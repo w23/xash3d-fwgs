@@ -26,6 +26,10 @@ jobs:
       before_script:
         - sh scripts/travis_common_deps.sh
         - sh scripts/travis_${TRAVIS_OS_NAME}_deps.sh
+      install:
+        - export VK_VERSION=1.2.176.1
+        - curl -L --silent --show-error --output VulkanSDK.exe https://vulkan.lunarg.com/sdk/download/$VULKAN_SDK/windows/VulkanSDK-$VULKAN_SDK-Installer.exe?Human=true
+        - ./VulkanSDK.exe /S
       script:
         - sh scripts/build_${TRAVIS_OS_NAME}_engine.sh
       after_script:
@@ -49,7 +53,6 @@ jobs:
             - libfuse2:i386
             - zlib1g:i386
             - unzip
-            - libvulkan-dev:i386
       before_script:
         - export ARCH=i686
         - sh scripts/travis_common_deps.sh
@@ -138,7 +141,11 @@ jobs:
             - libstdc++6
             - libfuse2
             - unzip
-            - libvulkan-dev
+      install:
+        - export VK_VERSION=1.2.176.1
+        - wget -O vulkansdk-linux-x86_64-$VK_VERSION.tar.gz https://sdk.lunarg.com/sdk/download/$VK_VERSION/linux/vulkansdk-linux-x86_64-$VK_VERSION.tar.gz?Human=true
+        - tar zxf vulkansdk-linux-x86_64-$VK_VERSION.tar.gz
+        - export VULKAN_SDK=$TRAVIS_BUILD_DIR/$VK_VERSION/x86_64
       before_script:
         - export ARCH=x86_64
         - sh scripts/travis_common_deps.sh
