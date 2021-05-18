@@ -28,7 +28,7 @@ jobs:
         - sh scripts/travis_${TRAVIS_OS_NAME}_deps.sh
       install:
         - export VK_VERSION=1.2.176.1
-        - curl -L --silent --show-error --output VulkanSDK.exe https://vulkan.lunarg.com/sdk/download/$VULKAN_SDK/windows/VulkanSDK-$VULKAN_SDK-Installer.exe?Human=true
+        - curl -L --show-error --output VulkanSDK.exe https://vulkan.lunarg.com/sdk/download/$VK_VERSION/windows/VulkanSDK-$VK_VERSION-Installer.exe?Human=true
         - ./VulkanSDK.exe /S
       script:
         - sh scripts/build_${TRAVIS_OS_NAME}_engine.sh
