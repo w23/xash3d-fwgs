@@ -20,6 +20,7 @@ GNU General Public License for more details.
 #include "common.h"
 #include "system.h"
 #include "defaults.h"
+#include "ref_vulkan.h"
 
 /*
 ==============================================================================
@@ -123,7 +124,6 @@ void GL_SwapBuffers( void );
 void *SW_LockBuffer( void );
 void SW_UnlockBuffer( void );
 qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *r, uint *g, uint *b );
-
 
 //
 // in_evdev.c

@@ -53,6 +53,7 @@ SUBDIRS = [
 	Subproject('public',      dedicated=False, mandatory = True),
 	Subproject('game_launch', singlebin=True),
 	Subproject('ref_gl',),
+	Subproject('ref_vk',),
 	Subproject('ref_soft'),
 	Subproject('mainui'),
 	Subproject('vgui_support'),
@@ -144,16 +145,21 @@ def configure(conf):
 		conf.options.NANOGL = True
 		conf.options.GLWES  = True
 		conf.options.GL     = False
+		# Vulkan is not supported on Android yet for CI reasons: requres NDK>12, glslc lookup etc.
+		conf.options.VK     = False
 	elif conf.env.MAGX:
 		conf.options.USE_SELECT       = True
 		conf.options.SDL12            = True
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = False
+		conf.options.VK               = False
 		conf.options.LOW_MEMORY       = 1
 		conf.options.SINGLE_BINARY    = True
 		conf.options.NO_ASYNC_RESOLVE = True
 		conf.define('XASH_SDLMAIN', 1)
 		enforce_pic = False
+	else:
+		conf.options.VK = True
 
 	if conf.env.STATIC_LINKING:
 		enforce_pic = False # PIC may break full static builds
@@ -190,6 +196,9 @@ def configure(conf):
                                    # so just warn, not error
 		'-Winit-self',
 		'-Werror=implicit-fallthrough=2', # clang incompatible without "=2"
+		'-Werror=logical-op',
+		'-Werror=write-strings',
+#		'-Werror=format=2',
 #		'-Wdouble-promotion', # disable warning flood
 		'-Wstrict-aliasing',
 	]
@@ -204,6 +213,9 @@ def configure(conf):
 		'-Werror=old-style-definition',
 		'-Werror=declaration-after-statement',
 		'-Werror=enum-conversion',
+		'-Werror=jump-misses-init',
+		'-Werror=strict-prototypes',
+#		'-Werror=nested-externs',
 		'-fnonconst-initializers' # owcc
 	]
 
@@ -250,13 +262,7 @@ def configure(conf):
 		# Don't check them more than once, to save time
 		# Usually, they are always available
 		# but we need them in uselib
-		a = map(lambda x: {
-			# 'features': 'c',
-			# 'message': '...' + x,
-			'lib': x,
-			# 'uselib_store': x.upper(),
-			# 'global_define': False,
-		}, [
+		a = [
 			'user32',
 			'shell32',
 			'gdi32',
@@ -264,12 +270,16 @@ def configure(conf):
 			'dbghelp',
 			'psapi',
 			'ws2_32'
-		])
+		]
 
-		for i in a:
-			conf.check_cc(**i)
-
-		# conf.multicheck(*a, run_all_tests = True, mandatory = True)
+		if conf.env.COMPILER_CC == 'msvc':
+			for i in a:
+				conf.start_msg('Checking for MSVC library')
+				conf.check_lib_msvc(i)
+				conf.end_msg(i)
+		else:
+			for i in a:
+				conf.check_cc(lib = i)
 
 	# check if we can use C99 tgmath
 	if conf.check_cc(header_name='tgmath.h', mandatory=False):

@@ -27,6 +27,7 @@ GNU General Public License for more details.
 #include "studio.h"
 #include "r_efx.h"
 #include "com_image.h"
+#include "ref_vulkan.h"
 
 #define REF_API_VERSION 1
 
@@ -155,6 +156,7 @@ enum ref_graphic_apis_e
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
+	REF_VULKAN, // Vulkan
 };
 
 typedef enum
@@ -431,6 +433,12 @@ typedef struct ref_api_s
 	void	(*pfnDrawNormalTriangles)( void );
 	void	(*pfnDrawTransparentTriangles)( void );
 	render_interface_t	*drawFuncs;
+
+#ifdef XASH_VULKAN
+	int (*XVK_GetInstanceExtensions)( unsigned int count, const char **pNames );
+	void *(*XVK_GetVkGetInstanceProcAddr)( void );
+	VkSurfaceKHR (*XVK_CreateSurface)( VkInstance instance );
+#endif
 } ref_api_t;
 
 struct mip_s;

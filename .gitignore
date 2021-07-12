@@ -321,11 +321,17 @@ build_current
 *.unsuccessfulbuild
 __pycache__
 *.pyc
+.waf*
 
 # MSVC projects
 *.vcproj
 *.sln
 *.vcxproj
+
+# vim/cscope/coc/clangd
+compile_commands.json
+cscope.out
+core
 
 # Visual Studio Code
 .vscode/*

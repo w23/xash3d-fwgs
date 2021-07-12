@@ -14,6 +14,9 @@ GNU General Public License for more details.
 */
 #if !XASH_DEDICATED
 #include <SDL.h>
+#ifdef XASH_VULKAN
+#include <SDL_vulkan.h>
+#endif
 #include "common.h"
 #include "client.h"
 #include "mod_local.h"
@@ -519,7 +522,7 @@ void VID_SaveWindowSize( int width, int height )
 	uint rotate = vid_rotate->value;
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	if( !glw_state.software )
+	if( glw_state.context_type != REF_SOFTWARE )
 		SDL_GL_GetDrawableSize( host.hWnd, &render_w, &render_h );
 	else
 		SDL_RenderSetLogicalSize( sw.renderer, width, height );
@@ -625,7 +628,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 {
 	static string	wndname;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	Uint32 wndFlags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_MOUSE_FOCUS;
+	Uint32 wndFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_MOUSE_FOCUS;
 	rgbdata_t *icon = NULL;
 	qboolean iconLoaded = false;
 	char iconpath[MAX_STRING];
@@ -633,8 +636,17 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 	if( vid_highdpi->value ) wndFlags |= SDL_WINDOW_ALLOW_HIGHDPI;
 	Q_strncpy( wndname, GI->title, sizeof( wndname ));
-	if( glw_state.software )
-		wndFlags &= ~SDL_WINDOW_OPENGL;
+	switch (glw_state.context_type)
+	{
+		case REF_GL:
+			wndFlags |= SDL_WINDOW_OPENGL;
+			break;
+#ifdef XASH_VULKAN
+		case REF_VULKAN:
+			wndFlags |= SDL_WINDOW_VULKAN;
+			break;
+#endif
+	}
 
 	if( !fullscreen )
 	{
@@ -740,7 +752,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 	SDL_ShowWindow( host.hWnd );
 
-	if( glw_state.software )
+	if( glw_state.context_type == REF_SOFTWARE )
 	{
 		int sdl_renderer = -2;
 		char cmd[64];
@@ -761,7 +773,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 			}
 		}
 	}
-	else
+	else if( glw_state.context_type == REF_GL )
 	{
 		if( !glw_state.initialized )
 		{
@@ -784,7 +796,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 		flags |= SDL_FULLSCREEN|SDL_HWSURFACE;
 	}
 
-	if( glw_state.software )
+	if( glw_state.context_type == REF_SOFTWARE )
 	{
 		// flags |= SDL_ASYNCBLIT;
 	}
@@ -960,6 +972,37 @@ int GL_GetAttribute( int attr, int *val )
 #define EGL_LIB NULL
 #endif
 
+#ifdef XASH_VULKAN
+int XVK_GetInstanceExtensions( unsigned int count, const char **pNames )
+{
+	if (!SDL_Vulkan_GetInstanceExtensions(host.hWnd, &count, pNames))
+	{
+		Con_Reportf( S_ERROR  "Couldn't get Vulkan extensions: %s\n", SDL_GetError());
+		return -1;
+	}
+
+	return (int)count;
+}
+
+void *XVK_GetVkGetInstanceProcAddr( void )
+{
+	return SDL_Vulkan_GetVkGetInstanceProcAddr();
+}
+
+VkSurfaceKHR XVK_CreateSurface( VkInstance instance )
+{
+	VkSurfaceKHR surface;
+
+	if (!SDL_Vulkan_CreateSurface(host.hWnd, instance, &surface))
+	{
+		Con_Reportf( S_ERROR  "Couldn't create Vulkan surface: %s\n", SDL_GetError());
+		return 0;
+	}
+
+	return surface;
+}
+#endif
+
 /*
 ==================
 R_Init_Video
@@ -989,10 +1032,10 @@ qboolean R_Init_Video( const int type )
 	WIN_SetDPIAwareness();
 #endif
 
+	glw_state.context_type = type;
 	switch( type )
 	{
 	case REF_SOFTWARE:
-		glw_state.software = true;
 		break;
 	case REF_GL:
 		if( !glw_state.safe && Sys_GetParmFromCmdLine( "-safegl", safe ) )
@@ -1007,6 +1050,10 @@ qboolean R_Init_Video( const int type )
 			return false;
 		}
 		break;
+#ifdef XASH_VULKAN
+	case REF_VULKAN:
+		break;
+#endif
 	default:
 		Host_Error( "Can't initialize unknown context type %d!\n", type );
 		break;

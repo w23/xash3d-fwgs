@@ -1,0 +1,114 @@
+#! /usr/bin/env python
+# encoding: utf-8
+# mittorn, 2018
+
+from waflib import Logs
+import os
+
+top = '.'
+
+def options(opt):
+	grp = opt.add_option_group('ref_vk options')
+
+	grp.add_option('--disable-vulkan', action='store_false', dest='VK', default=True,
+		help = 'disable vulkan [default: vulkan is enabled]')
+
+	grp.add_option('', '--aftermath', action='store', dest = 'NSIGHT_AFTERMATH_SDK', default = None,
+		help = 'Path to Nvidia Nsight Aftermath SDK (optional)')
+
+def configure(conf):
+	# check for dedicated server build
+	if conf.options.DEDICATED:
+		return
+
+	conf.env.VK = conf.options.VK
+
+	if not conf.env.VK:
+		return
+
+	if conf.env.DEST_OS == 'win32':
+		conf.start_msg('Vulkan SDK available?')
+		if not 'VULKAN_SDK' in conf.environ:
+			conf.error('VULKAN_SDK environment variable is not available, ref_vk will not be built')
+			conf.end_msg('no')
+		conf.env.VULKAN_SDK = conf.environ['VULKAN_SDK']
+		if not os.path.isdir(conf.env.VULKAN_SDK):
+			conf.error(conf.env.VULKAN_SDK + ' is not a valid directory')
+		conf.end_msg('found at ' + conf.env.VULKAN_SDK)
+
+	conf.load('glslc')
+
+	conf.define('REF_DLL', 1)
+	conf.define('XASH_VULKAN', 1)
+
+	if conf.options.NSIGHT_AFTERMATH_SDK:
+		conf.start_msg('Nvidia Nsight Aftermath SDK')
+		conf.env.HAVE_AFTERMATH = 1
+		path = conf.options.NSIGHT_AFTERMATH_SDK
+		conf.env.INCLUDES_AFTERMATH = [os.path.abspath(os.path.join(path, 'include'))]
+		libdir = 'lib'
+		lib = 'GFSDK_Aftermath_Lib'
+		if conf.env.COMPILER_CC == 'msvc':
+			if conf.env.DEST_CPU == 'x86_64':
+				libdir = 'lib/x64'
+				lib += '.x64'
+			else:
+				libdir = 'lib/' + conf.env.DEST_CPU
+				lib += conf.env.DEST_CPU
+		libdir = os.path.abspath(os.path.join(path, libdir))
+		conf.env.LIBPATH_AFTERMATH = [libdir]
+		conf.env.LIB_AFTERMATH = [lib]
+		conf.end_msg('SDK: {0}, includes: {1}, libpath: {2}, lib: {3}'.format(path, conf.env.INCLUDES_AFTERMATH, conf.env.LIBPATH_AFTERMATH, conf.env.LIB_AFTERMATH))
+
+	# TODO if debug
+	conf.env.GLSLCFLAGS += ['-g']
+
+def build(bld):
+	if not bld.env.VK:
+		return
+
+	libs = [ 'public', 'M' ]
+	defines = []
+	libpath = []
+
+	source = bld.path.ant_glob(['*.c'])
+	glsl_source = bld.path.ant_glob(['shaders/*.vert', 'shaders/*.frag', 'shaders/*.comp'])
+
+	includes = ['.',
+		'../engine',
+		'../engine/common',
+		'../engine/server',
+		'../engine/client',
+		'../public',
+		'../common',
+		'../pm_shared' ]
+
+	if bld.env.DEST_OS == 'win32':
+		includes.append(bld.env.VULKAN_SDK + '\\Include')
+
+	if bld.env.HAVE_AFTERMATH:
+		defines.append('USE_AFTERMATH')
+		libs.append('AFTERMATH')
+
+	#FIXME bld.env.CFLAGS += ["/WX"]
+
+	bld.shlib(
+		source   = source,
+		target   = 'ref_vk',
+		features = 'c',
+		includes = includes,
+		use      = libs,
+		defines  = defines,
+		libpath  = libpath,
+		install_path = bld.env.LIBDIR,
+		subsystem = bld.env.MSVC_SUBSYSTEM
+	)
+
+	bld(
+		source = glsl_source,
+		features = 'glsl',
+		# includes = 'shaders/', # write your includes here
+		# defines = 'TEST', # write your C preprocessor defines here
+		install_path = bld.env.LIBDIR + '/valve' # FIXME TEMPORARY!!!!
+	)
+
