@@ -11,6 +11,7 @@
 #include "vk_scene.h"
 #include "vk_render.h"
 #include "vk_light.h"
+#include "camera.h"
 
 #include "ref_params.h"
 #include "eiface.h"
@@ -325,6 +326,41 @@ texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s )
 	return base;
 }
 
+typedef struct vk_brush_model_s {
+	vk_render_model_t render_model;
+	int num_water_surfaces;
+	int max_visible_surfaces;
+
+	vk_render_geometry_t *surface_geometries ; // [mod->nummodelsurfaces]
+
+	int visframe_sequence;
+} vk_brush_model_t;
+
+static void renderSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod ) {
+	vk_brush_model_t *bmodel = mod->cache.data;
+	for (int i = 0; i < leaf->nummarksurfaces; ++i) {
+		msurface_t *marksurf = leaf->firstmarksurface[i];
+		const int surf_index = marksurf - mod->surfaces;
+		const int lastmodelsurface = mod->firstmodelsurface + mod->nummodelsurfaces;
+		const int geom_index = surf_index - mod->firstmodelsurface;
+		const vk_render_geometry_t *geom = bmodel->surface_geometries + surf_index;
+		if (surf_index < mod->firstmodelsurface || surf_index >= lastmodelsurface) {
+			PRINT_NOT_IMPLEMENTED_ARGS("WTF model %s surface %d is outside %d %d", mod->name, surf_index, mod->firstmodelsurface, lastmodelsurface);
+			continue;
+		}
+
+		if (geom->element_count == 0)
+			continue;
+
+		if (marksurf->visframe == bmodel->visframe_sequence)
+			continue;
+
+		marksurf->visframe = bmodel->visframe_sequence;
+		ASSERT(bmodel->render_model.num_geometries < bmodel->max_visible_surfaces);
+		bmodel->render_model.geometries[bmodel->render_model.num_geometries++] = *geom;
+	}
+}
+
 void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode )
 {
 	// Expect all buffers to be bound
@@ -336,13 +372,57 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode )
 		return;
 	}
 
+	// FIXME we could preallocate memory for water surfaces in brush model geometry array,
+	// if not for dynamic nature of its blas for ray tracing
+	// FIXME cull by bsp
 	if (bmodel->num_water_surfaces) {
 		XVK_DrawWaterSurfaces(ent);
 	}
 
-	if (bmodel->render_model.num_geometries == 0)
+	if (!bmodel->surface_geometries)
 		return;
 
+	++bmodel->visframe_sequence;
+	bmodel->render_model.num_geometries = 0;
+
+	{
+		const mleaf_t* leaf = gEngine.Mod_PointInLeaf(g_camera.vieworg, mod->nodes);
+		renderSurfacesFromLeaf(leaf, mod);
+
+		// pvs ..
+		// Get all PVS leafs
+		{
+			const byte *pvs = leaf->compressed_vis;
+			int pvs_leaf_index = 0;
+			for (;pvs_leaf_index < mod->numleafs; ++pvs) {
+				uint8_t bits = pvs[0];
+
+				// PVS is RLE encoded
+				if (bits == 0) {
+					const int skip = pvs[1];
+					pvs_leaf_index += skip * 8;
+					++pvs;
+					continue;
+				}
+
+				for (int k = 0; k < 8; ++k, ++pvs_leaf_index, bits >>= 1) {
+					if ((bits&1) == 0)
+						continue;
+
+					renderSurfacesFromLeaf( mod->leafs + pvs_leaf_index + 1, mod );
+				}
+			}
+		}
+	}
+
+	// TODO alternative render API:
+	// - VK_RenderModelBegin(debug_name, render_mode, ...)
+	// - for (...) VK_RenderModelPushGeometry(...)
+	// - VK_RenderModelEnd(...)
+	// why:
+	// - no need to preallocate arrays here, or track vk_render_model_t struct
+
+#if 0 // FIXME still need to do this for all surfaces in RTX mode
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		texture_t *t = R_TextureAnimation(ent, bmodel->render_model.geometries[i].surf);
 		if (t->gl_texturenum < 0)
@@ -350,9 +430,12 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode )
 
 		bmodel->render_model.geometries[i].texture = t->gl_texturenum;
 	}
+#endif
 
-	bmodel->render_model.render_mode = render_mode;
-	VK_RenderModelDraw(&bmodel->render_model);
+	if (bmodel->render_model.num_geometries > 0) {
+		bmodel->render_model.render_mode = render_mode;
+		VK_RenderModelDraw(&bmodel->render_model);
+	}
 }
 
 static qboolean renderableSurface( const msurface_t *surf, int i ) {
@@ -374,6 +457,7 @@ static qboolean renderableSurface( const msurface_t *surf, int i ) {
 // 		gEngine.Con_Reportf("\n");
 // 	}
 
+	// FIXME learn to do these
 	//if( surf->flags & ( SURF_DRAWSKY | SURF_DRAWTURB | SURF_CONVEYOR | SURF_DRAWTURB_QUADS ) ) {
 	if( surf->flags & ( SURF_DRAWTURB | SURF_CONVEYOR | SURF_DRAWTURB_QUADS ) ) {
 	//if( surf->flags & ( SURF_DRAWSKY | SURF_CONVEYOR ) ) {
@@ -395,10 +479,8 @@ static qboolean renderableSurface( const msurface_t *surf, int i ) {
 }
 
 typedef struct {
-	int num_surfaces, num_vertices, num_indices;
-	int max_texture_id;
+	int num_visible_surfaces, num_vertices, num_indices;
 	int water_surfaces;
-	//int sky_surfaces;
 } model_sizes_t;
 
 static model_sizes_t computeSizes( const model_t *mod ) {
@@ -414,11 +496,9 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		if (!renderableSurface(surf, i))
 			continue;
 
-		++sizes.num_surfaces;
+		++sizes.num_visible_surfaces;
 		sizes.num_vertices += surf->numedges;
 		sizes.num_indices += 3 * (surf->numedges - 1);
-		if (surf->texinfo->texture->gl_texturenum > sizes.max_texture_id)
-			sizes.max_texture_id = surf->texinfo->texture->gl_texturenum;
 	}
 
 	return sizes;
@@ -446,114 +526,107 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	index_offset = index_buffer.buffer.unit.offset;
 
 	// Load sorted by gl_texturenum
-	for (int t = 0; t <= sizes.max_texture_id; ++t)
+	for( int i = 0; i < mod->nummodelsurfaces; ++i)
 	{
-		for( int i = 0; i < mod->nummodelsurfaces; ++i)
+		const int surface_index = mod->firstmodelsurface + i;
+		msurface_t *surf = mod->surfaces + surface_index;
+		const mextrasurf_t *info = surf->info;
+		vk_render_geometry_t *model_geometry = bmodel->surface_geometries + i;
+		const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
+		int index_count = 0;
+
+		if (!renderableSurface(surf, -1))
+			continue;
+
+		++num_geometries;
+
+		//gEngine.Con_Reportf( "surface %d: numverts=%d numedges=%d\n", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
+
+		if (vertex_offset + surf->numedges >= UINT16_MAX)
 		{
-			const int surface_index = mod->firstmodelsurface + i;
-			msurface_t *surf = mod->surfaces + surface_index;
-			mextrasurf_t	*info = surf->info;
-			vk_render_geometry_t *model_geometry = bmodel->render_model.geometries + num_geometries;
-			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
-			int index_count = 0;
-
-			if (!renderableSurface(surf, -1))
-				continue;
-
-			if (t != surf->texinfo->texture->gl_texturenum)
-				continue;
-
-			++num_geometries;
-
-			//gEngine.Con_Reportf( "surface %d: numverts=%d numedges=%d\n", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
-
-			if (vertex_offset + surf->numedges >= UINT16_MAX)
-			{
-				gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", mod->name);
-				// FIXME unlock and free buffers
-				return false;
-			}
-
-			model_geometry->surf = surf;
-			model_geometry->texture = surf->texinfo->texture->gl_texturenum;
-
-			model_geometry->vertex_offset = vertex_buffer.buffer.unit.offset;
-			model_geometry->max_vertex = vertex_offset + surf->numedges;
-
-			model_geometry->index_offset = index_offset;
-
-			if( FBitSet( surf->flags, SURF_DRAWSKY )) {
-				model_geometry->material = kXVkMaterialSky;
-			} else {
-				model_geometry->material = kXVkMaterialRegular;
-				VK_CreateSurfaceLightmap( surf, mod );
-			}
-
-			for( int k = 0; k < surf->numedges; k++ )
-			{
-				const int iedge = mod->surfedges[surf->firstedge + k];
-				const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
-				const mvertex_t *in_vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
-				vk_vertex_t vertex = {
-					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
-				};
-
-				float s = DotProduct( in_vertex->position, surf->texinfo->vecs[0] ) + surf->texinfo->vecs[0][3];
-				float t = DotProduct( in_vertex->position, surf->texinfo->vecs[1] ) + surf->texinfo->vecs[1][3];
-
-				s /= surf->texinfo->texture->width;
-				t /= surf->texinfo->texture->height;
-
-				vertex.gl_tc[0] = s;
-				vertex.gl_tc[1] = t;
-
-				// lightmap texture coordinates
-				s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
-				s -= info->lightmapmins[0];
-				s += surf->light_s * sample_size;
-				s += sample_size * 0.5f;
-				s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
-
-				t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
-				t -= info->lightmapmins[1];
-				t += surf->light_t * sample_size;
-				t += sample_size * 0.5f;
-				t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
-
-				if( FBitSet( surf->flags, SURF_PLANEBACK ))
-					VectorNegate( surf->plane->normal, vertex.normal );
-				else VectorCopy( surf->plane->normal, vertex.normal );
-
-				vertex.lm_tc[0] = s;
-				vertex.lm_tc[1] = t;
-
-				*(bvert++) = vertex;
-
-				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
-				if (k > 1) {
-					*(bind++) = (uint16_t)(vertex_offset + 0);
-					*(bind++) = (uint16_t)(vertex_offset + k - 1);
-					*(bind++) = (uint16_t)(vertex_offset + k);
-					index_count += 3;
-					index_offset += 3;
-				}
-			}
-
-			model_geometry->element_count = index_count;
-			vertex_offset += surf->numedges;
+			gEngine.Con_Printf(S_ERROR "Model %s indices don't fit into 16 bits\n", mod->name);
+			// FIXME unlock and free buffers
+			return false;
 		}
+
+		model_geometry->surf = surf;
+		model_geometry->texture = surf->texinfo->texture->gl_texturenum;
+
+		model_geometry->vertex_offset = vertex_buffer.buffer.unit.offset;
+		model_geometry->max_vertex = vertex_offset + surf->numedges;
+
+		model_geometry->index_offset = index_offset;
+
+		if( FBitSet( surf->flags, SURF_DRAWSKY )) {
+			model_geometry->material = kXVkMaterialSky;
+		} else {
+			model_geometry->material = kXVkMaterialRegular;
+			VK_CreateSurfaceLightmap( surf, mod );
+		}
+
+		for( int k = 0; k < surf->numedges; k++ )
+		{
+			const int iedge = mod->surfedges[surf->firstedge + k];
+			const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
+			const mvertex_t *in_vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
+			vk_vertex_t vertex = {
+				{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
+			};
+
+			float s = DotProduct( in_vertex->position, surf->texinfo->vecs[0] ) + surf->texinfo->vecs[0][3];
+			float t = DotProduct( in_vertex->position, surf->texinfo->vecs[1] ) + surf->texinfo->vecs[1][3];
+
+			s /= surf->texinfo->texture->width;
+			t /= surf->texinfo->texture->height;
+
+			vertex.gl_tc[0] = s;
+			vertex.gl_tc[1] = t;
+
+			// lightmap texture coordinates
+			s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
+			s -= info->lightmapmins[0];
+			s += surf->light_s * sample_size;
+			s += sample_size * 0.5f;
+			s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
+
+			t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
+			t -= info->lightmapmins[1];
+			t += surf->light_t * sample_size;
+			t += sample_size * 0.5f;
+			t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
+
+			if( FBitSet( surf->flags, SURF_PLANEBACK ))
+				VectorNegate( surf->plane->normal, vertex.normal );
+			else VectorCopy( surf->plane->normal, vertex.normal );
+
+			vertex.lm_tc[0] = s;
+			vertex.lm_tc[1] = t;
+
+			*(bvert++) = vertex;
+
+			// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
+			if (k > 1) {
+				*(bind++) = (uint16_t)(vertex_offset + 0);
+				*(bind++) = (uint16_t)(vertex_offset + k - 1);
+				*(bind++) = (uint16_t)(vertex_offset + k);
+				index_count += 3;
+				index_offset += 3;
+			}
+		}
+
+		model_geometry->element_count = index_count;
+		vertex_offset += surf->numedges;
 	}
 
 	XVK_RenderBufferUnlock( index_buffer.buffer );
 	XVK_RenderBufferUnlock( vertex_buffer.buffer );
 
-	ASSERT(sizes.num_surfaces == num_geometries);
-	bmodel->render_model.num_geometries = num_geometries;
+	ASSERT(sizes.num_visible_surfaces == num_geometries);
 
 	return true;
 }
 
-qboolean VK_BrushModelLoad( model_t *mod )
+qboolean VK_BrushModelLoad( model_t *mod, qboolean map )
 {
 	if (mod->cache.data)
 	{
@@ -565,19 +638,19 @@ qboolean VK_BrushModelLoad( model_t *mod )
 
 	{
 		const model_sizes_t sizes = computeSizes( mod );
-		const size_t model_size =
-			sizeof(vk_brush_model_t) +
-			sizeof(vk_render_geometry_t) * sizes.num_surfaces;
+		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(vk_brush_model_t));
 
-		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, model_size);
 		mod->cache.data = bmodel;
 		Q_strncpy(bmodel->render_model.debug_name, mod->name, sizeof(bmodel->render_model.debug_name));
 		bmodel->render_model.render_mode = kRenderNormal;
+		bmodel->render_model.static_map = map;
+		bmodel->max_visible_surfaces = sizes.num_visible_surfaces;
 
 		bmodel->num_water_surfaces = sizes.water_surfaces;
 
-		if (sizes.num_surfaces != 0) {
-			bmodel->render_model.geometries = (vk_render_geometry_t*)((char*)(bmodel + 1));
+		if (mod->nummodelsurfaces != 0) {
+			bmodel->render_model.geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_visible_surfaces);
+			bmodel->surface_geometries = Mem_Calloc(vk_core.pool, sizeof(vk_render_geometry_t) * mod->nummodelsurfaces);
 
 			if (!loadBrushSurfaces(sizes, mod) || !VK_RenderModelInit(&bmodel->render_model)) {
 				gEngine.Con_Printf(S_ERROR "Could not load model %s\n", mod->name);
@@ -589,7 +662,7 @@ qboolean VK_BrushModelLoad( model_t *mod )
 		g_brush.stat.num_indices += sizes.num_indices;
 		g_brush.stat.num_vertices += sizes.num_vertices;
 
-		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n", mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.num_vertices, g_brush.stat.num_indices);
+		gEngine.Con_Reportf("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u\n", mod->name, sizes.num_visible_surfaces, mod->nummodelsurfaces, g_brush.stat.num_vertices, g_brush.stat.num_indices);
 	}
 
 	return true;
@@ -602,6 +675,10 @@ void VK_BrushModelDestroy( model_t *mod ) {
 		return;
 
 	VK_RenderModelDestroy(&bmodel->render_model);
+	if (bmodel->surface_geometries)
+		Mem_Free(bmodel->surface_geometries);
+	if (bmodel->render_model.geometries)
+		Mem_Free(bmodel->render_model.geometries);
 	Mem_Free(bmodel);
 	mod->cache.data = NULL;
 }
