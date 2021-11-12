@@ -489,6 +489,12 @@ void main() {
 
 		if (bounce == 0)
 			first_bounce_brdf_type = brdfType;
+
+		float maxThroughput = max(max(throughput.x, throughput.y), throughput.z);
+		if (rand01() > maxThroughput) {
+			break;
+		}
+		throughput /= maxThroughput;
 	} // for all bounces
 
 	if (first_bounce_brdf_type == DIFFUSE_TYPE) {
