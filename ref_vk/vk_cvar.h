@@ -20,6 +20,7 @@ void VK_LoadCvars( void );
 	X(ui_infotool) \
 	X(vk_rtx) \
 	X(vk_rtx_extension) \
+	X(vk_hdr) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

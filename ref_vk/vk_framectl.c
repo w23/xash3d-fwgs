@@ -132,11 +132,11 @@ static void destroyDepthImage( void ) {
 	freeDeviceMemory(&g_frame.depth.device_memory);
 }
 
-static VkRenderPass createRenderPass( qboolean ray_tracing ) {
+static VkRenderPass createRenderPass( qboolean ray_tracing, qboolean hdr_output ) {
 	VkRenderPass render_pass;
 
 	VkAttachmentDescription attachments[] = {{
-		.format = VK_FORMAT_B8G8R8A8_UNORM, //SRGB,// FIXME too early swapchain.create_info.imageFormat;
+		.format = hdr_output ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : VK_FORMAT_B8G8R8A8_UNORM, //SRGB,// FIXME too early swapchain.create_info.imageFormat;
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.loadOp = ray_tracing ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR /* TODO: prod renderer should not care VK_ATTACHMENT_LOAD_OP_DONT_CARE */,
 		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -213,6 +213,8 @@ static qboolean createSwapchain( void )
 	// recreating swapchain means invalidating any previous frames
 	g_frame.last_frame_index = -1;
 
+	qboolean hdr_output = CVAR_TO_BOOL( vk_hdr );
+
 	XVK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_core.physical_device.device, vk_core.surface.surface, &g_frame.surface_caps));
 
 	vk_frame.width = g_frame.surface_caps.currentExtent.width;
@@ -230,8 +232,8 @@ static qboolean createSwapchain( void )
 	create_info->sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	create_info->pNext = NULL;
 	create_info->surface = vk_core.surface.surface;
-	create_info->imageFormat = VK_FORMAT_B8G8R8A8_UNORM;//SRGB; // TODO get from surface_formats
-	create_info->imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR; // TODO get from surface_formats
+	create_info->imageFormat = hdr_output ? VK_FORMAT_A2B10G10R10_UNORM_PACK32 : VK_FORMAT_B8G8R8A8_UNORM;//SRGB; // TODO get from surface_formats
+	create_info->imageColorSpace = hdr_output ? VK_COLOR_SPACE_HDR10_ST2084_EXT : VK_COLORSPACE_SRGB_NONLINEAR_KHR; // TODO get from surface_formats
 	create_info->imageExtent.width = vk_frame.width;
 	create_info->imageExtent.height = vk_frame.height;
 	create_info->imageArrayLayers = 1;
@@ -345,6 +347,14 @@ void R_BeginFrame( qboolean clearScene )
 			createSwapchain();
 		}
 	}
+
+	// TODO: VkFramebufferCreateInfo attachment #0 has format of VK_FORMAT_A2B10G10R10_UNORM_PACK32 that does not match the format of VK_FORMAT_B8G8R8A8_UNORM used by the corresponding attachment for VkRenderPass
+	/*
+	if (FBitSet( vk_hdr->flags, FCVAR_CHANGED )) {
+		createSwapchain();
+	}
+	ClearBits( vk_hdr->flags, FCVAR_CHANGED );
+	*/
 
 	for (int i = 0;; ++i)
 	{
@@ -519,9 +529,10 @@ static void toggleRaytracing( void ) {
 qboolean VK_FrameCtlInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
-	vk_frame.render_pass.raster = createRenderPass(false);
+	qboolean hdr_output = CVAR_TO_BOOL( vk_hdr );
+	vk_frame.render_pass.raster = createRenderPass(false, hdr_output);
 	if (vk_core.rtx)
-		vk_frame.render_pass.after_ray_tracing = createRenderPass(true);
+		vk_frame.render_pass.after_ray_tracing = createRenderPass(true, hdr_output);
 
 	if (!createSwapchain())
 		return false;
@@ -764,7 +775,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 			r_shot->buffer = Mem_Malloc( r_temppool, r_shot->size );
 
 			if (!blit) {
-				if (dest_format != VK_FORMAT_R8G8B8A8_UNORM || g_frame.create_info.imageFormat != VK_FORMAT_B8G8R8A8_UNORM) {
+				if (dest_format != VK_FORMAT_R8G8B8A8_UNORM || g_frame.create_info.imageFormat != VK_FORMAT_B8G8R8A8_UNORM) { // TODO: fix for HDR
 					gEngine.Con_Printf(S_WARN "Don't have a blit function for this format pair, will save as-is w/o conversion; expect image to look wrong\n");
 					blit = true;
 				} else {
