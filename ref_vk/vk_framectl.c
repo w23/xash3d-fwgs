@@ -209,11 +209,10 @@ static uint32_t clamp_u32(uint32_t v, uint32_t min, uint32_t max) {
 static qboolean createSwapchain( void )
 {
 	VkSwapchainCreateInfoKHR *create_info = &g_frame.create_info;
+	qboolean hdr_output = CVAR_TO_BOOL( vk_hdr );
 	const uint32_t prev_num_images = g_frame.num_images;
 	// recreating swapchain means invalidating any previous frames
 	g_frame.last_frame_index = -1;
-
-	qboolean hdr_output = CVAR_TO_BOOL( vk_hdr );
 
 	XVK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_core.physical_device.device, vk_core.surface.surface, &g_frame.surface_caps));
 
