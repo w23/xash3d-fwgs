@@ -55,7 +55,7 @@ typedef struct vulkan_core_s {
 
 	// TODO store important capabilities that affect render code paths
 	// (as rtx, dedicated gpu memory, bindless, etc) separately in a struct
-	qboolean debug, rtx;
+	qboolean debug, rtx, hdr;
 	struct {
 		VkSurfaceKHR surface;
 		uint32_t num_surface_formats;
