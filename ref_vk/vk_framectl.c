@@ -528,8 +528,8 @@ static void toggleRaytracing( void ) {
 
 qboolean VK_FrameCtlInit( void )
 {
-	PROFILER_SCOPES(APROF_SCOPE_INIT);
 	qboolean hdr_output = CVAR_TO_BOOL( vk_hdr );
+	PROFILER_SCOPES(APROF_SCOPE_INIT);
 	vk_frame.render_pass.raster = createRenderPass(false, hdr_output);
 	if (vk_core.rtx)
 		vk_frame.render_pass.after_ray_tracing = createRenderPass(true, hdr_output);
