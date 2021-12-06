@@ -69,10 +69,12 @@ static qboolean createPipelines( void )
 		struct ShaderSpec {
 			float alpha_test_threshold;
 			uint32_t max_dlights;
-		} spec_data = { .25f, MAX_DLIGHTS };
+			int hdr_output;
+		} spec_data = { .25f, MAX_DLIGHTS, vk_core.hdr ? 1 : 0 };
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, alpha_test_threshold), .size = sizeof(float) },
 			{.constantID = 1, .offset = offsetof(struct ShaderSpec, max_dlights), .size = sizeof(uint32_t) },
+			{.constantID = 2, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
 		};
 
 		VkSpecializationInfo shader_spec = {
@@ -95,7 +97,7 @@ static qboolean createPipelines( void )
 		{
 			.stage = VK_SHADER_STAGE_VERTEX_BIT,
 			.filename = "brush.vert.spv",
-			.specialization_info = NULL,
+			.specialization_info = &shader_spec,
 		}, {
 			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 			.filename = "brush.frag.spv",

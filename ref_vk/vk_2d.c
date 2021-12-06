@@ -199,6 +199,19 @@ static qboolean createPipelines( void )
 	}
 
 	{
+		struct ShaderSpec {
+			int hdr_output;
+		} spec_data = { vk_core.hdr ? 1 : 0 };
+		const VkSpecializationMapEntry spec_map[] = {
+			{.constantID = 0, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
+		};
+		VkSpecializationInfo shader_spec = {
+			.mapEntryCount = ARRAYSIZE(spec_map),
+			.pMapEntries = spec_map,
+			.dataSize = sizeof(struct ShaderSpec),
+			.pData = &spec_data
+		};
+
 		const VkVertexInputAttributeDescription attribs[] = {
 			{.binding = 0, .location = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vertex_2d_t, x)},
 			{.binding = 0, .location = 1, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vertex_2d_t, u)},
@@ -209,9 +222,11 @@ static qboolean createPipelines( void )
 		{
 			.stage = VK_SHADER_STAGE_VERTEX_BIT,
 			.filename = "2d.vert.spv",
+			.specialization_info = NULL,
 		}, {
 			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 			.filename = "2d.frag.spv",
+			.specialization_info = &shader_spec,
 		}};
 
 		vk_pipeline_graphics_create_info_t pci = {

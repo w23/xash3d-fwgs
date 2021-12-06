@@ -1,7 +1,10 @@
 #version 450
+#include "tonemapping.glsl"
 
 layout (constant_id = 0) const float alpha_test_threshold = 0.;
 layout (constant_id = 1) const uint max_dlights = 1;
+layout (constant_id = 2) const int hdr_output = 0;
+
 
 layout(set=1,binding=0) uniform sampler2D sTexture0;
 layout(set=2,binding=0) uniform sampler2D sLightmap;
@@ -25,6 +28,7 @@ layout(location=5) flat in uint vFlags;
 
 layout(location=0) out vec4 outColor;
 
+
 // FIXME what should this be?
 const float dlight_attenuation_const = 5000.;
 
@@ -32,17 +36,27 @@ const float dlight_attenuation_const = 5000.;
 
 void main() {
 	outColor = vec4(0.);
-	const vec4 baseColor = vColor * texture(sTexture0, vTexture0);
+	vec4 baseColor = vColor * texture(sTexture0, vTexture0);
+
+	if (hdr_output > 0) {
+		// FIXME: Need an operator that understands the output luminance and middle gray stays at a reasonable level (400 vs 1000 nit display on 0.5)
+		baseColor.rgb = aces_tonemap(baseColor.rgb);
+	}
 
 	if (baseColor.a < alpha_test_threshold)
 		discard;
 
 	outColor.a = baseColor.a;
 
-	if ((vFlags & FLAG_VERTEX_LIGHTING) == 0)
-		outColor.rgb += baseColor.rgb * texture(sLightmap, vLightmapUV).rgb;
-	else
+	if ((vFlags & FLAG_VERTEX_LIGHTING) == 0) {
+		vec3 lightmap = texture(sLightmap, vLightmapUV).rgb;
+		if (hdr_output > 0) {
+			lightmap = aces_tonemap(lightmap);
+		}
+		outColor.rgb += baseColor.rgb * lightmap;
+	} else {
 		outColor.rgb += baseColor.rgb;
+	}
 
 	for (uint i = 0; i < ubo.num_lights; ++i) {
 		const vec4 light_pos_r = ubo.lights[i].pos_r;

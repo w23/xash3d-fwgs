@@ -85,10 +85,23 @@ static void createLayouts( void ) {
 }
 
 static VkPipeline createPipeline( void ) {
+	struct ShaderSpec {
+		int hdr_output;
+	} spec_data = { vk_core.hdr ? 1 : 0 };
+	const VkSpecializationMapEntry spec_map[] = {
+		{.constantID = 0, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
+	};
+	VkSpecializationInfo shader_spec = {
+		.mapEntryCount = ARRAYSIZE(spec_map),
+		.pMapEntries = spec_map,
+		.dataSize = sizeof(struct ShaderSpec),
+		.pData = &spec_data
+	};
+
 	const vk_pipeline_compute_create_info_t pcci = {
 		.layout = g_denoiser.descriptors.pipeline_layout,
 		.shader_filename = "denoiser.comp.spv",
-		.specialization_info = NULL,
+		.specialization_info = &shader_spec,
 	};
 
 	return VK_PipelineComputeCreate( &pcci );
