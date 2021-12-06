@@ -5,7 +5,6 @@ layout (constant_id = 0) const float alpha_test_threshold = 0.;
 layout (constant_id = 1) const uint max_dlights = 1;
 layout (constant_id = 2) const int hdr_output = 0;
 
-
 layout(set=1,binding=0) uniform sampler2D sTexture0;
 layout(set=2,binding=0) uniform sampler2D sLightmap;
 
