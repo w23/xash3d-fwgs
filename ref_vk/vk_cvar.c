@@ -1,6 +1,6 @@
 #include "vk_cvar.h"
 #include "vk_common.h"
-#include "vk_render.h"
+#include "vk_core.h"
 
 #define NONEXTERN_CVAR(cvar) cvar_t *cvar;
 DECLARE_CVAR(NONEXTERN_CVAR)
@@ -24,12 +24,12 @@ void VK_LoadCvars( void )
 	if (vk_core.rtx) {
 		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
 	} else {
-		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "0", FCVAR_READ_ONLY, "DISABLED: not supported without -rtx" );
+		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
 	}
 	vk_hdr_extension = gEngine.Cvar_Get( "vk_hdr_extension", vk_core.hdr ? "1" : "0", FCVAR_READ_ONLY, "" );
 	if (vk_core.hdr) {
 		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_GLCONFIG, "EXPERIMENTAL: Enable or disable High Dynamic Range output (RESTART REQUIRED)" );
 	} else {
 		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
-	}
+  }
 }
