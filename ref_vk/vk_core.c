@@ -615,7 +615,7 @@ qboolean R_VkInit( void )
 	const qboolean skip_first_device = !!(gEngine.Sys_CheckParm("-vkskipdev"));
 
 	vk_core.debug = !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
-  vk_core.rtx = false;
+	vk_core.rtx = false;
 	vk_core.hdr = false;
 
 	if( !gEngine.R_Init_Video( REF_VULKAN )) // request Vulkan surface

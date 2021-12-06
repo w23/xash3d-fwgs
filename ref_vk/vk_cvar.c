@@ -31,5 +31,5 @@ void VK_LoadCvars( void )
 		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_GLCONFIG, "EXPERIMENTAL: Enable or disable High Dynamic Range output (RESTART REQUIRED)" );
 	} else {
 		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
-  }
+	}
 }

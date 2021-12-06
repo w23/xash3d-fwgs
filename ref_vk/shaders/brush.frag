@@ -28,7 +28,6 @@ layout(location=5) flat in uint vFlags;
 
 layout(location=0) out vec4 outColor;
 
-
 // FIXME what should this be?
 const float dlight_attenuation_const = 5000.;
 
