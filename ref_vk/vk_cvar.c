@@ -26,10 +26,16 @@ void VK_LoadCvars( void )
 	} else {
 		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
 	}
-	vk_hdr_extension = gEngine.Cvar_Get( "vk_hdr_extension", vk_core.hdr ? "1" : "0", FCVAR_READ_ONLY, "" );
-	if (vk_core.hdr) {
-		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_GLCONFIG, "EXPERIMENTAL: Enable or disable High Dynamic Range output (RESTART REQUIRED)" );
+	vk_hdr_output_extension = gEngine.Cvar_Get( "vk_hdr_output_extension", vk_core.hdr_output ? "1" : "0", FCVAR_READ_ONLY, "" );
+	//vk_hdr_output_max_luminance = gEngine.Cvar_Get( "vk_hdr_output_max_luminance", vk_core.hdr_output_max_luminance, FCVAR_READ_ONLY, "" );
+	//vk_hdr_output_auto_adjust = gEngine.Cvar_Get( "vk_hdr_output_auto_adjust", "1", FCVAR_GLCONFIG, "" );
+	if (vk_core.hdr_output) {
+		vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", "0", FCVAR_GLCONFIG, "EXPERIMENTAL: Enable or disable High Dynamic Range output (ENABLED HDR IN OS AND RESTART REQUIRED)" );
+		vk_hdr_output_manual_rtx_adjust_down = gEngine.Cvar_Get( "vk_hdr_output_manual_rtx_adjust_down", "3", FCVAR_GLCONFIG, "EXPERIMENTAL: Adjust down output HDR level for color, specular (RESTART REQUIRED)" );
+		vk_hdr_output_manual_rtx_adjust_additive_down = gEngine.Cvar_Get( "vk_hdr_output_manual_rtx_adjust_additive_down", "1.5", FCVAR_GLCONFIG, "EXPERIMENTAL: Adjust down output HDR level for additive (RESTART REQUIRED)" );
+		vk_hdr_output_manual_adjust_ui_down = gEngine.Cvar_Get( "vk_hdr_output_manual_adjust_ui_down", "1.8", FCVAR_GLCONFIG, "EXPERIMENTAL: Adjust down output HDR level for UI (RESTART REQUIRED)" );
+		vk_hdr_output_manual_adjust_down = gEngine.Cvar_Get( "vk_hdr_output_manual_adjust_down", "1.6", FCVAR_GLCONFIG, "EXPERIMENTAL: Adjust down output HDR level without RTX (RESTART REQUIRED)" );
 	} else {
-		vk_hdr = gEngine.Cvar_Get( "vk_hdr", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
+		vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
 	}
 }

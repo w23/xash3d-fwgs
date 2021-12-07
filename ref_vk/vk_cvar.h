@@ -20,8 +20,14 @@ void VK_LoadCvars( void );
 	X(ui_infotool) \
 	X(vk_rtx) \
 	X(vk_rtx_extension) \
-	X(vk_hdr) \
-	X(vk_hdr_extension) \
+	X(vk_hdr_output) \
+	X(vk_hdr_output_extension) \
+	X(vk_hdr_output_max_luminance) \
+	X(vk_hdr_output_auto_adjust) \
+	X(vk_hdr_output_manual_rtx_adjust_down) \
+	X(vk_hdr_output_manual_rtx_adjust_additive_down) \
+	X(vk_hdr_output_manual_adjust_ui_down) \
+	X(vk_hdr_output_manual_adjust_down) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

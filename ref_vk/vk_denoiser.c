@@ -85,12 +85,30 @@ static void createLayouts( void ) {
 	VK_DescriptorsCreate(&g_denoiser.descriptors);
 }
 
+
 static VkPipeline createPipeline( void ) {
 	struct ShaderSpec {
 		int hdr_output;
-	} spec_data = { (vk_core.hdr && CVAR_TO_BOOL(vk_hdr)) ? 1 : 0 };
+		float hdr_output_max_luminance;
+		int hdr_output_auto_adjust;
+		float hdr_output_manual_adjust_down;
+		float hdr_output_manual_adjust_additive_down;
+	} spec_data = {
+		.hdr_output = (vk_core.hdr_output && CVAR_TO_BOOL(vk_hdr_output)) ? 1 : 0,
+		.hdr_output_max_luminance = 0, // TODO
+		.hdr_output_auto_adjust = 0, // TODO
+		// Auto level by VkHdrMetadataEXT.maxLuminance
+		// https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VkHdrMetadataEXT.html
+		// https://gpuopen.com/learn/using-amd-freesync-premium-pro-hdr-code-samples/
+		.hdr_output_manual_adjust_down = vk_core.hdr_output ? vk_hdr_output_manual_rtx_adjust_down->value : 0,
+		.hdr_output_manual_adjust_additive_down = vk_core.hdr_output ? vk_hdr_output_manual_rtx_adjust_additive_down->value : 0,
+	};
 	const VkSpecializationMapEntry spec_map[] = {
 		{.constantID = 0, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
+		{.constantID = 1, .offset = offsetof(struct ShaderSpec, hdr_output_max_luminance), .size = sizeof(int) },
+		{.constantID = 2, .offset = offsetof(struct ShaderSpec, hdr_output_auto_adjust), .size = sizeof(int) },
+		{.constantID = 3, .offset = offsetof(struct ShaderSpec, hdr_output_manual_adjust_down), .size = sizeof(int) },
+		{.constantID = 4, .offset = offsetof(struct ShaderSpec, hdr_output_manual_adjust_additive_down), .size = sizeof(int) },
 	};
 	VkSpecializationInfo shader_spec = {
 		.mapEntryCount = ARRAYSIZE(spec_map),

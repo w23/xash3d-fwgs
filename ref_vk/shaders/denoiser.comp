@@ -14,6 +14,12 @@ layout(set = 0, binding = 4, rgba16f) uniform image2D src_additive;
 layout(set = 0, binding = 5, rgba16f) uniform image2D src_normals;
 
 layout (constant_id = 0) const int hdr_output = 0;
+// FIXME: Avoid tone mapping "fix-ups", ideally done in scene-referred space
+// Need an operator that understands the output luminance and middle gray stays at a reasonable level (400 vs 1000 nit display on 0.5)
+//layout (constant_id = 1) const float hdr_maxLuminance = 0;
+//layout (constant_id = 2) const int hdr_auto_adjust = 1;
+layout (constant_id = 3) const float hdr_manual_adjust_down = 3;
+layout (constant_id = 4) const float hdr_manual_adjust_additive_down = 1.5;
 
 float normpdf2(in float x2, in float sigma) { return 0.39894*exp(-0.5*x2/(sigma*sigma))/sigma; }
 float normpdf(in float x, in float sigma) { return normpdf2(x*x, sigma); }
@@ -54,6 +60,7 @@ void main() {
 	float specular_total_scale = 0.;
 	vec3 colour = vec3(0.);
 	vec3 speculour = vec3(0.);
+	vec3 additivour = vec3(0.);
 	for (int x = -KERNEL_SIZE; x <= KERNEL_SIZE; ++x)
 		for (int y = -KERNEL_SIZE; y <= KERNEL_SIZE; ++y) {
 			const ivec2 p = pix + ivec2(x, y);
@@ -93,12 +100,12 @@ void main() {
 		colour *= base_color.rgb;
 	}
 
-	// FIXME: Avoid tone mapping "fix-ups", ideally done in scene-referred space
-	float hdr_correction = 1.5;
-	// FIXME: Need an operator that understands the output luminance and middle gray stays at a reasonable level (400 vs 1000 nit display on 0.5)
+	additivour = imageLoad(src_additive, pix).rgb;
+
 	if (hdr_output > 0) {
-		colour = aces_tonemap(colour) / hdr_correction;
-		speculour = aces_tonemap(speculour) / hdr_correction;
+		colour = aces_tonemap(colour) / hdr_manual_adjust_down;
+		speculour = aces_tonemap(speculour) / hdr_manual_adjust_down;
+		additivour = aces_tonemap(additivour) / hdr_manual_adjust_additive_down;
 	}
 
 	if (specular_total_scale > 0.) {
@@ -108,7 +115,7 @@ void main() {
 	}
 
 	//colour += imageLoad(src_specular, pix).rgb;
-	colour += imageLoad(src_additive, pix).rgb;
+	colour += additivour;
 
 	colour = aces_tonemap(colour);
 

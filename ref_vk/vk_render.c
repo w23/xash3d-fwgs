@@ -71,11 +71,18 @@ static qboolean createPipelines( void )
 			float alpha_test_threshold;
 			uint32_t max_dlights;
 			int hdr_output;
-		} spec_data = { .25f, MAX_DLIGHTS, (vk_core.hdr && CVAR_TO_BOOL(vk_hdr)) ? 1 : 0 };
+			float hdr_output_manual_adjust_down;
+		} spec_data = {
+			.alpha_test_threshold = .25f,
+			.max_dlights = MAX_DLIGHTS,
+			.hdr_output = (vk_core.hdr_output && CVAR_TO_BOOL(vk_hdr_output)) ? 1 : 0,
+			.hdr_output_manual_adjust_down = vk_core.hdr_output ? vk_hdr_output_manual_adjust_down->value : 0,
+		};
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, alpha_test_threshold), .size = sizeof(float) },
 			{.constantID = 1, .offset = offsetof(struct ShaderSpec, max_dlights), .size = sizeof(uint32_t) },
 			{.constantID = 2, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
+			{.constantID = 3, .offset = offsetof(struct ShaderSpec, hdr_output_manual_adjust_down), .size = sizeof(int) },
 		};
 
 		VkSpecializationInfo shader_spec = {

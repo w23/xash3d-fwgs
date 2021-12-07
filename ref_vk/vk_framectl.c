@@ -209,7 +209,7 @@ static uint32_t clamp_u32(uint32_t v, uint32_t min, uint32_t max) {
 static qboolean createSwapchain( void )
 {
 	VkSwapchainCreateInfoKHR *create_info = &g_frame.create_info;
-	qboolean hdr_output = vk_core.hdr && CVAR_TO_BOOL( vk_hdr );
+	qboolean hdr_output = vk_core.hdr_output && CVAR_TO_BOOL( vk_hdr_output );
 	const uint32_t prev_num_images = g_frame.num_images;
 	// recreating swapchain means invalidating any previous frames
 	g_frame.last_frame_index = -1;
@@ -527,7 +527,7 @@ static void toggleRaytracing( void ) {
 
 qboolean VK_FrameCtlInit( void )
 {
-	qboolean hdr_output = vk_core.hdr && CVAR_TO_BOOL( vk_hdr );
+	qboolean hdr_output = vk_core.hdr_output && CVAR_TO_BOOL( vk_hdr_output );
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
 	vk_frame.render_pass.raster = createRenderPass(false, hdr_output);
 	if (vk_core.rtx)

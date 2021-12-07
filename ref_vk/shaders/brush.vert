@@ -2,6 +2,7 @@
 #include "tonemapping.glsl"
 
 layout (constant_id = 2) const int hdr_output = 0;
+layout (constant_id = 3) const float hdr_output_manual_adjust_down = 1.6;
 
 layout(set=0,binding=0) uniform UBO {
 	mat4 mvp;
@@ -33,9 +34,8 @@ void main() {
 	vec4 lightmap = aLightColor;
 	if (hdr_output > 0) {
 		// FIXME: Avoid tone mapping "fix-ups", ideally done in scene-referred space
-		float hdr_correction = 1.6;
-		vColor.rgb = aces_tonemap(vColor.rgb) / hdr_correction;
-		lightmap.rgb = lightmap.rgb / hdr_correction;
+		vColor.rgb = aces_tonemap(vColor.rgb) / hdr_output_manual_adjust_down;
+		lightmap.rgb /= hdr_output_manual_adjust_down;
 	}
 
 	if ((aFlags & FLAG_VERTEX_LIGHTING) != 0) {

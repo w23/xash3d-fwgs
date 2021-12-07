@@ -573,7 +573,7 @@ static qboolean initSurface( void )
 		gEngine.Con_Reportf("\t%u: %u %u\n", i, vk_core.surface.surface_formats[i].format, vk_core.surface.surface_formats[i].colorSpace);
 		// TODO: VK_COLOR_SPACE_HDR10_HLG_EXT, VK_COLOR_SPACE_DOLBYVISION_EXT
 		if (vk_core.surface.surface_formats[i].colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
-			vk_core.hdr = true;
+			vk_core.hdr_output = true;
 		}
 	}
 
@@ -616,7 +616,7 @@ qboolean R_VkInit( void )
 
 	vk_core.debug = !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
-	vk_core.hdr = false;
+	vk_core.hdr_output = false;
 
 	if( !gEngine.R_Init_Video( REF_VULKAN )) // request Vulkan surface
 	{

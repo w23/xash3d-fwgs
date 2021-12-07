@@ -202,9 +202,14 @@ static qboolean createPipelines( void )
 	{
 		struct ShaderSpec {
 			int hdr_output;
-		} spec_data = { (vk_core.hdr && CVAR_TO_BOOL(vk_hdr)) ? 1 : 0 };
+			float hdr_output_manual_adjust_ui_down;
+		} spec_data = {
+			.hdr_output = (vk_core.hdr_output && CVAR_TO_BOOL(vk_hdr_output)) ? 1 : 0,
+			.hdr_output_manual_adjust_ui_down = vk_core.hdr_output ? vk_hdr_output_manual_adjust_ui_down->value : 0,
+		};
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
+			{.constantID = 1, .offset = offsetof(struct ShaderSpec, hdr_output_manual_adjust_ui_down), .size = sizeof(int) },
 		};
 		VkSpecializationInfo shader_spec = {
 			.mapEntryCount = ARRAYSIZE(spec_map),
