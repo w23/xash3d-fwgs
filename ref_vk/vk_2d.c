@@ -2,6 +2,7 @@
 
 #include "vk_buffer.h"
 #include "vk_core.h"
+#include "vk_cvar.h"
 #include "vk_common.h"
 #include "vk_textures.h"
 #include "vk_framectl.h"
@@ -201,7 +202,7 @@ static qboolean createPipelines( void )
 	{
 		struct ShaderSpec {
 			int hdr_output;
-		} spec_data = { vk_core.hdr ? 1 : 0 };
+		} spec_data = { (vk_core.hdr && CVAR_TO_BOOL(vk_hdr)) ? 1 : 0 };
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, hdr_output), .size = sizeof(int) },
 		};

@@ -3,6 +3,7 @@
 #include "vk_core.h"
 #include "vk_buffer.h"
 #include "vk_const.h"
+#include "vk_cvar.h"
 #include "vk_common.h"
 #include "vk_pipeline.h"
 #include "vk_textures.h"
@@ -70,7 +71,7 @@ static qboolean createPipelines( void )
 			float alpha_test_threshold;
 			uint32_t max_dlights;
 			int hdr_output;
-		} spec_data = { .25f, MAX_DLIGHTS, vk_core.hdr ? 1 : 0 };
+		} spec_data = { .25f, MAX_DLIGHTS, (vk_core.hdr && CVAR_TO_BOOL(vk_hdr)) ? 1 : 0 };
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, alpha_test_threshold), .size = sizeof(float) },
 			{.constantID = 1, .offset = offsetof(struct ShaderSpec, max_dlights), .size = sizeof(uint32_t) },
