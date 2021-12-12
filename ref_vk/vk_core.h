@@ -76,6 +76,9 @@ typedef struct vulkan_core_s {
 	vk_buffer_t staging;
 
 	VkSampler default_sampler;
+
+	unsigned int num_devices;
+	ref_device_t *devices;
 } vulkan_core_t;
 
 extern vulkan_core_t vk_core;
