@@ -5,7 +5,7 @@
 #include "vk_const.h"
 
 #define MAX_ACCELS 1024
-#define MAX_KUSOCHKI 8192
+#define MAX_KUSOCHKI 16384
 #define MAX_EMISSIVE_KUSOCHKI 256
 #define MODEL_CACHE_SIZE 1024
 
