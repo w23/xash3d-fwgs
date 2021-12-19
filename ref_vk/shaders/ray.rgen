@@ -338,7 +338,7 @@ void computeLighting(vec3 throughput, vec3 view_dir, MaterialProperties material
 	if (end_i > max_lights_per_frame) {
 		begin_i = rand() % (num_emissive_kusochki - max_lights_per_frame);
 		end_i = begin_i + max_lights_per_frame;
-		sampling_light_scale = float(num_emissive_kusochki) / float(max_lights_per_frame);
+sampling_light_scale = float(num_emissive_kusochki) / float(max_lights_per_frame);
 	}
 	for (uint i = begin_i; i < end_i; ++i) {
 #else
@@ -441,7 +441,7 @@ void main() {
 			if (bounce == 0) {
 				out_additive += payload_opaque.emissive * color_factor + additive;
 			} else {
-				out_accumulated += throughput * (/*payload_opaque.emissive * color_factor +*/ additive);
+				out_accumulated += throughput;
 			}
 			break;
 		}
