@@ -115,9 +115,9 @@ void main() {
 	}
 
 	//colour += imageLoad(src_specular, pix).rgb;
-	colour += imageLoad(src_additive, pix).rgb;
-
-	colour = aces_tonemap(colour);
+	
+    colour = aces_tonemap(colour);
+    colour += imageLoad(src_additive, pix).rgb;
 
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));
