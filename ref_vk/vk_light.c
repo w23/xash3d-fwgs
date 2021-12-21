@@ -882,9 +882,9 @@ static void processStaticPointLights( void ) {
 	g_lights.num_point_lights = 0;
 	for (int i = 0; i < g_map_entities.num_lights; ++i) {
 		const vk_light_entity_t *le = g_map_entities.lights + i;
-		const float default_radius = 2.f; // FIXME tune
-		const float hack_attenuation = .1f; // FIXME tune
-		const float hack_attenuation_spot = .1f; // FIXME tune
+		const float default_radius = 2.0f; // FIXME tune
+		const float hack_attenuation = 1.0f; // FIXME tune
+		const float hack_attenuation_spot = 1.0f; // FIXME tune
 		const float radius = le->radius > 0.f ? le->radius : default_radius;
 		int index;
 
@@ -894,6 +894,8 @@ static void processStaticPointLights( void ) {
 				break;
 
 			case LightTypeSpot:
+				index = addSpotLight(le, radius, le->style, hack_attenuation_spot, i == g_map_entities.single_environment_index);
+				break;
 			case LightTypeEnvironment:
 				index = addSpotLight(le, radius, le->style, hack_attenuation_spot, i == g_map_entities.single_environment_index);
 				break;
@@ -1008,7 +1010,7 @@ void VK_LightsFrameFinalize( void ) {
 			continue;
 
 		{
-			const float scale = g_lightmap.lightstylevalue[light->lightstyle] / 255.f;
+			const float scale = g_lightmap.lightstylevalue[light->lightstyle] / 8192.f;
 			VectorScale(light->base_color, scale, light->color);
 		}
 	}
