@@ -182,7 +182,7 @@ void sampleSurfaceTriangle(
 		return;
 #endif
 
-#if 0
+#if 1
 	{
 		const uint tex_index = kusochki[kusok_index].tex_base_color;
 		if ((KUSOK_MATERIAL_FLAG_SKYBOX & tex_index) == 0) {
@@ -261,7 +261,7 @@ void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, Mate
 		//float fdist = 1.f;
 		float light_dist = 1e5; // TODO this is supposedly not the right way to do shadows for environment lights. qrad checks for hitting SURF_SKY, and maybe we should too?
 		const float d2 = dot(light_dir, light_dir);
-		const float r2 = origin_r.w * origin_r.w;
+		const float r2 = origin_r.w * (sqrt(origin_r.w * origin_r.w));
 		if (not_environment) {
 			if (radius < 1e-3)
 				continue;
@@ -443,7 +443,7 @@ void main() {
 			if (bounce == 0) {
 				out_additive += payload_opaque.emissive * color_factor + additive;
 			} else {
-				out_accumulated += throughput * (/*payload_opaque.emissive * color_factor +*/ additive);
+				out_accumulated += throughput * (payload_opaque.emissive * color_factor + additive);
 			}
 			break;
 		}
