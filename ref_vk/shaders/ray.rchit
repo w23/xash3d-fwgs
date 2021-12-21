@@ -164,10 +164,10 @@ void main() {
 
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
-		const vec3 emissive_color = base_color;
-		//const vec3 emissive_color = pow(base_color, vec3(2.2));
+		//const vec3 emissive_color = base_color;
+		const vec3 emissive_color = pow(base_color, vec3(2.2));
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
-		payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
+		payload.emissive = clamp(kusok.emissive, 0.0, 1.0) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
 	}
 
 	payload.kusok_index = kusok_index;
