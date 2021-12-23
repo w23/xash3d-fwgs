@@ -83,8 +83,13 @@ struct texture_s;
 
 typedef struct {
 	uint32_t flags;
+
+	// Static texture index in case there's no texture_s pointer
 	int tex_id;
+
+	// Pointer to texture_s data (which also may include animation)
 	const struct texture_s *tex;
+
 	vec3_t emissive;
 } xvk_patch_surface_t;
 
@@ -99,6 +104,7 @@ typedef struct {
 	vk_light_entity_t lights[256];
 
 	int single_environment_index;
+	int entity_count;
 
 	string wadlist;
 
@@ -113,3 +119,4 @@ extern xvk_map_entities_t g_map_entities;
 enum { NoEnvironmentLights = -1, MoreThanOneEnvironmentLight = -2 };
 
 void XVK_ParseMapEntities( void );
+void XVK_ParseMapPatches( void );
