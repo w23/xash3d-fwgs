@@ -143,21 +143,21 @@ static void createLayoutsSH(void) {
 	};
 
 	g_denoiser_sh.desc_bindings[DenoiserSH_Binding_SH1_DestImage] = (VkDescriptorSetLayoutBinding){
-		.binding = DenoiserBinding_DestImage,
+		.binding = DenoiserSH_Binding_SH1_DestImage,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 	};
 
 	g_denoiser_sh.desc_bindings[DenoiserSH_Binding_SH2_DestImage] = (VkDescriptorSetLayoutBinding){
-		.binding = DenoiserBinding_DestImage,
+		.binding = DenoiserSH_Binding_SH2_DestImage,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 	};
 
 	g_denoiser_sh.desc_bindings[DenoiserSH_Binding_SH3_DestImage] = (VkDescriptorSetLayoutBinding){
-		.binding = DenoiserBinding_DestImage,
+		.binding = DenoiserSH_Binding_SH3_DestImage,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
@@ -246,15 +246,15 @@ void XVK_DenoiserDenoise( const xvk_denoiser_args_t* args ) {
 		// Create spherical harmonics from directions and colors of indirectional lighting
 
 	g_denoiser_sh.desc_values[DenoiserSH_Binding_Source_IndirectColor].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->src.indirect_color_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->src.indirect_color_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser_sh.desc_values[DenoiserSH_Binding_Source_IndirectDir].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->src.indirect_dir_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->src.indirect_dir_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser_sh.desc_values[DenoiserSH_Binding_SH1_DestImage].image = (VkDescriptorImageInfo){
@@ -264,22 +264,22 @@ void XVK_DenoiserDenoise( const xvk_denoiser_args_t* args ) {
 	};
 
 	g_denoiser_sh.desc_values[DenoiserSH_Binding_SH2_DestImage].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->sh2_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->sh2_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser_sh.desc_values[DenoiserSH_Binding_SH3_DestImage].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->sh3_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->sh3_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	VK_DescriptorsWrite(&g_denoiser_sh.descriptors);
 
-	//vkCmdBindPipeline(args->cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, g_denoiser_sh.pipeline);
-	//vkCmdBindDescriptorSets(args->cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, g_denoiser_sh.descriptors.pipeline_layout, 0, 1, g_denoiser_sh.descriptors.desc_sets + 0, 0, NULL);
-	//vkCmdDispatch(args->cmdbuf, (args->width + WG_W - 1) / WG_W, (args->height + WG_H - 1) / WG_H, 1);
+	vkCmdBindPipeline(args->cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, g_denoiser_sh.pipeline);
+	vkCmdBindDescriptorSets(args->cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, g_denoiser_sh.descriptors.pipeline_layout, 0, 1, g_denoiser_sh.descriptors.desc_sets + 0, 0, NULL);
+	vkCmdDispatch(args->cmdbuf, (args->width + WG_W - 1) / WG_W, (args->height + WG_H - 1) / WG_H, 1);
 
 
 		// Compose with blur and relighting by spherical harmonics
@@ -315,21 +315,21 @@ void XVK_DenoiserDenoise( const xvk_denoiser_args_t* args ) {
 	};
 
 	g_denoiser.desc_values[DenoiserBinding_Source_SH1].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->sh1_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->sh1_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser.desc_values[DenoiserBinding_Source_SH2].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->sh2_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->sh2_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser.desc_values[DenoiserBinding_Source_SH3].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = args->sh3_view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = args->sh3_view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_denoiser.desc_values[DenoiserBinding_DestImage].image = (VkDescriptorImageInfo){
