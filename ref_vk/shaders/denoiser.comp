@@ -54,31 +54,33 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = vec3(n.zw, sqrt(1. - n.z*n.z - n.w*n.w));
 }
 
-//// simple four directions on sphere
-//const vec3 sh_directions[4] = {
-//	vec3(1., 0., 0.),
-//	vec3(0.817, -0.437, -0.32),
-//	vec3(-0.817, -0.437, -0.32),
-//	vec3(0., 0.965, -0.32)
-//};
-//
-//vec4 sh_coefficients_simple(vec3 normal) {
-//	const float a = clamp(dot(normal, sh_directions[0]), 0., 1.);
-//	const float b = clamp(dot(normal, sh_directions[1]), 0., 1.);
-//	const float c = clamp(dot(normal, sh_directions[2]), 0., 1.);
-//	const float d = clamp(dot(normal, sh_directions[3]), 0., 1.);
-//	const float multiplier = (a + b + c + d) / 4.;
-//	return vec4(a, b, c, d) / multiplier;
-//}
-//
-//vec3 add_sh_lighting(ivec2 pix, vec4 sh_coefficients) {
-//	const vec4 sh1 = imageLoad(src_sh1, pix);
-//	const vec4 sh2 = imageLoad(src_sh1, pix);
-//	const vec4 sh3 = imageLoad(src_sh1, pix);
-//	const vec3 sh4 = vec3(sh1.a, sh2.a, sh3.a);	
-//	return sh1.rgb * sh_coefficients.x + sh2.rgb * sh_coefficients.y +
-//			sh3.rgb * sh_coefficients.z + sh4 * sh_coefficients.w;
-//}
+// simple four directions on sphere
+const vec3 sh_directions[4] = {
+	vec3(1., 0., 0.),
+	vec3(0.817, -0.437, -0.32),
+	vec3(-0.817, -0.437, -0.32),
+	vec3(0., 0.965, -0.32)
+};
+
+vec4 sh_coefficients_simple(vec3 worldspace_normal, float softness) {
+	float one_minus_softness = 1. - softness;
+	vec3 inverted_normal = -worldspace_normal;
+	const float a = clamp(dot(inverted_normal, sh_directions[0]) * one_minus_softness + softness, 0., 1.);
+	const float b = clamp(dot(inverted_normal, sh_directions[1]) * one_minus_softness + softness, 0., 1.);
+	const float c = clamp(dot(inverted_normal, sh_directions[2]) * one_minus_softness + softness, 0., 1.);
+	const float d = clamp(dot(inverted_normal, sh_directions[3]) * one_minus_softness + softness, 0., 1.);
+	const float multiplier = (a + b + c + d);
+	return vec4(a, b, c, d) / multiplier;
+}
+
+vec3 add_sh_lighting(ivec2 pix, vec4 sh_coefficients) {
+	const vec4 sh1 = imageLoad(src_sh1, pix);
+	const vec4 sh2 = imageLoad(src_sh1, pix);
+	const vec4 sh3 = imageLoad(src_sh1, pix);
+	const vec3 sh4 = vec3(sh1.a, sh2.a, sh3.a);	
+	return sh1.rgb * sh_coefficients.x + sh2.rgb * sh_coefficients.y +
+			sh3.rgb * sh_coefficients.z + sh4 * sh_coefficients.w;
+}
 
 void main() {
 	ivec2 res = ivec2(imageSize(src_base_color));
@@ -105,7 +107,7 @@ void main() {
 	vec3 worldspace_normal = imageLoad(src_normals, pix).xyz;
 
 	// coefficients need to compute only for destination texel
-	//vec4 sh_coefficients = sh_coefficients_simple(worldspace_normal);
+	vec4 sh_coefficients = sh_coefficients_simple(worldspace_normal, 0.7);
 
 	//imageStore(dest, pix, vec4(.5 + geometry_normal * .5, 0.)); return;
 
@@ -127,8 +129,8 @@ void main() {
 				continue;
 			}
 
-			//colour_gi += add_sh_lighting(pix, sh_coefficients);
-			//gi_total_scale += 1.;
+			colour_gi += add_sh_lighting(p, sh_coefficients);
+			gi_total_scale += 1.;
 
 			const vec4 c = imageLoad(src_diffuse_gi, p);
 			if (c.a != material_index)
@@ -137,7 +139,7 @@ void main() {
 			// Normals only in worldspace format now, maybe store depth in w coord?
 			const vec3 sample_normal_ws = imageLoad(src_normals, p).xyz;
 
-			if ( dot(sample_normal_ws, worldspace_normal) < .99 )
+			if ( dot(sample_normal_ws, worldspace_normal) < .90 )
 				continue;
 
 //			vec3 sample_geometry_normal, sample_shading_normal;
@@ -169,16 +171,18 @@ void main() {
 		colour *= base_color.rgb;
 	}
 
-	if (specular_total_scale > 0.) {
-		speculour /= specular_total_scale;
-		//speculour *= base_color.rgb;
-		colour += speculour;
-	}
+	// Specular hided for experiment's cleanest status without artifacts
 
-//	if (gi_total_scale > 0.) {
-//		colour_gi /= gi_total_scale ;
-//		colour += colour_gi * base_color.rgb;
+//	if (specular_total_scale > 0.) {
+//		speculour /= specular_total_scale;
+//		//speculour *= base_color.rgb;
+//		colour += speculour;
 //	}
+
+	if (gi_total_scale > 0.) {
+		colour_gi /= gi_total_scale ;
+		colour += colour_gi * base_color.rgb * 8.;
+	}
 
 	//colour += imageLoad(src_specular, pix).rgb;
 	colour += imageLoad(src_additive, pix).rgb;
@@ -189,6 +193,11 @@ void main() {
 
 	//colour = aces_tonemap(colour);
 	colour = reinhard02(colour, vec3(400.));
+
+
+	//colour = worldspace_normal * 0.5 + vec3(0.5, 0.5, 0.5);
+
+
 
 	imageStore(dest, pix, vec4(colour, 0.));
 }

@@ -13,7 +13,7 @@ layout(set = 0, binding = 4, rgba16f) uniform readonly image2D src_indirect_dir;
 
 // offset between samples, additional bluring on compose make this way right
 // ivec2(1,1) - it'is like no offset, but it's need for larger area of collection
-const ivec2 uv_offset = ivec2(3,3);
+const ivec2 uv_offset = ivec2(4,8);
 
 // max offset 
 const int blur_kernel_size = 8;
@@ -26,10 +26,13 @@ const vec3 sh_directions[4] = {
 	vec3(0., 0.965, -0.32)
 };
 
-//// better is to flatten in code
-//vec3 add_harmonics(vec3 directionNormalized, vec3 color, const vec3 sh_direction) {
-//	return clamp(dot(dir_normalized, sh_direction), 0., 1.) * color;
-//}
+// better is to flatten in code
+vec3 add_harmonics(vec3 directionNormalized, vec3 color, const vec3 sh_direction) {
+	return clamp(dot(directionNormalized, sh_direction), 0., 1.) * color;
+}
+
+float normpdf2(in float x2, in float sigma) { return 0.39894*exp(-0.5*x2/(sigma*sigma))/sigma; }
+float normpdf(in float x, in float sigma) { return normpdf2(x*x, sigma); }
 
 void main() {
 	ivec2 res = ivec2(imageSize(src_indirect_color));
@@ -58,12 +61,15 @@ void main() {
 			// direction is normalized, length stored in w coord
 			const vec3 dir_normalized = dir.xyz;
 
-			sh1 += clamp(dot(dir_normalized, sh_directions[0]), 0., 1.) * color;
-			sh2 += clamp(dot(dir_normalized, sh_directions[1]), 0., 1.) * color;
-			sh3 += clamp(dot(dir_normalized, sh_directions[2]), 0., 1.) * color;
-			sh4 += clamp(dot(dir_normalized, sh_directions[3]), 0., 1.) * color;
+			const float sigma = blur_kernel_size / 2.;
+			const float scale = normpdf(x, sigma) * normpdf(y, sigma);
 
-			total_scale += 1.0;
+			sh1 += clamp(dot(dir_normalized, sh_directions[0]), 0., 1.) * color * scale;
+			sh2 += clamp(dot(dir_normalized, sh_directions[1]), 0., 1.) * color * scale;
+			sh3 += clamp(dot(dir_normalized, sh_directions[2]), 0., 1.) * color * scale;
+			sh4 += clamp(dot(dir_normalized, sh_directions[3]), 0., 1.) * color * scale;
+
+			total_scale += scale;
 		}
 
 	if (total_scale > 0.) {
