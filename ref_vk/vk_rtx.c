@@ -79,8 +79,10 @@ enum {
 	RayDescBinding_Dest_ImageSpecular = 10,
 	RayDescBinding_Dest_ImageAdditive = 11,
 	RayDescBinding_Dest_ImageNormals = 12,
+	RayDescBinding_Dest_ImageIndirectColor = 13,
+	RayDescBinding_Dest_ImageIndirectDir = 14,
 
-	RayDescBinding_SkyboxCube = 13,
+	RayDescBinding_SkyboxCube = 15,
 
 	RayDescBinding_COUNT
 };
@@ -92,6 +94,8 @@ typedef struct {
 	xvk_image_t specular;
 	xvk_image_t additive;
 	xvk_image_t normals;
+	xvk_image_t indirect_color;
+	xvk_image_t indirect_dir;
 } xvk_ray_frame_images_t;
 
 static struct {
@@ -703,6 +707,18 @@ static void updateDescriptors( VkCommandBuffer cmdbuf, const vk_ray_frame_render
 		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
+	g_rtx.desc_values[RayDescBinding_Dest_ImageIndirectColor].image = (VkDescriptorImageInfo){
+	.sampler = VK_NULL_HANDLE,
+	.imageView = frame_dst->indirect_color.view,
+	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+
+	g_rtx.desc_values[RayDescBinding_Dest_ImageIndirectDir].image = (VkDescriptorImageInfo){
+	.sampler = VK_NULL_HANDLE,
+	.imageView = frame_dst->indirect_dir.view,
+	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+
 	VK_DescriptorsWrite(&g_rtx.descriptors);
 }
 
@@ -713,6 +729,8 @@ static qboolean rayTrace( VkCommandBuffer cmdbuf, const xvk_ray_frame_images_t *
 	X(specular) \
 	X(additive) \
 	X(normals) \
+	X(indirect_color) \
+	X(indirect_dir) \
 
 	// 4. Barrier for TLAS build and dest image layout transfer
 	{
@@ -1068,6 +1086,8 @@ LIST_GBUFFER_IMAGES(GBUFFER_READ_BARRIER)
 					.specular_view = current_frame->specular.view,
 					.additive_view = current_frame->additive.view,
 					.normals_view = current_frame->normals.view,
+					.indirect_color_view = current_frame->indirect_color.view,
+					.indirect_dir_view = current_frame->indirect_dir.view,
 				},
 				.dst_view = current_frame->denoised.view,
 			};
@@ -1137,6 +1157,20 @@ static void createLayouts( void ) {
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+	};
+
+	g_rtx.desc_bindings[RayDescBinding_Dest_ImageIndirectColor] = (VkDescriptorSetLayoutBinding){
+	.binding = RayDescBinding_Dest_ImageIndirectColor,
+	.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	.descriptorCount = 1,
+	.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+	};
+
+	g_rtx.desc_bindings[RayDescBinding_Dest_ImageIndirectDir] = (VkDescriptorSetLayoutBinding){
+	.binding = RayDescBinding_Dest_ImageIndirectDir,
+	.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	.descriptorCount = 1,
+	.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
 	};
 
 	g_rtx.desc_bindings[RayDescBinding_Dest_ImageBaseColor] = (VkDescriptorSetLayoutBinding){
@@ -1326,6 +1360,8 @@ qboolean VK_RayInit( void )
 		CREATE_GBUFFER_IMAGE(additive, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
 		// TODO make sure this format and usage is suppported
 		CREATE_GBUFFER_IMAGE(normals, VK_FORMAT_R16G16B16A16_SNORM, 0);
+		CREATE_GBUFFER_IMAGE(indirect_color, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
+		CREATE_GBUFFER_IMAGE(indirect_dir, VK_FORMAT_R16G16B16A16_SNORM, 0);
 #undef CREATE_GBUFFER_IMAGE
 	}
 
@@ -1346,6 +1382,8 @@ void VK_RayShutdown( void ) {
 		XVK_ImageDestroy(&g_rtx.frames[i].specular);
 		XVK_ImageDestroy(&g_rtx.frames[i].additive);
 		XVK_ImageDestroy(&g_rtx.frames[i].normals);
+		XVK_ImageDestroy(&g_rtx.frames[i].indirect_color);
+		XVK_ImageDestroy(&g_rtx.frames[i].indirect_dir);
 	}
 
 	vkDestroyPipeline(vk_core.device, g_rtx.pipeline, NULL);

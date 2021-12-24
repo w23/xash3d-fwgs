@@ -11,6 +11,8 @@ layout(set = 0, binding = 2, rgba16f) uniform readonly image2D src_diffuse_gi;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D src_specular;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D src_additive;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image2D src_normals;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D src_indirect_color;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D src_indirect_dir;
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
 vec3 aces_tonemap(vec3 color){
@@ -73,7 +75,7 @@ void main() {
 	/* imageStore(dest, pix, vec4(rand3_f01(uvec3(mi,mi+1,mi+2)), 0.)); */
 	/* return; */
 
-	const int KERNEL_SIZE = 8;
+	const int KERNEL_SIZE = 1;
 	float total_scale = 0.;
 	float specular_total_scale = 0.;
 	vec3 colour = vec3(0.);

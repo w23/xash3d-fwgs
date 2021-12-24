@@ -13,6 +13,8 @@ enum {
 	DenoiserBinding_Source_Specular = 3,
 	DenoiserBinding_Source_Additive = 4,
 	DenoiserBinding_Source_Normals = 5,
+	DenoiserBinding_Source_IndirectColor = 6,
+	DenoiserBinding_Source_IndirectDir = 7,
 
 	DenoiserBinding_COUNT
 };
@@ -79,6 +81,20 @@ static void createLayouts( void ) {
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+	};
+
+	g_denoiser.desc_bindings[DenoiserBinding_Source_IndirectColor] = (VkDescriptorSetLayoutBinding){
+	.binding = DenoiserBinding_Source_IndirectColor,
+	.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	.descriptorCount = 1,
+	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+	};
+
+	g_denoiser.desc_bindings[DenoiserBinding_Source_IndirectDir] = (VkDescriptorSetLayoutBinding){
+	.binding = DenoiserBinding_Source_IndirectDir,
+	.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	.descriptorCount = 1,
+	.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
 	};
 
 	VK_DescriptorsCreate(&g_denoiser.descriptors);
@@ -152,6 +168,18 @@ void XVK_DenoiserDenoise( const xvk_denoiser_args_t* args ) {
 		.imageView = args->src.normals_view,
 		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
+
+	//g_denoiser.desc_values[DenoiserBinding_Source_IndirectColor].image = (VkDescriptorImageInfo){
+	//.sampler = VK_NULL_HANDLE,
+	//.imageView = args->src.indirect_color_view,
+	//.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	//};
+
+	//g_denoiser.desc_values[DenoiserBinding_Source_IndirectDir].image = (VkDescriptorImageInfo){
+	//.sampler = VK_NULL_HANDLE,
+	//.imageView = args->src.indirect_dir_view,
+	//.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	//};
 
 	g_denoiser.desc_values[DenoiserBinding_DestImage].image = (VkDescriptorImageInfo){
 		.sampler = VK_NULL_HANDLE,
