@@ -21,6 +21,10 @@ typedef struct {
 		VkImageView indirect_dir_view;
 	} src;
 
+	VkImageView sh1_view;
+	VkImageView sh2_view;
+	VkImageView sh3_view;
+
 	VkImageView dst_view;
 } xvk_denoiser_args_t;
 

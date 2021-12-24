@@ -96,6 +96,9 @@ typedef struct {
 	xvk_image_t normals;
 	xvk_image_t indirect_color;
 	xvk_image_t indirect_dir;
+	xvk_image_t sh1;
+	xvk_image_t sh2;
+	xvk_image_t sh3;
 } xvk_ray_frame_images_t;
 
 static struct {
@@ -708,15 +711,15 @@ static void updateDescriptors( VkCommandBuffer cmdbuf, const vk_ray_frame_render
 	};
 
 	g_rtx.desc_values[RayDescBinding_Dest_ImageIndirectColor].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = frame_dst->indirect_color.view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = frame_dst->indirect_color.view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	g_rtx.desc_values[RayDescBinding_Dest_ImageIndirectDir].image = (VkDescriptorImageInfo){
-	.sampler = VK_NULL_HANDLE,
-	.imageView = frame_dst->indirect_dir.view,
-	.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+		.sampler = VK_NULL_HANDLE,
+		.imageView = frame_dst->indirect_dir.view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
 	VK_DescriptorsWrite(&g_rtx.descriptors);
@@ -1089,6 +1092,9 @@ LIST_GBUFFER_IMAGES(GBUFFER_READ_BARRIER)
 					.indirect_color_view = current_frame->indirect_color.view,
 					.indirect_dir_view = current_frame->indirect_dir.view,
 				},
+				.sh1_view = current_frame->sh1.view,
+				.sh2_view = current_frame->sh2.view,
+				.sh3_view = current_frame->sh3.view,
 				.dst_view = current_frame->denoised.view,
 			};
 
@@ -1362,6 +1368,9 @@ qboolean VK_RayInit( void )
 		CREATE_GBUFFER_IMAGE(normals, VK_FORMAT_R16G16B16A16_SNORM, 0);
 		CREATE_GBUFFER_IMAGE(indirect_color, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
 		CREATE_GBUFFER_IMAGE(indirect_dir, VK_FORMAT_R16G16B16A16_SNORM, 0);
+		CREATE_GBUFFER_IMAGE(sh1, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
+		CREATE_GBUFFER_IMAGE(sh2, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
+		CREATE_GBUFFER_IMAGE(sh3, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
 #undef CREATE_GBUFFER_IMAGE
 	}
 
@@ -1384,6 +1393,9 @@ void VK_RayShutdown( void ) {
 		XVK_ImageDestroy(&g_rtx.frames[i].normals);
 		XVK_ImageDestroy(&g_rtx.frames[i].indirect_color);
 		XVK_ImageDestroy(&g_rtx.frames[i].indirect_dir);
+		XVK_ImageDestroy(&g_rtx.frames[i].sh1);
+		XVK_ImageDestroy(&g_rtx.frames[i].sh2);
+		XVK_ImageDestroy(&g_rtx.frames[i].sh3);
 	}
 
 	vkDestroyPipeline(vk_core.device, g_rtx.pipeline, NULL);

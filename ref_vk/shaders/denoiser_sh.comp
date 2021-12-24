@@ -1,0 +1,79 @@
+#version 460
+
+#include "noise.glsl"
+
+layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D out_sh1;
+layout(set = 0, binding = 1, rgba16f) uniform image2D out_sh2;
+layout(set = 0, binding = 2, rgba16f) uniform image2D out_sh3;
+
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D src_indirect_color;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D src_indirect_dir;
+
+// offset between samples, additional bluring on compose make this way right
+// ivec2(1,1) - it'is like no offset, but it's need for larger area of collection
+const ivec2 uv_offset = ivec2(3,3);
+
+// max offset 
+const int blur_kernel_size = 8;
+
+// simple four directions on sphere
+const vec3 sh_directions[4] = {
+	vec3(1., 0., 0.),
+	vec3(0.817, -0.437, -0.32),
+	vec3(-0.817, -0.437, -0.32),
+	vec3(0., 0.965, -0.32)
+};
+
+//// better is to flatten in code
+//vec3 add_harmonics(vec3 directionNormalized, vec3 color, const vec3 sh_direction) {
+//	return clamp(dot(dir_normalized, sh_direction), 0., 1.) * color;
+//}
+
+void main() {
+	ivec2 res = ivec2(imageSize(src_indirect_color));
+	ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	vec3 sh1 = vec3(0.);
+	vec3 sh2 = vec3(0.);
+	vec3 sh3 = vec3(0.);
+	vec3 sh4 = vec3(0.);
+
+	float total_scale = 0.;
+	for (int x = -blur_kernel_size; x <= blur_kernel_size; ++x)
+		for (int y = -blur_kernel_size; y <= blur_kernel_size; ++y) {
+			const ivec2 p = pix + ivec2(x, y) * uv_offset;
+			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
+				continue;
+			}
+
+			const vec3 color = imageLoad(src_indirect_color, p).rgb;
+			const vec4 dir = imageLoad(src_indirect_dir, p);
+
+			// direction is normalized, length stored in w coord
+			const vec3 dir_normalized = dir.xyz;
+
+			sh1 += clamp(dot(dir_normalized, sh_directions[0]), 0., 1.) * color;
+			sh2 += clamp(dot(dir_normalized, sh_directions[1]), 0., 1.) * color;
+			sh3 += clamp(dot(dir_normalized, sh_directions[2]), 0., 1.) * color;
+			sh4 += clamp(dot(dir_normalized, sh_directions[3]), 0., 1.) * color;
+
+			total_scale += 1.0;
+		}
+
+	if (total_scale > 0.) {
+		sh1 /= total_scale;
+		sh2 /= total_scale;
+		sh3 /= total_scale;
+		sh4 /= total_scale;
+	}
+
+	imageStore(out_sh1, pix, vec4(sh1, sh4.r));
+	imageStore(out_sh2, pix, vec4(sh2, sh4.g));
+	imageStore(out_sh3, pix, vec4(sh3, sh4.b));
+}
