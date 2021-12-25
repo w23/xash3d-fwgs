@@ -105,7 +105,8 @@ void main() {
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
 		// We need to remaster them into HDR. While that is not done, we just tune them with (pow(x, 2.2)*255.f) which looks okay-ish
 		// See #230
-		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt(sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f ))));
+		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f )))
+		//payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt(sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f ))));
 		
 		//WHEN HDR TEXTURE ARE READY
 		//payload.emissive = texture(skybox, gl_WorldRayDirectionEXT).rgb;
@@ -168,12 +169,21 @@ void main() {
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
 		const vec3 emissive_color = pow(base_color, vec3(2.2));
+		const vec3 factor = (1 - (emissive_color * (1. + emissive_color / (kusok.emissive)) / (1. + emissive_color))); //REVERSE REINHARD02
+		
 		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (emissive_color * 255.0);
-		payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (sqrt(sqrt(emissive_color)*255.0));//x^4*255 is a hack, we are expanding LDR gamut to HDR
-
+		//payload.emissive = mix(((kusok.emissive/2) * emissive_color), (sqrt(sqrt(emissive_color * emissive_color)*255.0)), 0.05); //I don't even...
+		//payload.emissive = ((kusok.emissive * emissive_color)/2.0);
+		//payload.emissive = (kusok.emissive / 2.) * (sqrt(emissive_color));
+		//payload.emissive = (sqrt(kusok.emissive / 2) * (sqrt(emissive_color) * sqrt(kusok.emissive / 2)));
+		//payload.emissive = (sqrt(kusok.emissive * (kusok.emissive/4)) * sqrt((sqrt(emissive_color * emissive_color * emissive_color))));		
+		//payload.emissive = mix(kusok.emissive, emissive_color, (factor * 0.5));
+		payload.emissive = (kusok.emissive / 2.) * (emissive_color); //I GUESS THIS IS THE MOST SENSIBLE HACK
+/*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
-		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color);
+		//payload.emissive = kusok.emissive * emissive_color;
+*/
 	}
 
 	payload.kusok_index = kusok_index;
