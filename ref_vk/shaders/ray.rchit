@@ -103,9 +103,12 @@ void main() {
 		payload.material_index = tex_base_color;
 
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
-		// We need to remaster them into HDR. While that is not done, we just tune them with pow(x, 2.2) which looks okay-ish
+		// We need to remaster them into HDR. While that is not done, we just tune them with (pow(x, 2.2)*255.f) which looks okay-ish
 		// See #230
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
+		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt(sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f ))));
+		
+		//WHEN HDR TEXTURE ARE READY
+		//payload.emissive = texture(skybox, gl_WorldRayDirectionEXT).rgb;
 		return;
 	}
 
@@ -164,10 +167,13 @@ void main() {
 
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
-		//const vec3 emissive_color = base_color;
 		const vec3 emissive_color = pow(base_color, vec3(2.2));
-		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
-		payload.emissive = clamp(kusok.emissive, 0.0, 1.0) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
+		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (emissive_color * 255.0);
+		payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (sqrt(sqrt(emissive_color)*255.0));//x^4*255 is a hack, we are expanding LDR gamut to HDR
+
+		//WHEN HDR TEXTURE ARE READY
+		//const vec3 emissive_color = emissive_color; //(HDR)
+		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color);
 	}
 
 	payload.kusok_index = kusok_index;

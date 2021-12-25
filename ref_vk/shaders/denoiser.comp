@@ -128,10 +128,10 @@ void main() {
 
 	// HACK: exposure
 	// TODO: should be dynamic based on previous frames brightness
-	colour *= 8.0;
+	colour *= 1.0;
 
 	//colour = aces_tonemap(colour);
-	colour = reinhard02(colour, vec3(67.5));
+	colour = reinhard02(colour, vec3(255.0));
 
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));
