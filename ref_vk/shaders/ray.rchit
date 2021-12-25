@@ -105,7 +105,7 @@ void main() {
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
 		// We need to remaster them into HDR. While that is not done, we just tune them with (pow(x, 2.2)*255.f) which looks okay-ish
 		// See #230
-		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f )))
+		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f )));
 		//payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt(sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f ))));
 		
 		//WHEN HDR TEXTURE ARE READY
