@@ -105,11 +105,8 @@ void main() {
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
 		// We need to remaster them into HDR. While that is not done, we just tune them with (pow(x, 2.2)*255.f) which looks okay-ish
 		// See #230
-		payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f )));
-		//payload.emissive = (texture(skybox, gl_WorldRayDirectionEXT).rgb) * (sqrt(sqrt((pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 255.f ))));
-		
-		//WHEN HDR TEXTURE ARE READY
-		//payload.emissive = texture(skybox, gl_WorldRayDirectionEXT).rgb;
+		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
+		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 8; // dirty hack;
 		return;
 	}
 
@@ -143,6 +140,7 @@ void main() {
 	const vec4 tex_color = sampleTexture(tex_index, texture_uv, uv_lods);
 	//const vec3 base_color = pow(tex_color.rgb, vec3(2.));
 	const vec3 base_color = ((push_constants.flags & PUSH_FLAG_LIGHTMAP_ONLY) != 0) ? vec3(1.) : tex_color.rgb;// pow(tex_color.rgb, vec3(2.));
+	//const vec3 base_color = vec3(0.);
 	/* tex_color = pow(tex_color, vec4(2.)); */
 	/* const vec3 base_color = tex_color.rgb; */
 
@@ -169,9 +167,10 @@ void main() {
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
 		const vec3 emissive_color = pow(base_color, vec3(2.2));
+		//const vec3 emissive_color = base_color;
 		const vec3 masked_color = emissive_color - (1 - (clamp(kusok.emissive, 0.0, 1.0)));
-		const vec3 factor = (1 - (emissive_color * (1. + emissive_color / (kusok.emissive)) / (1. + emissive_color))); //REVERSE REINHARD02
-		const float cringe_HDR = 8;
+		//const vec3 factor = (1 - (emissive_color * (1. + emissive_color / (kusok.emissive)) / (1. + emissive_color))); //REVERSE REINHARD02
+		const float cringe_HDR = 16;
 
 		//1 - most promising hack, >1 - less promising hack
 
@@ -182,7 +181,9 @@ void main() {
 		//payload.emissive = (sqrt(kusok.emissive * (kusok.emissive/4)) * sqrt((sqrt(emissive_color * emissive_color * emissive_color)))); //fairly good, hack 3		
 		//payload.emissive = mix((kusok.emissive), (emissive_color * emissive_color), factor); //cringe reverse tonemapping math, hack 4
 		//payload.emissive = masked_color * normalize(kusok.emissive); //mask method, hack 1
-		payload.emissive = masked_color * (normalize(kusok.emissive) * cringe_HDR); //mask method, hack 1
+		//payload.emissive = masked_color * (normalize(kusok.emissive) * cringe_HDR; //mask method, hack 1
+		payload.emissive = (((masked_color * (kusok.emissive / 255)) * 255) * (emissive_color * emissive_color)); //NightFox x MaxG3D hack
+		//payload.emissive = clamp(kusok.emissive, 0.0, 25.0) * emissive_color; //NightFox hack
 /*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
