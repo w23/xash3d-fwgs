@@ -105,7 +105,8 @@ void main() {
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
 		// We need to remaster them into HDR. While that is not done, we just tune them with pow(x, 2.2) which looks okay-ish
 		// See #230
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
+		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
+		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 8; // dirty hack;
 		return;
 	}
 
@@ -139,6 +140,7 @@ void main() {
 	const vec4 tex_color = sampleTexture(tex_index, texture_uv, uv_lods);
 	//const vec3 base_color = pow(tex_color.rgb, vec3(2.));
 	const vec3 base_color = ((push_constants.flags & PUSH_FLAG_LIGHTMAP_ONLY) != 0) ? vec3(1.) : tex_color.rgb;// pow(tex_color.rgb, vec3(2.));
+	//const vec3 base_color = vec3(0.);
 	/* tex_color = pow(tex_color, vec4(2.)); */
 	/* const vec3 base_color = tex_color.rgb; */
 
@@ -167,7 +169,8 @@ void main() {
 		const vec3 emissive_color = base_color;
 		//const vec3 emissive_color = pow(base_color, vec3(2.2));
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
-		payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
+		//payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
+		payload.emissive = kusok.emissive * emissive_color;
 	}
 
 	payload.kusok_index = kusok_index;
