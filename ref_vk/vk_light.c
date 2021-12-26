@@ -878,7 +878,8 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 			// TODO: tune it
 			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0] * 5.0f) + (g_camera.vforward[0] * 2.0f); // forward-back
 			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1] * 5.0f) + (g_camera.vforward[1] * 2.0f); // left-right
-			origin[2] = g_camera.vieworg[2] + 6.0f + (g_camera.vright[2] * 5.0f) + (g_camera.vforward[2] * 2.0f); // up-down
+			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2] * 5.0f) + (g_camera.vforward[2] * 2.0f); // up-down
+			origin[2] += 6.0f;
 			VectorCopy(g_camera.vforward, plight->dir);
 		}
 	}
@@ -940,8 +941,6 @@ static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
 }
 
 static void addDlight( const dlight_t *dlight ) {
-	cl_entity_t	*entPlayer;
-
 	const float k_light_radius = 2.f;
 	const float k_threshold = 1.f;
 
