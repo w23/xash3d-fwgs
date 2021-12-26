@@ -941,6 +941,8 @@ static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
 }
 
 static void addDlight( const dlight_t *dlight ) {
+	cl_entity_t	*entPlayer;
+	
 	const float k_light_radius = 2.f;
 	const float k_threshold = 1.f;
 
