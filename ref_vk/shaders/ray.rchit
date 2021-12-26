@@ -169,16 +169,20 @@ void main() {
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
 		const vec3 emissive_color = pow(base_color, vec3(2.2));
+		const vec3 masked_color = emissive_color - (1 - (clamp(kusok.emissive, 0.0, 1.0)));
 		const vec3 factor = (1 - (emissive_color * (1. + emissive_color / (kusok.emissive)) / (1. + emissive_color))); //REVERSE REINHARD02
-		
-		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (emissive_color * 255.0);
+		const float cringe_HDR = 8;
+
+		//1 - most promising hack, >1 - less promising hack
+
+		//payload.emissive = (clamp(kusok.emissive, 0.0, 1.0) * emissive_color) * (emissive_color * 255.0); //hack number 2
 		//payload.emissive = mix(((kusok.emissive/2) * emissive_color), (sqrt(sqrt(emissive_color * emissive_color)*255.0)), 0.05); //I don't even...
-		//payload.emissive = ((kusok.emissive * emissive_color)/2.0);
-		//payload.emissive = (kusok.emissive / 2.) * (sqrt(emissive_color));
-		//payload.emissive = (sqrt(kusok.emissive / 2) * (sqrt(emissive_color) * sqrt(kusok.emissive / 2)));
-		//payload.emissive = (sqrt(kusok.emissive * (kusok.emissive/4)) * sqrt((sqrt(emissive_color * emissive_color * emissive_color))));		
-		//payload.emissive = mix(kusok.emissive, emissive_color, (factor * 0.5));
-		payload.emissive = (kusok.emissive / 2.) * (emissive_color); //I GUESS THIS IS THE MOST SENSIBLE HACK
+		//payload.emissive = (kusok.emissive / 2.) * (sqrt(emissive_color)); //really bad, hack 5
+		//payload.emissive = (sqrt(kusok.emissive / 2) * (sqrt(emissive_color) * sqrt(kusok.emissive / 2))); //really bad, hack 6
+		//payload.emissive = (sqrt(kusok.emissive * (kusok.emissive/4)) * sqrt((sqrt(emissive_color * emissive_color * emissive_color)))); //fairly good, hack 3		
+		//payload.emissive = mix((kusok.emissive), (emissive_color * emissive_color), factor); //cringe reverse tonemapping math, hack 4
+		//payload.emissive = masked_color * normalize(kusok.emissive); //mask method, hack 1
+		payload.emissive = masked_color * (normalize(kusok.emissive) * cringe_HDR); //mask method, hack 1
 /*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
