@@ -449,7 +449,7 @@ void main() {
 				out_accumulated += throughput * (payload_opaque.emissive * color_factor + additive); // fix emissive texture through glass but on test_light3 getting brighter
 				//out_accumulated += payload_opaque.emissive;
 			}
-			//break;
+			break;
 		}
 
 #if 0 //def DEBUG_LIGHT_CULLING
