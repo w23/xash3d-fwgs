@@ -173,7 +173,8 @@ void sampleSurfaceTriangle(
 	const float area = 1.;//.5 * length(cross(v1 - v2, v1 - v3));
 	const float light_dist2 = dot(light_dir, light_dir);
 	//float pdf = /*light_dist2 */ 1./ (area * light_dot);
-	float pdf = TWO_PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
+	//float pdf = TWO_PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
+	float pdf = PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
 
 	if (pdf > pdf_culling_threshold)
 #ifdef DEBUG_LIGHT_CULLING
@@ -196,7 +197,8 @@ void sampleSurfaceTriangle(
 	}
 #endif
 
-	color /= pdf / 10;
+	//color /= pdf / 2;
+	color /= pdf;
 
 	if (dot(color,color) < color_culling_threshold)
 #ifdef DEBUG_LIGHT_CULLING

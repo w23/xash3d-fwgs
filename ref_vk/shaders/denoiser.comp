@@ -29,6 +29,7 @@ vec3 aces_tonemap(vec3 color){
 	vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
 	//return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(1.0 / 2.2));
 	return clamp(m2 * (a / b), 0.0, 1.0);
+	//return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(0.8));
 }
 
 vec3 reinhard(vec3 color){
@@ -126,12 +127,9 @@ void main() {
 	//colour += imageLoad(src_specular, pix).rgb;
 	colour += imageLoad(src_additive, pix).rgb;
 
-	// HACK: exposure
-	// TODO: should be dynamic based on previous frames brightness
-	colour *= 0.25;
-
-	//colour = aces_tonemap(colour);
-	colour = reinhard02(colour, vec3(25.));
+	//colour = aces_tonemap(colour); // bad
+	colour = reinhard(colour); // ok
+	//colour = reinhard02(colour, vec3(20.)); // ok
 
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));

@@ -106,7 +106,7 @@ void main() {
 		// We need to remaster them into HDR. While that is not done, we just tune them with pow(x, 2.2) which looks okay-ish
 		// See #230
 		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 8; // dirty hack;
+		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 4; // dirty hack;
 		return;
 	}
 
@@ -170,7 +170,9 @@ void main() {
 		//const vec3 emissive_color = pow(base_color, vec3(2.2));
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
 		//payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
-		payload.emissive = clamp(kusok.emissive, 0.0, 25.0) * pow(emissive_color, vec3(1.5));
+		//payload.emissive = clamp(kusok.emissive, 0.0, 25.0) * pow(emissive_color, vec3(1.5));
+		//payload.emissive = clamp(kusok.emissive, 0.0, 5.0) * pow(emissive_color, vec3(2));
+		payload.emissive = clamp(kusok.emissive, 0.0, 5.0) * pow(emissive_color, vec3(2)) * exp2(emissive_color); // dirty hack;
 	}
 
 	payload.kusok_index = kusok_index;
