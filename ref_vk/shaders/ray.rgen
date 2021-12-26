@@ -439,14 +439,16 @@ void main() {
 		vec3 additive = traceAdditive(origin, direction, payload_opaque.hit_pos_t.w <= 0. ? L : payload_opaque.hit_pos_t.w);
 
 		// Sky/envmap/emissive
-		if ((payload_opaque.kusok_index < 0) || any(greaterThan(payload_opaque.emissive, vec3(0.)))) {
+		//if ((payload_opaque.kusok_index < 0) || any(greaterThan(payload_opaque.emissive, vec3(0.)))) {
+		// emissive textures must receive light from other light sources
+		if (payload_opaque.kusok_index < 0) {
 			if (bounce == 0) {
 				out_additive += payload_opaque.emissive * color_factor + additive;
 			} else {
-				//out_accumulated += throughput * (/*payload_opaque.emissive * color_factor +*/ additive);
-				out_accumulated += throughput * (payload_opaque.emissive * color_factor + additive); // fix emissive texture through glass
+				out_accumulated += throughput * (/*payload_opaque.emissive * color_factor +*/ additive);
+				//out_accumulated += throughput * (payload_opaque.emissive * color_factor + additive); // fix emissive texture through glass but on test_light3 getting brighter
 			}
-			//break; // emissive textures must receive light from other light sources
+			break;
 		}
 
 #if 0 //def DEBUG_LIGHT_CULLING
