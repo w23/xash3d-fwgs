@@ -854,7 +854,7 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 			if( ent->curstate.usehull == 1 ) {
 				view_ofs[2] = 12.0f; // VEC_DUCK_VIEW;
 			} else {
-				view_ofs[2] = 28.0f; // DEFAULT_VIEWHEIGHT
+				view_ofs[2] = 26.0f; // DEFAULT_VIEWHEIGHT
 			}
 			VectorAdd( ent->origin, view_ofs, vecSrc );
 			VectorMA( vecSrc, thirdperson_offset, forward, vecEnd );
@@ -876,10 +876,12 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 		} else { // firstperson
 			// based on https://github.com/SNMetamorph/PrimeXT/blob/0869b1abbddd13c1229769d8cd71941610be0bf3/client/flashlight.cpp#L35
 			// TODO: tune it
-			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0] * 5.0f) + (g_camera.vforward[0] * 2.0f); // forward-back
-			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1] * 5.0f) + (g_camera.vforward[1] * 2.0f); // left-right
-			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2] * 5.0f) + (g_camera.vforward[2] * 2.0f); // up-down
-			origin[2] += 6.0f;
+			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0]) + (g_camera.vforward[0]); // forward-back
+			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1]) + (g_camera.vforward[1]); // left-right
+			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2]) + (g_camera.vforward[2]); // up-down
+			origin[2] += 0.0f; // up-down
+			//origin[1] += -10.0f; // left-right
+			//origin[0] += -5.0f; // forward-back
 			VectorCopy(g_camera.vforward, plight->dir);
 		}
 	}
