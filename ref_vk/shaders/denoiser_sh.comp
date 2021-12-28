@@ -1,0 +1,71 @@
+#version 460
+
+// This is extra blur for global illumination
+// Spherical harmonics are mixed and make soft light probes with filter by distance
+
+#include "noise.glsl"
+#include "spherical_harmonics.glsl"
+
+layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D out_sh1_blured;
+layout(set = 0, binding = 1, rgba16f) uniform image2D out_sh2_blured;
+
+layout(set = 0, binding = 2, rgba16f) uniform image2D src_indirect_sh1;
+layout(set = 0, binding = 3, rgba16f) uniform image2D src_indirect_sh2;
+
+
+// offset between samples, additional bluring on compose make this way right
+// ivec2(1,1) - it'is like no offset, but it's need for larger area of collection
+const ivec2 uv_offset = ivec2(3,3);
+
+// max offset is uv_offset*blur_kernel_size, recommended ivec2(4,4) and blur_kernel_size = 8
+const int blur_kernel_size = 24;
+
+// depth edge of accumulation of one lightprobe
+const float gi_depth_fade_distance = 3.;
+
+float normpdf2(in float x2, in float sigma) { return 0.39894*exp(-0.5*x2/(sigma*sigma))/sigma; }
+float normpdf(in float x, in float sigma) { return normpdf2(x*x, sigma); }
+
+void main() {
+	ivec2 res = ivec2(imageSize(src_indirect_sh1));
+	ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	float depth = imageLoad(src_indirect_sh2, pix).z;
+
+	vec4 sh1 = vec4(0.);
+	vec4 sh2 = vec4(0.);
+
+	float total_scale = 0.;
+	for (int x = -blur_kernel_size; x <= blur_kernel_size; ++x)
+		for (int y = -blur_kernel_size; y <= blur_kernel_size; ++y) {
+			const ivec2 p = pix + ivec2(x, y) * uv_offset;
+			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
+				continue;
+			}
+
+			const vec4 sh1_current = imageLoad(src_indirect_sh1, p);
+			const vec4 sh2_current = imageLoad(src_indirect_sh2, p);
+
+			const float depth_current = sh2_current.z;
+			const float scale = fade_by_depth(depth_current, depth, gi_depth_fade_distance);
+
+			sh1 += imageLoad(src_indirect_sh1, p) * scale;
+			sh2 += imageLoad(src_indirect_sh2, p) * scale;
+
+			total_scale += scale;
+		}
+
+	if (total_scale > 0.) {
+		sh1 /= total_scale;
+		sh2 /= total_scale;
+	}
+
+	imageStore(out_sh1_blured, pix, sh1);
+	imageStore(out_sh2_blured, pix, vec4(sh2.xy, depth, 0));
+}
