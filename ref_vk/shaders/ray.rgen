@@ -17,9 +17,9 @@ const float color_culling_threshold = 1e-6;//600./color_factor;
 const float throughput_threshold = 1e-3;
 const float depth_multiplier = 0.01;
 
-// denoiser parameters
-const float prevous_frames_temporal_mix = 0.0;
-const float gi_depth_fade_distance = 10.0;
+// denoiser parameters - temporal blur now is off
+//const float prevous_frames_temporal_mix = 0.0;
+//const float gi_depth_fade_distance = 10.0;
 const float indirectional_lights_clamping = 0.6;
 const float specular_reflection_clamping = 0.9;
 
@@ -616,10 +616,10 @@ void main() {
 	SH low_freq;
 
 	// TODO: please, reproject this coords with matrices from prevous frame.....
-	vec4 sh1_prevous = imageLoad(out_image_indirect_sh1, ivec2(gl_LaunchIDEXT.xy));
-	vec4 sh2_prevous = imageLoad(out_image_indirect_sh2, ivec2(gl_LaunchIDEXT.xy));
-
-	float prevous_depth = sh2_prevous.z;
+//	vec4 sh1_prevous = imageLoad(out_image_indirect_sh1, ivec2(gl_LaunchIDEXT.xy));
+//	vec4 sh2_prevous = imageLoad(out_image_indirect_sh2, ivec2(gl_LaunchIDEXT.xy));
+//
+//	float prevous_depth = sh2_prevous.z;
 
 	low_freq.shY = vec4(0.);
 	low_freq.CoCg = vec2(0.);
@@ -632,10 +632,10 @@ void main() {
 	vec4 sh1_out = low_freq.shY;
 	vec2 sh2_out = low_freq.CoCg;
 
-	float mix_weight = prevous_frames_temporal_mix * fade_by_depth(depth, prevous_depth, gi_depth_fade_distance);
-
-	sh1_out = mix(sh1_out, sh1_prevous, mix_weight);
-	sh2_out = mix(sh2_out, sh2_prevous.xy, mix_weight);
+//	float mix_weight = prevous_frames_temporal_mix * fade_by_depth(depth, prevous_depth, gi_depth_fade_distance);
+//
+//	sh1_out = mix(sh1_out, sh1_prevous, mix_weight);
+//	sh2_out = mix(sh2_out, sh2_prevous.xy, mix_weight);
 
 	imageStore(out_image_base_color, ivec2(gl_LaunchIDEXT.xy), vec4(out_base_color, 0.));
 	imageStore(out_image_normals, ivec2(gl_LaunchIDEXT.xy), out_normals);
