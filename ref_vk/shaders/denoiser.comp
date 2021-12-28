@@ -87,6 +87,9 @@ void main() {
 	/* return; */
 
 	SH low_freq;
+	low_freq.shY = vec4(0.);
+	low_freq.CoCg = vec2(0.);
+
 	const int KERNEL_SIZE = 8;
 	float total_scale = 0.;
 	float specular_total_scale = 0.;
@@ -111,10 +114,9 @@ void main() {
 			const float depth_gradient = fade_by_depth(current_depth, depth, gi_depth_fade_distance);
 			const float scale = normpdf(x, sigma) * normpdf(y, sigma) * depth_gradient;
 
-			low_freq.shY = sh1;
-			low_freq.CoCg = sh2_and_depth.xy;
+			low_freq.shY += sh1 * scale;
+			low_freq.CoCg += sh2_and_depth.xy * scale;
 
-			colour_gi += project_SH_irradiance(low_freq, worldspace_normal) * scale / STORAGE_SCALE_LF;
 			gi_total_scale += scale;
 
 			const vec4 c = imageLoad(src_diffuse_gi, p);
@@ -130,7 +132,7 @@ void main() {
 			colour += scale * imageLoad(src_diffuse_gi, p).rgb;
 			total_scale += scale;
 
-			const int SPECULAR_KERNEL_SIZE = 2;
+			const int SPECULAR_KERNEL_SIZE = 4;
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(SPECULAR_KERNEL_SIZE)))) {
 				const float spigma = SPECULAR_KERNEL_SIZE / 2.;
 				const float specuale = normpdf(x, spigma) * normpdf(y, spigma);
@@ -151,7 +153,7 @@ void main() {
 	}
 
 	if (gi_total_scale > 0.) {
-		colour_gi /= gi_total_scale ;
+		colour_gi = project_SH_irradiance(low_freq, worldspace_normal) / (gi_total_scale * STORAGE_SCALE_LF);
 		colour += colour_gi * base_color.rgb * gi_multiplier;
 	}
 

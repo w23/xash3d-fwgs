@@ -17,6 +17,16 @@ const float color_culling_threshold = 1e-6;//600./color_factor;
 const float throughput_threshold = 1e-3;
 const float depth_multiplier = 0.01;
 
+
+// Choose just single option to increacing perfomance:
+
+// Balance perfomance and visual
+//#define LIGHTS_QUARTER_REDUCION 1
+
+// More perfomance, but not so beautiful
+#define LIGHTS_NINEFOLD_REDUCION 1
+
+
 // denoiser parameters - temporal blur now is off
 //const float prevous_frames_temporal_mix = 0.0;
 //const float gi_depth_fade_distance = 10.0;
@@ -140,6 +150,16 @@ vec2 baryMix(vec2 v1, vec2 v2, vec2 v3, vec2 bary) {
 	return v1 * (1. - bary.x - bary.y) + v2 * bary.x + v3 * bary.y;
 }
 
+int quarterPart() {
+	ivec2 pix = ivec2(gl_LaunchIDEXT.xy) % 2;
+	return pix.x + 2 * pix.y;
+}
+
+int ninefoldPart() {
+	ivec2 pix = ivec2(gl_LaunchIDEXT.xy) % 3;
+	return pix.x + 3 * pix.y;
+}
+
 void sampleSurfaceTriangle(
 	vec3 color, vec3 view_dir, MaterialProperties material /* TODO BrdfData instead is supposedly more efficient */,
 	mat4x3 emissive_transform, mat3 emissive_transform_normal,
@@ -172,7 +192,7 @@ void sampleSurfaceTriangle(
 		return vec3(1., 0., 1.) * color_factor;
 #else
 		return;
-#endif
+#endif 
 
 	// Consider area light sources as planes, take the first normal
 	const vec3 normal = normalize(emissive_transform_normal * vertices[vi1].normal);
@@ -245,7 +265,15 @@ void sampleSurfaceTriangle(
 void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 	const uint num_point_lights = uint(light_grid.clusters[cluster_index].num_point_lights);
+#ifdef LIGHTS_NINEFOLD_REDUCION
+	int start = ninefoldPart();
+	for (int j = start; j < num_point_lights; j += 9) {
+#elif LIGHTS_QUARTER_REDUCION
+	int start = quarterPart();
+	for (int j = start; j < num_point_lights; j += 4) {
+#else
 	for (uint j = 0; j < num_point_lights; ++j) {
+#endif
 		const uint i = uint(light_grid.clusters[cluster_index].point_lights[j]);
 
 		vec3 color = lights.point_lights[i].color_stopdot.rgb * throughput;
@@ -348,17 +376,27 @@ void computeLighting(vec3 throughput, vec3 view_dir, MaterialProperties material
 
 	const uint num_emissive_kusochki = uint(light_grid.clusters[cluster_index].num_emissive_surfaces);
 	float sampling_light_scale = 1.;
-#if 0
-	const uint max_lights_per_frame = 4;
-	uint begin_i = 0, end_i = num_emissive_kusochki;
-	if (end_i > max_lights_per_frame) {
-		begin_i = rand() % (num_emissive_kusochki - max_lights_per_frame);
-		end_i = begin_i + max_lights_per_frame;
-		sampling_light_scale = float(num_emissive_kusochki) / float(max_lights_per_frame);
-	}
-	for (uint i = begin_i; i < end_i; ++i) {
-#else
+//#if 0
+//	const uint max_lights_per_frame = 4;
+//	uint begin_i = 0, end_i = num_emissive_kusochki;
+//	if (end_i > max_lights_per_frame) {
+//		begin_i = rand() % (num_emissive_kusochki - max_lights_per_frame);
+//		end_i = begin_i + max_lights_per_frame;
+//		sampling_light_scale = float(num_emissive_kusochki) / float(max_lights_per_frame);
+//	}
+//	for (uint i = begin_i; i < end_i; ++i) {
+//#else
+//
+//	for (uint i = 0; i < num_emissive_kusochki; ++i) {
+//#endif
 
+#ifdef LIGHTS_NINEFOLD_REDUCION
+	int start = ninefoldPart();
+	for (int i = start; i < num_emissive_kusochki; i += 9) {
+#elif LIGHTS_QUARTER_REDUCION
+	int start = quarterPart();
+	for (int i = start; i < num_emissive_kusochki; i += 4) {
+#else
 	for (uint i = 0; i < num_emissive_kusochki; ++i) {
 #endif
 		const uint index_into_emissive_kusochki = uint(light_grid.clusters[cluster_index].emissive_surfaces[i]);
@@ -617,6 +655,15 @@ void main() {
 //		out_specular += out_accumulated;
 //	}
 
+
+#ifdef LIGHTS_NINEFOLD_REDUCION
+	out_diffuse_gi *= 9.;
+	out_specular *= 9.;
+#elif LIGHTS_QUARTER_REDUCION
+	out_diffuse_gi *= 4.;
+	out_specular *= 4.;
+#endif
+
 	SH low_freq;
 
 	// TODO: please, reproject this coords with matrices from prevous frame.....
@@ -630,6 +677,12 @@ void main() {
 
 	vec3 indirect_color = clamp_color(out_accumulated, indirectional_lights_clamping) * STORAGE_SCALE_LF;
 	//vec3 indirect_color = STORAGE_SCALE_LF * out_accumulated / color_factor;
+
+#ifdef LIGHTS_NINEFOLD_REDUCION
+	indirect_color *= 9.;
+#elif LIGHTS_QUARTER_REDUCION
+	indirect_color *= 4.;
+#endif
 
 	accumulate_SH(low_freq, irradiance_to_SH(indirect_color, gi_direction), 1.0);
 

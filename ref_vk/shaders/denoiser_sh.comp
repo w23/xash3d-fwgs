@@ -17,10 +17,10 @@ layout(set = 0, binding = 3, rgba16f) uniform image2D src_indirect_sh2;
 
 // offset between samples, additional bluring on compose make this way right
 // ivec2(1,1) - it'is like no offset, but it's need for larger area of collection
-const ivec2 uv_offset = ivec2(3,3);
+const ivec2 uv_offset = ivec2(5,5);
 
 // max offset is uv_offset*blur_kernel_size, recommended ivec2(4,4) and blur_kernel_size = 8
-const int blur_kernel_size = 24;
+const int blur_kernel_size = 12;
 
 // depth edge of accumulation of one lightprobe
 const float gi_depth_fade_distance = 3.;
