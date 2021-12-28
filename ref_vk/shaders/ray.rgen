@@ -18,8 +18,8 @@ const float throughput_threshold = 1e-3;
 const float depth_multiplier = 0.01;
 
 // denoiser parameters
-const float prevous_frames_temporal_mix = 0.5;
-const float gi_depth_fade_distance = 2.;
+const float prevous_frames_temporal_mix = 0.8;
+const float gi_depth_fade_distance = 3.;
 const float indirectional_lights_clamping = 0.9;
 const float specular_reflection_clamping = 0.9;
 
@@ -621,8 +621,8 @@ void main() {
 
 	float prevous_depth = sh2_prevous.z;
 
-	low_freq.shY = sh1_prevous;
-	low_freq.CoCg = sh2_prevous.xy;
+	low_freq.shY = vec4(0.);
+	low_freq.CoCg = vec2(0.);
 
 	vec3 indirect_color = clamp_color(out_accumulated, indirectional_lights_clamping) * STORAGE_SCALE_LF;
 	//vec3 indirect_color = STORAGE_SCALE_LF * out_accumulated / color_factor;

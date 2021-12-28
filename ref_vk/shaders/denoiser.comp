@@ -16,10 +16,10 @@ layout(set = 0, binding = 6, rgba16f) uniform readonly image2D src_sh1_blured;
 layout(set = 0, binding = 7, rgba16f) uniform readonly image2D src_sh2_blured;
 
 // depth fading of blur
-const float gi_depth_fade_distance = 2.;
+const float gi_depth_fade_distance = 3.;
 
 // global illunitation exposition
-const float gi_multiplier = 0.3;
+const float gi_multiplier = 4.0;
 
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
@@ -127,8 +127,8 @@ void main() {
 
 			// TODO bilaterally filter shading normals
 
-			//colour += scale * imageLoad(src_diffuse_gi, p).rgb;
-			//total_scale += scale;
+			colour += scale * imageLoad(src_diffuse_gi, p).rgb;
+			total_scale += scale;
 
 			const int SPECULAR_KERNEL_SIZE = 2;
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(SPECULAR_KERNEL_SIZE)))) {
@@ -139,16 +139,16 @@ void main() {
 			}
 		}
 
-//	if (total_scale > 0.) {
-//		colour /= total_scale;
-//		colour *= base_color.rgb;
-//	}
-//
-//	if (specular_total_scale > 0.) {
-//		speculour /= specular_total_scale;
-//		//speculour *= base_color.rgb;
-//		colour += speculour;
-//	}
+	if (total_scale > 0.) {
+		colour /= total_scale;
+		colour *= base_color.rgb;
+	}
+
+	if (specular_total_scale > 0.) {
+		speculour /= specular_total_scale;
+		//speculour *= base_color.rgb;
+		colour += speculour;
+	}
 
 	if (gi_total_scale > 0.) {
 		colour_gi /= gi_total_scale ;

@@ -23,7 +23,7 @@ const ivec2 uv_offset = ivec2(2,2);
 const int blur_kernel_size = 16;
 
 // depth edge of accumulation of one lightprobe
-const float gi_depth_fade_distance = 2.;
+const float gi_depth_fade_distance = 3.;
 
 float normpdf2(in float x2, in float sigma) { return 0.39894*exp(-0.5*x2/(sigma*sigma))/sigma; }
 float normpdf(in float x, in float sigma) { return normpdf2(x*x, sigma); }
