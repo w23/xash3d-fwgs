@@ -523,6 +523,10 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 	if (cluster->num_point_lights == MAX_VISIBLE_POINT_LIGHTS)
 		return false;
 
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("    adding point light %d to cell %d (count=%d)\n", light_index, cell_index, cluster->num_point_lights+1);
+	}
+
 	cluster->point_lights[cluster->num_point_lights++] = light_index;
 	return true;
 }
@@ -704,6 +708,15 @@ static void addLightIndexToleaf( const mleaf_t *leaf, int index ) {
 	const int max_y = ceilf(leaf->minmaxs[4] / LIGHT_GRID_CELL_SIZE);
 	const int max_z = ceilf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE);
 
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+			leaf->cluster,
+			min_x, min_y, min_z,
+			max_x, max_y, max_z,
+			(max_x - min_x) * (max_y - min_y) * (max_z - min_z)
+		);
+	}
+
 	for (int x = min_x; x < max_x; ++x)
 	for (int y = min_y; y < max_y; ++y)
 	for (int z = min_z; z < max_z; ++z) {
@@ -831,30 +844,18 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 	vec3_t color;
 	vec3_t origin;
 	vec3_t angles;
-	const int index = g_lights.num_point_lights;
-	vk_point_light_t *const plight = g_lights.point_lights + index;
-	*plight = (vk_point_light_t){0};
+	vk_light_entity_t le;
 
 	// parameters
 	const float hack_attenuation = 1.0;
-	const float radius = 2.0;
+	float radius = 1.0;
+	// TODO: better tune it
 	const float _cone = 0.01;
 	const float _cone2 = 30.0;
 	const vec3_t light_color = {255, 255, 192};
-	const float light_intensity = 150;
+	float light_intensity = 150;
 
-	VectorCopy(light_color, color);
-
-	// prepare colors by parseEntPropRgbav
-	VectorScale(light_color, light_intensity / 255.0f, color);
-
-	// convert colors by weirdGoldsrcLightScaling
-	float l1 = Q_max(color[0], Q_max(color[1], color[2]));
-	l1 = l1 * l1 / 10;
-	VectorScale(color, l1, color);
-
-	float angle;
-	float thirdperson_offset = 15;
+	float thirdperson_offset = 25;
 	vec3_t forward, view_ofs;
 	vec3_t vecSrc, vecEnd;
 	pmtrace_t *trace;
@@ -863,49 +864,41 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 		// local player case
 		// position
 		if (gEngine.EngineGetParm(PARM_THIRDPERSON, 0)) { // thirdperson
-
 			AngleVectors( g_camera.viewangles, forward, NULL, NULL );
 			view_ofs[0] = view_ofs[1] = 0.0f;
 			if( ent->curstate.usehull == 1 ) {
 				view_ofs[2] = 12.0f; // VEC_DUCK_VIEW;
 			} else {
-				view_ofs[2] = 26.0f; // DEFAULT_VIEWHEIGHT
+				view_ofs[2] = 28.0f; // DEFAULT_VIEWHEIGHT
 			}
 			VectorAdd( ent->origin, view_ofs, vecSrc );
 			VectorMA( vecSrc, thirdperson_offset, forward, vecEnd );
 			trace = gEngine.EV_VisTraceLine( vecSrc, vecEnd, PM_STUDIO_BOX );
 			VectorCopy( trace->endpos, origin );
-			VectorAngles( forward, angles );
-
-			// convert angles by parseAngles
-			angle = angles[1];
-			angle *= M_PI / 180.f;
-			plight->dir[2] = 0;
-			plight->dir[0] = cosf(angle);
-			plight->dir[1] = sinf(angle);
-			angle = angles[0];
-			angle *= M_PI / 180.f;
-			plight->dir[2] = sinf(angle);
-			plight->dir[0] *= cosf(angle);
-			plight->dir[1] *= cosf(angle);
+			VectorCopy( forward, le.dir);
 		} else { // firstperson
 			// based on https://github.com/SNMetamorph/PrimeXT/blob/0869b1abbddd13c1229769d8cd71941610be0bf3/client/flashlight.cpp#L35
 			// TODO: tune it
-			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0]) + (g_camera.vforward[0]); // forward-back
-			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1]) + (g_camera.vforward[1]); // left-right
-			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2]) + (g_camera.vforward[2]); // up-down
-			origin[2] += 0.0f; // up-down
-			//origin[1] += -10.0f; // left-right
-			//origin[0] += -5.0f; // forward-back
-			VectorCopy(g_camera.vforward, plight->dir);
+			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0] * 5.0f) + (g_camera.vforward[0] * 2.0f); // forward-back
+			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1] * 5.0f) + (g_camera.vforward[1] * 2.0f); // left-right
+			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2] * 5.0f) + (g_camera.vforward[2] * 2.0f); // up-down
+			origin[2] += 6.0f;
+			VectorCopy(g_camera.vforward, le.dir);
 		}
 	}
 	else // non-local player case
 	{
-		// TODO: need to test!
-		VectorCopy(ent->origin, origin);
-		VectorCopy(ent->angles, angles);
-		AngleVectors( ent->angles, forward, NULL, NULL ); // TODO: maybe improve turning sensitivity
+		thirdperson_offset = 10;
+		radius = 10;
+		light_intensity = 60;
+
+		VectorCopy( ent->angles, angles );
+		// NOTE: pitch divided by 3.0 twice. So we need apply 3^2 = 9
+		angles[PITCH] = ent->curstate.angles[PITCH] * 9.0f;
+		angles[YAW] = ent->angles[YAW];
+		angles[ROLL] = 0.0f; // roll not used
+
+		AngleVectors( angles, angles, NULL, NULL );
 		view_ofs[0] = view_ofs[1] = 0.0f;
 		if( ent->curstate.usehull == 1 ) {
 			view_ofs[2] = 12.0f; // VEC_DUCK_VIEW;
@@ -913,45 +906,35 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 			view_ofs[2] = 28.0f; // DEFAULT_VIEWHEIGHT
 		}
 		VectorAdd( ent->origin, view_ofs, vecSrc );
-		VectorMA( vecSrc, thirdperson_offset, forward, vecEnd );
+		VectorMA( vecSrc, thirdperson_offset, angles, vecEnd );
 		trace = gEngine.EV_VisTraceLine( vecSrc, vecEnd, PM_STUDIO_BOX );
 		VectorCopy( trace->endpos, origin );
-		VectorAngles( forward, angles );
-
-		// convert angles by parseAngles
-		angle = angles[1];
-		angle *= M_PI / 180.f;
-		plight->dir[2] = 0;
-		plight->dir[0] = cosf(angle);
-		plight->dir[1] = sinf(angle);
-		angle = angles[0];
-		angle *= M_PI / 180.f;
-		plight->dir[2] = sinf(angle);
-		plight->dir[0] *= cosf(angle);
-		plight->dir[1] *= cosf(angle);
+		VectorCopy( angles, le.dir );
 	}
 
+	VectorCopy(origin, le.origin);
+
+	// prepare colors by parseEntPropRgbav
+	VectorScale(light_color, light_intensity / 255.0f, color);
+
+	// convert colors by weirdGoldsrcLightScaling
+	float l1 = Q_max(color[0], Q_max(color[1], color[2]));
+	l1 = l1 * l1 / 10;
+	VectorScale(color, l1, le.color);
+
 	// convert stopdots by parseStopDot
-	plight->stopdot = cosf(_cone * M_PI / 180.f);
-	plight->stopdot2 = cosf(_cone2 * M_PI / 180.f);
-
-	VectorCopy(origin, plight->origin);
-	plight->radius = radius;
-
-	VectorScale(color, hack_attenuation, plight->base_color);
-	VectorCopy(plight->base_color, plight->color);
+	le.stopdot = cosf(_cone * M_PI / 180.f);
+	le.stopdot2 = cosf(_cone2 * M_PI / 180.f);
 
 	/*
 	gEngine.Con_Printf("flashlight: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)\n",
-		plight->origin[0], plight->origin[1], plight->origin[2],
-		plight->color[0], plight->color[1], plight->color[2],
-		plight->dir[0], plight->dir[1], plight->dir[2]);
+		le.origin[0], le.origin[1], le.origin[2],
+		le.color[0], le.color[1], le.color[2],
+		le.dir[0], le.dir[1], le.dir[2]);
 	*/
 
-	addPointLightToClusters( index );
-	g_lights.num_point_lights++;
+	addSpotLight(&le, radius, 0, hack_attenuation, false);
 }
-
 
 static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
 	return 1. - sqrt(d*d - r*r)/d;
@@ -967,15 +950,6 @@ static void addDlight( const dlight_t *dlight ) {
 	vec3_t color;
 	int index;
 	float scaler;
-
-	if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
-		return;
-
-	// Draw flashlight
-	entPlayer = gEngine.GetLocalPlayer();
-	if( FBitSet( entPlayer->curstate.effects, EF_DIMLIGHT )) {
-		VK_AddFlashlight(entPlayer);
-	}
 
 	max_comp = Q_max(dlight->color.r, Q_max(dlight->color.g, dlight->color.b));
 	if (max_comp < k_threshold || dlight->radius <= k_light_radius)
@@ -1108,6 +1082,7 @@ void XVK_GetEmissiveForTexture( vec3_t out, int texture_id ) {
 void VK_LightsFrameFinalize( void ) {
 	APROF_SCOPE_BEGIN_EARLY(finalize);
 	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	cl_entity_t	*entPlayer;
 
 	if (g_lights.num_emissive_surfaces > UINT8_MAX) {
 		ERROR_THROTTLED(10, "Too many emissive surfaces found: %d; some areas will be dark", g_lights.num_emissive_surfaces);
@@ -1136,7 +1111,14 @@ void VK_LightsFrameFinalize( void ) {
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
 		const dlight_t *dlight = gEngine.GetDynamicLight(i);
+		if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
+			continue;
 		addDlight(dlight);
+	}
+	// Draw flashlight for local player
+	entPlayer = gEngine.GetLocalPlayer();
+	if( FBitSet( entPlayer->curstate.effects, EF_DIMLIGHT )) {
+		VK_AddFlashlight(entPlayer);
 	}
 	APROF_SCOPE_END(dlights);
 
