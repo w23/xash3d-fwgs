@@ -19,7 +19,7 @@ const float depth_multiplier = 0.01;
 
 // denoiser parameters
 const float prevous_frames_temporal_mix = 0.8;
-const float gi_depth_fade_distance = 3.;
+const float gi_depth_fade_distance = 1.0;
 const float indirectional_lights_clamping = 0.9;
 const float specular_reflection_clamping = 0.9;
 

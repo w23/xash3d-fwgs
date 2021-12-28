@@ -20,7 +20,7 @@ layout(set = 0, binding = 3, rgba16f) uniform image2D src_indirect_sh2;
 const ivec2 uv_offset = ivec2(2,2);
 
 // max offset is uv_offset*blur_kernel_size, recommended ivec2(4,4) and blur_kernel_size = 8
-const int blur_kernel_size = 16;
+const int blur_kernel_size = 24;
 
 // depth edge of accumulation of one lightprobe
 const float gi_depth_fade_distance = 3.;
