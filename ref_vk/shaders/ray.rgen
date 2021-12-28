@@ -5,6 +5,7 @@
 #include "ray_kusochki.glsl"
 #include "noise.glsl"
 #include "brdf.h"
+#include "spherical_harmonics.glsl"
 
 //#define DEBUG_LIGHT_CULLING
 
@@ -14,6 +15,13 @@ const float pdf_culling_threshold = 1e6;//100.;
 const float color_factor = 1.;
 const float color_culling_threshold = 1e-6;//600./color_factor;
 const float throughput_threshold = 1e-3;
+const float depth_multiplier = 0.01;
+
+// denoiser parameters
+const float prevous_frames_temporal_mix = 0.5;
+const float gi_depth_fade_distance = 2.;
+const float indirectional_lights_clamping = 0.9;
+const float specular_reflection_clamping = 0.9;
 
 layout (constant_id = 4) const float LIGHT_GRID_CELL_SIZE = 256.;
 layout (constant_id = 5) const uint MAX_LIGHT_CLUSTERS = 32768;
@@ -32,6 +40,8 @@ layout(set = 0, binding = 9, rgba16f) uniform image2D out_image_diffuse_gi;
 layout(set = 0, binding = 10, rgba16f) uniform image2D out_image_specular;
 layout(set = 0, binding = 11, rgba16f) uniform image2D out_image_additive;
 layout(set = 0, binding = 12, rgba16f) uniform image2D out_image_normals;
+layout(set = 0, binding = 14, rgba16f) uniform image2D out_image_indirect_sh1;
+layout(set = 0, binding = 15, rgba16f) uniform image2D out_image_indirect_sh2;
 
 layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 layout(set = 0, binding = 2) uniform UBO {
@@ -53,6 +63,12 @@ layout (push_constant) uniform PC_ {
 layout(location = PAYLOAD_LOCATION_OPAQUE) rayPayloadEXT RayPayloadOpaque payload_opaque;
 layout(location = PAYLOAD_LOCATION_SHADOW) rayPayloadEXT RayPayloadShadow payload_shadow;
 layout(location = PAYLOAD_LOCATION_ADDITIVE) rayPayloadEXT RayPayloadAdditive payload_additive;
+
+// clamp light exposition without loosing of color
+vec3 clamp_color(vec3 color, float clamp_value) {
+	float max_color = max(max(color.r, color.g), color.b);
+	return max_color > clamp_value ? (color / max_color) * clamp_value : color;
+}
 
 bool shadowed(vec3 pos, vec3 dir, float dist) {
 	payload_shadow.hit_type = SHADOW_HIT;
@@ -419,6 +435,9 @@ void main() {
 	vec3 out_specular = vec3(0.);
 	vec3 out_base_color = vec3(0.);
 	vec4 out_normals = vec4(0.);
+	vec3 gi_direction = -direction;
+	vec3 camera_position = origin;
+	float depth = 0.;
 
 	// Can be specular or diffuse_gi based on first bounce
 	vec3 out_accumulated = vec3(0.);
@@ -497,8 +516,12 @@ void main() {
 
 			out_material_index = float(payload_opaque.material_index);
 			out_base_color = payload_opaque.base_color;
-			out_normals = vec4(geometryNormal.xy, shadingNormal.xy);
+			//out_normals = vec4(geometryNormal.xy, shadingNormal.xy);
 			payload_opaque.base_color = vec3(1.);
+
+			// world space normals stored without encoding now
+			out_normals = vec4(payload_opaque.normal, 0);
+			depth = length(camera_position - payload_opaque.hit_pos_t.xyz) * depth_multiplier;
 
 			//out_material_index = float(kusochki[payload_opaque.kusok_index].tex_roughness);
 #if 0
@@ -550,6 +573,9 @@ void main() {
 		vec3 diffuse, specular;
 		computeLighting(prev_throughput, -direction, material, diffuse, specular);
 
+		// reduction of white points 
+		//specular = clamp_color(specular, specular_reflection_clamping);
+
 		if (bounce == 0) {
 			out_diffuse_gi += diffuse;
 			out_specular += specular;
@@ -574,19 +600,48 @@ void main() {
 
 		origin = payload_opaque.hit_pos_t.xyz;
 
-		if (bounce == 0)
+		if (bounce == 0) {
 			first_bounce_brdf_type = brdfType;
+			gi_direction = direction;
+		}
 	} // for all bounces
 
-	if (first_bounce_brdf_type == DIFFUSE_TYPE) {
-		out_diffuse_gi += out_accumulated;
-	} else {
-		out_specular += out_accumulated;
-	}
+//	// global illumination stored separately now 
+//	if (first_bounce_brdf_type == DIFFUSE_TYPE) {
+//		out_diffuse_gi += out_accumulated;
+//	} else {
+//		out_specular += out_accumulated;
+//	}
+
+	SH low_freq;
+
+	// TODO: please, reproject this coords with matrices from prevous frame.....
+	vec4 sh1_prevous = imageLoad(out_image_indirect_sh1, ivec2(gl_LaunchIDEXT.xy));
+	vec4 sh2_prevous = imageLoad(out_image_indirect_sh2, ivec2(gl_LaunchIDEXT.xy));
+
+	float prevous_depth = sh2_prevous.z;
+
+	low_freq.shY = sh1_prevous;
+	low_freq.CoCg = sh2_prevous.xy;
+
+	vec3 indirect_color = clamp_color(out_accumulated, indirectional_lights_clamping) * STORAGE_SCALE_LF;
+	//vec3 indirect_color = STORAGE_SCALE_LF * out_accumulated / color_factor;
+
+	accumulate_SH(low_freq, irradiance_to_SH(indirect_color, gi_direction), 1.0);
+
+	vec4 sh1_out = low_freq.shY;
+	vec2 sh2_out = low_freq.CoCg;
+
+	float mix_weight = prevous_frames_temporal_mix * fade_by_depth(depth, prevous_depth, gi_depth_fade_distance);
+
+	sh1_out = mix(sh1_out, sh1_prevous, mix_weight);
+	sh2_out = mix(sh2_out, sh2_prevous.xy, mix_weight);
 
 	imageStore(out_image_base_color, ivec2(gl_LaunchIDEXT.xy), vec4(out_base_color, 0.));
 	imageStore(out_image_normals, ivec2(gl_LaunchIDEXT.xy), out_normals);
 	imageStore(out_image_diffuse_gi, ivec2(gl_LaunchIDEXT.xy), vec4(out_diffuse_gi / color_factor, out_material_index));
 	imageStore(out_image_specular, ivec2(gl_LaunchIDEXT.xy), vec4(out_specular / color_factor, 0.));
 	imageStore(out_image_additive, ivec2(gl_LaunchIDEXT.xy), vec4(out_additive / color_factor, 0.));
+	imageStore(out_image_indirect_sh1, ivec2(gl_LaunchIDEXT.xy), sh1_out);
+	imageStore(out_image_indirect_sh2, ivec2(gl_LaunchIDEXT.xy), vec4(sh2_out, depth, 0));
 }

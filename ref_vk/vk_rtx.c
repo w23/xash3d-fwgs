@@ -82,6 +82,9 @@ enum {
 
 	RayDescBinding_SkyboxCube = 13,
 
+	RayDescBinding_Dest_SH1 = 14,
+	RayDescBinding_Dest_SH2 = 15,
+
 	RayDescBinding_COUNT
 };
 
@@ -92,6 +95,10 @@ typedef struct {
 	xvk_image_t specular;
 	xvk_image_t additive;
 	xvk_image_t normals;
+	xvk_image_t indirect_sh1;
+	xvk_image_t indirect_sh2;
+	xvk_image_t sh1_blured;
+	xvk_image_t sh2_blured;
 } xvk_ray_frame_images_t;
 
 static struct {
@@ -704,6 +711,18 @@ static void updateDescriptors( VkCommandBuffer cmdbuf, const vk_ray_frame_render
 		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
 	};
 
+	g_rtx.desc_values[RayDescBinding_Dest_SH1].image = (VkDescriptorImageInfo){
+		.sampler = VK_NULL_HANDLE,
+		.imageView = frame_dst->indirect_sh1.view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+
+	g_rtx.desc_values[RayDescBinding_Dest_SH2].image = (VkDescriptorImageInfo){
+		.sampler = VK_NULL_HANDLE,
+		.imageView = frame_dst->indirect_sh2.view,
+		.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+	};
+
 	VK_DescriptorsWrite(&g_rtx.descriptors);
 }
 
@@ -714,6 +733,10 @@ static qboolean rayTrace( VkCommandBuffer cmdbuf, const xvk_ray_frame_images_t *
 	X(specular) \
 	X(additive) \
 	X(normals) \
+	X(indirect_sh1) \
+	X(indirect_sh2) \
+	X(sh1_blured) \
+	X(sh2_blured) \
 
 	// 4. Barrier for TLAS build and dest image layout transfer
 	{
@@ -1066,7 +1089,11 @@ LIST_GBUFFER_IMAGES(GBUFFER_READ_BARRIER)
 					.specular_view = current_frame->specular.view,
 					.additive_view = current_frame->additive.view,
 					.normals_view = current_frame->normals.view,
+					.indirect_sh1_view = current_frame->indirect_sh1.view,
+					.indirect_sh2_view = current_frame->indirect_sh2.view,
 				},
+				.sh1_blured_view = current_frame->sh1_blured.view,
+				.sh2_blured_view = current_frame->sh2_blured.view,
 				.dst_view = current_frame->denoised.view,
 			};
 
@@ -1132,6 +1159,20 @@ static void createLayouts( void ) {
 	};
 	g_rtx.desc_bindings[RayDescBinding_Dest_ImageNormals] = (VkDescriptorSetLayoutBinding){
 		.binding = RayDescBinding_Dest_ImageNormals,
+		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+	};
+
+	g_rtx.desc_bindings[RayDescBinding_Dest_SH1] = (VkDescriptorSetLayoutBinding){
+		.binding = RayDescBinding_Dest_SH1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+		.descriptorCount = 1,
+		.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+	};
+
+	g_rtx.desc_bindings[RayDescBinding_Dest_SH2] = (VkDescriptorSetLayoutBinding){
+		.binding = RayDescBinding_Dest_SH2,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 		.descriptorCount = 1,
 		.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
@@ -1324,6 +1365,10 @@ qboolean VK_RayInit( void )
 		CREATE_GBUFFER_IMAGE(additive, VK_FORMAT_R16G16B16A16_SFLOAT, 0);
 		// TODO make sure this format and usage is suppported
 		CREATE_GBUFFER_IMAGE(normals, VK_FORMAT_R16G16B16A16_SNORM, 0);
+		CREATE_GBUFFER_IMAGE(indirect_sh1, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		CREATE_GBUFFER_IMAGE(indirect_sh2, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		CREATE_GBUFFER_IMAGE(sh1_blured, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		CREATE_GBUFFER_IMAGE(sh2_blured, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 #undef CREATE_GBUFFER_IMAGE
 	}
 
@@ -1344,6 +1389,10 @@ void VK_RayShutdown( void ) {
 		XVK_ImageDestroy(&g_rtx.frames[i].specular);
 		XVK_ImageDestroy(&g_rtx.frames[i].additive);
 		XVK_ImageDestroy(&g_rtx.frames[i].normals);
+		XVK_ImageDestroy(&g_rtx.frames[i].indirect_sh1);
+		XVK_ImageDestroy(&g_rtx.frames[i].indirect_sh2);
+		XVK_ImageDestroy(&g_rtx.frames[i].sh1_blured);
+		XVK_ImageDestroy(&g_rtx.frames[i].sh2_blured);
 	}
 
 	vkDestroyPipeline(vk_core.device, g_rtx.pipeline, NULL);
