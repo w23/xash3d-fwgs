@@ -523,6 +523,10 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 	if (cluster->num_point_lights == MAX_VISIBLE_POINT_LIGHTS)
 		return false;
 
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("    adding point light %d to cell %d (count=%d)\n", light_index, cell_index, cluster->num_point_lights+1);
+	}
+
 	cluster->point_lights[cluster->num_point_lights++] = light_index;
 	return true;
 }
@@ -703,6 +707,15 @@ static void addLightIndexToleaf( const mleaf_t *leaf, int index ) {
 	const int max_x = ceilf(leaf->minmaxs[3] / LIGHT_GRID_CELL_SIZE);
 	const int max_y = ceilf(leaf->minmaxs[4] / LIGHT_GRID_CELL_SIZE);
 	const int max_z = ceilf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE);
+
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+			leaf->cluster,
+			min_x, min_y, min_z,
+			max_x, max_y, max_z,
+			(max_x - min_x) * (max_y - min_y) * (max_z - min_z)
+		);
+	}
 
 	for (int x = min_x; x < max_x; ++x)
 	for (int y = min_y; y < max_y; ++y)
@@ -968,15 +981,6 @@ static void addDlight( const dlight_t *dlight ) {
 	int index;
 	float scaler;
 
-	if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
-		return;
-
-	// Draw flashlight
-	entPlayer = gEngine.GetLocalPlayer();
-	if( FBitSet( entPlayer->curstate.effects, EF_DIMLIGHT )) {
-		VK_AddFlashlight(entPlayer);
-	}
-
 	max_comp = Q_max(dlight->color.r, Q_max(dlight->color.g, dlight->color.b));
 	if (max_comp < k_threshold || dlight->radius <= k_light_radius)
 		return;
@@ -1136,6 +1140,8 @@ void VK_LightsFrameFinalize( void ) {
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
 		const dlight_t *dlight = gEngine.GetDynamicLight(i);
+		if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
+			continue;
 		addDlight(dlight);
 	}
 	APROF_SCOPE_END(dlights);
