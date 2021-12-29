@@ -52,6 +52,9 @@ void main() {
 			const vec4 sh1_current = imageLoad(src_indirect_sh1, p);
 			const vec4 sh2_current = imageLoad(src_indirect_sh2, p);
 
+			// specular is not pre-blured
+			if (sh2_current.w > 0.5) continue;
+
 			const float depth_current = sh2_current.z;
 			const float scale = fade_by_depth(depth_current, depth, gi_depth_fade_distance);
 
