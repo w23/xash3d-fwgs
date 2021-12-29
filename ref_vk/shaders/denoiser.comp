@@ -181,7 +181,7 @@ void main() {
 		colour *= 8.;
 	}
 #else
-	colour *= .1;
+	colour *= 0.2;
 #endif
 
 	//colour = aces_tonemap(colour);
