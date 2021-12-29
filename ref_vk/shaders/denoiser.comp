@@ -146,7 +146,7 @@ void main() {
 			colour += scale * imageLoad(src_diffuse_gi, p).rgb;
 			total_scale += scale;
 
-			const int SPECULAR_KERNEL_SIZE = 4;
+			const int SPECULAR_KERNEL_SIZE = 2;
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(SPECULAR_KERNEL_SIZE)))) {
 				const float spigma = SPECULAR_KERNEL_SIZE / 2.;
 				const float specuale = normpdf(x, spigma) * normpdf(y, spigma);
