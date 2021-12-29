@@ -370,7 +370,8 @@ void main() {
 		vec3 diffuse, specular;
 		computeLighting(prev_throughput, -direction, material, diffuse, specular);
 
-		if (bounce == 0) {
+		// gi started from 1-th bounce on diffuse or from 2-th on specular
+		if (bounce == 0 || (first_bounce_brdf_type != DIFFUSE_TYPE && bounce == 1)) {
 			out_diffuse_gi += diffuse;
 			out_specular += specular;
 		} else {
