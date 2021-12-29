@@ -17,8 +17,12 @@ typedef struct {
 		VkImageView specular_view;
 		VkImageView additive_view;
 		VkImageView normals_view;
+		VkImageView indirect_sh1_view;
+		VkImageView indirect_sh2_view;
 	} src;
 
+	VkImageView sh1_blured_view;
+	VkImageView sh2_blured_view;
 	VkImageView dst_view;
 } xvk_denoiser_args_t;
 
