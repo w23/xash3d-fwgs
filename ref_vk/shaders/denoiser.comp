@@ -87,7 +87,9 @@ void main() {
 	//readNormals(pix, geometry_normal, shading_normal);
 
 	vec3 worldspace_normal = imageLoad(src_normals, pix).xyz;
-	float depth = imageLoad(src_sh2_blured, pix).z;
+	const vec4 source_sh2 = imageLoad(src_sh2_blured, pix);
+	const float depth = source_sh2.z;
+	const float is_specular = source_sh2.w;
 
 	//imageStore(dest, pix, vec4(.5 + geometry_normal * .5, 0.)); return;
 
@@ -117,16 +119,19 @@ void main() {
 
 			const vec4 sh1 = imageLoad(src_sh1_blured, p);
 			const vec4 sh2_and_depth = imageLoad(src_sh2_blured, p);
+			const float current_is_specular = sh2_and_depth.w;
 			const float current_depth = sh2_and_depth.z;
 
 			const float sigma = KERNEL_SIZE / 2.;
 			const float depth_gradient = fade_by_depth(current_depth, depth, gi_depth_fade_distance);
 			const float scale = normpdf(x, sigma) * normpdf(y, sigma) * depth_gradient;
 
-			low_freq.shY += sh1 * scale;
-			low_freq.CoCg += sh2_and_depth.xy * scale;
-
-			gi_total_scale += scale;
+			// specular and diffuse gi blured separately
+			if (abs(current_is_specular - is_specular) < 0.1) {
+				low_freq.shY += sh1 * scale;
+				low_freq.CoCg += sh2_and_depth.xy * scale;
+				gi_total_scale += scale;
+			}
 
 			const vec4 c = imageLoad(src_diffuse_gi, p);
 			if (c.a != material_index)

@@ -36,7 +36,9 @@ void main() {
 		return;
 	}
 
-	float depth = imageLoad(src_indirect_sh2, pix).z;
+	const vec4 source_sh2 = imageLoad(src_indirect_sh2, pix);
+	const float depth = source_sh2.z;
+	const float is_specular = source_sh2.w;
 
 	vec4 sh1 = vec4(0.);
 	vec4 sh2 = vec4(0.);
@@ -52,8 +54,8 @@ void main() {
 			const vec4 sh1_current = imageLoad(src_indirect_sh1, p);
 			const vec4 sh2_current = imageLoad(src_indirect_sh2, p);
 
-			// specular is not pre-blured
-			if (sh2_current.w > 0.5) continue;
+			// specular and diffuse gi blured separately
+			if (abs(sh2_current.w - is_specular) > 0.1) continue;
 
 			const float depth_current = sh2_current.z;
 			const float scale = fade_by_depth(depth_current, depth, gi_depth_fade_distance);
