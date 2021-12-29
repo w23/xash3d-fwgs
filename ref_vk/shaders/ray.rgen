@@ -21,10 +21,10 @@ const float depth_multiplier = 0.01;
 // Choose just single option to increacing perfomance:
 
 // Balance perfomance and visual
-//#define LIGHTS_QUARTER_REDUCION 1
+#define LIGHTS_QUARTER_REDUCION 1
 
 // More perfomance, but not so beautiful
-#define LIGHTS_NINEFOLD_REDUCION 1
+//#define LIGHTS_NINEFOLD_REDUCION 1
 
 
 // denoiser parameters - temporal blur now is off
