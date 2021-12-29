@@ -852,8 +852,8 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 	// TODO: better tune it
 	const float _cone = 1.0;
 	const float _cone2 = 32.5;
-	const vec3_t light_color = {255, 255, 230};
-	float light_intensity = 200;
+	const vec3_t light_color = {255, 255, 210};
+	float light_intensity = 225;
 
 	float thirdperson_offset = 25;
 	vec3_t forward, view_ofs;
