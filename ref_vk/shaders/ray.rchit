@@ -200,5 +200,5 @@ void main() {
 
 	T = baryMix(vertices[vi1].tangent, vertices[vi2].tangent, vertices[vi3].tangent, bary);
 	T = normalize(normalTransformMat * T);
-	payload.debug = vec4(T, 0.);
+	payload.debug = vec4(bary, 0., 0.);
 }
