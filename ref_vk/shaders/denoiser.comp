@@ -16,10 +16,10 @@ layout(set = 0, binding = 6, rgba16f) uniform readonly image2D src_sh1_blured;
 layout(set = 0, binding = 7, rgba16f) uniform readonly image2D src_sh2_blured;
 
 // depth fading of blur
-const float gi_depth_fade_distance = 3.;
+const float gi_depth_fade_distance = 2.;
 
 // global illunitation exposition
-const float gi_multiplier = 1.0;
+const float gi_multiplier = 2.0;
 
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
@@ -176,12 +176,13 @@ void main() {
 		colour *= 8.;
 	}
 #else
-	colour *= .25;
+	colour *= .1;
 #endif
 
-	colour = aces_tonemap(colour);
-	//colour = reinhard02(colour, vec3(400.));
-	//colour = reinhard02(colour, vec3(1.));
+	//colour = aces_tonemap(colour);
+	//colour = reinhard02(colour, vec3(0.255));
+	//colour = reinhard(colour, vec3(255.));
+	colour = reinhard02(colour, vec3(255.));
 
 #if 0
 	if (pix.x < res.x / 2) {

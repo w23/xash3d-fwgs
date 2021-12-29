@@ -29,7 +29,7 @@ void main() {
     // TODO mips
     const uint tex_index = kusochki[kusok_index].tex_base_color;
     const vec4 texture_color = texture(textures[nonuniformEXT(tex_index)], texture_uv);
-	const vec3 color = ((pow(texture_color.rgb * kusochki[kusok_index].color.rgb, vec3(1.8))) * 16) * texture_color.a * kusochki[kusok_index].color.a;
+	const vec3 color = ((pow(texture_color.rgb * kusochki[kusok_index].color.rgb, vec3(1.8))) * 80) * texture_color.a * kusochki[kusok_index].color.a;
 
 	const float overshoot = gl_HitTEXT - payload_additive.ray_distance;
 

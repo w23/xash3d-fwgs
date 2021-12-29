@@ -106,7 +106,8 @@ void main() {
 		// We need to remaster them into HDR. While that is not done, we just tune them with (pow(x, 2.2)*255.f) which looks okay-ish
 		// See #230
 		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 8; // dirty hack;
+		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 80; // dirty hack;
+		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 200; // dirty hack2;
 		return;
 	}
 
@@ -182,9 +183,11 @@ void main() {
 		//payload.emissive = mix((kusok.emissive), (emissive_color * emissive_color), factor); //cringe reverse tonemapping math, hack 4
 		//payload.emissive = masked_color * normalize(kusok.emissive); //mask method, hack 1
 		//payload.emissive = masked_color * (normalize(kusok.emissive) * cringe_HDR; //mask method, hack 1
-		payload.emissive = (((masked_color * (kusok.emissive / 255)) * 255) * (clamp((emissive_color * emissive_color), 0.075, 10000.0))); //NightFox x MaxG3D hack
-		//payload.emissive = clamp(kusok.emissive, 0.0, 25.0) * emissive_color; //NightFox hack
-		//payload.emissive = kusok.emissive * emissive_color;
+		//payload.emissive = (((masked_color * (kusok.emissive / 255)) * 255) * (clamp((emissive_color * emissive_color), 0.0, 10000.0))); //NightFox x MaxG3D hack
+		//payload.emissive = ((masked_color * (kusok.emissive / 255)) * 255) * (emissive_color * emissive_color); //NightFox x MaxG3D hack
+		//payload.emissive = clamp(kusok.emissive, 0.0, 255.0) * emissive_color; //NightFox hack
+		//payload.emissive = (((normalize(kusok.emissive) * emissive_color) * 255) * sqrt(emissive_color * emissive_color)) * 5;
+		payload.emissive = (((normalize(kusok.emissive) * emissive_color) * 255) * sqrt(emissive_color * emissive_color)) * 1;
 /*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
