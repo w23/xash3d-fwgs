@@ -188,6 +188,7 @@ void main() {
 		//payload.emissive = clamp(kusok.emissive, 0.0, 255.0) * emissive_color; //NightFox hack
 		//payload.emissive = (((normalize(kusok.emissive) * emissive_color) * 255) * sqrt(emissive_color * emissive_color)) * 5;
 		payload.emissive = (((normalize(kusok.emissive) * emissive_color) * 255) * sqrt(emissive_color * emissive_color)) * 0.5;
+		//payload.emissive = kusok.emissive * emissive_color;
 /*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
