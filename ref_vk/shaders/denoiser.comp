@@ -19,7 +19,7 @@ layout(set = 0, binding = 7, rgba16f) uniform readonly image2D src_sh2_blured;
 const float gi_depth_fade_distance = 3.;
 
 // global illunitation exposition
-const float gi_multiplier = 4.0;
+const float gi_multiplier = 1.0;
 
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV

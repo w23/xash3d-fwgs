@@ -184,6 +184,7 @@ void main() {
 		//payload.emissive = masked_color * (normalize(kusok.emissive) * cringe_HDR; //mask method, hack 1
 		payload.emissive = (((masked_color * (kusok.emissive / 255)) * 255) * (clamp((emissive_color * emissive_color), 0.075, 10000.0))); //NightFox x MaxG3D hack
 		//payload.emissive = clamp(kusok.emissive, 0.0, 25.0) * emissive_color; //NightFox hack
+		//payload.emissive = kusok.emissive * emissive_color;
 /*
 		//WHEN HDR TEXTURE ARE READY
 		//const vec3 emissive_color = emissive_color; //(HDR)
