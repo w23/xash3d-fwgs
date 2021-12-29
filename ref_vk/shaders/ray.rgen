@@ -11,6 +11,9 @@
 
 //#define DEBUG_LIGHT_CULLING
 
+// enable this to debug mirrors, now they are works bad 
+//#define NOT_DENOISE_SPECULAR
+
 // FIXME what should these be?
 const float shadow_offset_fudge = .1;
 const float pdf_culling_threshold = 1e6;//100.;
@@ -399,6 +402,13 @@ void main() {
 	//} else {
 	//	out_specular += out_accumulated;
 	//}
+
+#ifdef NOT_DENOISE_SPECULAR
+	if (first_bounce_brdf_type != DIFFUSE_TYPE) {
+		out_specular += out_accumulated;
+		out_accumulated = vec3(0., 0., 0.);
+	}
+#endif
 
 	// store indirectional light in spherical harmonics
 	if (out_accumulated != vec3(0., 0., 0.)) {
