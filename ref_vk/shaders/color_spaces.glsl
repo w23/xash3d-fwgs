@@ -58,16 +58,18 @@ vec4 sRGB_OECF(const vec4 sRGB)
 //------------------------------------------------------------------------------
 
 float OECF_sRGB(const float linear) {
-    // IEC 61966-2-1:1999
-    float sRGBLow  = linear * 12.92;
-    float sRGBHigh = (pow(linear, 1.0 / 2.4) * 1.055) - 0.055;
-    return linear <= 0.0031308 ? sRGBLow : sRGBHigh;
+	// IEC 61966-2-1:1999
+	float sRGBLow  = linear * 12.92;
+	float sRGBHigh = (pow(linear, 1.0 / 2.4) * 1.055) - 0.055;
+	return linear <= 0.0031308 ? sRGBLow : sRGBHigh;
 }
 
 vec3 OECF_sRGB(const vec3 linear) {
-    return vec3(OECF_sRGB(linear.r), OECF_sRGB(linear.g), OECF_sRGB(linear.b));
+	return vec3(OECF_sRGB(linear.r), OECF_sRGB(linear.g), OECF_sRGB(linear.b));
 }
-
+vec4 OECF_sRGB(const vec4 linear) {
+	return vec4(OECF_sRGB(linear.r), OECF_sRGB(linear.g), OECF_sRGB(linear.b), linear.w);
+}
 vec3 OECF_sRGBFast(const vec3 linear) {
-    return pow(linear, vec3(1.0 / 2.2));
+	return pow(linear, vec3(1.0 / 2.2));
 }

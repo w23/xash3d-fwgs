@@ -7,6 +7,7 @@ layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform image2D dest;
 
+//layout(set = 0, binding = 1, rgba8) uniform readonly image2D src_base_color;
 layout(set = 0, binding = 1, rgba16f) uniform readonly image2D src_base_color;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D src_diffuse_gi;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D src_specular;
@@ -66,8 +67,7 @@ void main() {
 	/* } */
 
 
-	const vec4 base_color = sRGB_OECF(imageLoad(src_base_color, pix));
-	//const vec4 base_color = imageLoad(src_base_color, pix);
+	const vec4 base_color = imageLoad(src_base_color, pix);
 	const float material_index = imageLoad(src_diffuse_gi, pix).a;
 
 	//imageStore(dest, pix, vec4(aces_tonemap(base_color.rgb), 0.)); return;
@@ -163,6 +163,7 @@ void main() {
 	}
 #endif
 	//colour = base_color.rgb;
+	//colour = OECF_sRGB(colour);
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));
 }

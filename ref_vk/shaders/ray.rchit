@@ -139,7 +139,9 @@ void main() {
 	computeAnisotropicEllipseAxes(hit_pos, /* TODO geom_?*/ normal, gl_WorldRayDirectionEXT, ray_cone_width, pos, uvs, texture_uv_stationary, uv_lods.xy, uv_lods.zw);
 
 	const uint tex_index = tex_base_color;
-	const vec4 tex_color = sampleTexture(tex_index, texture_uv, uv_lods);
+	//const vec4 tex_color = sampleTexture(tex_index, texture_uv, uv_lods);
+	//const vec4 tex_color = OECF_sRGB(sampleTexture(tex_index, texture_uv, uv_lods));
+	const vec4 tex_color = sRGB_OECF(sampleTexture(tex_index, texture_uv, uv_lods));
 	//const vec3 base_color = pow(tex_color.rgb, vec3(2.));
 	const vec3 base_color = ((push_constants.flags & PUSH_FLAG_LIGHTMAP_ONLY) != 0) ? vec3(1.) : tex_color.rgb;// pow(tex_color.rgb, vec3(2.));
 	/* tex_color = pow(tex_color, vec4(2.)); */
@@ -172,9 +174,9 @@ void main() {
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
 		//payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
 		//payload.emissive = normalize(kusok.emissive) * pow(base_color, vec3(2.2));
-		//payload.emissive = (kusok.emissive / 25) * sRGB_OECF(base_color);
-		payload.emissive = clamp(kusok.emissive, 0, 1) * sRGB_OECF(base_color);
-		//payload.emissive = sRGB_OECF(base_color);
+		//payload.emissive = (kusok.emissive / 25) * base_color;
+		payload.emissive = clamp(kusok.emissive, 0, 1) * base_color;
+		//payload.emissive = base_color;
 	}
 
 	payload.kusok_index = kusok_index;
