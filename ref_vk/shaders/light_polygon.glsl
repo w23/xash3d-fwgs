@@ -154,7 +154,9 @@ void sampleEmissiveSurfaces(vec3 throughput, vec3 view_dir, MaterialProperties m
 	//float sampling_light_scale = 1;
 	//float sampling_light_scale = 0.1;
 	//float sampling_light_scale = 0.25;
-	float sampling_light_scale = 0.05;
+	//float sampling_light_scale = 0.025;
+	//float sampling_light_scale = 0.03;
+	float sampling_light_scale = 0.04;
 #if 0
 	const uint max_lights_per_frame = 4;
 	uint begin_i = 0, end_i = num_emissive_kusochki;
