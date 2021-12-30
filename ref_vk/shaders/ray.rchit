@@ -176,7 +176,7 @@ void main() {
 		//payload.emissive = normalize(kusok.emissive) * pow(base_color, vec3(2.2));
 		//payload.emissive = (kusok.emissive / 10) * sRGB_OECF(base_color);
 		//payload.emissive = clamp(kusok.emissive, 0, 1) * base_color;
-		payload.emissive = clamp(kusok.emissive / 10, 0, 1) * sRGB_OECF(base_color);
+		payload.emissive = clamp(kusok.emissive / 50, 0, 1) * sRGB_OECF(base_color);
 		//payload.emissive = base_color;
 	}
 
