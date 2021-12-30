@@ -1,6 +1,7 @@
 #version 460
 
 #include "noise.glsl"
+#include "spherical_harmonics.glsl"
 
 layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
@@ -11,6 +12,15 @@ layout(set = 0, binding = 2, rgba16f) uniform readonly image2D src_diffuse_gi;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D src_specular;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D src_additive;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image2D src_normals;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D src_sh1_blured;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D src_sh2_blured;
+
+// depth fading of blur
+const float gi_depth_fade_distance = 3.;
+
+// global illunitation exposition
+const float gi_multiplier = 4.0;
+
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
 vec3 aces_tonemap(vec3 color){
@@ -56,16 +66,30 @@ void main() {
 		return;
 	}
 
+	/* if (pix.y < res.y / 3) { */
+	/* 	imageStore(dest, pix, vec4(pow(float(pix.x) / res.x, 2.2))); return; */
+	/* } else if (pix.y < res.y * 2 / 3) { */
+	/* 	imageStore(dest, pix, vec4(float(pix.x) / res.x)); return; */
+	/* } else { */
+	/* 	imageStore(dest, pix, vec4(sqrt(float(pix.x) / res.x))); return; */
+	/* } */
+
 	const vec4 base_color = imageLoad(src_base_color, pix);
 	const float material_index = imageLoad(src_diffuse_gi, pix).a;
 
 	//imageStore(dest, pix, vec4(aces_tonemap(base_color.rgb), 0.)); return;
 	//imageStore(dest, pix, vec4((base_color.rgb), 0.)); return;
+	//imageStore(dest, pix, vec4((imageLoad(src_diffuse_gi, pix).rgb), 0.)); return;
 	//imageStore(dest, pix, vec4(aces_tonemap(imageLoad(src_diffuse_gi, pix).rgb), 0.)); return;
 	//imageStore(dest, pix, vec4(aces_tonemap(imageLoad(src_specular, pix).rgb), 0.)); return;
 
-	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
+	//vec3 geometry_normal, shading_normal;
+	//readNormals(pix, geometry_normal, shading_normal);
+
+	vec3 worldspace_normal = imageLoad(src_normals, pix).xyz;
+	const vec4 source_sh2 = imageLoad(src_sh2_blured, pix);
+	const float depth = source_sh2.z;
+	const float is_specular = source_sh2.w;
 
 	//imageStore(dest, pix, vec4(.5 + geometry_normal * .5, 0.)); return;
 
@@ -73,11 +97,17 @@ void main() {
 	/* imageStore(dest, pix, vec4(rand3_f01(uvec3(mi,mi+1,mi+2)), 0.)); */
 	/* return; */
 
+	SH low_freq;
+	low_freq.shY = vec4(0.);
+	low_freq.CoCg = vec2(0.);
+
 	const int KERNEL_SIZE = 8;
 	float total_scale = 0.;
 	float specular_total_scale = 0.;
+	float gi_total_scale = 0.;
 	vec3 colour = vec3(0.);
 	vec3 speculour = vec3(0.);
+	vec3 colour_gi = vec3(0.);
 	for (int x = -KERNEL_SIZE; x <= KERNEL_SIZE; ++x)
 		for (int y = -KERNEL_SIZE; y <= KERNEL_SIZE; ++y) {
 			const ivec2 p = pix + ivec2(x, y);
@@ -85,21 +115,34 @@ void main() {
 				continue;
 			}
 
+			const vec3 current_normal = imageLoad(src_normals, p).xyz;
+
+			const vec4 sh1 = imageLoad(src_sh1_blured, p);
+			const vec4 sh2_and_depth = imageLoad(src_sh2_blured, p);
+			const float current_is_specular = sh2_and_depth.w;
+			const float current_depth = sh2_and_depth.z;
+
+			const float sigma = KERNEL_SIZE / 2.;
+			const float depth_gradient = fade_by_depth(current_depth, depth, gi_depth_fade_distance);
+			const float scale = normpdf(x, sigma) * normpdf(y, sigma) * depth_gradient;
+
+			// specular and diffuse gi blured separately
+			if (abs(current_is_specular - is_specular) < 0.1) {
+				low_freq.shY += sh1 * scale;
+				low_freq.CoCg += sh2_and_depth.xy * scale;
+				gi_total_scale += scale;
+			}
+
 			const vec4 c = imageLoad(src_diffuse_gi, p);
 			if (c.a != material_index)
 				continue;
 
-			vec3 sample_geometry_normal, sample_shading_normal;
-			readNormals(p, sample_geometry_normal, sample_shading_normal);
-
-			// FIXME also filter by depth, (kusok index?), etc
-			if ( dot(sample_geometry_normal, geometry_normal) < .99 )
+			// FIXME also filter by depth
+			if ( dot(worldspace_normal, current_normal) < .99 )
 				continue;
 
 			// TODO bilaterally filter shading normals
 
-			const float sigma = KERNEL_SIZE / 2.;
-			const float scale = normpdf(x, sigma) * normpdf(y, sigma);
 			colour += scale * imageLoad(src_diffuse_gi, p).rgb;
 			total_scale += scale;
 
@@ -123,15 +166,36 @@ void main() {
 		colour += speculour;
 	}
 
+	if (gi_total_scale > 0.) {
+		colour_gi = project_SH_irradiance(low_freq, worldspace_normal) / (gi_total_scale * STORAGE_SCALE_LF);
+		colour += colour_gi * base_color.rgb * gi_multiplier;
+	}
+
 	//colour += imageLoad(src_specular, pix).rgb;
 	colour += imageLoad(src_additive, pix).rgb;
 
 	// HACK: exposure
 	// TODO: should be dynamic based on previous frames brightness
-	colour *= 4.;
+#if 0
+	if (pix.x >= res.x / 2) {
+		colour *= 8.;
+	}
+#else
+	colour *= .25;
+#endif
 
-	//colour = aces_tonemap(colour);
-	colour = reinhard02(colour, vec3(400.));
+	colour = aces_tonemap(colour);
+	//colour = reinhard02(colour, vec3(400.));
+	//colour = reinhard02(colour, vec3(1.));
+
+#if 0
+	if (pix.x < res.x / 2) {
+#endif
+		//colour *= .25;
+		colour = pow(colour, vec3(1. / 2.2));
+#if 0
+	}
+#endif
 
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));
