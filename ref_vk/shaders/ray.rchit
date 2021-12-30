@@ -174,7 +174,7 @@ void main() {
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
 		//payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
 		//payload.emissive = normalize(kusok.emissive) * pow(base_color, vec3(2.2));
-		payload.emissive = (kusok.emissive / 10) * sRGB_OECF(base_color);
+		//payload.emissive = (kusok.emissive / 10) * sRGB_OECF(base_color);
 		//payload.emissive = clamp(kusok.emissive, 0, 1) * base_color;
 		payload.emissive = clamp(kusok.emissive / 10, 0, 1) * sRGB_OECF(base_color);
 		//payload.emissive = base_color;
