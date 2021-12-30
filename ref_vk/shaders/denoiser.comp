@@ -85,7 +85,7 @@ void main() {
 	/* imageStore(dest, pix, vec4(rand3_f01(uvec3(mi,mi+1,mi+2)), 0.)); */
 	/* return; */
 
-	const int KERNEL_SIZE = 8;
+	const int KERNEL_SIZE = 1;
 	float total_scale = 0.;
 	float specular_total_scale = 0.;
 	vec3 colour = vec3(0.);
@@ -126,13 +126,16 @@ void main() {
 
 	if (total_scale > 0.) {
 		colour /= total_scale;
+		//colour *= OECF_sRGB(base_color.rgb);
+		//colour *= sRGB_OECF(base_color.rgb);
 		colour *= base_color.rgb;
+		//colour += base_color.rgb / 10;
 	}
 
 	if (specular_total_scale > 0.) {
 		speculour /= specular_total_scale;
 		//speculour *= base_color.rgb;
-		colour += speculour;
+		//colour += speculour;
 	}
 
 	//colour += imageLoad(src_specular, pix).rgb;
@@ -151,7 +154,7 @@ void main() {
 
 	//colour = aces_tonemap(colour);
 	//colour = reinhard02(colour, vec3(100.));
-	//colour = reinhard(colour);
+	colour = reinhard(colour);
 
 #if 0
 	if (pix.x < res.x / 2) {
@@ -163,6 +166,7 @@ void main() {
 	}
 #endif
 	//colour = base_color.rgb;
+	//colour = reinhard(colour);
 	//colour = OECF_sRGB(colour);
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));

@@ -28,7 +28,7 @@ layout (constant_id = 7) const uint SBT_RECORD_SIZE = 64;
 //const uint LIGHT_CLUSTER_DLIGHTS_DATA_OFFSET = 2;
 //const uint LIGHT_CLUSTER_EMISSIVE_SURFACES_DATA_OFFSET = 3 + MAX_VISIBLE_DLIGHTS;
 
-layout(set = 0, binding = 0, rgba8) uniform image2D out_image_base_color;
+layout(set = 0, binding = 0, rgba16f) uniform image2D out_image_base_color;
 layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 9, rgba16f) uniform image2D out_image_diffuse_gi;
 layout(set = 0, binding = 10, rgba16f) uniform image2D out_image_specular;

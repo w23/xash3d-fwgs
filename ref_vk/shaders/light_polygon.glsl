@@ -151,6 +151,9 @@ void sampleEmissiveSurfaces(vec3 throughput, vec3 view_dir, MaterialProperties m
 	const SampleContext ctx = buildSampleContext(payload_opaque.hit_pos_t.xyz, payload_opaque.normal, view_dir);
 
 	const uint num_emissive_kusochki = uint(light_grid.clusters[cluster_index].num_emissive_surfaces);
+	//float sampling_light_scale = 1;
+	//float sampling_light_scale = 0.1;
+	//float sampling_light_scale = 0.25;
 	float sampling_light_scale = 0.05;
 #if 0
 	const uint max_lights_per_frame = 4;
