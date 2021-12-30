@@ -113,7 +113,7 @@ void sampleSurfaceTriangle(
 	}
 #endif
 
-	color /= pdf;
+	color /= pdf * 2;
 
 	if (dot(color,color) < color_culling_threshold)
 #ifdef DEBUG_LIGHT_CULLING
