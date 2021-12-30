@@ -154,7 +154,7 @@ void main() {
 
 	//colour = aces_tonemap(colour);
 	//colour = reinhard02(colour, vec3(100.));
-	colour = reinhard(colour);
+	//colour = reinhard(colour);
 
 #if 0
 	if (pix.x < res.x / 2) {
