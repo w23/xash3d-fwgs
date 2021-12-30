@@ -135,7 +135,7 @@ void main() {
 	if (specular_total_scale > 0.) {
 		speculour /= specular_total_scale;
 		//speculour *= base_color.rgb;
-		//colour += speculour;
+		colour += speculour;
 	}
 
 	//colour += imageLoad(src_specular, pix).rgb;

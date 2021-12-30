@@ -343,7 +343,7 @@ void main() {
 
 		if (bounce == 0) {
 			out_diffuse_gi += diffuse;
-			out_specular += specular;
+			//out_specular += specular;
 		} else {
 			out_accumulated += payload_opaque.base_color * (diffuse + specular);
 			out_accumulated += prev_throughput * additive;
