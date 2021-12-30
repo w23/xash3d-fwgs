@@ -186,13 +186,13 @@ void main() {
 
 	//colour = aces_tonemap(colour);
 	//colour = reinhard02(colour, vec3(0.255));
-	colour = reinhard02(colour, vec3(255.));
+	colour = reinhard02(colour, vec3(12.75));
 
 #if 0
 	if (pix.x < res.x / 2) {
 #endif
 		//colour *= .25;
-		colour = pow(colour, vec3(1. / 2.2));
+		colour = pow(colour, vec3(1. / 1.9));
 #if 0
 	}
 #endif

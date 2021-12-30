@@ -853,7 +853,7 @@ void VK_AddFlashlight( cl_entity_t *ent ) {
 	const float _cone = 1.0;
 	const float _cone2 = 32.5;
 	const vec3_t light_color = {255, 255, 210};
-	float light_intensity = 225;
+	float light_intensity = 300;
 
 	float thirdperson_offset = 25;
 	vec3_t forward, view_ofs;
@@ -943,7 +943,7 @@ static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
 static void addDlight( const dlight_t *dlight ) {
 	cl_entity_t	*entPlayer;
 	
-	const float k_light_radius = 2.f;
+	const float k_light_radius = 8.f;
 	const float k_threshold = 1.f;
 
 	float max_comp;
@@ -976,7 +976,7 @@ static void processStaticPointLights( void ) {
 	g_lights.num_point_lights = 0;
 	for (int i = 0; i < g_map_entities.num_lights; ++i) {
 		const vk_light_entity_t *le = g_map_entities.lights + i;
-		const float default_radius = 2.f;
+		const float default_radius = 8.f;
 		const float hack_attenuation = 1.f;
 		const float hack_attenuation_spot = 1.f;
 		const float radius = le->radius > 0.f ? le->radius : default_radius;

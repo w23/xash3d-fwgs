@@ -223,7 +223,7 @@ void sampleEmissiveSurface(vec3 throughput, vec3 view_dir, MaterialProperties ma
 			selected_plane.w = -dot(v[0], selected_plane.xyz);
 		}
 
-#define MAX_BELOW_ONE .99999 // FIXME what's the correct way to do this
+#define MAX_BELOW_ONE .999999999 // FIXME what's the correct way to do this
 		eps1 = clamp(eps1, 0., MAX_BELOW_ONE); // Numerical stability (?)
 	}
 
