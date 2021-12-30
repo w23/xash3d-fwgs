@@ -1,6 +1,7 @@
 #version 460
 
 #include "noise.glsl"
+#include "color_spaces.glsl"
 
 layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
@@ -64,7 +65,7 @@ void main() {
 	/* 	imageStore(dest, pix, vec4(sqrt(float(pix.x) / res.x))); return; */
 	/* } */
 
-	const vec4 base_color = imageLoad(src_base_color, pix);
+	const vec4 base_color = SRGBtoLINEAR(imageLoad(src_base_color, pix));
 	const float material_index = imageLoad(src_diffuse_gi, pix).a;
 
 	//imageStore(dest, pix, vec4(aces_tonemap(base_color.rgb), 0.)); return;
@@ -142,22 +143,24 @@ void main() {
 		colour *= 8.;
 	}
 #else
-	colour *= .25;
+	//colour *= .25;
+	//colour *= .10;
 #endif
 
-	colour = aces_tonemap(colour);
-	//colour = reinhard02(colour, vec3(400.));
-	//colour = reinhard02(colour, vec3(1.));
+	//colour = aces_tonemap(colour);
+	//colour = reinhard02(colour, vec3(100.));
+	//colour = reinhard(colour);
 
 #if 0
 	if (pix.x < res.x / 2) {
 #endif
 		//colour *= .25;
-		colour = pow(colour, vec3(1. / 2.2));
+		//colour = pow(colour, vec3(1. / 2.2));
+		colour = OECF_sRGB(colour);
 #if 0
 	}
 #endif
-
+	//colour = base_color.rgb;
 	imageStore(dest, pix, vec4(colour, 0.));
 	//imageStore(dest, pix, imageLoad(src_diffuse_gi, pix));
 }

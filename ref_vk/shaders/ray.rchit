@@ -5,6 +5,8 @@
 #include "ray_kusochki.glsl"
 #include "ray_common.glsl"
 
+#include "color_spaces.glsl"
+
 layout (constant_id = 6) const uint MAX_TEXTURES = 4096;
 layout (set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout (set = 0, binding = 13) uniform samplerCube skybox;
@@ -105,7 +107,8 @@ void main() {
 		// HACK: skyboxes are LDR now. They will look really dull after tonemapping
 		// We need to remaster them into HDR. While that is not done, we just tune them with pow(x, 2.2) which looks okay-ish
 		// See #230
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
+		payload.emissive = sRGB_OECF(texture(skybox, gl_WorldRayDirectionEXT).rgb);
+		//payload.emissive = texture(skybox, gl_WorldRayDirectionEXT).rgb;
 		return;
 	}
 
@@ -168,7 +171,10 @@ void main() {
 		//const vec3 emissive_color = pow(base_color, vec3(2.2));
 		//const float max_color = max(max(emissive_color.r, emissive_color.g), emissive_color.b);
 		//payload.emissive = normalize(kusok.emissive) * emissive_color;// * mix(vec3(1.), kusok.emissive, smoothstep(.3, .6, max_color));
-		payload.emissive = kusok.emissive * base_color;
+		//payload.emissive = normalize(kusok.emissive) * pow(base_color, vec3(2.2));
+		//payload.emissive = (kusok.emissive / 25) * sRGB_OECF(base_color);
+		payload.emissive = clamp(kusok.emissive, 0, 1) * sRGB_OECF(base_color);
+		//payload.emissive = sRGB_OECF(base_color);
 	}
 
 	payload.kusok_index = kusok_index;
