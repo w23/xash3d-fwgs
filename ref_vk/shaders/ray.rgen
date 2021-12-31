@@ -150,9 +150,18 @@ void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, Mate
 			continue;
 
 		if (not_environment) {
-			if (shadowed(payload_opaque.hit_pos_t.xyz, light_dir_norm, light_dist + shadow_offset_fudge))
-				continue;
-		} else {
+            vec3 shadow_sample_offset = normalize(vec3(rand01(), rand01(), rand01()) - vec3(0.5, 0.5, 0.5)) * 8.0; // 10. is radius
+            vec3 shadow_sample_dir = light_dir_norm*light_dist + shadow_sample_offset;
+            if (shadowed(payload_opaque.hit_pos_t.xyz, normalize(shadow_sample_dir), length(shadow_sample_dir)))
+                continue;
+        } else {
+
+		// for environment light check that we've hit SURF_SKY
+            vec3 shadow_sample_offset = normalize(vec3(rand01(), rand01(), rand01()) - vec3(0.5, 0.5, 0.5)) * 10000.; // 10000. is radius
+            vec3 shadow_sample_dir = light_dir_norm*light_dist + shadow_sample_offset;
+            if (shadowedSky(payload_opaque.hit_pos_t.xyz, normalize(shadow_sample_dir), length(shadow_sample_dir)))
+                continue; 
+
 			// for environment light check that we've hit SURF_SKY
 			if (shadowedSky(payload_opaque.hit_pos_t.xyz, light_dir_norm, light_dist + shadow_offset_fudge))
 				continue;
