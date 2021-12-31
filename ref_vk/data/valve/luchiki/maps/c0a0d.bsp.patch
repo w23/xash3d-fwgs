@@ -1,0 +1,13 @@
+// section 0
+{
+"_xvk_ent_id" "13" // remove hack light
+}
+// section 1
+{
+"_xvk_ent_id" "28 31 32 30 29 26 27" // remove hack light
+}
+// correct light
+{
+"_xvk_surface_id" "629 1552" // SKKYLITE         255 110 40   700
+"_light" "255 110 40 100000"
+}
