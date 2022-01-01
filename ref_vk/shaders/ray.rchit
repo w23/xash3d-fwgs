@@ -177,6 +177,10 @@ void main() {
 		//payload.emissive = (kusok.emissive / 10) * sRGB_OECF(base_color);
 		//payload.emissive = clamp(kusok.emissive, 0, 1) * base_color;
 		payload.emissive = clamp(kusok.emissive / 50, 0, 1) * sRGB_OECF(base_color);
+		//payload.emissive = (kusok.emissive / (1.0/3.0) / 36) * sRGB_OECF(base_color);
+		//payload.emissive = (kusok.emissive / (1.0/3.0) / 40) * sRGB_OECF(base_color);
+		//payload.emissive = (kusok.emissive / 1.0/3.0 / 4.6) * sRGB_OECF(base_color);
+		payload.emissive = clamp(kusok.emissive / (1.0/3.0) / 50, 0, 1.5) * sRGB_OECF(base_color);
 		//payload.emissive = base_color;
 	}
 
