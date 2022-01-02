@@ -1,0 +1,68 @@
+// section 0
+{
+"_xvk_ent_id" "28 29 31 30 32 33 34 35 36" // remove hack light
+}
+{
+"_xvk_surface_id" "2192 2244 2243 2242 2230" // +0~FIFTIES_LGT2  185 195 255  3000
+"_light" "185 195 255 8000"
+}
+
+
+// section 1
+{
+"_xvk_ent_id" "8" // remove hack light
+}
+
+// add missing light // ~LIGHT3C         220 210 150  2500
+{
+"classname" "light"
+"origin" "-2474 2456 -1530"
+"_light" "220 210 150 250"
+}
+{
+"classname" "light"
+"origin" "-1551 2456 -1530"
+"_light" "220 210 150 250"
+}
+{
+"classname" "light"
+"origin" "-559 2456 -1530"
+"_light" "220 210 150 250"
+}
+{
+"classname" "light"
+"origin" "433 2456 -1530"
+"_light" "220 210 150 250"
+}
+{
+"classname" "light"
+"origin" "1426 2456 -1530"
+"_light" "220 210 150 250"
+}
+
+
+// section 2
+{
+"_xvk_ent_id" "1" // sun
+"_light" "250 210 110 2500" // original: 250 210 110 150 // need tune for hdr-autoexposure
+}
+
+{
+"_xvk_ent_id" "148 146 149" // remove hack light
+}
+{
+"_xvk_surface_id" "437 1112" // ~SPOTBLUE        80  190 240  2000
+"_light" "80 190 240 100000"
+}
+
+
+// section 3
+{
+"_xvk_ent_id" "124 109 117 112 119 110 118 111 120 121 150" // remove hack light
+}
+{
+"_xvk_surface_id" "4477 4475 4470 4468 4484 4482 4491 4487" // ~LIGHT3C         220 210 150  2500
+"_light" "220 210 150 40000" // color from hack entity
+}
+
+
