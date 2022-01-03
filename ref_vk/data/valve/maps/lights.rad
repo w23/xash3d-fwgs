@@ -5,9 +5,9 @@
 //+0DRKMTL_SCRN    60  80  255  10000
 //+1DRKMTL_SCRN    60  80  255  10000 // hack, because no inheritance yet
 //+2DRKMTL_SCRN    60  80  255  10000
-+0DRKMTL_SCRN    60  80  255  1000
-+1DRKMTL_SCRN    60  80  255  1000
-+2DRKMTL_SCRN    60  80  255  1000
++0DRKMTL_SCRN    60  80  255  200
++1DRKMTL_SCRN    60  80  255  200
++2DRKMTL_SCRN    60  80  255  200
 +1FLICKERMON     255 255 255  1000
 +3FLICKERMON     255 255 255  300
 +4FLICKERMON     255 255 255  1000
@@ -42,8 +42,9 @@
 +0~GYMLIGHT      255 230 150  2500
 +0~LAB_CRT8      50  50  255  100
 +1~LAB_CRT8      50  50  255  100 // hack, because no inheritance yet
-//+0~LAB1_CMP2     255 255 255  20
-+0~LAB1_CMP2     255 255 255  100
++0~LAB1_CMP2     255 255 255  20
++1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
++2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 //+0~LIGHT1        40  60  150  3000
 +0~LIGHT1        40  60  150  10000
 +0~LIGHT2A       255 250 130  2000
