@@ -1,0 +1,102 @@
+// section 0
+{
+//"_xvk_ent_id" "294" // remove hack lights entity
+}
+
+// section 1
+{
+"_xvk_ent_id" "274 295 272 276 279" // remove hack lights entity
+}
+
+// section 2
+{
+"_xvk_ent_id" "280 281" // remove hack lights entity
+}
+{ // another red light
+"_xvk_ent_id" "284" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "290"
+"origin" "202 524 -32"
+//"style" "1"
+//"style" "32"
+//"pattern" "abcdefghijklmnopqrstuvwxyzyxwvutsrqponmlkjihgfedcba"
+//"pattern" "amammamaamamama"
+"_light" "255 0 0 150" // TODO: lightstyle
+}
+{
+"_xvk_ent_id" "287"
+//"origin" "63 50 -75"
+}
+{
+"_xvk_ent_id" "285"
+//"origin" "-161 50 -76"
+}
+{
+"_xvk_ent_id" "289"
+//"origin" "-53 356 -142"
+}
+{
+"_xvk_ent_id" "288"
+"origin" "-53 285 -142"
+}
+
+// section 3
+{
+"_xvk_ent_id" "283 296 275 278 291 273 292 271" // remove hack lights entity
+}
+
+{
+"_xvk_surface_id" "4592 4593 4594 4591 4589" // remove additive "god rays" fade2
+"_xvk_texture" ""
+}
+
+// section 4
+{
+"_xvk_ent_id" "400" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "299 303 304 305" // remove hack lights entity
+}
+// TODO: animate texture
+{
+"classname" "light"// hack hack light entity
+"_xvk_radius" "2"
+"style" "10"
+"origin" "-671 -521 -65"
+"_light" "40 60 70 255"
+}
+{
+"classname" "light"// hack hack light entity
+"_xvk_radius" "2"
+"style" "10"
+"origin" "-671 -486 -65"
+"_light" "40 60 70 255"
+}
+{
+"classname" "light"// hack hack light entity
+"_xvk_radius" "2"
+"style" "10"
+"origin" "-671 -450 -65"
+"_light" "40 60 70 255"
+}
+{
+"_xvk_ent_id" "306" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "302 300" // remove hack lights entity
+}
+{
+"_xvk_surface_id" "3035 3052" // ~SPOTBLUE        7   163 245  18000
+"_light" "7 163 245 25000"
+}
+
+// section 5
+{
+"_xvk_ent_id" "377" // remove hack lights entity
+// TODO: animate texture
+}
+{
+"_xvk_ent_id" "297 301" // remove hack lights entity
+}
+
