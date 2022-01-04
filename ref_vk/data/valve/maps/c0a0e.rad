@@ -8,6 +8,4 @@ SUBWAY_LIGHTS    190 195 255  1500
 
 +0~LAB_CRT2      255 255 255  20
 
-
-//hack
-EXIT1            255 0   0    200
+EXIT1            255 0   0    1000
