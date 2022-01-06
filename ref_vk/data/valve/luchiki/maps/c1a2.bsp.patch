@@ -1,0 +1,33 @@
+// section 0
+{
+"_xvk_ent_id" "330 331 328 329" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "323 324 326 325" // remove hack lights entity
+}
+{
+"_xvk_surface_id" "723 722 903 902" // ELEV2_CIEL       255 200 100  2000
+"_light" "255 200 100 7000"
+}
+
+// section 1
+{
+"_xvk_ent_id" "502" // remove hack lights entity
+}
+{ // TODO: better design light
+"_xvk_ent_id" "378"
+"_cone" "1"
+"_cone2" "300"
+//"style" "10"
+}
+{ // FIXME: remove and recreate by points light with lightstyle (when it will work)
+"_xvk_ent_id" "276"
+"_cone" "1"
+"_cone2" "300"
+//"style" "10"
+"origin" "1833 -674 -521"
+"pitch" "120"
+"_light" "255 255 255 200"
+}
+
+// section 2
