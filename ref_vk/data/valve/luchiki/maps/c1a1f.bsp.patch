@@ -64,21 +64,21 @@
 "_xvk_radius" "2"
 "style" "10"
 "origin" "-671 -521 -65"
-"_light" "40 60 70 255"
+"_light" "40 60 70 180"
 }
 {
 "classname" "light"// hack hack light entity
 "_xvk_radius" "2"
 "style" "10"
 "origin" "-671 -486 -65"
-"_light" "40 60 70 255"
+"_light" "40 60 70 180"
 }
 {
 "classname" "light"// hack hack light entity
 "_xvk_radius" "2"
 "style" "10"
 "origin" "-671 -450 -65"
-"_light" "40 60 70 255"
+"_light" "40 60 70 180"
 }
 {
 "_xvk_ent_id" "306" // remove hack lights entity
@@ -100,3 +100,18 @@
 "_xvk_ent_id" "297 301" // remove hack lights entity
 }
 
+// fix wrong textures
+{
+"_xvk_surface_id" "2362 2363 2352 2351 2386 2389 2562 2563 1002 1003 1013 1014"
+"_xvk_texture" "crete4_flr03"
+}
+//{ // FIXME: need fix texture coordinates
+//"_xvk_surface_id" "999 1010" // LITEPANEL1
+//"_xvk_texture" "+0LAB1_W6"
+//"_light" "255 255 255 4000"
+//}
+{ // TODO: need fix texture coordinates
+"_xvk_surface_id" "975 2354 974 2357" // +0~FIFTS_LGHT01
+"_xvk_texture" "+0~FIFTIES_LGT2"
+"_light" "255 255 255 3000"
+}
