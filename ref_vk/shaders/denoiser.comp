@@ -2,12 +2,13 @@
 
 #include "noise.glsl"
 #include "spherical_harmonics.glsl"
+#include "color_spaces.glsl"
 
 layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform image2D dest;
 
-layout(set = 0, binding = 1, rgba8) uniform readonly image2D src_base_color;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D src_base_color;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D src_diffuse_gi;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D src_specular;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D src_additive;
@@ -192,7 +193,8 @@ void main() {
 	if (pix.x < res.x / 2) {
 #endif
 		//colour *= .25;
-		colour = pow(colour, vec3(1. / 1.9));
+		//colour = pow(colour, vec3(1. / 1.9));
+		colour = OECF_sRGB(colour);
 #if 0
 	}
 #endif

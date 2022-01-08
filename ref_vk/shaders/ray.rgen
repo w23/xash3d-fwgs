@@ -8,6 +8,7 @@
 #include "noise.glsl"
 #include "brdf.h"
 #include "spherical_harmonics.glsl"
+#include "color_spaces.glsl"
 
 //#define DEBUG_LIGHT_CULLING
 
@@ -37,7 +38,7 @@ layout (constant_id = 7) const uint SBT_RECORD_SIZE = 64;
 //const uint LIGHT_CLUSTER_DLIGHTS_DATA_OFFSET = 2;
 //const uint LIGHT_CLUSTER_EMISSIVE_SURFACES_DATA_OFFSET = 3 + MAX_VISIBLE_DLIGHTS;
 
-layout(set = 0, binding = 0, rgba8) uniform image2D out_image_base_color;
+layout(set = 0, binding = 0, rgba16f) uniform image2D out_image_base_color;
 layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 9, rgba16f) uniform image2D out_image_diffuse_gi;
 layout(set = 0, binding = 10, rgba16f) uniform image2D out_image_specular;
@@ -150,7 +151,7 @@ void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, Mate
 			continue;
 
 		if (not_environment) {
-            vec3 shadow_sample_offset = normalize(vec3(rand01(), rand01(), rand01()) - vec3(0.5, 0.5, 0.5)) * 8.0; // 10. is radius
+            vec3 shadow_sample_offset = normalize(vec3(rand01(), rand01(), rand01()) - vec3(0.5, 0.5, 0.5)) * 2.0; // 2. is radius
             vec3 shadow_sample_dir = light_dir_norm*light_dist + shadow_sample_offset;
             if (shadowed(payload_opaque.hit_pos_t.xyz, normalize(shadow_sample_dir), length(shadow_sample_dir)))
                 continue;
@@ -213,7 +214,7 @@ vec3 traceAdditive(vec3 origin, vec3 direction, float ray_distance) {
 		sbt_offset, sbt_stride, SHADER_OFFSET_MISS_EMPTY,
 		origin, 0., direction, ray_distance + additive_soft_overshoot,
 		PAYLOAD_LOCATION_ADDITIVE);
-	return payload_additive.color * color_factor;
+	return sRGB_OECF(payload_additive.color) * color_factor;
 }
 
 void main() {
@@ -255,7 +256,7 @@ void main() {
 			sbt_offset, sbt_stride, SHADER_OFFSET_MISS_REGULAR,
 			origin, 0., direction, L,
 			PAYLOAD_LOCATION_OPAQUE);
-
+			
 #if 0
 			imageStore(out_image_base_color, ivec2(gl_LaunchIDEXT.xy), vec4(fract(payload_opaque.debug.xy), 0., 0.));
 			//imageStore(out_image_base_color, ivec2(gl_LaunchIDEXT.xy), vec4(payload_opaque.kusok_index));

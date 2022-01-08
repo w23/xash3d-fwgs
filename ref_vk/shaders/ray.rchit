@@ -4,6 +4,7 @@
 
 #include "ray_kusochki.glsl"
 #include "ray_common.glsl"
+#include "color_spaces.glsl"
 
 layout (constant_id = 6) const uint MAX_TEXTURES = 4096;
 layout (set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
@@ -107,7 +108,8 @@ void main() {
 		// See #230
 		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2));
 		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(1.5)) * exp2(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 80; // dirty hack;
-		payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 100; // dirty hack2;
+		//payload.emissive = pow(texture(skybox, gl_WorldRayDirectionEXT).rgb, vec3(2.2)) * 100; // dirty hack2;
+		payload.emissive = sRGB_OECF(texture(skybox, gl_WorldRayDirectionEXT).rgb) * 100;
 		return;
 	}
 
@@ -168,10 +170,11 @@ void main() {
 	payload.emissive = vec3(0.);
 	if (any(greaterThan(kusok.emissive, vec3(0.)))) {
 		const vec3 emissive_color = pow(base_color, vec3(2.2));
+		//const vec3 emissive_color_sRGB = OECF_sRGB(base_color);
 		//const vec3 emissive_color = base_color;
-		const vec3 masked_color = emissive_color - (1 - (clamp(kusok.emissive, 0.0, 1.0)));
+		//const vec3 masked_color = emissive_color - (1 - (clamp(kusok.emissive, 0.0, 1.0)));
 		//const vec3 factor = (1 - (emissive_color * (1. + emissive_color / (kusok.emissive)) / (1. + emissive_color))); //REVERSE REINHARD02
-		const float cringe_HDR = 16;
+		//const float cringe_HDR = 16;
 
 		//1 - most promising hack, >1 - less promising hack
 
