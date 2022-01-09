@@ -28,11 +28,11 @@
 { // FIXME: remove and recreate by points light with lightstyle (when it will work)
 "_xvk_ent_id" "276"
 "_cone" "1"
-"_cone2" "300"
+"_cone2" "200"
 //"style" "10"
 "origin" "1833 -674 -521"
 "pitch" "120"
-"_light" "255 255 255 200"
+"_light" "255 255 255 170"
 }
 
 {
