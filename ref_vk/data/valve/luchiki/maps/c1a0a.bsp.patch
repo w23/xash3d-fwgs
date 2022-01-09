@@ -10,6 +10,11 @@
 "_light" "60  220 170 100000"
 }
 
+{
+"_xvk_ent_id" "205 204" // fix z-fighting
+"origin" "-0.1 0 0"
+}
+
 
 {
 "_xvk_ent_id" "10 1 3 12 13" // remove hack lights entity
