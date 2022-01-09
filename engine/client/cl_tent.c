@@ -908,6 +908,18 @@ void GAME_EXPORT R_MuzzleFlash( const vec3_t pos, int type )
 	if( index == 0 ) pTemp->entity.angles[2] = COM_RandomLong( 0, 20 ); // rifle flash
 	else pTemp->entity.angles[2] = COM_RandomLong( 0, 359 );
 
+		dlight_t	*dl;
+
+		
+		dl = CL_AllocDlight( 0 );
+		VectorCopy( pos, dl->origin );
+		dl->radius = COM_RandomFloat (200, 800);
+		dl->color.r = 255;
+		dl->color.g = COM_RandomFloat (150, 155);
+		dl->color.b = COM_RandomFloat (28, 38);
+		dl->die = cl.time + 0.01f;
+		dl->decay = 320;
+
 	CL_TempEntAddEntity( &pTemp->entity );
 }
 
