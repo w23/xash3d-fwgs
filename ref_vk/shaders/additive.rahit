@@ -5,6 +5,8 @@
 #include "ray_common.glsl"
 #include "ray_kusochki.glsl"
 
+#include "color_spaces.glsl"
+
 layout (constant_id = 6) const uint MAX_TEXTURES = 4096;
 layout (set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 
@@ -28,8 +30,8 @@ void main() {
     const vec2 texture_uv = vertices[vi1].gl_tc * (1. - bary.x - bary.y) + vertices[vi2].gl_tc * bary.x + vertices[vi3].gl_tc * bary.y + push_constants.time * kusochki[kusok_index].uv_speed;
     // TODO mips
     const uint tex_index = kusochki[kusok_index].tex_base_color;
-    const vec4 texture_color = texture(textures[nonuniformEXT(tex_index)], texture_uv);
-	const vec3 color = texture_color.rgb * kusochki[kusok_index].color.rgb * texture_color.a * kusochki[kusok_index].color.a;
+    const vec4 texture_color = sRGB_OECF(texture(textures[nonuniformEXT(tex_index)], texture_uv));
+	const vec3 color = texture_color.rgb * sRGB_OECF(kusochki[kusok_index].color.rgb) * texture_color.a * kusochki[kusok_index].color.a;
 
 	const float overshoot = gl_HitTEXT - payload_additive.ray_distance;
 
