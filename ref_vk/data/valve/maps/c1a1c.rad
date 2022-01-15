@@ -3,7 +3,10 @@
 +0LAB1_W6B       150 160 210  4000
 
 // FIXME: need emissive mask or emissive texture
-+0MEDKIT         255 192 128  300
++0MEDKIT         255 192 128  100
+MEDKITEDGE1      255 192 128  100
++0RECHARGE       255 192 0    30
+RECHARGEEDGE1    255 192 0    30
 
 +0~LIGHT3A       180 180 230  50000
 
