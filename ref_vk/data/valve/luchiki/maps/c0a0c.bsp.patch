@@ -1,3 +1,11 @@
+// wagonchik
+{
+"_xvk_ent_id" "354 346 353 343 348 344 350 355 347 351 345 349 342 352" // remove hack light entity
+}
+{
+"_xvk_ent_id" "340 341" // remove hack light entity "EXIT"
+}
+
 // section 0
 {
 "_xvk_ent_id" "257 252 245 254 248 253 246 247 255 256" // remove hack light

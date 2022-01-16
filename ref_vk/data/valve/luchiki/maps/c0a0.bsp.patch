@@ -5,14 +5,14 @@
 //"renderamt" "0"
 //}
 
-// vagonchik
+// wagonchik
 {
 "_xvk_ent_id" "198 192 193 199 203 200 190 191 201 202 194 195 196 197" // remove hack light entity
-"_light" "223 222 248 0"
+//"_light" "223 222 248 0"
 }
 {
 "_xvk_ent_id" "188 189" // remove hack light entity "EXIT"
-"_light" "223 222 248 0"
+//"_light" "223 222 248 0"
 }
 
 
