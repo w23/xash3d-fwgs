@@ -45,12 +45,38 @@ static struct {
 	draw_list_t	*draw_list;
 } g_lists;
 
+static void reloadPatches( void ) {
+	// Must re-parse map entities to initialize initial values before patching
+	XVK_ParseMapEntities();
+	// Wadlist doesn't change, so no need to reload materials here
+	XVK_ParseMapPatches();
+
+	// Assumes that the map brush model has been loaded
+
+	// Patching does disturb light sources, reinitialize
+	VK_LightsLoadMapStaticLights();
+}
+
+static void reloadMaterials( void ) {
+	// Materials do affect patching, as new materials can be referenced in patch data
+	// So we must do the full sequencce
+	XVK_ParseMapEntities();
+	XVK_ReloadMaterials();
+	XVK_ParseMapPatches();
+
+	// Assumes that the map has been loaded
+
+	// Might have loaded new patch data, need to reload lighting data just in case
+	VK_LightsLoadMapStaticLights();
+}
+
 void VK_SceneInit( void )
 {
 	g_lists.draw_list = g_lists.draw_stack;
 	g_lists.draw_stack_pos = 0;
 	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_reload_materials", XVK_ReloadMaterials, "Reload PBR materials");
+		gEngine.Cmd_AddCommand("vk_rtx_reload_materials", reloadMaterials, "Reload PBR materials");
+		gEngine.Cmd_AddCommand("vk_rtx_reload_patches", reloadPatches, "Reload patches (does not update surface deletion)");
 	}
 }
 
@@ -137,6 +163,13 @@ void R_NewMap( void )
 	// Load light entities and patch data prior to loading map brush model
 	XVK_ParseMapEntities();
 
+	// Load PBR materials (depends on wadlist from parsed map entities)
+	XVK_ReloadMaterials();
+
+	// Parse patch data
+	// Depens on loaded materials. Must preceed loading brush models.
+	XVK_ParseMapPatches();
+
 	// Load all models at once
 	gEngine.Con_Reportf( "Num models: %d:\n", num_models );
 	for( int i = 0; i < num_models; i++ )
@@ -156,9 +189,9 @@ void R_NewMap( void )
 		}
 	}
 
-	// After we've loaded map brush model, we can proceed with loading static surface lights
+	// Load static map lights
+	// Reads surfaces from loaded brush models (must happen after all brushes are loaded)
 	VK_LightsLoadMapStaticLights();
-	XVK_ReloadMaterials(); // requires wadlist from entities, which are parsed in lights loading routine ....
 
 	if (vk_core.rtx)
 	{
@@ -562,9 +595,8 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 
 static float g_frametime = 0;
 
-void VK_SceneRender( const ref_viewpass_t *rvp )
-{
-	int current_pipeline_index = kRenderNormal;
+void VK_SceneRender( const ref_viewpass_t *rvp ) {
+	const cl_entity_t* const local_player = gEngine.GetLocalPlayer();
 
 	g_frametime = /*FIXME VK RP_NORMALPASS( )) ? */
 	gpGlobals->time - gpGlobals->oldtime
@@ -597,11 +629,23 @@ void VK_SceneRender( const ref_viewpass_t *rvp )
 		}
 	}
 
+	{
+		// Draw flashlight for local player
+		if( FBitSet( local_player->curstate.effects, EF_DIMLIGHT )) {
+			R_LightAddFlashlight(local_player, true);
+		}
+	}
+
 	// Draw opaque entities
 	for (int i = 0; i < g_lists.draw_list->num_solid_entities; ++i)
 	{
 		cl_entity_t *ent = g_lists.draw_list->solid_entities[i];
 		drawEntity(ent, kRenderNormal);
+
+		// Draw flashlight for other players
+		if( FBitSet( ent->curstate.effects, EF_DIMLIGHT ) && ent != local_player) {
+			R_LightAddFlashlight(ent, false);
+		}
 	}
 
 	// Draw opaque beams
@@ -628,6 +672,9 @@ void VK_SceneRender( const ref_viewpass_t *rvp )
 	gEngine.CL_DrawEFX( g_frametime, true );
 
 	VK_RenderDebugLabelEnd();
+
+	if (vk_core.rtx)
+		VK_LightsFrameFinalize();
 
 	if (ui_infotool->value > 0)
 		XVK_CameraDebugPrintCenterEntity();

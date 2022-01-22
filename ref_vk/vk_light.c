@@ -15,6 +15,10 @@
 #include <string.h>
 #include <ctype.h> // isalnum...
 
+#include "camera.h"
+#include "pm_defs.h"
+#include "pmtrace.h"
+
 #define PROFILER_SCOPES(X) \
 	X(finalize , "VK_LightsFrameFinalize"); \
 	X(emissive_surface, "VK_LightsAddEmissiveSurface"); \
@@ -55,16 +59,6 @@ void VK_LightsShutdown( void ) {
 	clusterBitMapShutdown();
 }
 
-
-#define MAX_LEAF_LIGHTS 256
-typedef struct {
-	int num_lights;
-	struct {
-		LightType type;
-	} light[MAX_LEAF_LIGHTS];
-} vk_light_leaf_t;
-#define MAX_SURF_ASSOCIATED_LEAFS 16
-
 typedef struct {
 	int num;
 	int leafs[];
@@ -75,8 +69,6 @@ typedef struct {
 } vk_surface_metadata_t;
 
 static struct {
-	vk_light_leaf_t leaves[MAX_MAP_LEAFS];
-
 	// Worldmodel surfaces
 	int num_surfaces;
 	vk_surface_metadata_t *surfaces;
@@ -366,7 +358,7 @@ static void clusterBitMapShutdown( void ) {
 	g_lights_tmp.clusters_bit_map = NULL;
 }
 
-static int computeCellIndex( const int light_cell[3] ) {
+int R_LightCellIndex( const int light_cell[3] ) {
 	if (light_cell[0] < 0 || light_cell[1] < 0 || light_cell[2] < 0
 		|| (light_cell[0] >= g_lights.map.grid_size[0])
 		|| (light_cell[1] >= g_lights.map.grid_size[1])
@@ -415,7 +407,7 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 		gEngine.Con_Reportf("Collecting visible leafs for moving surface %p: %f,%f,%f %f: ", surf,
 			origin[0], origin[1], origin[2], radius);
 
-	for (int i = 1; i <= map->numleafs; ++i) {
+	for (int i = 0; i <= map->numleafs; ++i) {
 		const mleaf_t *leaf = map->leafs + i;
 		if( !CHECKVISBIT( g_lights_bsp.accum.visbytes, i ))
 			continue;
@@ -439,39 +431,6 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 
 	// ...... oh no
 	return (vk_light_leaf_set_t*)&g_lights_bsp.accum.count;
-}
-
-static void lbspClear( void ) {
-	for (int i = 0; i < MAX_MAP_LEAFS; ++i)
-		g_lights_bsp.leaves[i].num_lights = 0;
-}
-
-static void lbspAddLightByLeaf( LightType type, const mleaf_t *leaf) {
-	const int leaf_index = leaf->cluster + 1;
-	ASSERT(leaf_index >= 0 && leaf_index < MAX_MAP_LEAFS);
-
-	{
-		vk_light_leaf_t *light_leaf = g_lights_bsp.leaves + leaf_index;
-
-		ASSERT(light_leaf->num_lights <= MAX_LEAF_LIGHTS);
-		if (light_leaf->num_lights == MAX_LEAF_LIGHTS) {
-			gEngine.Con_Printf(S_ERROR "Max number of lights %d exceeded for leaf %d\n", MAX_LEAF_LIGHTS, leaf_index);
-			return;
-		}
-
-		light_leaf->light[light_leaf->num_lights++].type = type;
-	}
-}
-
-static void lbspAddLightByOrigin( LightType type, const vec3_t origin) {
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
-	const mleaf_t* leaf = gEngine.Mod_PointInLeaf(origin, world->nodes);
-	if (!leaf) {
-		gEngine.Con_Printf(S_ERROR "Adding light %d with origin (%f, %f, %f) ended up in no leaf\n",
-			type, origin[0], origin[1], origin[2]);
-		return;
-	}
-	lbspAddLightByLeaf( type, leaf);
 }
 
 static void prepareSurfacesLeafVisibilityCache( void ) {
@@ -541,8 +500,6 @@ void VK_LightsFrameInit( void ) {
 		cell->num_point_lights = cell->num_static.point_lights;
 		cell->num_emissive_surfaces = cell->num_static.emissive_surfaces;
 	}
-
-	lbspClear();
 }
 
 static qboolean addSurfaceLightToCell( int cell_index, int emissive_surface_index ) {
@@ -550,6 +507,10 @@ static qboolean addSurfaceLightToCell( int cell_index, int emissive_surface_inde
 
 	if (cluster->num_emissive_surfaces == MAX_VISIBLE_SURFACE_LIGHTS) {
 		return false;
+	}
+
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("    adding surface light %d to cell %d (count=%d)\n", emissive_surface_index, cell_index, cluster->num_emissive_surfaces+1);
 	}
 
 	cluster->emissive_surfaces[cluster->num_emissive_surfaces++] = emissive_surface_index;
@@ -561,6 +522,10 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 
 	if (cluster->num_point_lights == MAX_VISIBLE_POINT_LIGHTS)
 		return false;
+
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("    adding point light %d to cell %d (count=%d)\n", light_index, cell_index, cluster->num_point_lights+1);
+	}
 
 	cluster->point_lights[cluster->num_point_lights++] = light_index;
 	return true;
@@ -603,49 +568,65 @@ static qboolean canSurfaceLightAffectAABB(const model_t *mod, const msurface_t *
 
 void VK_LightsAddEmissiveSurface( const struct vk_render_geometry_s *geom, const matrix3x4 *transform_row, qboolean static_map ) {
 	APROF_SCOPE_BEGIN_EARLY(emissive_surface);
+	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
 	const int texture_num = geom->texture; // Animated texture
 	vk_emissive_surface_t *retval = NULL;
+	vec3_t emissive_color = {0};
+
 	ASSERT(texture_num >= 0);
 	ASSERT(texture_num < MAX_TEXTURES);
 
+	// Only brush model surfaces are supported to be emissive. This is not _strictly_ necessary, but is a bit simpler.
 	if (!geom->surf)
 		goto fin; // TODO break? no surface means that model is not brush
 
-	if (geom->material != kXVkMaterialEmissive && !g_lights.map.emissive_textures[texture_num].set)
-		goto fin;
+	// Find out whether this surface is emissive
+	{
+		const int surface_index = geom->surf - world->surfaces;
+		const xvk_patch_surface_t *psurf = g_map_entities.patch.surfaces ? g_map_entities.patch.surfaces + surface_index : NULL;
+
+		ASSERT(surface_index >= 0);
+		ASSERT(surface_index < world->numsurfaces);
+
+		if (psurf && psurf->flags & Patch_Surface_Emissive) {
+			VectorCopy(psurf->emissive, emissive_color);
+		} else if (geom->material == kXVkMaterialEmissive) {
+			VectorCopy(geom->emissive, emissive_color);
+		} else if (g_lights.map.emissive_textures[texture_num].set) {
+			VectorCopy(g_lights.map.emissive_textures[texture_num].emissive, emissive_color);
+		} else {
+			goto fin;
+		}
+
+		if (emissive_color[0] == 0 && emissive_color[1] == 0 && emissive_color[2] == 0) {
+			if (static_map) {
+				gEngine.Con_Reportf("Surface %d got zero emissive color, not adding as a light source\n", surface_index);
+			}
+			goto fin;
+		}
+	}
 
 	if (g_lights.num_emissive_surfaces >= 256)
 		goto fin;
 
 	if (debug_dump_lights.enabled) {
 		const vk_texture_t *tex = findTexture(texture_num);
-		const vk_emissive_texture_t *etex = g_lights.map.emissive_textures + texture_num;
 		ASSERT(tex);
-		gEngine.Con_Printf("surface light %d: %s (%f %f %f)\n", g_lights.num_emissive_surfaces, tex->name,
-			etex->emissive[0], etex->emissive[1], etex->emissive[2]);
+		gEngine.Con_Reportf("surface light %d: %s (%f %f %f)\n", g_lights.num_emissive_surfaces, tex->name,
+			emissive_color[0],
+			emissive_color[1],
+			emissive_color[2]);
 	}
 
 	{
-		const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
 		const vk_light_leaf_set_t *const leafs = static_map
 			? getMapLeafsAffectedByMapSurface( geom->surf )
 			: getMapLeafsAffectedByMovingSurface( geom->surf, transform_row );
 		vk_emissive_surface_t *esurf = g_lights.emissive_surfaces + g_lights.num_emissive_surfaces;
 
-		{
-			// Add this light to per-leaf stats
-			//gEngine.Con_Reportf("surface %p, leafs %d\n", geom->surf, leafs->num);
-			for (int i = 0; i < leafs->num; ++i)
-				lbspAddLightByLeaf(LightTypeSurface, world->leafs + leafs->leafs[i]);
-		}
-
 		// Insert into emissive surfaces
 		esurf->kusok_index = geom->kusok_index;
-		if (geom->material != kXVkMaterialEmissive) {
-			VectorCopy(g_lights.map.emissive_textures[texture_num].emissive, esurf->emissive);
-		} else {
-			VectorCopy(geom->emissive, esurf->emissive);
-		}
+		VectorCopy(emissive_color, esurf->emissive);
 		Matrix3x4_Copy(esurf->transform, *transform_row);
 
 		clusterBitMapClear();
@@ -658,11 +639,22 @@ void VK_LightsAddEmissiveSurface( const struct vk_render_geometry_s *geom, const
 			const int min_y = floorf(leaf->minmaxs[1] / LIGHT_GRID_CELL_SIZE);
 			const int min_z = floorf(leaf->minmaxs[2] / LIGHT_GRID_CELL_SIZE);
 
-			const int max_x = ceilf(leaf->minmaxs[3] / LIGHT_GRID_CELL_SIZE);
-			const int max_y = ceilf(leaf->minmaxs[4] / LIGHT_GRID_CELL_SIZE);
-			const int max_z = ceilf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE);
+			const int max_x = floorf(leaf->minmaxs[3] / LIGHT_GRID_CELL_SIZE) + 1;
+			const int max_y = floorf(leaf->minmaxs[4] / LIGHT_GRID_CELL_SIZE) + 1;
+			const int max_z = floorf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE) + 1;
 
-			if (static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, leaf->minmaxs))
+			const qboolean not_visible = static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, leaf->minmaxs);
+
+			if (debug_dump_lights.enabled) {
+				gEngine.Con_Reportf("  adding leaf %d (%d of %d) min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+					leaf->cluster, i, leafs->num,
+					min_x, min_y, min_z,
+					max_x, max_y, max_z,
+					(max_x - min_x) * (max_y - min_y) * (max_z - min_z)
+				);
+			}
+
+			if (not_visible)
 				continue;
 
 			for (int x = min_x; x < max_x; ++x)
@@ -674,7 +666,7 @@ void VK_LightsAddEmissiveSurface( const struct vk_render_geometry_s *geom, const
 					z - g_lights.map.grid_min_cell[2]
 				};
 
-				const int cell_index = computeCellIndex( cell );
+				const int cell_index = R_LightCellIndex( cell );
 				if (cell_index < 0)
 					continue;
 
@@ -716,6 +708,15 @@ static void addLightIndexToleaf( const mleaf_t *leaf, int index ) {
 	const int max_y = ceilf(leaf->minmaxs[4] / LIGHT_GRID_CELL_SIZE);
 	const int max_z = ceilf(leaf->minmaxs[5] / LIGHT_GRID_CELL_SIZE);
 
+	if (debug_dump_lights.enabled) {
+		gEngine.Con_Reportf("  adding leaf %d min=(%d, %d, %d), max=(%d, %d, %d) total=%d\n",
+			leaf->cluster,
+			min_x, min_y, min_z,
+			max_x, max_y, max_z,
+			(max_x - min_x) * (max_y - min_y) * (max_z - min_z)
+		);
+	}
+
 	for (int x = min_x; x < max_x; ++x)
 	for (int y = min_y; y < max_y; ++y)
 	for (int z = min_z; z < max_z; ++z) {
@@ -725,7 +726,7 @@ static void addLightIndexToleaf( const mleaf_t *leaf, int index ) {
 			z - g_lights.map.grid_min_cell[2]
 		};
 
-		const int cell_index = computeCellIndex( cell );
+		const int cell_index = R_LightCellIndex( cell );
 		if (cell_index < 0)
 			continue;
 
@@ -839,6 +840,101 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, int lightsty
 	return index;
 }
 
+void R_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player ) {
+	// parameters
+	const float hack_attenuation = 0.1;
+	float radius = 1.0;
+	// TODO: better tune it
+	const float _cone = 10.0;
+	const float _cone2 = 30.0;
+	const vec3_t light_color = {255, 255, 192};
+	float light_intensity = 300;
+
+	vec3_t color;
+	vec3_t origin;
+	vec3_t angles;
+	vk_light_entity_t le;
+
+	float thirdperson_offset = 25;
+	vec3_t forward, view_ofs;
+	vec3_t vecSrc, vecEnd;
+	pmtrace_t *trace;
+	if( local_player )
+	{
+		// local player case
+		// position
+		if (gEngine.EngineGetParm(PARM_THIRDPERSON, 0)) { // thirdperson
+			AngleVectors( g_camera.viewangles, forward, NULL, NULL );
+			view_ofs[0] = view_ofs[1] = 0.0f;
+			if( ent->curstate.usehull == 1 ) {
+				view_ofs[2] = 12.0f; // VEC_DUCK_VIEW;
+			} else {
+				view_ofs[2] = 28.0f; // DEFAULT_VIEWHEIGHT
+			}
+			VectorAdd( ent->origin, view_ofs, vecSrc );
+			VectorMA( vecSrc, thirdperson_offset, forward, vecEnd );
+			trace = gEngine.EV_VisTraceLine( vecSrc, vecEnd, PM_STUDIO_BOX );
+			VectorCopy( trace->endpos, origin );
+			VectorCopy( forward, le.dir);
+		} else { // firstperson
+			// based on https://github.com/SNMetamorph/PrimeXT/blob/0869b1abbddd13c1229769d8cd71941610be0bf3/client/flashlight.cpp#L35
+			origin[0] = g_camera.vieworg[0] + (g_camera.vright[0] * (-4.0f)) + (g_camera.vforward[0] * 14.0); // forward-back
+			origin[1] = g_camera.vieworg[1] + (g_camera.vright[1] * (-4.0f)) + (g_camera.vforward[1] * 14.0); // left-right
+			origin[2] = g_camera.vieworg[2] + (g_camera.vright[2] * (-4.0f)) + (g_camera.vforward[2] * 14.0); // up-down
+			origin[2] += 2.0f;
+			VectorCopy(g_camera.vforward, le.dir);
+		}
+	}
+	else // non-local player case
+	{
+		thirdperson_offset = 10;
+		radius = 10;
+		light_intensity = 60;
+
+		VectorCopy( ent->angles, angles );
+		// NOTE: pitch divided by 3.0 twice. So we need apply 3^2 = 9
+		angles[PITCH] = ent->curstate.angles[PITCH] * 9.0f;
+		angles[YAW] = ent->angles[YAW];
+		angles[ROLL] = 0.0f; // roll not used
+
+		AngleVectors( angles, angles, NULL, NULL );
+		view_ofs[0] = view_ofs[1] = 0.0f;
+		if( ent->curstate.usehull == 1 ) {
+			view_ofs[2] = 12.0f; // VEC_DUCK_VIEW;
+		} else {
+			view_ofs[2] = 28.0f; // DEFAULT_VIEWHEIGHT
+		}
+		VectorAdd( ent->origin, view_ofs, vecSrc );
+		VectorMA( vecSrc, thirdperson_offset, angles, vecEnd );
+		trace = gEngine.EV_VisTraceLine( vecSrc, vecEnd, PM_STUDIO_BOX );
+		VectorCopy( trace->endpos, origin );
+		VectorCopy( angles, le.dir );
+	}
+
+	VectorCopy(origin, le.origin);
+
+	// prepare colors by parseEntPropRgbav
+	VectorScale(light_color, light_intensity / 255.0f, color);
+
+	// convert colors by weirdGoldsrcLightScaling
+	float l1 = Q_max(color[0], Q_max(color[1], color[2]));
+	l1 = l1 * l1 / 10;
+	VectorScale(color, l1, le.color);
+
+	// convert stopdots by parseStopDot
+	le.stopdot = cosf(_cone * M_PI / 180.f);
+	le.stopdot2 = cosf(_cone2 * M_PI / 180.f);
+
+	/*
+	gEngine.Con_Printf("flashlight: origin=(%f %f %f) color=(%f %f %f) dir=(%f %f %f)\n",
+		le.origin[0], le.origin[1], le.origin[2],
+		le.color[0], le.color[1], le.color[2],
+		le.dir[0], le.dir[1], le.dir[2]);
+	*/
+
+	addSpotLight(&le, radius, 0, hack_attenuation, false);
+}
+
 static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
 	return 1. - sqrt(d*d - r*r)/d;
 }
@@ -851,9 +947,6 @@ static void addDlight( const dlight_t *dlight ) {
 	vec3_t color;
 	int index;
 	float scaler;
-
-	if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
-		return;
 
 	max_comp = Q_max(dlight->color.r, Q_max(dlight->color.g, dlight->color.b));
 	if (max_comp < k_threshold || dlight->radius <= k_light_radius)
@@ -870,8 +963,6 @@ static void addDlight( const dlight_t *dlight ) {
 	index = addPointLight(dlight->origin, color, k_light_radius, -1, 1.f);
 	if (index < 0)
 		return;
-
-	lbspAddLightByOrigin( LightTypePoint, dlight->origin );
 }
 
 static void processStaticPointLights( void ) {
@@ -905,8 +996,6 @@ static void processStaticPointLights( void ) {
 
 		if (index < 0)
 			break;
-
-		lbspAddLightByOrigin( le->type, le->origin );
 	}
 	APROF_SCOPE_END(static_lights);
 }
@@ -1016,29 +1105,13 @@ void VK_LightsFrameFinalize( void ) {
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
 		const dlight_t *dlight = gEngine.GetDynamicLight(i);
+		if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
+			continue;
 		addDlight(dlight);
 	}
 	APROF_SCOPE_END(dlights);
 
 	if (debug_dump_lights.enabled) {
-		for (int i = 0; i < MAX_MAP_LEAFS; ++i ) {
-			const vk_light_leaf_t *lleaf = g_lights_bsp.leaves + i;
-			int point = 0, spot = 0, surface = 0, env = 0;;
-			if (lleaf->num_lights == 0)
-				continue;
-
-			for (int j = 0; j < lleaf->num_lights; ++j) {
-				switch (lleaf->light[j].type) {
-					case LightTypePoint: ++point; break;
-					case LightTypeSpot: ++spot; break;
-					case LightTypeSurface: ++surface; break;
-					case LightTypeEnvironment: ++env; break;
-				}
-			}
-
-			gEngine.Con_Printf("\tLeaf %d, lights %d: spot=%d point=%d surface=%d env=%d\n", i, lleaf->num_lights, spot, point, surface, env);
-		}
-
 #if 0
 		// Print light grid stats
 		gEngine.Con_Reportf("Emissive surfaces found: %d\n", g_lights.num_emissive_surfaces);

@@ -1,6 +1,8 @@
 // Common definitions for both shaders and native code
 
 #ifndef GLSL
+#include "xash3d_types.h"
+#define MAX_EMISSIVE_KUSOCHKI 256
 #define uint uint32_t
 #define vec2 vec2_t
 #define vec3 vec3_t
@@ -17,7 +19,7 @@
 
 layout (constant_id = 0) const uint MAX_POINT_LIGHTS = 32;
 layout (constant_id = 1) const uint MAX_EMISSIVE_KUSOCHKI = 256;
-layout (constant_id = 2) const uint MAX_VISIBLE_POINT_LIGHTS = 31;
+layout (constant_id = 2) const uint MAX_VISIBLE_POINT_LIGHTS = 63;
 layout (constant_id = 3) const uint MAX_VISIBLE_SURFACE_LIGHTS = 255;
 #endif
 

@@ -232,7 +232,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		le->stopdot, le->stopdot2);
 }
 
-static void addLightEntity( const entity_props_t *props, unsigned have_fields, int entity_index ) {
+static void addLightEntity( const entity_props_t *props, unsigned have_fields ) {
 	const int index = g_map_entities.num_lights;
 	vk_light_entity_t *le = g_map_entities.lights + index;
 	unsigned expected_fields = 0;
@@ -281,9 +281,9 @@ static void addLightEntity( const entity_props_t *props, unsigned have_fields, i
 		}
 	}
 
-	fillLightFromProps(le, props, have_fields, false, entity_index);
+	fillLightFromProps(le, props, have_fields, false, g_map_entities.entity_count);
 
-	le->entity_index = entity_index;
+	le->entity_index = g_map_entities.entity_count;
 	g_map_entities.num_lights++;
 }
 
@@ -311,13 +311,14 @@ static void readWorldspawn( const entity_props_t *props ) {
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
+	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_texture && props->_xvk_texture[0] == '\0');
 
 	for (int i = 0; i < props->_xvk_surface_id.num; ++i) {
 		const int index = props->_xvk_surface_id.values[i];
 		xvk_patch_surface_t *psurf = NULL;
 		if (index < 0 || index >= num_surfaces) {
 			gEngine.Con_Printf(S_ERROR "Incorrect patch for surface_index %d where numsurfaces=%d\n", index, num_surfaces);
-			return;
+			continue;
 		}
 
 		if (!g_map_entities.patch.surfaces) {
@@ -331,27 +332,28 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 
 		psurf = g_map_entities.patch.surfaces + index;
 
+		if (should_remove) {
+			gEngine.Con_Reportf("Patch: surface %d removed\n", index);
+			psurf->flags = Patch_Surface_Delete;
+			continue;
+		}
+
 		if (have_fields & Field__xvk_texture) {
-			if (props->_xvk_texture[0] == '\0') {
-				gEngine.Con_Reportf("Patch: surface %d removed\n", index);
-				psurf->flags = Patch_Surface_Delete;
-				return;
-			} else {
-				const int tex_id = VK_FindTexture( props->_xvk_texture );
-				gEngine.Con_Reportf("Patch for surface %d with texture \"%s\" -> %d\n", index, props->_xvk_texture, tex_id);
-				psurf->tex_id = tex_id;
+			const int tex_id = XVK_FindTextureNamedLike( props->_xvk_texture );
+			gEngine.Con_Reportf("Patch for surface %d with texture \"%s\" -> %d\n", index, props->_xvk_texture, tex_id);
+			psurf->tex_id = tex_id;
 
-				// Find texture_t for this index
-				for (int i = 0; i < map->numtextures; ++i) {
-					const texture_t* const tex = map->textures[i];
-					if (tex->gl_texturenum == tex_id) {
-						psurf->tex = tex;
-						break;
-					}
+			// Find texture_t for this index
+			for (int i = 0; i < map->numtextures; ++i) {
+				const texture_t* const tex = map->textures[i];
+				if (tex->gl_texturenum == tex_id) {
+					psurf->tex = tex;
+					psurf->tex_id = -1;
+					break;
 				}
-
-				psurf->flags |= Patch_Surface_Texture;
 			}
+
+			psurf->flags |= Patch_Surface_Texture;
 		}
 
 		if (have_fields & Field__light) {
@@ -381,21 +383,21 @@ static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) 
 		const int light_index = findLightEntityWithIndex( props->_xvk_ent_id.values[i] );
 		if (light_index < 0) {
 			gEngine.Con_Printf(S_ERROR "Patch light entity with index=%d not found\n", props->_xvk_ent_id);
-			return;
+			continue;
 		}
 
 		if (have_fields == Field__xvk_ent_id) {
 			gEngine.Con_Reportf("Deleting light entity (%d of %d) with index=%d\n", light_index, g_map_entities.num_lights, props->_xvk_ent_id);
 			g_map_entities.num_lights--;
 			memmove(g_map_entities.lights + light_index, g_map_entities.lights + light_index + 1, sizeof(*g_map_entities.lights) * g_map_entities.num_lights - light_index);
-			return;
+			continue;
 		}
 
 		fillLightFromProps(g_map_entities.lights + light_index, props, have_fields, true, props->_xvk_ent_id.values[i]);
 	}
 }
 
-static void parseEntities( char *string, int *count ) {
+static void parseEntities( char *string ) {
 	unsigned have_fields = 0;
 	entity_props_t values;
 	char *pos = string;
@@ -421,7 +423,7 @@ static void parseEntities( char *string, int *count ) {
 				case Light:
 				case LightSpot:
 				case LightEnvironment:
-					addLightEntity( &values, have_fields, *count );
+					addLightEntity( &values, have_fields );
 					break;
 
 				case Worldspawn:
@@ -440,7 +442,7 @@ static void parseEntities( char *string, int *count ) {
 					break;
 			}
 
-			++(*count);
+			g_map_entities.entity_count++;
 			continue;
 		}
 
@@ -500,7 +502,7 @@ static void orientSpotlights( void ) {
 	}
 }
 
-static void parsePatches( const model_t *const map, int *count) {
+static void parsePatches( const model_t *const map ) {
 	char filename[256];
 	byte *data;
 
@@ -517,22 +519,27 @@ static void parsePatches( const model_t *const map, int *count) {
 		return;
 	}
 
-	parseEntities( (char*)data, count );
+	parseEntities( (char*)data );
 	Mem_Free(data);
 }
 
 void XVK_ParseMapEntities( void ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
-	int entities_count = 0;
 
 	ASSERT(map);
 
 	g_map_entities.num_targets = 0;
 	g_map_entities.num_lights = 0;
 	g_map_entities.single_environment_index = NoEnvironmentLights;
+	g_map_entities.entity_count = 0;
 
-	parseEntities( map->entities, &entities_count );
-	parsePatches( map, &entities_count );
+	parseEntities( map->entities );
+	orientSpotlights();
+}
 
+void XVK_ParseMapPatches( void ) {
+	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+
+	parsePatches( map );
 	orientSpotlights();
 }

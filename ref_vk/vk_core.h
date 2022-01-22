@@ -17,28 +17,10 @@ void destroySemaphore(VkSemaphore sema);
 VkFence createFence( void );
 void destroyFence(VkFence fence);
 
-// FIXME arena allocation, ...
-typedef struct device_memory_s
-{
-	VkDeviceMemory device_memory;
-	uint32_t offset;
-} device_memory_t;
-
-device_memory_t allocateDeviceMemory(VkMemoryRequirements req, VkMemoryPropertyFlags props, VkMemoryAllocateFlags flags);
-void freeDeviceMemory(device_memory_t *mem);
-
-typedef struct vk_buffer_s
-{
-	device_memory_t device_memory;
-	VkBuffer buffer;
-
-	void *mapped;
-	uint32_t size;
-} vk_buffer_t;
-
 typedef struct physical_device_s {
 	VkPhysicalDevice device;
-	VkPhysicalDeviceMemoryProperties memory_properties;
+	VkPhysicalDeviceMemoryProperties2 memory_properties2;
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget;
 	VkPhysicalDeviceProperties properties;
 	VkPhysicalDeviceProperties2 properties2;
 	VkPhysicalDeviceAccelerationStructurePropertiesKHR properties_accel;
@@ -72,8 +54,6 @@ typedef struct vulkan_core_s {
 	VkCommandPool command_pool;
 	VkCommandBuffer cb;
 	VkCommandBuffer cb_tex;
-
-	vk_buffer_t staging;
 
 	VkSampler default_sampler;
 
@@ -133,7 +113,7 @@ do { \
 	X(vkGetPhysicalDeviceFeatures2) \
 	X(vkGetPhysicalDeviceQueueFamilyProperties) \
 	X(vkGetPhysicalDeviceSurfaceSupportKHR) \
-	X(vkGetPhysicalDeviceMemoryProperties) \
+	X(vkGetPhysicalDeviceMemoryProperties2) \
 	X(vkGetPhysicalDeviceSurfacePresentModesKHR) \
 	X(vkGetPhysicalDeviceSurfaceFormatsKHR) \
 	X(vkGetPhysicalDeviceSurfaceCapabilitiesKHR) \

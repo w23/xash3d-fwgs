@@ -14,9 +14,12 @@
 #include "vk_studio.h"
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
-#include "vk_light.h"
 #include "vk_nv_aftermath.h"
+#include "vk_devmem.h"
+
+// FIXME move this rt-specific stuff out
 #include "vk_denoiser.h"
+#include "vk_light.h"
 
 #include "xash3d_types.h"
 #include "cvardef.h"
@@ -440,6 +443,32 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 	return this_device - *available_devices;
 }
 
+static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props, const VkPhysicalDeviceMemoryBudgetPropertiesEXT *budget) {
+	gEngine.Con_Printf("Memory heaps: %d\n", props->memoryHeapCount);
+	for (int i = 0; i < (int)props->memoryHeapCount; ++i) {
+		const VkMemoryHeap* const heap = props->memoryHeaps + i;
+		gEngine.Con_Printf("  %d: size=%dMb used=%dMb avail=%dMb device_local=%d\n", i,
+			(int)(heap->size / (1024 * 1024)),
+			(int)(budget->heapUsage[i] / (1024 * 1024)),
+			(int)(budget->heapBudget[i] / (1024 * 1024)),
+			!!(heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT));
+	}
+
+	gEngine.Con_Printf("Memory types: %d\n", props->memoryTypeCount);
+	for (int i = 0; i < (int)props->memoryTypeCount; ++i) {
+		const VkMemoryType* const type = props->memoryTypes + i;
+		gEngine.Con_Printf("  %d: bit=0x%x heap=%d flags=%c%c%c%c%c\n", i,
+			(1 << i),
+			type->heapIndex,
+			type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ? 'D' : '.',
+			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ? 'V' : '.',
+			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ? 'C' : '.',
+			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ? '$' : '.',
+			type->propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT ? 'L' : '.'
+		);
+	}
+}
+
 static qboolean createDevice( void ) {
 	void *head = NULL;
 	vk_available_device_t *available_devices;
@@ -531,12 +560,19 @@ static qboolean createDevice( void ) {
 			.ppEnabledExtensionNames = device_extensions,
 		};
 
-		// FIXME do only once
-		vkGetPhysicalDeviceMemoryProperties(candidate_device->device, &vk_core.physical_device.memory_properties);
+		{
+			vk_core.physical_device.memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+			vk_core.physical_device.memory_properties2.pNext = &vk_core.physical_device.memory_budget;
+			vk_core.physical_device.memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+			vk_core.physical_device.memory_budget.pNext = NULL;
+			vkGetPhysicalDeviceMemoryProperties2(candidate_device->device, &vk_core.physical_device.memory_properties2);
+		}
 
 		gEngine.Con_Printf("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u\n",
 			i, candidate_device->props.vendorID, candidate_device->props.deviceID, candidate_device->props.deviceType, candidate_device->props.deviceName,
 			XVK_PARSE_VERSION(candidate_device->props.driverVersion), XVK_PARSE_VERSION(candidate_device->props.apiVersion));
+
+		devicePrintMemoryInfo(&vk_core.physical_device.memory_properties2.memoryProperties, &vk_core.physical_device.memory_budget);
 
 		{
 			const VkResult result = vkCreateDevice(candidate_device->device, &create_info, NULL, &vk_core.device);
@@ -710,15 +746,19 @@ qboolean R_VkInit( void )
 	if (!createCommandPool())
 		return false;
 
-	if (!createBuffer("staging", &vk_core.staging, 16 * 1024 * 1024 /* TODO why 16Mb? */, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+	if (!VK_DevMemInit())
 		return false;
 
+	if (!VK_BuffersInit())
+		return false;
+
+	// TODO move this to vk_texture module
 	{
 		VkSamplerCreateInfo sci = {
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 			.magFilter = VK_FILTER_LINEAR,
 			.minFilter = VK_FILTER_LINEAR,
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,//CLAMP_TO_EDGE,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,// TODO CLAMP_TO_EDGE, for menus
 			.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,//CLAMP_TO_EDGE,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
 			.anisotropyEnable = vk_core.physical_device.anisotropy_enabled,
@@ -764,6 +804,7 @@ qboolean R_VkInit( void )
 		if (!VK_RayInit())
 			return false;
 
+		// FIXME move all this to rt-specific modules
 		VK_LightsInit();
 
 		if (!XVK_DenoiserInit())
@@ -797,7 +838,9 @@ void R_VkShutdown( void )
 	VK_DescriptorShutdown();
 
 	vkDestroySampler(vk_core.device, vk_core.default_sampler, NULL);
-	destroyBuffer(&vk_core.staging);
+	VK_BuffersDestroy();
+
+	VK_DevMemDestroy();
 
 	vkDestroyCommandPool(vk_core.device, vk_core.command_pool, NULL);
 
@@ -876,42 +919,4 @@ VkFence createFence( void ) {
 
 void destroyFence(VkFence fence) {
 	vkDestroyFence(vk_core.device, fence, NULL);
-}
-
-static uint32_t findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
-	for (uint32_t i = 0; i < vk_core.physical_device.memory_properties.memoryTypeCount; ++i) {
-		if (!(type_index_bits & (1 << i)))
-			continue;
-
-		if ((vk_core.physical_device.memory_properties.memoryTypes[i].propertyFlags & flags) == flags)
-			return i;
-	}
-
-	return UINT32_MAX;
-}
-
-device_memory_t allocateDeviceMemory(VkMemoryRequirements req, VkMemoryPropertyFlags props, VkMemoryAllocateFlags flags) {
-	// TODO coalesce allocations, ...
-	device_memory_t ret = {0};
-
-	const VkMemoryAllocateFlagsInfo mafi = {
-		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
-		.flags = flags,
-	};
-
-	const VkMemoryAllocateInfo mai = {
-		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-		.pNext = flags ? &mafi : NULL,
-		.allocationSize = req.size,
-		.memoryTypeIndex = findMemoryWithType(req.memoryTypeBits, props),
-	};
-
-	ASSERT(mai.memoryTypeIndex != UINT32_MAX);
-	XVK_CHECK(vkAllocateMemory(vk_core.device, &mai, NULL, &ret.device_memory));
-	return ret;
-}
-
-void freeDeviceMemory(device_memory_t *mem)
-{
-	vkFreeMemory(vk_core.device, mem->device_memory, NULL);
 }

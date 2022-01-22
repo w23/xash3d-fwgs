@@ -2,8 +2,10 @@
 
 #include "vk_common.h"
 #include "vk_core.h"
+#include "vk_buffer.h"
 #include "vk_const.h"
 #include "vk_descriptor.h"
+#include "vk_mapents.h" // wadlist
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
@@ -586,7 +588,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 					.depth = 1,
 				};
 
-				memcpy(((uint8_t*)vk_core.staging.mapped) + staging_offset, buf, mip_size);
+				memcpy(((uint8_t*)g_vk_buffers.staging.mapped) + staging_offset, buf, mip_size);
 
 				if ( mip < mipCount - 1 )
 				{
@@ -594,7 +596,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 				}
 
 				// TODO we could do this only once w/ region array
-				vkCmdCopyBufferToImage(vk_core.cb_tex, vk_core.staging.buffer, tex->vk.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+				vkCmdCopyBufferToImage(vk_core.cb_tex, g_vk_buffers.staging.buffer, tex->vk.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
 				staging_offset += mip_size;
 			}
@@ -1017,4 +1019,46 @@ void XVK_SetupSky( const char *skyboxname ) {
 		gEngine.Con_Reportf( S_WARN "missed or incomplete skybox '%s'\n", skyboxname );
 		XVK_SetupSky( "desert" ); // force to default
 	}
+}
+
+int XVK_FindTextureNamedLike( const char *texture_name ) {
+	const model_t *map = gEngine.pfnGetModelByIndex( 1 );
+	string texname;
+
+	// Try texture name as-is first
+	int tex_id = XVK_TextureLookupF("%s", texture_name);
+
+	// Try bsp name
+	if (!tex_id)
+		tex_id = XVK_TextureLookupF("#%s:%s.mip", map->name, texture_name);
+
+	if (!tex_id) {
+		const char *wad = g_map_entities.wadlist;
+		for (; *wad;) {
+			const char *const wad_end = Q_strchr(wad, ';');
+			tex_id = XVK_TextureLookupF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
+			if (tex_id)
+				break;
+			wad = wad_end + 1;
+		}
+	}
+
+	return tex_id ? tex_id : -1;
+}
+
+int XVK_CreateDummyTexture( const char *name ) {
+	// emo-texture from quake1
+	rgbdata_t *pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR );
+
+	for( int y = 0; y < 16; y++ )
+	{
+		for( int x = 0; x < 16; x++ )
+		{
+			if(( y < 8 ) ^ ( x < 8 ))
+				((uint *)pic->buffer)[y*16+x] = 0xFFFF00FF;
+			else ((uint *)pic->buffer)[y*16+x] = 0xFF000000;
+		}
+	}
+
+	return VK_LoadTextureInternal(name, pic, TF_NOMIPMAP);
 }
