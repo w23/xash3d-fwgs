@@ -24,3 +24,51 @@ vec3 reinhard(vec3 color){
 vec3 reinhard02(vec3 c, vec3 Cwhite2) {
 	return c * (1. + c / Cwhite2) / (1. + c);
 }
+
+// https://github.com/SNMetamorph/PrimeXT/blob/7e3ac4bd6924c42e1d8f467dcf88fc8b6f105ca5/game_dir/glsl/postfx/tonemap_fp.glsl#L52-L60
+vec3 TonemapMGS5(vec3 source)
+{
+	const float a = 0.6;
+	const float b = 0.45333;
+	vec3 t = step(a, source);
+	vec3 f1 = source;
+	vec3 f2 = min(vec3(1.0), a + b - (b*b) / (f1 - a + b));
+	return mix(f1, f2, t);
+}
+
+
+// https://github.com/dmnsgn/glsl-tone-map/blob/master/uncharted2.glsl
+vec3 uncharted2Tonemap(vec3 x) {
+	float A = 0.15;
+	float B = 0.50;
+	float C = 0.10;
+	float D = 0.20;
+	float E = 0.02;
+	float F = 0.30;
+	float W = 11.2;
+	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+vec3 uncharted2(vec3 color) {
+	const float W = 11.2;
+	float exposureBias = 2.0;
+	vec3 curr = uncharted2Tonemap(exposureBias * color);
+	vec3 whiteScale = 1.0 / uncharted2Tonemap(vec3(W));
+	return curr * whiteScale;
+}
+float uncharted2Tonemap(float x) {
+	float A = 0.15;
+	float B = 0.50;
+	float C = 0.10;
+	float D = 0.20;
+	float E = 0.02;
+	float F = 0.30;
+	float W = 11.2;
+	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+float uncharted2(float color) {
+	const float W = 11.2;
+	const float exposureBias = 2.0;
+	float curr = uncharted2Tonemap(exposureBias * color);
+	float whiteScale = 1.0 / uncharted2Tonemap(W);
+	return curr * whiteScale;
+}

@@ -31,12 +31,22 @@ void main() {
 	vNormal = aNormal;
 	vTexture0 = aTexture0;
 	vLightmapUV = aLightmapUV;
-	vColor = ubo.color;
-	vec4 lightmap = aLightColor;
+	vColor = ubo.color; // pre-base color (filter) for all
+	vec4 lightmap = aLightColor; // lightmap for studiomodel (if FLAG_VERTEX_LIGHTING)
 	if (hdr_output > 0) {
 		// FIXME: Avoid tone mapping "fix-ups", ideally done in scene-referred space
-		vColor.rgb = OECF_sRGB(aces_tonemap(vColor.rgb)) / hdr_output_manual_adjust_down;
-		lightmap.rgb /= hdr_output_manual_adjust_down;
+		//vColor.rgb = OECF_sRGB(aces_tonemap(vColor.rgb)) / hdr_output_manual_adjust_down;
+		//lightmap.rgb /= hdr_output_manual_adjust_down;
+		//vColor.rgb = OECF_sRGB(vColor.rgb) / hdr_output_manual_adjust_down;
+		//lightmap.rgb = OECF_sRGB(lightmap.rgb) / hdr_output_manual_adjust_down;
+		//vColor.rgb = OECF_sRGB(uncharted2Tonemap(vColor.rgb * 2));
+		//lightmap.rgb = OECF_sRGB(uncharted2Tonemap(lightmap.rgb * 2)); // additive (sprites)
+		//vColor.rgb = vec3(0.5);
+	
+		//lightmap.rgb = vec3(1);
+		
+		//lightmap.rgb = lightmap.rgb * 0.5;
+		lightmap.rgb = lightmap.rgb * 1.0;
 	}
 
 	if ((aFlags & FLAG_VERTEX_LIGHTING) != 0) {

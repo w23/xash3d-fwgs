@@ -105,6 +105,8 @@ void main() {
 
 	//#define TONEMAPPER aces_tonemap
 	#define TONEMAPPER reinhard
+	//#define TONEMAPPER TonemapMGS5
+	//#define TONEMAPPER uncharted2Tonemap
 
 	#ifdef TONEMAPPER
 	if (hdr_output > 0) {
@@ -123,10 +125,12 @@ void main() {
 	//colour += imageLoad(src_specular, pix).rgb;
 	colour += additivour;
 	
-	if (hdr_output < 0) {
-	//colour = TONEMAPPER(colour);
-	//colour = reinhard02(colour, vec3(400.));
+	#ifdef TONEMAPPER
+	if (hdr_output == 0) {
+		colour = TONEMAPPER(colour);
+		//colour = reinhard02(colour, vec3(1.0));
 	}
+	#endif
 	colour = OECF_sRGB(colour); // gamma-correction
 
 	imageStore(dest, pix, vec4(colour, 0.));

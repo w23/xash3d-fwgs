@@ -37,11 +37,14 @@ const float dlight_attenuation_const = 5000.;
 
 void main() {
 	outColor = vec4(0.);
-	vec4 baseColor = vColor * texture(sTexture0, vTexture0);
+	vec4 baseColor = vColor * texture(sTexture0, vTexture0); // base color for all
 
 	if (hdr_output > 0) {
 		// FIXME: Need an operator that understands the output luminance and middle gray stays at a reasonable level (400 vs 1000 nit display on 0.5)
-		baseColor.rgb = OECF_sRGB(aces_tonemap(baseColor.rgb));
+		//baseColor.rgb = OECF_sRGB(aces_tonemap(baseColor.rgb));
+		//baseColor.rgb = OECF_sRGB(baseColor.rgb);
+		//baseColor.rgb = vec3(0.5);
+		baseColor.rgb = OECF_sRGB(aces_tonemap(baseColor.rgb) / 1.5);
 	}
 
 	if (baseColor.a < alpha_test_threshold)
@@ -50,13 +53,17 @@ void main() {
 	outColor.a = baseColor.a;
 
 	if ((vFlags & FLAG_VERTEX_LIGHTING) == 0) {
-		vec3 lightmap = texture(sLightmap, vLightmapUV).rgb;
+		vec3 lightmap = texture(sLightmap, vLightmapUV).rgb; // lightmap for brush
 		if (hdr_output > 0) {
-			//lightmap = OECF_sRGB(aces_tonemap(lightmap)); // best LDR (lightmap) in HDR
+			//lightmap = vec3(1);
+			lightmap = OECF_sRGB(aces_tonemap(lightmap) * 1.5);
 			//lightmap = OECF_sRGB(lightmap);
 			//lightmap = lightmap;
 			//lightmap = OECF_sRGB(reinhard02(lightmap,vec3(.600)));
-			lightmap = OECF_sRGB(reinhard02(lightmap,vec3(.400)) * aces_tonemap(lightmap)); // TODO: histogram equalization
+			//lightmap = OECF_sRGB(reinhard02(lightmap,vec3(.400)) * aces_tonemap(lightmap)); // TODO: histogram equalization
+			//lightmap = OECF_sRGB(TonemapMGS5(lightmap)); // TODO: histogram equalization
+			//lightmap = TonemapMGS5(lightmap * 2); // TODO: histogram equalization
+			//lightmap = OECF_sRGB(uncharted2Tonemap(pow(lightmap,vec3(2)) * 2)); // TODO: histogram equalization
 		}
 		outColor.rgb += baseColor.rgb * lightmap;
 	} else {
