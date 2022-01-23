@@ -4,6 +4,7 @@
 
 #include "ray_common.glsl"
 #include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
 
 layout (constant_id = 6) const uint MAX_TEXTURES = 4096;
 layout (set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
@@ -33,7 +34,7 @@ void main() {
 
 	const float overshoot = gl_HitTEXT - payload_additive.ray_distance;
 
-	payload_additive.color += color * smoothstep(additive_soft_overshoot, 0., overshoot);
+	payload_additive.color += sRGB_OECF(color) * smoothstep(additive_soft_overshoot, 0., overshoot);
 
 	ignoreIntersectionEXT;
 }

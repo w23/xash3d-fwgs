@@ -360,6 +360,7 @@ static void createPipeline( void )
 		int max_light_clusters;
 		uint32_t max_textures;
 		uint32_t sbt_record_size;
+		int hdr_output;
 	} spec_data = {
 		.max_point_lights = MAX_POINT_LIGHTS,
 		.max_emissive_kusochki = MAX_EMISSIVE_KUSOCHKI,
@@ -369,6 +370,7 @@ static void createPipeline( void )
 		.max_light_clusters = MAX_LIGHT_CLUSTERS,
 		.max_textures = MAX_TEXTURES,
 		.sbt_record_size = g_rtx.sbt_record_size,
+		.hdr_output = (vk_core.hdr_output && CVAR_TO_BOOL(vk_hdr_output)) ? 1 : 0,
 	};
 	const VkSpecializationMapEntry spec_map[] = {
 		{.constantID = 0, .offset = offsetof(struct RayShaderSpec, max_point_lights), .size = sizeof(int) },
@@ -379,6 +381,7 @@ static void createPipeline( void )
 		{.constantID = 5, .offset = offsetof(struct RayShaderSpec, max_light_clusters), .size = sizeof(int) },
 		{.constantID = 6, .offset = offsetof(struct RayShaderSpec, max_textures), .size = sizeof(uint32_t) },
 		{.constantID = 7, .offset = offsetof(struct RayShaderSpec, sbt_record_size), .size = sizeof(uint32_t) },
+		{.constantID = 8, .offset = offsetof(struct RayShaderSpec, hdr_output), .size = sizeof(int) },
 	};
 
 	VkSpecializationInfo spec = {

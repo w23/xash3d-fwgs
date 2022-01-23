@@ -1,5 +1,6 @@
 #version 450
 #include "tonemapping.glsl"
+#include "color_spaces.glsl"
 
 layout (constant_id = 2) const int hdr_output = 0;
 layout (constant_id = 3) const float hdr_output_manual_adjust_down = 1.6;
@@ -34,7 +35,7 @@ void main() {
 	vec4 lightmap = aLightColor;
 	if (hdr_output > 0) {
 		// FIXME: Avoid tone mapping "fix-ups", ideally done in scene-referred space
-		vColor.rgb = aces_tonemap(vColor.rgb) / hdr_output_manual_adjust_down;
+		vColor.rgb = OECF_sRGB(aces_tonemap(vColor.rgb)) / hdr_output_manual_adjust_down;
 		lightmap.rgb /= hdr_output_manual_adjust_down;
 	}
 

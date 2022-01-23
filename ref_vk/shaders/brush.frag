@@ -1,5 +1,7 @@
 #version 450
 #include "tonemapping.glsl"
+#include "color_spaces.glsl"
+
 
 layout (constant_id = 0) const float alpha_test_threshold = 0.;
 layout (constant_id = 1) const uint max_dlights = 1;
@@ -39,7 +41,7 @@ void main() {
 
 	if (hdr_output > 0) {
 		// FIXME: Need an operator that understands the output luminance and middle gray stays at a reasonable level (400 vs 1000 nit display on 0.5)
-		baseColor.rgb = aces_tonemap(baseColor.rgb);
+		baseColor.rgb = OECF_sRGB(aces_tonemap(baseColor.rgb));
 	}
 
 	if (baseColor.a < alpha_test_threshold)
@@ -50,7 +52,11 @@ void main() {
 	if ((vFlags & FLAG_VERTEX_LIGHTING) == 0) {
 		vec3 lightmap = texture(sLightmap, vLightmapUV).rgb;
 		if (hdr_output > 0) {
-			lightmap = aces_tonemap(lightmap);
+			//lightmap = OECF_sRGB(aces_tonemap(lightmap)); // best LDR (lightmap) in HDR
+			//lightmap = OECF_sRGB(lightmap);
+			//lightmap = lightmap;
+			//lightmap = OECF_sRGB(reinhard02(lightmap,vec3(.600)));
+			lightmap = OECF_sRGB(reinhard02(lightmap,vec3(.400)) * aces_tonemap(lightmap)); // TODO: histogram equalization
 		}
 		outColor.rgb += baseColor.rgb * lightmap;
 	} else {

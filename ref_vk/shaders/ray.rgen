@@ -173,7 +173,8 @@ void sampleSurfaceTriangle(
 	const float area = 1.;//.5 * length(cross(v1 - v2, v1 - v3));
 	const float light_dist2 = dot(light_dir, light_dir);
 	//float pdf = /*light_dist2 */ 1./ (area * light_dot);
-	float pdf = TWO_PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
+	//float pdf = TWO_PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
+	float pdf = PI / triangleSolidAngle(payload_opaque.hit_pos_t.xyz, v1, v2, v3);
 
 	if (pdf > pdf_culling_threshold)
 #ifdef DEBUG_LIGHT_CULLING
@@ -283,7 +284,7 @@ void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, Mate
 			//const float pdf = 1.f / (fdist * light_dot * spot_attenuation);
 			//const float pdf = TWO_PI / asin(radius / dist);
 			const float pdf = 1. / ((1. - sqrt(d2 - r2) / dist) * spot_attenuation);
-			color /= pdf;
+			color /= pdf * 2;
 		}
 
 		// if (dot(color,color) < color_culling_threshold)
@@ -291,7 +292,7 @@ void computePointLights(uint cluster_index, vec3 throughput, vec3 view_dir, Mate
 
 		vec3 ldiffuse, lspecular;
 		evalSplitBRDF(payload_opaque.normal, light_dir_norm, view_dir, material, ldiffuse, lspecular);
-		ldiffuse *= color;
+		ldiffuse *= color / 2;
 		lspecular *= color;
 
 		vec3 combined = ldiffuse + lspecular;
@@ -439,7 +440,7 @@ void main() {
 		vec3 additive = traceAdditive(origin, direction, payload_opaque.hit_pos_t.w <= 0. ? L : payload_opaque.hit_pos_t.w);
 
 		// Sky/envmap/emissive
-		if ((payload_opaque.kusok_index < 0) || any(greaterThan(payload_opaque.emissive, vec3(0.)))) {
+		if (payload_opaque.kusok_index < 0) {
 			if (bounce == 0) {
 				out_additive += payload_opaque.emissive * color_factor + additive;
 			} else {

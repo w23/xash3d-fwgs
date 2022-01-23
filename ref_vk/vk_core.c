@@ -738,10 +738,10 @@ qboolean R_VkInit( void )
 	if (!createDevice())
 		return false;
 
-	VK_LoadCvarsAfterInit();
-
 	if (!initSurface())
 		return false;
+
+	VK_LoadCvarsAfterInit();
 
 	if (!createCommandPool())
 		return false;

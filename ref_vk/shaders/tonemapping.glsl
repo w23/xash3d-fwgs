@@ -13,5 +13,14 @@ vec3 aces_tonemap(vec3 color){
 	vec3 v = m1 * color;
 	vec3 a = v * (v + 0.0245786) - 0.000090537;
 	vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
-	return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(1.0 / 2.2)); // TODO: 2.2 is gamma, need to support the gamma console command, but smart because default gamma 2.5 (WHY?) https://github.com/FWGS/xash3d-fwgs/blob/master/engine/client/vid_common.c#L182
+	//return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(1.0 / 2.2));
+	return clamp(m2 * (a / b), 0.0, 1.0);
+}
+
+vec3 reinhard(vec3 color){
+	return color / (color + 1.0);
+}
+
+vec3 reinhard02(vec3 c, vec3 Cwhite2) {
+	return c * (1. + c / Cwhite2) / (1. + c);
 }
