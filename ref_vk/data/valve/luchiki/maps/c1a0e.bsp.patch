@@ -22,6 +22,17 @@
 {
 "_xvk_ent_id" "490 172 488 489 173 487 175 486 174" // remove hack lights entity
 }
+{
+"_xvk_ent_id" "97"
+"origin" "1848 226 168"
+}
+{
+"_xvk_ent_id" "56"
+"origin" "2164 656 -213"
+}
+
+
+
 
 // red flashing lights (does not work now)
 //{
@@ -61,6 +72,11 @@
 //"_xvk_radius" "2"
 //}
 
+{ // remove bad texture faces
+"_xvk_surface_id" "2105 2106 2104" // {ladder2
+}
+
+
 // missing xen lights
 {
 "classname" "light"
@@ -80,5 +96,10 @@
 "origin" "-2918 -2295 3174"
 "_xvk_radius" "2"
 }
+
+
+
+
+
 
 

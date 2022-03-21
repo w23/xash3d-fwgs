@@ -23,9 +23,16 @@
 "_light" "60  220 170 20000"
 }
 
-//{
-//"_xvk_ent_id" "18" // remove hack lights entity
-//}
+{
+"_xvk_surface_id" "888" // +0~GENERIC86B    60  220 170  10000
+"_light" "60  220 170 50000"
+}
+
+
+{
+"_xvk_ent_id" "18" // remove hack lights entity
+"origin" "2160 656 -210"
+}
 
 {
 "_xvk_ent_id" "22 19 20 21" // remove hack lights entity
