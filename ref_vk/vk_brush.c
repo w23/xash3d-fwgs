@@ -433,10 +433,30 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		sizes.num_indices += 3 * (surf->numedges - 1);
 		if (surf->texinfo->texture->gl_texturenum > sizes.max_texture_id)
 			sizes.max_texture_id = surf->texinfo->texture->gl_texturenum;
-	}
+		}
 
 	return sizes;
 }
+
+// cos(45) degrees like in qrad
+#define MAX_SMOOTHING_DOT_TRESHOLD 0.7
+#define MAX_SMOOTHING_NORMALS_POOL 10000
+#define MAX_SMOOTHING_NORMALS_LINKED 16
+#define SMOOTHING_NORMALS_POS_MULTIPLIER 1000.0f
+
+// structure for linking smoothing points
+typedef struct vk_smoothing_normals_s {
+	vk_vertex_t* vertex;
+	uint linked[MAX_SMOOTHING_NORMALS_LINKED];
+	uint linked_count;
+	uint already_smoothed;
+	int ipos[3];
+	int iuv[2];
+} vk_smoothing_map_normals_t;
+
+// TODO: maybe use dynamic memory? but now is fast and simple
+vk_smoothing_map_normals_t smoothing_vertices[MAX_SMOOTHING_NORMALS_POOL];
+uint smoothing_vertices_count = 0;
 
 static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	vk_brush_model_t *bmodel = mod->cache.data;
@@ -462,6 +482,9 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	// Load sorted by gl_texturenum
 	for (int t = 0; t <= sizes.max_texture_id; ++t)
 	{
+
+		smoothing_vertices_count = 0;
+
 		for( int i = 0; i < mod->nummodelsurfaces; ++i)
 		{
 			const int surface_index = mod->firstmodelsurface + i;
@@ -555,6 +578,17 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 				vertex.lm_tc[0] = s;
 				vertex.lm_tc[1] = t;
 
+				// remember data for smoothing normals
+				vk_smoothing_map_normals_t* smoothing_vertex = smoothing_vertices + smoothing_vertices_count++;
+				smoothing_vertex->vertex = bvert;
+				smoothing_vertex->already_smoothed = 0;
+				smoothing_vertex->linked_count = 0;
+				smoothing_vertex->ipos[0] = (int)(vertex.pos[0] * SMOOTHING_NORMALS_POS_MULTIPLIER);
+				smoothing_vertex->ipos[1] = (int)(vertex.pos[1] * SMOOTHING_NORMALS_POS_MULTIPLIER);
+				smoothing_vertex->ipos[2] = (int)(vertex.pos[2] * SMOOTHING_NORMALS_POS_MULTIPLIER);
+				smoothing_vertex->iuv[0] = (int)(vertex.gl_tc[0] * SMOOTHING_NORMALS_POS_MULTIPLIER);
+				smoothing_vertex->iuv[1] = (int)(vertex.gl_tc[1] * SMOOTHING_NORMALS_POS_MULTIPLIER);
+
 				*(bvert++) = vertex;
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
@@ -569,6 +603,93 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 			model_geometry->element_count = index_count;
 			vertex_offset += surf->numedges;
+		}
+
+		// Smoothing normals by 45 degrees like qrad
+		if (smoothing_vertices_count > 0) {
+
+			uint linked_vertices_count = 0;
+			uint smoothing_vertices_count_minus_one = smoothing_vertices_count - 1;
+
+			// Bruteforce linking vertices
+			for (int f = 0; f < smoothing_vertices_count_minus_one; ++f) {
+				vk_smoothing_map_normals_t* first_vertex = smoothing_vertices + f;
+
+				for (int s = f + 1; s < smoothing_vertices_count; ++s) {
+					vk_smoothing_map_normals_t* second_vertex = smoothing_vertices + s;
+					qboolean already_linked = false;
+
+					// is lists overloaded?
+					if (first_vertex->linked_count >= MAX_SMOOTHING_NORMALS_LINKED) break;
+					if (second_vertex->linked_count >= MAX_SMOOTHING_NORMALS_LINKED) continue;
+
+					for (int l = 0; l < first_vertex->linked_count; ++l) {
+						if (first_vertex->linked[l] == s) {
+							already_linked = true;
+							break;
+						}
+					}
+
+					if (already_linked) continue;
+
+					for (int l = 0; l < first_vertex->linked_count; ++l) {
+						if (second_vertex->linked[l] == f) {
+							already_linked = true;
+							break;
+						}
+					}
+
+					if (already_linked) continue;
+
+					if (first_vertex->ipos[0] == second_vertex->ipos[0] &&
+						first_vertex->ipos[1] == second_vertex->ipos[1] &&
+						first_vertex->ipos[2] == second_vertex->ipos[2] /* &&
+						first_vertex->iuv[0] == second_vertex->iuv[0] && // need for fixing of artifacts?
+						first_vertex->iuv[1] == second_vertex->iuv[1]*/) {
+						if (DotProduct(first_vertex->vertex->normal, second_vertex->vertex->normal) > MAX_SMOOTHING_DOT_TRESHOLD) {
+							first_vertex->linked[(first_vertex->linked_count)++] = s;
+							second_vertex->linked[(second_vertex->linked_count)++] = f;
+						}
+					}
+				}
+
+				if (first_vertex->linked_count > 0) {
+					linked_vertices_count++;
+				}
+			}
+
+			if (linked_vertices_count == 0) continue;
+
+			gEngine.Con_Printf("Map normals smoothing: searched %u vertices and %u smoothed.\n", smoothing_vertices_count, linked_vertices_count);
+
+			// Simple calculation of median normals
+			// TODO: need to recalculate tangents for better result?
+			for (int v = 0; v < smoothing_vertices_count; ++v) {
+				vk_smoothing_map_normals_t* vertex = smoothing_vertices + v;
+
+				if (vertex->already_smoothed == 1) continue;
+
+				vk_vertex_t* vert_data = vertex->vertex;
+
+				vec3_t normal = { vert_data->normal[0], vert_data->normal[1], vert_data->normal[2] };
+
+				for (int l = 0; l < vertex->linked_count; ++l) {
+					vk_smoothing_map_normals_t* linked = smoothing_vertices + vertex->linked[l];
+
+					VectorAdd(normal, linked->vertex->normal, normal);
+				}
+
+				VectorNormalize(normal);
+
+				VectorCopy(normal, vert_data->normal);
+
+				for (int l = 0; l < vertex->linked_count; ++l) {
+					vk_smoothing_map_normals_t* linked = smoothing_vertices + vertex->linked[l];
+					VectorCopy(normal, linked->vertex->normal);
+
+					linked->already_smoothed = 1;
+				}
+			}
 		}
 	}
 
