@@ -257,7 +257,7 @@ static void performTracing(VkCommandBuffer cmdbuf, const perform_tracing_args_t*
 			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
 	}
 
-R_VkMeatpipePerform(&g_rtx.mainpipe, cmdbuf, args->frame_index, &res);
+	R_VkMeatpipePerform(&g_rtx.mainpipe, cmdbuf, args->frame_index, &res);
 
 	{
 		const r_vkimage_blit_args blit_args = {
@@ -280,6 +280,7 @@ R_VkMeatpipePerform(&g_rtx.mainpipe, cmdbuf, args->frame_index, &res);
 
 		R_VkImageBlit( cmdbuf, &blit_args );
 	}
+
 	DEBUG_END(cmdbuf);
 }
 

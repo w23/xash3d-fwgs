@@ -228,10 +228,10 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 	}
 
 	const vk_staging_buffer_args_t staging_args = {
-	.buffer = g_ray_model_state.kusochki_buffer.buffer,
-	.offset = kusochki_count_offset * sizeof(vk_kusok_data_t),
-	.size = args.model->num_geometries * sizeof(vk_kusok_data_t),
-	.alignment = 16,
+		.buffer = g_ray_model_state.kusochki_buffer.buffer,
+		.offset = kusochki_count_offset * sizeof(vk_kusok_data_t),
+		.size = args.model->num_geometries * sizeof(vk_kusok_data_t),
+		.alignment = 16,
 	};
 	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
 
