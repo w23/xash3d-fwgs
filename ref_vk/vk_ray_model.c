@@ -228,10 +228,10 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 	}
 
 	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_ray_model_state.kusochki_buffer.buffer,
-		.offset = kusochki_count_offset * sizeof(vk_kusok_data_t),
-		.size = args.model->num_geometries * sizeof(vk_kusok_data_t),
-		.alignment = 16,
+	.buffer = g_ray_model_state.kusochki_buffer.buffer,
+	.offset = kusochki_count_offset * sizeof(vk_kusok_data_t),
+	.size = args.model->num_geometries * sizeof(vk_kusok_data_t),
+	.alignment = 16,
 	};
 	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
 
@@ -301,6 +301,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 
 		const vec3_t color = {1, 1, 1};
 		applyMaterialToKusok(kusochki + i, mg, color, false);
+		Matrix4x4_LoadIdentity(kusochki[i].prev_transform);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -493,6 +494,8 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		for (int i = 0; i < render_model->num_geometries; ++i) {
 			const vk_render_geometry_t *geom = render_model->geometries + i;
 			applyMaterialToKusok(kusochki + i, geom, color, HACK_reflective);
+
+			Matrix4x4_Copy((kusochki + i)->prev_transform, render_model->prev_transform);
 		}
 
 		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
