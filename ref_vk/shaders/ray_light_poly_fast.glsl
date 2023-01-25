@@ -42,11 +42,16 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
+#define ALL_BITS_U32 4294967295
 #define UINT_BITS_COUNT 32
 #define MAX_LIGHTS 512
 #define BITMASKS_COUNT (MAX_LIGHTS / UINT_BITS_COUNT + 1)
 
 shared uint shared_visiblity[ BITMASKS_COUNT ];
+
+#ifndef LIGHT_VISIBLITY_COLLECT
+shared uint shared_sample_always[ BITMASKS_COUNT ];
+#endif
 
 #if LIGHT_POLYGON
 vec3 fastSampleShadowPosPoly(const PolygonLight poly, vec3 rnd) {
@@ -170,13 +175,16 @@ void main() {
 
 	const int bitmask_id = loc.x + loc.y * 8;
 	shared_visiblity[bitmask_id] = 0;
+	shared_sample_always[bitmask_id] = ALL_BITS_U32;
 	for (int x = -VISIBLITY_KERNEL; x <= VISIBLITY_KERNEL; ++x) {
 		for (int y = -VISIBLITY_KERNEL; y <= VISIBLITY_KERNEL; ++y) {
 			ivec2 p = pix + ivec2(x, y) * 8;
 			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
 				continue;
 			}
-			shared_visiblity[bitmask_id] |= imageLoad(VISIBLITY_IMAGE, p).x;
+			const uint current_vis = imageLoad(VISIBLITY_IMAGE, p).x;
+			shared_visiblity[bitmask_id] |= current_vis;
+			shared_sample_always[bitmask_id] &= current_vis;
 		}
 	}
 
@@ -189,10 +197,12 @@ void main() {
 #endif
 
 	uint visiblity_mask = 0;
+	uint sample_always_mask = 0;
 	for (uint i = 0; i < num_lights; ++i) {
 
 		if (i % UINT_BITS_COUNT == 0) {
 			visiblity_mask = shared_visiblity[i / UINT_BITS_COUNT];
+			sample_always_mask = shared_sample_always[i / UINT_BITS_COUNT];
 		}
 		
 		if ((visiblity_mask & (1 << (i % UINT_BITS_COUNT))) == 0)
@@ -218,6 +228,9 @@ void main() {
 
 		const float dist = - dot(vec4(pos, 1.f), poly.plane) / dot(light_sample_dir.xyz, poly.plane.xyz);
 
+#ifdef EXTREME_SPEEDUP
+		if ((sample_always_mask & (1 << (i % UINT_BITS_COUNT))) == 0)
+#endif
 		if (shadowed(pos, light_sample_dir.xyz, dist))
 			continue;
 

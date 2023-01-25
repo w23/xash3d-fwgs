@@ -10,6 +10,8 @@
 #define LIGHT_DIVIDE 25.
 #define VISIBLITY_KERNEL 2
 
+//#define EXTREME_SPEEDUP 1
+
 #define LIGHT_POLYGON 1
 #define OUTPUTS RAY_LIGHT_DIRECT_POLY_OUTPUTS
 #include "ray_light_poly_fast.glsl"
