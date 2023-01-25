@@ -106,6 +106,7 @@ class ImageFormat:
     VK_FORMAT_UNDEFINED = 0
     VK_FORMAT_R8G8B8A8_UNORM = 37
     VK_FORMAT_R16G16B16A16_SFLOAT = 97
+    VK_FORMAT_R32_UINT = 98
     VK_FORMAT_R32G32B32A32_SFLOAT = 109
 
     __map = {
@@ -113,6 +114,7 @@ class ImageFormat:
         'Rgba32f' : VK_FORMAT_R32G32B32A32_SFLOAT,
         'Rgba16f' : VK_FORMAT_R16G16B16A16_SFLOAT,
         'Rgba8' : VK_FORMAT_R8G8B8A8_UNORM,
+        'R32ui' : VK_FORMAT_R32_UINT,
         # TODO map more
     }
 

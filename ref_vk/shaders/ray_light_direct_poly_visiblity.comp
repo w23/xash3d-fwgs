@@ -1,0 +1,11 @@
+#version 460 core
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query: require
+
+#define RAY_QUERY
+
+#define LIGHT_VISIBLITY_COLLECT 1
+#define OUT_VISIBLITY_IMAGE out_light_poly_visiblity
+
+#define LIGHT_POLYGON 1
+#include "ray_light_poly_fast.glsl"

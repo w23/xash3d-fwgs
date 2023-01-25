@@ -27,7 +27,7 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 
 // TODO settings/realtime modifiable/adaptive
-#if 1
+#if 0
 #define FRAME_WIDTH 1280
 #define FRAME_HEIGHT 720
 #elif 0

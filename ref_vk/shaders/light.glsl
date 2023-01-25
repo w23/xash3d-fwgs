@@ -21,6 +21,79 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #endif
 
 #if LIGHT_POINT
+void sampleSinglePointLight(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialProperties material, PointLight light, out vec3 diffuse, out vec3 specular) {
+	vec3 color = light.color_stopdot.rgb * throughput;
+	if (dot(color,color) < color_culling_threshold)
+		return;
+
+	const vec4 origin_r = light.origin_r;
+	const float stopdot = light.color_stopdot.a;
+	const vec3 dir = light.dir_stopdot2.xyz;
+	const float stopdot2 = light.dir_stopdot2.a;
+	const bool not_environment = (light.environment == 0);
+
+	const vec3 light_dir = not_environment ? (origin_r.xyz - P) : -dir; // TODO need to randomize sampling direction for environment soft shadow
+	const float radius = origin_r.w;
+
+	const vec3 light_dir_norm = normalize(light_dir);
+	const float light_dot = dot(light_dir_norm, N);
+	if (light_dot < 1e-5)
+		return;
+
+	const float spot_dot = -dot(light_dir_norm, dir);
+	if (spot_dot < stopdot2)
+		return;
+
+	float spot_attenuation = 1.f;
+	if (spot_dot < stopdot)
+		spot_attenuation = (spot_dot - stopdot2) / (stopdot - stopdot2);
+
+	//float fdist = 1.f;
+	float light_dist = 1e5; // TODO this is supposedly not the right way to do shadows for environment lights.m. qrad checks for hitting SURF_SKY, and maybe we should too?
+	const float d2 = dot(light_dir, light_dir);
+	const float r2 = origin_r.w * origin_r.w;
+	if (not_environment) {
+		if (radius < 1e-3)
+			return;
+
+		const float dist = length(light_dir);
+		if (radius > dist)
+			return;
+
+		light_dist = dist - radius;
+		const float pdf = 1. / ((1. - sqrt(d2 - r2) / dist) * spot_attenuation);
+		color /= pdf;
+	} else {
+		color *= 2;
+	}
+
+	// if (dot(color,color) < color_culling_threshold)
+	// 	continue;
+
+	vec3 ldiffuse, lspecular;
+	evalSplitBRDF(N, light_dir_norm, view_dir, material, ldiffuse, lspecular);
+	ldiffuse *= color;
+	lspecular *= color;
+
+	vec3 combined = ldiffuse + lspecular;
+
+	if (dot(combined,combined) < color_culling_threshold)
+		return;
+
+	// FIXME split environment and other lights
+	if (not_environment) {
+		if (shadowed(P, light_dir_norm, light_dist + shadow_offset_fudge))
+			return;
+	} else {
+		// for environment light check that we've hit SURF_SKY
+		if (shadowedSky(P, light_dir_norm, light_dist + shadow_offset_fudge))
+			return;
+	}
+
+	diffuse += ldiffuse;
+	specular += lspecular;
+}
+
 void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 throughput, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
@@ -34,87 +107,8 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 throughput, vec
 	for (uint i = 0; i < lights.m.num_point_lights; ++i) {
 #endif
 
-		vec3 color = lights.m.point_lights[i].color_stopdot.rgb * throughput;
-		if (dot(color,color) < color_culling_threshold)
-			continue;
+		sampleSinglePointLight(P, N, throughput, view_dir, material, lights.m.point_lights[i], diffuse, specular);
 
-		const vec4 origin_r = lights.m.point_lights[i].origin_r;
-		const float stopdot = lights.m.point_lights[i].color_stopdot.a;
-		const vec3 dir = lights.m.point_lights[i].dir_stopdot2.xyz;
-		const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
-		const bool not_environment = (lights.m.point_lights[i].environment == 0);
-
-		const vec3 light_dir = not_environment ? (origin_r.xyz - P) : -dir; // TODO need to randomize sampling direction for environment soft shadow
-		const float radius = origin_r.w;
-
-		const vec3 light_dir_norm = normalize(light_dir);
-		const float light_dot = dot(light_dir_norm, N);
-		if (light_dot < 1e-5)
-			continue;
-
-		const float spot_dot = -dot(light_dir_norm, dir);
-		if (spot_dot < stopdot2)
-			continue;
-
-		float spot_attenuation = 1.f;
-		if (spot_dot < stopdot)
-			spot_attenuation = (spot_dot - stopdot2) / (stopdot - stopdot2);
-
-		//float fdist = 1.f;
-		float light_dist = 1e5; // TODO this is supposedly not the right way to do shadows for environment lights.m. qrad checks for hitting SURF_SKY, and maybe we should too?
-		const float d2 = dot(light_dir, light_dir);
-		const float r2 = origin_r.w * origin_r.w;
-		if (not_environment) {
-			if (radius < 1e-3)
-				continue;
-
-			const float dist = length(light_dir);
-			if (radius > dist)
-				continue;
-#if 1
-			//light_dist = sqrt(d2);
-			light_dist = dist - radius;
-			//fdist = 2.f / (r2 + d2 + light_dist * sqrt(d2 + r2));
-#else
-			light_dist = dist;
-			//const float fdist = 2.f / (r2 + d2 + light_dist * sqrt(d2 + r2));
-			//const float fdist = 2.f / (r2 + d2 + light_dist * sqrt(d2 + r2));
-			//fdist = (light_dist > 1.) ? 1.f / d2 : 1.f; // qrad workaround
-#endif
-
-			//const float pdf = 1.f / (fdist * light_dot * spot_attenuation);
-			//const float pdf = TWO_PI / asin(radius / dist);
-			const float pdf = 1. / ((1. - sqrt(d2 - r2) / dist) * spot_attenuation);
-			color /= pdf;
-		} else {
-			color *= 2;
-		}
-
-		// if (dot(color,color) < color_culling_threshold)
-		// 	continue;
-
-		vec3 ldiffuse, lspecular;
-		evalSplitBRDF(N, light_dir_norm, view_dir, material, ldiffuse, lspecular);
-		ldiffuse *= color;
-		lspecular *= color;
-
-		vec3 combined = ldiffuse + lspecular;
-
-		if (dot(combined,combined) < color_culling_threshold)
-			continue;
-
-		// FIXME split environment and other lights
-		if (not_environment) {
-			if (shadowed(P, light_dir_norm, light_dist + shadow_offset_fudge))
-				continue;
-		} else {
-			// for environment light check that we've hit SURF_SKY
-			if (shadowedSky(P, light_dir_norm, light_dist + shadow_offset_fudge))
-				continue;
-		}
-
-		diffuse += ldiffuse;
-		specular += lspecular;
 	} // for all lights
 }
 #endif
