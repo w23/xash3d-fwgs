@@ -56,7 +56,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 #if 1
 	// Real correct emissive color
 	//payload.emissive.rgb = kusok.emissive;
-	payload.emissive.rgb = clamp(kusok.emissive / (1.0/3.0) / 25, 0, 1.5) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	payload.emissive.rgb = clamp(((kusok.emissive * (1.0/3.0) / 20) ), 0, 1.0) * SRGBtoLINEAR(payload.base_color_a.rgb);
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))
