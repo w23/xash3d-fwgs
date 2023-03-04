@@ -16,10 +16,12 @@ typedef struct vk_ray_model_s {
 	int max_prims;
 	int num_geoms;
 	int size;
+	int as_buffer_pool_index;
 	uint32_t kusochki_offset;
 	qboolean dynamic;
-	qboolean taken;
 	qboolean kusochki_updated_this_frame;
+
+	uint32_t used_frames_ago;
 
 	struct {
 		uint32_t as_offset;
@@ -52,6 +54,7 @@ typedef struct {
 } as_build_args_t;
 
 qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_build_args_t *args, vk_ray_model_t *model);
+void destroyAccelerationStructure( vk_ray_model_t *model );
 
 typedef struct {
 	// Geometry metadata. Lifetime is similar to geometry lifetime itself.

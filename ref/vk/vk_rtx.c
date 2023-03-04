@@ -73,7 +73,6 @@ static struct {
 	vk_buffer_t uniform_buffer;
 	uint32_t uniform_unit_size;
 
-	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
 	vk_meatpipe_t *mainpipe;
 	vk_resource_p *mainpipe_resources;

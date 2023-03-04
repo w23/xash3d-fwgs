@@ -16,23 +16,27 @@
 
 xvk_ray_model_state_t g_ray_model_state;
 
-static void returnModelToCache(vk_ray_model_t *model) {
-	ASSERT(model->taken);
-	model->taken = false;
+static qboolean modelIsTaken(const vk_ray_model_t *const model) {
+	return model->used_frames_ago == 0;
 }
 
 static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkAccelerationStructureGeometryKHR *geoms) { //}, int size) {
 	vk_ray_model_t *model = NULL;
+	vk_ray_model_t *oldest_model = NULL;
 	int i;
 	for (i = 0; i < ARRAYSIZE(g_ray_model_state.models_cache); ++i)
 	{
 		int j;
-	 	model = g_ray_model_state.models_cache + i;
-		if (model->taken)
-			continue;
+		model = g_ray_model_state.models_cache + i;
 
 		if (!model->as)
 			break;
+
+		if (modelIsTaken(model))
+			continue;
+
+		if (!oldest_model || (oldest_model->used_frames_ago < model->used_frames_ago))
+			oldest_model = model;
 
 		if (model->num_geoms != num_geoms)
 			continue;
@@ -65,8 +69,18 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 			break;
 	}
 
-	if (i == ARRAYSIZE(g_ray_model_state.models_cache))
-		return NULL;
+	if (i == ARRAYSIZE(g_ray_model_state.models_cache)) {
+		if (!oldest_model) {
+			gEngine.Con_Printf(S_ERROR "Cannot acquire a model from cache. Every model is being used. What.\n");
+			return NULL;
+		}
+
+		gEngine.Con_Printf(S_WARN "Reusing model %d used %u frames ago\n", oldest_model - g_ray_model_state.models_cache, oldest_model->used_frames_ago);
+		model = oldest_model;
+
+		// Clear and prepare for new use
+		VK_RayModelDestroy(model);
+	}
 
 	// if (model->size > 0)
 	// 	ASSERT(model->size >= size);
@@ -79,7 +93,7 @@ static vk_ray_model_t *getModelFromCache(int num_geoms, int max_prims, const VkA
 		model->max_prims = max_prims;
 	}
 
-	model->taken = true;
+	model->used_frames_ago = 0;
 	return model;
 }
 
@@ -104,7 +118,7 @@ static void validateModelPair( const vk_ray_model_t *m1, const vk_ray_model_t *m
 	if (m1 == m2) return;
 	if (!m2->num_geoms) return;
 	assertNoOverlap(m1->debug.as_offset, m1->size, m2->debug.as_offset, m2->size);
-	if (m1->taken && m2->taken)
+	if (modelIsTaken(m1) && modelIsTaken(m2))
 		assertNoOverlap(m1->kusochki_offset, m1->num_geoms, m2->kusochki_offset, m2->num_geoms);
 }
 
@@ -132,7 +146,7 @@ void XVK_RayModel_Validate( void ) {
 		ASSERT(model->kusochki_offset < MAX_KUSOCHKI);
 		ASSERT(model->geoms);
 		ASSERT(model->num_geoms > 0);
-		ASSERT(model->taken);
+		ASSERT(modelIsTaken(model));
 		num_geoms = model->num_geoms;
 
 		for (int j = 0; j < num_geoms; j++) {
@@ -375,7 +389,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			if (!result)
 			{
 				gEngine.Con_Printf(S_ERROR "Could not build BLAS for %s\n", args.model->debug_name);
-				returnModelToCache(ray_model);
+				ray_model->used_frames_ago = 1;
 				ray_model = NULL;
 			} else {
 				ray_model->kusochki_offset = kusochki_count_offset;
@@ -404,8 +418,11 @@ void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
 	if (model->as != VK_NULL_HANDLE) {
 		//gEngine.Con_Reportf("Model %s destroying AS=%p blas_index=%d\n", model->debug_name, model->rtx.blas, blas_index);
 
-		vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);
-		Mem_Free(model->geoms);
+		destroyAccelerationStructure(model);
+
+		if (model->geoms)
+			Mem_Free(model->geoms);
+
 		memset(model, 0, sizeof(*model));
 	}
 }
@@ -565,7 +582,11 @@ void XVK_RayModel_ClearForNextFrame( void ) {
 		if (!model->model->dynamic)
 			continue;
 
-		returnModelToCache(model->model);
+		// Explicitly not handling the wraparound here: 2^32 / 60fps / 3600 = ~18000 hours
+		// The worst that can happen is there are fewer available slots for a few frames
+		// FIXME ALSO lol it will be done only once for current frame, and so used_frames_ago will never be larger than 1
+		model->model->used_frames_ago++;
+
 		model->model = NULL;
 	}
 

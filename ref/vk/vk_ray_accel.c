@@ -85,6 +85,9 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 			return false;
 		}
 
+		if (model)
+			model->as_buffer_pool_index = block.index + 1;
+
 		XVK_CHECK(vkCreateAccelerationStructureKHR(vk_core.device, &asci, NULL, args->p_accel));
 		SET_DEBUG_NAME(*args->p_accel, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, args->debug_name);
 
@@ -114,6 +117,14 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 
 	vkCmdBuildAccelerationStructuresKHR(cmdbuf, 1, &build_info, &args->build_ranges);
 	return true;
+}
+
+void destroyAccelerationStructure( vk_ray_model_t *model ) {
+	if (model->as)
+		vkDestroyAccelerationStructureKHR(vk_core.device, model->as, NULL);
+
+	if (model->as_buffer_pool_index > 0)
+		aloPoolFree(g_accel.accels_buffer_alloc, model->as_buffer_pool_index - 1);
 }
 
 static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr ) {
