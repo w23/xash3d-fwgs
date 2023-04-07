@@ -3,7 +3,7 @@
 
 #include "profiler.h"
 
-#define MAX_COMMANDBUFFERS 4
+#define MAX_COMMANDBUFFERS 6
 #define MAX_QUERY_COUNT 128
 
 #define BEGIN_INDEX_TAG 0x10000000

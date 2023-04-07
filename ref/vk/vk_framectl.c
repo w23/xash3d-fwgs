@@ -43,6 +43,8 @@ typedef struct {
 	// Unfortunately waiting on semaphore also means resetting it when it is signaled
 	// so we can't reuse the same one for two purposes and need to mnozhit sunchnosti
 	VkSemaphore sem_done2;
+
+	vk_combuf_t *staging_combuf;
 } vk_framectl_frame_t;
 
 static struct {
@@ -208,8 +210,6 @@ void R_BeginFrame( qboolean clearScene ) {
 		waitForFrameFence();
 		// Current command buffer is done and available
 		// Previous might still be in flight
-
-		// TODO R_VkQueryPoolGetFrameResults(g_frame.qpools + g_frame.current.index);
 	}
 
 	APROF_SCOPE_END(begin_frame_tail);
@@ -220,8 +220,12 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_BEGIN(begin_frame);
 
 	{
-		const vk_combuf_scopes_t gpurofl = R_VkCombufScopesGet(frame->combuf);
-		R_SpeedsDisplayMore(prev_frame_event_index, &gpurofl);
+		const vk_combuf_scopes_t gpurofl[] = {
+			frame->staging_combuf ? R_VkCombufScopesGet(frame->staging_combuf) : (vk_combuf_scopes_t){},
+			R_VkCombufScopesGet(frame->combuf),
+		};
+
+		R_SpeedsDisplayMore(prev_frame_event_index, frame->staging_combuf ? gpurofl : gpurofl + 1, frame->staging_combuf ? 2 : 1);
 	}
 
 	if (vk_core.rtx && FBitSet( vk_rtx->flags, FCVAR_CHANGED )) {
@@ -304,6 +308,7 @@ static void enqueueRendering( vk_combuf_t* combuf ) {
 	g_frame.current.phase = Phase_RenderingEnqueued;
 }
 
+// FIXME pass frame, not combuf (possible desync)
 static void submit( vk_combuf_t* combuf, qboolean wait ) {
 	ASSERT(g_frame.current.phase == Phase_RenderingEnqueued);
 
@@ -314,8 +319,10 @@ static void submit( vk_combuf_t* combuf, qboolean wait ) {
 
 	R_VkCombufEnd(combuf);
 
+	frame->staging_combuf = R_VkStagingFrameEnd();
+
 	const VkCommandBuffer cmdbufs[] = {
-		R_VkStagingFrameEnd(),
+		frame->staging_combuf ? frame->staging_combuf->cmdbuf : NULL,
 		cmdbuf,
 	};
 

@@ -345,7 +345,7 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	return frame_bar_y;
 }
 
-static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofl) {
+static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
 	const int max_frames_to_draw = 2;
@@ -378,22 +378,25 @@ static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_comb
 		y += g_speeds.font_metrics.glyph_height * 6;
 		const int bar_height = g_speeds.font_metrics.glyph_height;
 
-		for (int i = 0; i < gpurofl->entries_count; ++i) {
-			const int scope_index = gpurofl->entries[i];
-			const uint64_t begin_ns = gpurofl->timestamps[scope_index*2 + 0];
-			const uint64_t end_ns = gpurofl->timestamps[scope_index*2 + 1];
-			const char *name = gpurofl->scopes[scope_index].name;
+		for (int j = 0; j < gpurofls_count; ++j) {
+			const vk_combuf_scopes_t *const gpurofl = gpurofls + j;
+			for (int i = 0; i < gpurofl->entries_count; ++i) {
+				const int scope_index = gpurofl->entries[i];
+				const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
+				const uint64_t end_ns = gpurofl->timestamps[i*2 + 1];
+				const char *name = gpurofl->scopes[scope_index].name;
 
-			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
-				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
+				if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
+					R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
+					g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
+				}
+
+				g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
+
+				rgba_t color = {255, 255, 0, 127};
+				getColorForString(name, color);
+				drawTimeBar(frame_begin_time, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
 			}
-
-			g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
-
-			rgba_t color = {255, 255, 0, 127};
-			getColorForString(name, color);
-			drawTimeBar(frame_begin_time, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
 		}
 	}
 	return y;
@@ -586,11 +589,14 @@ void R_SpeedsRegisterMetric(int* p_value, const char *name, r_speeds_metric_type
 	}
 }
 
-void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scopes_s *gpurofl) {
+void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scopes_s *gpurofl, int gpurofl_count) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
-	const uint64_t gpu_frame_begin_ns = gpurofl->timestamps[0];
-	const uint64_t gpu_frame_end_ns = gpurofl->timestamps[1];
+	uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
+	for (int i = 0; i < gpurofl_count; ++i) {
+		gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].timestamps[0]);
+		gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].timestamps[1]);
+	}
 
 	// Reads current font/DPI scale, many functions below use it
 	getCurrentFontMetrics();
@@ -614,7 +620,7 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 	{
 		int y = 100;
 		const int draw = speeds_bits & SPEEDS_BIT_FRAME;
-		y = drawFrames( draw, prev_frame_index, y, gpurofl );
+		y = drawFrames( draw, prev_frame_index, y, gpurofl, gpurofl_count );
 
 		if (draw)
 			y = drawGraphs(y + 10);

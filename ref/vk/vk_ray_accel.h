@@ -41,4 +41,5 @@ qboolean RT_VkAccelInit(void);
 void RT_VkAccelShutdown(void);
 void RT_VkAccelNewMap(void);
 void RT_VkAccelFrameBegin(void);
-void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf);
+struct vk_combuf_s;
+void RT_VkAccelPrepareTlas(struct vk_combuf_s *combuf);

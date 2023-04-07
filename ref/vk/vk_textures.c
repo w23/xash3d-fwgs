@@ -6,6 +6,7 @@
 #include "vk_const.h"
 #include "vk_descriptor.h"
 #include "vk_mapents.h" // wadlist
+#include "vk_combuf.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
@@ -672,7 +673,10 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 			}
 		}
 
-		const VkCommandBuffer cmdbuf = R_VkStagingCommit();
+		// TODO Don't change layout here. Alternatively:
+		// I. Attach layout metadata to the image, and request its change next time it is used.
+		// II. Build-in layout transfer to staging commit and do it there on commit.
+		const VkCommandBuffer cmdbuf = R_VkStagingCommit()->cmdbuf;
 
 		// 	5.2 image:layout:DST -> image:layout:SAMPLED
 		// 		5.2.1 transitionToLayout(DST -> SHADER_READ_ONLY)
@@ -689,7 +693,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		};
 		vkCmdPipelineBarrier(cmdbuf,
 				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // FIXME incorrect, we also use them in compute and potentially ray tracing shaders
 				0, 0, NULL, 0, NULL, 1, &image_barrier);
 
 	}

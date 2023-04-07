@@ -4,6 +4,7 @@
 #include "vk_commandpool.h"
 #include "profiler.h"
 #include "r_speeds.h"
+#include "vk_combuf.h"
 
 #include <memory.h>
 
@@ -34,8 +35,10 @@ static struct {
 		int count;
 	} images;
 
-	vk_command_pool_t upload_pool;
-	VkCommandBuffer cmdbuf;
+	vk_combuf_t *combuf[3];
+
+	// Currently opened command buffer, ready to accept new commands
+	vk_combuf_t *current;
 
 	struct {
 		int total_size;
@@ -50,7 +53,9 @@ qboolean R_VkStagingInit(void) {
 	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 		return false;
 
-	g_staging.upload_pool = R_VkCommandPoolCreate( COMMAND_BUFFER_COUNT );
+	g_staging.combuf[0] = R_VkCombufOpen();
+	g_staging.combuf[1] = R_VkCombufOpen();
+	g_staging.combuf[2] = R_VkCombufOpen();
 
 	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
 
@@ -66,7 +71,6 @@ qboolean R_VkStagingInit(void) {
 
 void R_VkStagingShutdown(void) {
 	VK_BufferDestroy(&g_staging.buffer);
-	R_VkCommandPoolDestroy( &g_staging.upload_pool );
 }
 
 // FIXME There's a severe race condition here. Submitting things manually and prematurely (before framectl had a chance to synchronize with the previous frame)
@@ -74,12 +78,12 @@ void R_VkStagingShutdown(void) {
 void R_VkStagingFlushSync( void ) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
-	const VkCommandBuffer cmdbuf = R_VkStagingCommit();
-	if (!cmdbuf)
+	vk_combuf_t *combuf = R_VkStagingCommit();
+	if (!combuf)
 		goto end;
 
-	XVK_CHECK(vkEndCommandBuffer(cmdbuf));
-	g_staging.cmdbuf = VK_NULL_HANDLE;
+	R_VkCombufEnd(combuf);
+	g_staging.current = NULL;
 
 	//gEngine.Con_Reportf(S_WARN "flushing staging buffer img count=%d\n", g_staging.images.count);
 
@@ -87,12 +91,14 @@ void R_VkStagingFlushSync( void ) {
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.commandBufferCount = 1,
-			.pCommandBuffers = &cmdbuf,
+			.pCommandBuffers = &combuf->cmdbuf,
 		};
 
 		// TODO wait for previous command buffer completion. Why: we might end up writing into the same dst
 
 		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, VK_NULL_HANDLE));
+
+		// TODO wait for fence, not this
 		XVK_CHECK(vkQueueWaitIdle(vk_core.queue));
 	}
 
@@ -173,7 +179,11 @@ void R_VkStagingUnlock(staging_handle_t handle) {
 	// FIXME mark and check ready
 }
 
-static void commitBuffers(VkCommandBuffer cmdbuf) {
+static void commitBuffers(void) {
+	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
+
+	// TODO combuf scopes
+
 	// TODO better coalescing:
 	// - upload once per buffer
 	// - join adjacent regions
@@ -214,7 +224,8 @@ static void commitBuffers(VkCommandBuffer cmdbuf) {
 	g_staging.buffers.count = 0;
 }
 
-static void commitImages(VkCommandBuffer cmdbuf) {
+static void commitImages(void) {
+	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
 	for (int i = 0; i < g_staging.images.count; i++) {
 		/* { */
 		/* 	const VkBufferImageCopy *const copy = g_staging.images.copy + i; */
@@ -233,29 +244,27 @@ static void commitImages(VkCommandBuffer cmdbuf) {
 	g_staging.images.count = 0;
 }
 
-VkCommandBuffer R_VkStagingGetCommandBuffer(void) {
-	if (g_staging.cmdbuf)
-		return g_staging.cmdbuf;
+static vk_combuf_t *getCurrentCombuf(void) {
+	if (!g_staging.current) {
+		g_staging.current = g_staging.combuf[0];
+		R_VkCombufBegin(g_staging.current);
+	}
 
-	g_staging.cmdbuf = g_staging.upload_pool.buffers[0];
-
-	const VkCommandBufferBeginInfo beginfo = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	};
-	XVK_CHECK(vkBeginCommandBuffer(g_staging.cmdbuf, &beginfo));
-
-	return g_staging.cmdbuf;
+	return g_staging.current;
 }
 
-VkCommandBuffer R_VkStagingCommit(void) {
-	if (!g_staging.images.count && !g_staging.buffers.count && !g_staging.cmdbuf)
+VkCommandBuffer R_VkStagingGetCommandBuffer(void) {
+	return getCurrentCombuf()->cmdbuf;
+}
+
+vk_combuf_t *R_VkStagingCommit(void) {
+	if (!g_staging.images.count && !g_staging.buffers.count && !g_staging.current)
 		return VK_NULL_HANDLE;
 
-	const VkCommandBuffer cmdbuf = R_VkStagingGetCommandBuffer();
-	commitBuffers(cmdbuf);
-	commitImages(cmdbuf);
-	return cmdbuf;
+	getCurrentCombuf();
+	commitBuffers();
+	commitImages();
+	return g_staging.current;
 }
 
 void R_VkStagingFrameBegin(void) {
@@ -265,19 +274,21 @@ void R_VkStagingFrameBegin(void) {
 	g_staging.images.count = 0;
 }
 
-VkCommandBuffer R_VkStagingFrameEnd(void) {
-	const VkCommandBuffer cmdbuf = R_VkStagingCommit();
-	if (cmdbuf)
-		XVK_CHECK(vkEndCommandBuffer(cmdbuf));
+vk_combuf_t *R_VkStagingFrameEnd(void) {
+	R_VkStagingCommit();
+	vk_combuf_t *current = g_staging.current;
 
-	g_staging.cmdbuf = VK_NULL_HANDLE;
+	if (current) {
+		R_VkCombufEnd(g_staging.current);
+	}
 
-	const VkCommandBuffer tmp = g_staging.upload_pool.buffers[0];
-	g_staging.upload_pool.buffers[0] = g_staging.upload_pool.buffers[1];
-	g_staging.upload_pool.buffers[1] = g_staging.upload_pool.buffers[2];
-	g_staging.upload_pool.buffers[2] = tmp;
+	g_staging.current = NULL;
+	vk_combuf_t *const tmp = g_staging.combuf[0];
+	g_staging.combuf[0] = g_staging.combuf[1];
+	g_staging.combuf[1] = g_staging.combuf[2];
+	g_staging.combuf[2] = tmp;
 
 	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
 
-	return cmdbuf;
+	return current;
 }

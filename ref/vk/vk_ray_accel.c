@@ -4,6 +4,7 @@
 #include "vk_rtx.h"
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
+#include "vk_combuf.h"
 
 #define MAX_SCRATCH_BUFFER (32*1024*1024)
 #define MAX_ACCELS_BUFFER (64*1024*1024)
@@ -26,7 +27,7 @@ static VkDeviceAddress getASAddress(VkAccelerationStructureKHR as) {
 }
 
 // TODO split this into smaller building blocks in a separate module
-qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_build_args_t *args, vk_ray_model_t *model) {
+qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args, vk_ray_model_t *model) {
 	qboolean should_create = *args->p_accel == VK_NULL_HANDLE;
 #if 1 // update does not work at all on AMD gpus
 	qboolean is_update = false; // FIXME this crashes for some reason !should_create && args->dynamic;
@@ -105,7 +106,7 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 	}
 
 	// If not enough data for building, just create
-	if (!cmdbuf || !args->build_ranges)
+	if (!combuf || !args->build_ranges)
 		return true;
 
 	if (model) {
@@ -121,11 +122,17 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x\n", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
 	g_accel_.stats.accels_built++;
-	vkCmdBuildAccelerationStructuresKHR(cmdbuf, 1, &build_info, &args->build_ranges);
+
+	static int scope_id = -2;
+	if (scope_id == -2)
+		scope_id = R_VkGpuScope_Register("build_as");
+	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
+	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &build_info, &args->build_ranges);
+	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	return true;
 }
 
-static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr ) {
+static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 	const VkAccelerationStructureGeometryKHR tl_geom[] = {
 		{
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
@@ -146,7 +153,7 @@ static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr )
 	const as_build_args_t asrgs = {
 		.geoms = tl_geom,
 		.max_prim_counts = tl_max_prim_counts,
-		.build_ranges =  cmdbuf == VK_NULL_HANDLE ? NULL : &tl_build_range,
+		.build_ranges = !combuf ? NULL : &tl_build_range,
 		.n_geoms = COUNTOF(tl_geom),
 		.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
 		// we can't really rebuild TLAS because instance count changes are not allowed .dynamic = true,
@@ -154,15 +161,15 @@ static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr )
 		.p_accel = &g_accel.tlas,
 		.debug_name = "TLAS",
 	};
-	if (!createOrUpdateAccelerationStructure(cmdbuf, &asrgs, NULL)) {
+	if (!createOrUpdateAccelerationStructure(combuf, &asrgs, NULL)) {
 		gEngine.Host_Error("Could not create/update TLAS\n");
 		return;
 	}
 }
 
-void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf) {
+void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	ASSERT(g_ray_model_state.frame.num_models > 0);
-	DEBUG_BEGIN(cmdbuf, "prepare tlas");
+	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
 
@@ -220,15 +227,15 @@ void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf) {
 			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
 			.size = g_ray_model_state.frame.num_models * sizeof(VkAccelerationStructureInstanceKHR),
 		} };
-		vkCmdPipelineBarrier(cmdbuf,
+		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
 	}
 
 	// 2. Build TLAS
-	createTlas(cmdbuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
-	DEBUG_END(cmdbuf);
+	createTlas(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
+	DEBUG_END(combuf->cmdbuf);
 }
 
 qboolean RT_VkAccelInit(void) {

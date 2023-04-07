@@ -8,6 +8,7 @@
 #include "vk_staging.h"
 #include "vk_light.h"
 #include "vk_math.h"
+#include "vk_combuf.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -324,8 +325,8 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 
 	R_VkStagingUnlock(kusok_staging.handle);
 
-	 // FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
-	const VkCommandBuffer cmdbuf = R_VkStagingCommit();
+	// FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
+	vk_combuf_t *const combuf = R_VkStagingCommit();
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -344,7 +345,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			.offset = staging_args.offset,
 			.size = staging_args.size,
 		} };
-		vkCmdPipelineBarrier(cmdbuf,
+		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			//VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
@@ -368,9 +369,9 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			qboolean result;
 			asrgs.p_accel = &ray_model->as;
 
-			DEBUG_BEGINF(cmdbuf, "build blas for %s", args.model->debug_name);
-			result = createOrUpdateAccelerationStructure(cmdbuf, &asrgs, ray_model);
-			DEBUG_END(cmdbuf);
+			DEBUG_BEGINF(combuf->cmdbuf, "build blas for %s", args.model->debug_name);
+			result = createOrUpdateAccelerationStructure(combuf, &asrgs, ray_model);
+			DEBUG_END(combuf->cmdbuf);
 
 			if (!result)
 			{

@@ -35,14 +35,14 @@ vk_staging_region_t R_VkStagingLockForImage(vk_staging_image_args_t args);
 void R_VkStagingUnlock(staging_handle_t handle);
 
 // Append copy commands to command buffer.
-VkCommandBuffer R_VkStagingCommit(void);
+struct vk_combuf_s* R_VkStagingCommit(void);
 
 // Mark previous frame data as uploaded and safe to use.
 void R_VkStagingFrameBegin(void);
 
 // Uploads staging contents and returns the command buffer ready to be submitted.
 // Can return NULL if there's nothing to upload.
-VkCommandBuffer R_VkStagingFrameEnd(void);
+struct vk_combuf_s *R_VkStagingFrameEnd(void);
 
 // Gets the current command buffer.
 // WARNING: Can be invalidated by any of the Lock calls

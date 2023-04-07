@@ -51,7 +51,8 @@ typedef struct {
 	qboolean dynamic;
 } as_build_args_t;
 
-qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_build_args_t *args, vk_ray_model_t *model);
+struct vk_combuf_s;
+qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *combuf, const as_build_args_t *args, vk_ray_model_t *model);
 
 typedef struct {
 	// Geometry metadata. Lifetime is similar to geometry lifetime itself.
