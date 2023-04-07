@@ -8,6 +8,7 @@
 #include "vk_staging.h"
 #include "vk_light.h"
 #include "vk_math.h"
+#include "vk_combuf.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -213,7 +214,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 	VkAccelerationStructureBuildRangeInfoKHR *geom_build_ranges;
 	const VkDeviceAddress buffer_addr = R_VkBufferGetDeviceAddress(args.buffer); // TODO pass in args/have in buffer itself
 	const uint32_t kusochki_count_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, args.model->dynamic ? LifetimeDynamic : LifetimeStatic, args.model->num_geometries, 1);
-	vk_ray_model_t *ray_model;
 	int max_prims = 0;
 
 	ASSERT(vk_core.rtx);
@@ -352,49 +352,62 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 	}
 
 	{
-		as_build_args_t asrgs = {
-			.geoms = geoms,
-			.max_prim_counts = geom_max_prim_counts,
-			.build_ranges = geom_build_ranges,
-			.n_geoms = args.model->num_geometries,
-			.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-			.dynamic = args.model->dynamic,
-			.debug_name = args.model->debug_name,
-		};
-		ray_model = getModelFromCache(args.model->num_geometries, max_prims, geoms); //, build_size.accelerationStructureSize);
+		vk_ray_model_t *const ray_model = getModelFromCache(args.model->num_geometries, max_prims, geoms); //, build_size.accelerationStructureSize);
 		if (!ray_model) {
 			gEngine.Con_Printf(S_ERROR "Ran out of model cache slots\n");
+			Mem_Free(geom_build_ranges);
+			Mem_Free(geom_max_prim_counts);
+			Mem_Free(geoms); // TODO this can be cached within models_cache ??
+			return NULL;
 		} else {
-			qboolean result;
-			asrgs.p_accel = &ray_model->as;
+			ray_model->build.args = (as_build_args_t){
+				.p_accel = &ray_model->as,
+				.geoms = geoms,
+				.max_prim_counts = geom_max_prim_counts,
+				.build_ranges = geom_build_ranges,
+				.n_geoms = args.model->num_geometries,
+				.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+				.dynamic = args.model->dynamic,
+				.debug_name = args.model->debug_name,
+			};
+			ray_model->build.geom_build_ranges = geom_build_ranges;
+			ray_model->build.geoms = geoms;
+			ray_model->build.geom_max_prim_counts = geom_max_prim_counts;
+			ray_model->build.name = args.model->debug_name;
 
-			DEBUG_BEGINF(cmdbuf, "build blas for %s", args.model->debug_name);
-			result = createOrUpdateAccelerationStructure(cmdbuf, &asrgs, ray_model);
-			DEBUG_END(cmdbuf);
-
-			if (!result)
-			{
-				gEngine.Con_Printf(S_ERROR "Could not build BLAS for %s\n", args.model->debug_name);
-				returnModelToCache(ray_model);
-				ray_model = NULL;
-			} else {
-				ray_model->kusochki_offset = kusochki_count_offset;
-				ray_model->dynamic = args.model->dynamic;
-				ray_model->kusochki_updated_this_frame = true;
-
-				if (vk_core.debug)
-					validateModel(ray_model);
-			}
+			ray_model->kusochki_offset = kusochki_count_offset;
+			ray_model->dynamic = args.model->dynamic;
+			ray_model->kusochki_updated_this_frame = true;
 		}
+
+		return ray_model;
+	}
+}
+
+static qboolean buildBLAS( vk_combuf_t *cb, vk_ray_model_t *rm) {
+	DEBUG_BEGINF(cb->cmdbuf, "build blas for %s", rm->build.name);
+	const qboolean result = createOrUpdateAccelerationStructure(cb, &rm->build.args, rm);
+	DEBUG_END(cb->cmdbuf);
+
+	Mem_Free(rm->build.geom_build_ranges);
+	rm->build.geom_build_ranges = NULL;
+	Mem_Free(rm->build.geom_max_prim_counts);
+	rm->build.geom_max_prim_counts = NULL;
+	Mem_Free(rm->build.geoms); // TODO this can be cached within models_cache ??
+	rm->build.geoms = NULL;
+
+	if (!result)
+	{
+		gEngine.Con_Printf(S_ERROR "Could not build BLAS for %s\n", rm->build.name);
+		returnModelToCache(rm);
+		return false;
 	}
 
-	Mem_Free(geom_build_ranges);
-	Mem_Free(geom_max_prim_counts);
-	Mem_Free(geoms); // TODO this can be cached within models_cache ??
+	if (vk_core.debug)
+		validateModel(rm);
 
 	//gEngine.Con_Reportf("Model %s (%p) created blas %p\n", args.model->debug_name, args.model, args.model->rtx.blas);
-
-	return ray_model;
+	return true;
 }
 
 void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
@@ -455,7 +468,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	}
 
 	{
-		ASSERT(model->as != VK_NULL_HANDLE);
+		//ASSERT(model->as != VK_NULL_HANDLE);
 		draw_model->model = model;
 		memcpy(draw_model->transform_row, *transform_row, sizeof(draw_model->transform_row));
 	}

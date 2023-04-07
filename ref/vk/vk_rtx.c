@@ -276,7 +276,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	}
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
-	RT_VkAccelPrepareTlas(cmdbuf);
+	RT_VkAccelPrepareTlas(combuf);
 	prepareUniformBuffer(args->render_args, args->frame_index, args->fov_angle_y);
 
 	// 4. Barrier for TLAS build

@@ -4,6 +4,7 @@
 #include "vk_rtx.h"
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
+#include "vk_combuf.h"
 
 #define MAX_SCRATCH_BUFFER (32*1024*1024)
 #define MAX_ACCELS_BUFFER (64*1024*1024)
@@ -26,7 +27,7 @@ static VkDeviceAddress getASAddress(VkAccelerationStructureKHR as) {
 }
 
 // TODO split this into smaller building blocks in a separate module
-qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_build_args_t *args, vk_ray_model_t *model) {
+qboolean createOrUpdateAccelerationStructure(vk_combuf_t *cb, const as_build_args_t *args, vk_ray_model_t *model) {
 	qboolean should_create = *args->p_accel == VK_NULL_HANDLE;
 #if 1 // update does not work at all on AMD gpus
 	qboolean is_update = false; // FIXME this crashes for some reason !should_create && args->dynamic;
@@ -105,7 +106,7 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 	}
 
 	// If not enough data for building, just create
-	if (!cmdbuf || !args->build_ranges)
+	if (!cb || !args->build_ranges)
 		return true;
 
 	if (model) {
@@ -121,11 +122,18 @@ qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_bu
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x\n", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
 	g_accel_.stats.accels_built++;
-	vkCmdBuildAccelerationStructuresKHR(cmdbuf, 1, &build_info, &args->build_ranges);
+
+	// TODO dynamic scope names?
+	static int scope_id = -2;
+	if (scope_id == -2)
+		scope_id = R_VkGpuScope_Register("BuildAS");
+	const int begin_index = R_VkCombufScopeBegin(cb, scope_id);
+	vkCmdBuildAccelerationStructuresKHR(cb->cmdbuf, 1, &build_info, &args->build_ranges);
+	R_VkCombufScopeEnd(cb, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 	return true;
 }
 
-static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr ) {
+static void createTlas( vk_combuf_t *cb, VkDeviceAddress instances_addr ) {
 	const VkAccelerationStructureGeometryKHR tl_geom[] = {
 		{
 			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
@@ -146,7 +154,7 @@ static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr )
 	const as_build_args_t asrgs = {
 		.geoms = tl_geom,
 		.max_prim_counts = tl_max_prim_counts,
-		.build_ranges =  cmdbuf == VK_NULL_HANDLE ? NULL : &tl_build_range,
+		.build_ranges = !cb ? NULL : &tl_build_range,
 		.n_geoms = COUNTOF(tl_geom),
 		.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
 		// we can't really rebuild TLAS because instance count changes are not allowed .dynamic = true,
@@ -154,15 +162,41 @@ static void createTlas( VkCommandBuffer cmdbuf, VkDeviceAddress instances_addr )
 		.p_accel = &g_accel.tlas,
 		.debug_name = "TLAS",
 	};
-	if (!createOrUpdateAccelerationStructure(cmdbuf, &asrgs, NULL)) {
+	if (!createOrUpdateAccelerationStructure(cb, &asrgs, NULL)) {
 		gEngine.Host_Error("Could not create/update TLAS\n");
 		return;
 	}
 }
 
-void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf) {
+static qboolean buildBLAS( vk_combuf_t *cb, vk_ray_model_t *rm) {
+	DEBUG_BEGINF(cb->cmdbuf, "build blas for %s", rm->build.name);
+	const qboolean result = createOrUpdateAccelerationStructure(cb, &rm->build.args, rm);
+	DEBUG_END(cb->cmdbuf);
+
+	Mem_Free(rm->build.geom_build_ranges);
+	rm->build.geom_build_ranges = NULL;
+	Mem_Free(rm->build.geom_max_prim_counts);
+	rm->build.geom_max_prim_counts = NULL;
+	Mem_Free(rm->build.geoms); // TODO this can be cached within models_cache ??
+	rm->build.geoms = NULL;
+
+	if (!result)
+	{
+		gEngine.Con_Printf(S_ERROR "Could not build BLAS for %s\n", rm->build.name);
+		//returnModelToCache(rm);
+		return false;
+	}
+
+	/* if (vk_core.debug) */
+	/* 	validateModel(rm); */
+
+	//gEngine.Con_Reportf("Model %s (%p) created blas %p\n", args.model->debug_name, args.model, args.model->rtx.blas);
+	return true;
+}
+
+void RT_VkAccelPrepareTlas(vk_combuf_t *cb) {
 	ASSERT(g_ray_model_state.frame.num_models > 0);
-	DEBUG_BEGIN(cmdbuf, "prepare tlas");
+	DEBUG_BEGIN(cb->cmdbuf, "prepare tlas");
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
 
@@ -172,38 +206,45 @@ void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf) {
 	// Upload all blas instances references to GPU mem
 	{
 		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
-		for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
-			const vk_ray_draw_model_t* const model = g_ray_model_state.frame.models + i;
+		for (int index = 0, mi = 0; mi < g_ray_model_state.frame.num_models; ++mi) {
+			const vk_ray_draw_model_t* const model = g_ray_model_state.frame.models + mi;
 			ASSERT(model->model);
+
+			if (model->model->build.geom_build_ranges) {
+				if (!buildBLAS(cb, model->model))
+					continue;
+			}
+
 			ASSERT(model->model->as != VK_NULL_HANDLE);
-			inst[i] = (VkAccelerationStructureInstanceKHR){
+			inst[index] = (VkAccelerationStructureInstanceKHR){
 				.instanceCustomIndex = model->model->kusochki_offset,
 				.instanceShaderBindingTableRecordOffset = 0,
 				.accelerationStructureReference = getASAddress(model->model->as), // TODO cache this addr
 			};
 			switch (model->material_mode) {
 				case MaterialMode_Opaque:
-					inst[i].mask = GEOMETRY_BIT_OPAQUE;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+					inst[index].mask = GEOMETRY_BIT_OPAQUE;
+					inst[index].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+					inst[index].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 					break;
 				case MaterialMode_Opaque_AlphaTest:
-					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+					inst[index].mask = GEOMETRY_BIT_ALPHA_TEST;
+					inst[index].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
+					inst[index].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
 					break;
 				case MaterialMode_Refractive:
-					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+					inst[index].mask = GEOMETRY_BIT_REFRACTIVE;
+					inst[index].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+					inst[index].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 					break;
 				case MaterialMode_Additive:
-					inst[i].mask = GEOMETRY_BIT_ADDITIVE;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+					inst[index].mask = GEOMETRY_BIT_ADDITIVE;
+					inst[index].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
+					inst[index].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
 					break;
 			}
-			memcpy(&inst[i].transform, model->transform_row, sizeof(VkTransformMatrixKHR));
+			memcpy(&inst[index].transform, model->transform_row, sizeof(VkTransformMatrixKHR));
+			++index;
 		}
 	}
 
@@ -220,15 +261,15 @@ void RT_VkAccelPrepareTlas(VkCommandBuffer cmdbuf) {
 			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
 			.size = g_ray_model_state.frame.num_models * sizeof(VkAccelerationStructureInstanceKHR),
 		} };
-		vkCmdPipelineBarrier(cmdbuf,
+		vkCmdPipelineBarrier(cb->cmdbuf,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
 	}
 
 	// 2. Build TLAS
-	createTlas(cmdbuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
-	DEBUG_END(cmdbuf);
+	createTlas(cb, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
+	DEBUG_END(cb->cmdbuf);
 }
 
 qboolean RT_VkAccelInit(void) {

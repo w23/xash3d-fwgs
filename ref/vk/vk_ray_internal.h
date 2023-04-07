@@ -10,6 +10,17 @@
 
 #include "shaders/ray_interop.h"
 
+typedef struct {
+	const char *debug_name;
+	VkAccelerationStructureKHR *p_accel;
+	const VkAccelerationStructureGeometryKHR *geoms;
+	const uint32_t *max_prim_counts;
+	const VkAccelerationStructureBuildRangeInfoKHR *build_ranges;
+	uint32_t n_geoms;
+	VkAccelerationStructureTypeKHR type;
+	qboolean dynamic;
+} as_build_args_t;
+
 typedef struct vk_ray_model_s {
 	VkAccelerationStructureKHR as;
 	VkAccelerationStructureGeometryKHR *geoms;
@@ -24,6 +35,14 @@ typedef struct vk_ray_model_s {
 	struct {
 		uint32_t as_offset;
 	} debug;
+
+	struct {
+		const char *name;
+		as_build_args_t args;
+		VkAccelerationStructureBuildRangeInfoKHR *geom_build_ranges;
+		uint32_t *geom_max_prim_counts;
+		VkAccelerationStructureGeometryKHR *geoms;
+	} build;
 } vk_ray_model_t;
 
 typedef struct Kusok vk_kusok_data_t;
@@ -40,18 +59,8 @@ typedef struct {
 	} material_mode;
 } vk_ray_draw_model_t;
 
-typedef struct {
-	const char *debug_name;
-	VkAccelerationStructureKHR *p_accel;
-	const VkAccelerationStructureGeometryKHR *geoms;
-	const uint32_t *max_prim_counts;
-	const VkAccelerationStructureBuildRangeInfoKHR *build_ranges;
-	uint32_t n_geoms;
-	VkAccelerationStructureTypeKHR type;
-	qboolean dynamic;
-} as_build_args_t;
-
-qboolean createOrUpdateAccelerationStructure(VkCommandBuffer cmdbuf, const as_build_args_t *args, vk_ray_model_t *model);
+struct vk_combuf_s;
+qboolean createOrUpdateAccelerationStructure(struct vk_combuf_s *cb, const as_build_args_t *args, vk_ray_model_t *model);
 
 typedef struct {
 	// Geometry metadata. Lifetime is similar to geometry lifetime itself.
