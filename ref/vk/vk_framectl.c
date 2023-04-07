@@ -221,7 +221,7 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	{
 		const vk_combuf_scopes_t gpurofl[] = {
-			frame->staging_combuf ? R_VkCombufScopesGet(frame->staging_combuf) : (vk_combuf_scopes_t){},
+			frame->staging_combuf ? R_VkCombufScopesGet(frame->staging_combuf) : (vk_combuf_scopes_t){.entries_count=0},
 			R_VkCombufScopesGet(frame->combuf),
 		};
 
