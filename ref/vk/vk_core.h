@@ -84,7 +84,7 @@ do { \
 		char buffer[1024]; \
 		VkDebugUtilsObjectNameInfoEXT duoni = { \
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, \
-			.objectHandle = (uint64_t)object, \
+			.objectHandle = (uint64_t)(uintptr_t)object, \
 			.objectType = type, \
 			.pObjectName = buffer, \
 		}; \
