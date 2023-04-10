@@ -148,7 +148,7 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	gEngine.Con_DrawString(x, y, tmp, text_color);
 }
 
-static void drawProfilerScopes(int draw, const aprof_event_t *events, uint64_t begin_time, float time_scale_ms, uint32_t begin, uint32_t end, int y) {
+static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_t begin_time, float time_scale_ms, uint32_t begin, uint32_t end, int y) {
 #define MAX_STACK_DEPTH 16
 	struct {
 		int scope_id;
@@ -345,6 +345,69 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	return frame_bar_y;
 }
 
+static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_time_ns, float time_scale_ms, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+	y += g_speeds.font_metrics.glyph_height * 6;
+	const int bar_height = g_speeds.font_metrics.glyph_height;
+
+#define MAX_ROWS 4
+	int rows_x[MAX_ROWS] = {0};
+	for (int j = 0; j < gpurofls_count; ++j) {
+		const vk_combuf_scopes_t *const gpurofl = gpurofls + j;
+		for (int i = 0; i < gpurofl->entries_count; ++i) {
+			const int scope_index = gpurofl->entries[i];
+			const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
+			const uint64_t end_ns = gpurofl->timestamps[i*2 + 1];
+			const char *name = gpurofl->scopes[scope_index].name;
+
+			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
+				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
+				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
+			}
+
+			g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
+
+			rgba_t color = {255, 255, 0, 127};
+			getColorForString(name, color);
+
+			if (draw) {
+				const int height = bar_height;
+				const float delta_ms = (end_ns - begin_ns) * 1e-6;
+				const int width = delta_ms  * time_scale_ms;
+				const int x0 = (begin_ns - frame_begin_time_ns) * 1e-6 * time_scale_ms;
+				const int x1 = x0 + width;
+
+				int bar_y = -1;
+				for (int row_i = 0; row_i < MAX_ROWS; ++row_i) {
+					if (rows_x[row_i] <= x0) {
+						bar_y = row_i;
+						rows_x[row_i] = x1;
+						break;
+					}
+				}
+
+				if (bar_y == -1) {
+					// TODO how? increase MAX_ROWS
+					bar_y = MAX_ROWS;
+				}
+
+				bar_y = bar_y * bar_height + y;
+
+				rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
+				CL_FillRGBA(x0, bar_y, width, height, color[0], color[1], color[2], color[3]);
+
+				// Tweak this if scope names escape the block boundaries
+				char tmp[64];
+				tmp[0] = '\0';
+				const int glyph_width = g_speeds.font_metrics.glyph_width;
+				Q_snprintf(tmp, Q_min(sizeof(tmp), width / glyph_width), "%s %.3fms", name, delta_ms);
+				gEngine.Con_DrawString(x0, bar_y, tmp, text_color);
+
+				//drawTimeBar(frame_begin_time_ns, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
+			}
+		}
+	}
+}
+
 static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
@@ -371,34 +434,11 @@ static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_comb
 	const uint64_t frame_end_time = APROF_EVENT_TIMESTAMP(events[event_end]);
 	const uint64_t delta_ns = frame_end_time - frame_begin_time;
 	const float time_scale_ms = (double)vk_frame.width / (delta_ns / 1e6);
-	drawProfilerScopes(draw, events, frame_begin_time, time_scale_ms, event_begin, event_end, y);
 
-	// Draw GPU last frame bar
-	if (draw) {
-		y += g_speeds.font_metrics.glyph_height * 6;
-		const int bar_height = g_speeds.font_metrics.glyph_height;
+	// TODO? manage y based on depths
+	drawCPUProfilerScopes(draw, events, frame_begin_time, time_scale_ms, event_begin, event_end, y);
 
-		for (int j = 0; j < gpurofls_count; ++j) {
-			const vk_combuf_scopes_t *const gpurofl = gpurofls + j;
-			for (int i = 0; i < gpurofl->entries_count; ++i) {
-				const int scope_index = gpurofl->entries[i];
-				const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
-				const uint64_t end_ns = gpurofl->timestamps[i*2 + 1];
-				const char *name = gpurofl->scopes[scope_index].name;
-
-				if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-					R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us, name, kSpeedsMetricMicroseconds);
-					g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
-				}
-
-				g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
-
-				rgba_t color = {255, 255, 0, 127};
-				getColorForString(name, color);
-				drawTimeBar(frame_begin_time, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
-			}
-		}
-	}
+	drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
 	return y;
 }
 
@@ -459,9 +499,22 @@ typedef struct {
 	int len;
 } const_string_view_t;
 
+static int stringViewCmp(const_string_view_t sv, const char* s) {
+	for (int i = 0; i < sv.len; ++i) {
+		const int d = sv.s[i] - s[i];
+		if (d != 0)
+			return d;
+		if (s[i] == '\0')
+			return 1;
+	}
+
+	// Check that both strings end the same
+	return '\0' - s[sv.len];
+}
+
 static int findMetricIndexByName( const_string_view_t name) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
-		if (Q_strncmp(g_speeds.metrics[i].name, name.s, name.len) == 0)
+		if (stringViewCmp(name, g_speeds.metrics[i].name) == 0)
 			return i;
 	}
 
