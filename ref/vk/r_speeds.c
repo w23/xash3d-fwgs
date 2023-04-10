@@ -439,7 +439,8 @@ static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_comb
 	drawCPUProfilerScopes(draw, events, frame_begin_time, time_scale_ms, event_begin, event_end, y);
 
 	drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
-	return y;
+
+	return y + g_speeds.font_metrics.glyph_height * 6;
 }
 
 static void printMetrics( void ) {
