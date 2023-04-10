@@ -92,6 +92,8 @@ static const char *validation_layers[] = {
 
 static const char* device_extensions_req[] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+	// FIXME make optional
+	VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME,
 };
 
 static const char* device_extensions_rt[] = {
@@ -693,6 +695,51 @@ static const r_vk_module_t *const modules[] = {
 };
 */
 
+static const char* perfCounterUnitName(VkPerformanceCounterUnitKHR unit) {
+	switch (unit) {
+		case VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR: return "generic";
+		case VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR: return "%";
+		case VK_PERFORMANCE_COUNTER_UNIT_NANOSECONDS_KHR: return "ns";
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_KHR: return "b";
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_PER_SECOND_KHR: return "bps";
+		case VK_PERFORMANCE_COUNTER_UNIT_KELVIN_KHR: return "K";
+		case VK_PERFORMANCE_COUNTER_UNIT_WATTS_KHR: return "W";
+		case VK_PERFORMANCE_COUNTER_UNIT_VOLTS_KHR: return "V";
+		case VK_PERFORMANCE_COUNTER_UNIT_AMPS_KHR: return "A";
+		case VK_PERFORMANCE_COUNTER_UNIT_HERTZ_KHR: return "Hz";
+		case VK_PERFORMANCE_COUNTER_UNIT_CYCLES_KHR: return "C";
+		default: return "?";
+	}
+}
+
+static const char *perfCounterScopeName(VkPerformanceCounterScopeKHR scope) {
+	switch(scope) {
+		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_BUFFER_KHR: return "cmdbuf";
+		case VK_PERFORMANCE_COUNTER_SCOPE_RENDER_PASS_KHR: return "renderpass";
+		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_KHR: return "command";
+		default: return "unknown";
+	}
+}
+
+static void queryPerformanceQuery(void) {
+	const uint32_t queue_family_index = 0;
+	uint32_t counters_count = 0;
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(vk_core.physical_device.device, queue_family_index, &counters_count, NULL, NULL));
+
+	VkPerformanceCounterKHR *const counters = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters));
+	VkPerformanceCounterDescriptionKHR *const counters_desc = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters_desc));
+
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(vk_core.physical_device.device, queue_family_index, &counters_count, counters, counters_desc));
+
+	gEngine.Con_Reportf("Got %d counters:\n", counters_count);
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		const VkPerformanceCounterKHR *const cnt = counters + i;
+		const VkPerformanceCounterDescriptionKHR *const desc = counters_desc + i;
+		gEngine.Con_Reportf("  %d: %s %s/%s, %s (%s)\n",
+			i, perfCounterScopeName(cnt->scope), desc->category, desc->name, perfCounterUnitName(cnt->unit), desc->description);
+	}
+}
+
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
@@ -750,6 +797,8 @@ qboolean R_VkInit( void )
 
 	if (!createDevice())
 		return false;
+
+	queryPerformanceQuery();
 
 	VK_LoadCvarsAfterInit();
 
@@ -835,7 +884,7 @@ void R_VkShutdown( void ) {
 	VK_DescriptorShutdown();
 
 	R_VkStagingShutdown();
-	
+
 	R_VkCombuf_Destroy();
 
 	VK_DevMemDestroy();

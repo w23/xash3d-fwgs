@@ -158,6 +158,7 @@ do { \
 	X(vkDestroyDevice) \
 	X(vkDestroySurfaceKHR) \
 	X(vkEnumerateDeviceExtensionProperties) \
+	X(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR) \
 
 #define INSTANCE_DEBUG_FUNCS(X) \
 	X(vkCreateDebugUtilsMessengerEXT) \
