@@ -47,6 +47,9 @@ static struct {
 		int buffer_chunks;
 		int images;
 	} stats;
+
+	int buffer_upload_scope_id;
+	int image_upload_scope_id;
 } g_staging = {0};
 
 qboolean R_VkStagingInit(void) {
@@ -65,6 +68,9 @@ qboolean R_VkStagingInit(void) {
 
 	R_SpeedsRegisterMetric(&g_staging.stats.buffer_chunks, "staging_buffer_chunks", kSpeedsMetricCount);
 	R_SpeedsRegisterMetric(&g_staging.stats.images, "staging_images", kSpeedsMetricCount);
+
+	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
+	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
 
 	return true;
 }
@@ -179,10 +185,12 @@ void R_VkStagingUnlock(staging_handle_t handle) {
 	// FIXME mark and check ready
 }
 
-static void commitBuffers(void) {
-	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
+static void commitBuffers(vk_combuf_t *combuf) {
+	if (!g_staging.buffers.count)
+		return;
 
-	// TODO combuf scopes
+	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
+	const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
 
 	// TODO better coalescing:
 	// - upload once per buffer
@@ -222,10 +230,16 @@ static void commitBuffers(void) {
 	}
 
 	g_staging.buffers.count = 0;
+
+	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }
 
-static void commitImages(void) {
+static void commitImages(vk_combuf_t *combuf) {
+	if (!g_staging.images.count)
+		return;
+
 	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
+	const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.image_upload_scope_id);
 	for (int i = 0; i < g_staging.images.count; i++) {
 		/* { */
 		/* 	const VkBufferImageCopy *const copy = g_staging.images.copy + i; */
@@ -242,6 +256,7 @@ static void commitImages(void) {
 	}
 
 	g_staging.images.count = 0;
+	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }
 
 static vk_combuf_t *getCurrentCombuf(void) {
@@ -262,8 +277,8 @@ vk_combuf_t *R_VkStagingCommit(void) {
 		return VK_NULL_HANDLE;
 
 	getCurrentCombuf();
-	commitBuffers();
-	commitImages();
+	commitBuffers(g_staging.current);
+	commitImages(g_staging.current);
 	return g_staging.current;
 }
 
