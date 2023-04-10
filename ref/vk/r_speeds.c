@@ -659,8 +659,19 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	const uint32_t speeds_bits = r_speeds->value;
 
-	if (speeds_bits)
+	if (speeds_bits) {
 		speedsPrintf( "Renderer: ^1Vulkan%s^7\n", vk_frame.rtx_enabled ? " RT" : "" );
+		int color_index = 7; // default color
+		switch (vk_core.physical_device.properties.vendorID) {
+			case 0x1002: /* AMD */ color_index = 1; break;
+			case 0x10DE: /* NVIDIA */ color_index = 2; break;
+			case 0x8086: /* INTEL */ color_index = 4; break;
+		}
+		speedsPrintf( "^%d%s^7\n", color_index, vk_core.physical_device.properties.deviceName);
+		speedsPrintf( "Driver: %u.%u.%u, Vulkan: %u.%u.%u\n",
+			XVK_PARSE_VERSION(vk_core.physical_device.properties.driverVersion),
+			XVK_PARSE_VERSION(vk_core.physical_device.properties.apiVersion));
+	}
 
 	const uint32_t events = g_aprof.events_last_frame - prev_frame_index;
 	const uint64_t frame_begin_time = APROF_EVENT_TIMESTAMP(g_aprof.events[prev_frame_index]);

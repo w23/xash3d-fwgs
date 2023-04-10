@@ -37,11 +37,6 @@
 #include <string.h>
 #include <errno.h>
 
-#define XVK_PARSE_VERSION(v) \
-	VK_VERSION_MAJOR(v), \
-	VK_VERSION_MINOR(v), \
-	VK_VERSION_PATCH(v)
-
 #define NULLINST_FUNCS(X) \
 	X(vkEnumerateInstanceVersion) \
 	X(vkCreateInstance) \
