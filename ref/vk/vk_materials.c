@@ -16,7 +16,7 @@ static const xvk_material_t k_default_material = {
 
 		.metalness = 0.f,
 		.roughness = 1.f,
-		.base_color = { 1.f, 1.f, 1.f },
+		.base_color = { 1.f, 1.f, 1.f, 1.f },
 
 		.set = false,
 };
@@ -58,12 +58,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 	const char *path_end = Q_strrchr(filename, '/');
 	byte *data = gEngine.fsapi->LoadFile( filename, 0, false );
 	char *pos = (char*)data;
-	xvk_material_t current_material = {
-		.base_color = -1,
-		.metalness = tglob.blackTexture,
-		.roughness = tglob.whiteTexture,
-		.tex_normalmap = 0,
-	};
+	xvk_material_t current_material = k_default_material;
 	int current_material_index = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
@@ -150,7 +145,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else if (Q_stricmp(key, "metalness") == 0) {
 				sscanf(value, "%f", &current_material.metalness);
 			} else if (Q_stricmp(key, "base_color") == 0) {
-				sscanf(value, "%f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2]);
+				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {
 				gEngine.Con_Printf(S_ERROR "Unknown material key %s\n", key);
 				continue;

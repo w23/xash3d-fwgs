@@ -8,7 +8,7 @@ typedef struct {
 	int tex_metalness;
 	int tex_normalmap;
 
-	vec3_t base_color;
+	vec4_t base_color;
 	float roughness;
 	float metalness;
 

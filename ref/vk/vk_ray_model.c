@@ -194,7 +194,7 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		gcolor[0] = color[0] * mat->base_color[0];
 		gcolor[1] = color[1] * mat->base_color[1];
 		gcolor[2] = color[2] * mat->base_color[2];
-		gcolor[3] = color[3];
+		gcolor[3] = color[3] * mat->base_color[3];
 		Vector4Copy(gcolor, kusok->color);
 	}
 
