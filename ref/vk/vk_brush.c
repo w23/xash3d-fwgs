@@ -598,36 +598,57 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 				vertex.prev_pos[1] = in_vertex->position[1];
 				vertex.prev_pos[2] = in_vertex->position[2];
 
-				float s = DotProduct( in_vertex->position, surf->texinfo->vecs[0] ) + surf->texinfo->vecs[0][3];
-				float t = DotProduct( in_vertex->position, surf->texinfo->vecs[1] ) + surf->texinfo->vecs[1][3];
+				{
+					vec4_t svec, tvec;
+					if (psurf && (psurf->flags & Patch_Surface_STvecs)) {
+						Vector4Copy(psurf->s_vec, svec);
+						Vector4Copy(psurf->t_vec, tvec);
+					} else {
+						Vector4Copy(surf->texinfo->vecs[0], svec);
+						Vector4Copy(surf->texinfo->vecs[1], tvec);
+					}
 
-				s /= surf->texinfo->texture->width;
-				t /= surf->texinfo->texture->height;
+					float s_off = 0, t_off = 0;
+					float s_sc = 1, t_sc = 1;
 
-				vertex.gl_tc[0] = s;
-				vertex.gl_tc[1] = t;
+					if (psurf && (psurf->flags & Patch_Surface_STOffScale)) {
+						s_off = psurf->s_offscale[0];
+						t_off = psurf->t_offscale[0];
+
+						s_sc = psurf->s_offscale[1];
+						t_sc = psurf->t_offscale[1];
+					}
+
+					const float s = s_off + s_sc * DotProduct( in_vertex->position, svec ) + svec[3];
+					const float t = t_off + t_sc * DotProduct( in_vertex->position, tvec ) + tvec[3];
+
+					vertex.gl_tc[0] = s / surf->texinfo->texture->width;
+					vertex.gl_tc[1] = t / surf->texinfo->texture->height;
+				}
 
 				// lightmap texture coordinates
-				s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
-				s -= info->lightmapmins[0];
-				s += surf->light_s * sample_size;
-				s += sample_size * 0.5f;
-				s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
+				{
+					float s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
+					s -= info->lightmapmins[0];
+					s += surf->light_s * sample_size;
+					s += sample_size * 0.5f;
+					s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
 
-				t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
-				t -= info->lightmapmins[1];
-				t += surf->light_t * sample_size;
-				t += sample_size * 0.5f;
-				t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
+					float t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
+					t -= info->lightmapmins[1];
+					t += surf->light_t * sample_size;
+					t += sample_size * 0.5f;
+					t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
+
+					vertex.lm_tc[0] = s;
+					vertex.lm_tc[1] = t;
+				}
 
 				if( FBitSet( surf->flags, SURF_PLANEBACK ))
 					VectorNegate( surf->plane->normal, vertex.normal );
 				else VectorCopy( surf->plane->normal, vertex.normal );
 
 				VectorCopy(tangent, vertex.tangent);
-
-				vertex.lm_tc[0] = s;
-				vertex.lm_tc[1] = t;
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);
 

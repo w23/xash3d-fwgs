@@ -19,6 +19,10 @@
 	X(14, string, _xvk_texture, String) \
 	X(15, int_array_t, _xvk_ent_id, IntArray) \
 	X(16, float, _xvk_radius, Float) \
+	X(17, vec4_t, _xvk_svec, Vec4) \
+	X(18, vec4_t, _xvk_tvec, Vec4) \
+	X(19, vec2_t, _xvk_soffscale, Vec2) \
+	X(20, vec2_t, _xvk_toffscale, Vec2) \
 
 typedef enum {
 	Unknown = 0,
@@ -96,9 +100,11 @@ void XVK_ParseMapPatches( void );
 
 enum {
 	Patch_Surface_NoPatch = 0,
-	Patch_Surface_Delete = 0x01,
-	Patch_Surface_Texture = 0x02,
-	Patch_Surface_Emissive = 0x04,
+	Patch_Surface_Delete = (1<<0),
+	Patch_Surface_Texture = (1<<1),
+	Patch_Surface_Emissive = (1<<2),
+	Patch_Surface_STvecs = (1<<3),
+	Patch_Surface_STOffScale = (1<<4),
 };
 
 struct texture_s;
@@ -113,6 +119,10 @@ typedef struct {
 	const struct texture_s *tex;
 
 	vec3_t emissive;
+
+	// Texture coordinate patches
+	vec4_t s_vec, t_vec;
+	vec2_t s_offscale, t_offscale;
 } xvk_patch_surface_t;
 
 const xvk_patch_surface_t* R_VkPatchGetSurface( int surface_index );

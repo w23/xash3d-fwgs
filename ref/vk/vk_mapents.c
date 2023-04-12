@@ -92,8 +92,16 @@ static unsigned parseEntPropString(const char* value, string *out, unsigned bit)
 	return bit;
 }
 
+static unsigned parseEntPropVec2(const char* value, vec2_t *out, unsigned bit) {
+	return (2 == sscanf(value, "%f %f", &(*out)[0], &(*out)[1])) ? bit : 0;
+}
+
 static unsigned parseEntPropVec3(const char* value, vec3_t *out, unsigned bit) {
 	return (3 == sscanf(value, "%f %f %f", &(*out)[0], &(*out)[1], &(*out)[2])) ? bit : 0;
+}
+
+static unsigned parseEntPropVec4(const char* value, vec4_t *out, unsigned bit) {
+	return (4 == sscanf(value, "%f %f %f %f", &(*out)[0], &(*out)[1], &(*out)[2], &(*out)[3])) ? bit : 0;
 }
 
 static unsigned parseEntPropRgbav(const char* value, vec3_t *out, unsigned bit) {
@@ -369,6 +377,24 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 				psurf->emissive[0],
 				psurf->emissive[1],
 				psurf->emissive[2]
+			);
+		}
+
+		if (have_fields & (Field__xvk_svec | Field__xvk_tvec)) {
+			Vector4Copy(props->_xvk_svec, psurf->s_vec);
+			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
+			psurf->flags |= Patch_Surface_STvecs;
+			gEngine.Con_Reportf("Patch for surface %d: assign stvec\n", index);
+		}
+
+		if (have_fields & (Field__xvk_soffscale | Field__xvk_toffscale)) {
+			Vector2Copy(props->_xvk_soffscale, psurf->s_offscale);
+			Vector2Copy(props->_xvk_toffscale, psurf->t_offscale);
+			psurf->flags |= Patch_Surface_STOffScale;
+			gEngine.Con_Reportf("Patch for surface %d: assign st offset %f %f and scale %f %f\n",
+				index,
+				psurf->s_offscale[0], psurf->t_offscale[0],
+				psurf->s_offscale[1], psurf->t_offscale[1]
 			);
 		}
 	}
