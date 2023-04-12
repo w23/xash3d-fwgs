@@ -8,7 +8,7 @@
 
 #define MAX_INCLUDE_DEPTH 4
 
-static const xvk_material_t k_default_material = {
+static xvk_material_t k_default_material = {
 		.tex_base_color = -1,
 		.tex_metalness = 0,
 		.tex_roughness = 0,
@@ -62,6 +62,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 	int current_material_index = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
+	qboolean metalness_set = false;
 
 	gEngine.Con_Reportf("Loading materials from %s\n", filename);
 
@@ -87,6 +88,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			current_material_index = -1;
 			force_reload = false;
 			create = false;
+			metalness_set = false;
 			continue;
 		}
 
@@ -97,6 +99,16 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			// If there's no explicit basecolor_map value, use the "for" target texture
 			if (current_material.tex_base_color == -1)
 				current_material.tex_base_color = current_material_index;
+
+			if (metalness_set && current_material.tex_metalness == tglob.blackTexture) {
+				// Set metalness texture to white to accommodate explicitly set metalness value
+				current_material.tex_metalness = tglob.whiteTexture;
+			}
+
+			if (!metalness_set && current_material.tex_metalness != tglob.blackTexture) {
+				// If metalness factor wasn't set explicitly, but texture was specified, set it to match the texture value.
+				current_material.metalness = 1.f;
+			}
 
 			gEngine.Con_Reportf("Creating%s material for texture %s(%d)\n", create?" new":"",
 				findTexture(current_material_index)->name, current_material_index);
@@ -144,6 +156,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				sscanf(value, "%f", &current_material.roughness);
 			} else if (Q_stricmp(key, "metalness") == 0) {
 				sscanf(value, "%f", &current_material.metalness);
+				metalness_set = true;
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {
@@ -187,6 +200,9 @@ static void loadMaterialsFromFileF( const char *fmt, ... ) {
 void XVK_ReloadMaterials( void ) {
 	memset(&g_stats, 0, sizeof(g_stats));
 	const uint64_t begin_time_ns = aprof_time_now_ns();
+
+	k_default_material.tex_metalness = tglob.blackTexture;
+	k_default_material.tex_roughness = tglob.whiteTexture;
 
 	for (int i = 0; i < MAX_TEXTURES; ++i) {
 		xvk_material_t *const mat = g_materials.materials + i;

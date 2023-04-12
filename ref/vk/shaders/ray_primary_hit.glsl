@@ -34,8 +34,8 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		return;
 	} else {
 		payload.base_color_a = sampleTexture(kusok.tex_base_color, geom.uv, geom.uv_lods);
-		payload.material_rmxx.r = (kusok.tex_roughness > 0) ? sampleTexture(kusok.tex_roughness, geom.uv, geom.uv_lods).r : kusok.roughness;
-		payload.material_rmxx.g = (kusok.tex_metalness > 0) ? sampleTexture(kusok.tex_metalness, geom.uv, geom.uv_lods).r : kusok.metalness;
+		payload.material_rmxx.r = sampleTexture(kusok.tex_roughness, geom.uv, geom.uv_lods).r * kusok.roughness;
+		payload.material_rmxx.g = sampleTexture(kusok.tex_metalness, geom.uv, geom.uv_lods).r * kusok.metalness;
 
 #ifndef RAY_BOUNCE
 		const uint tex_normal = kusok.tex_normalmap;
