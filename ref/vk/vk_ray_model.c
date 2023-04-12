@@ -172,6 +172,7 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 
 	kusok->roughness = mat->roughness;
 	kusok->metalness = mat->metalness;
+	kusok->normal_scale = mat->normal_scale;
 
 	kusok->flags = 0;
 

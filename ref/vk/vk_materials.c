@@ -16,6 +16,7 @@ static xvk_material_t k_default_material = {
 
 		.metalness = 0.f,
 		.roughness = 1.f,
+		.normal_scale = 1.f,
 		.base_color = { 1.f, 1.f, 1.f, 1.f },
 
 		.set = false,
@@ -157,6 +158,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else if (Q_stricmp(key, "metalness") == 0) {
 				sscanf(value, "%f", &current_material.metalness);
 				metalness_set = true;
+			} else if (Q_stricmp(key, "normal_scale") == 0) {
+				sscanf(value, "%f", &current_material.normal_scale);
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {

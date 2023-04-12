@@ -86,9 +86,8 @@ struct Kusok {
 
 	float roughness;
 	float metalness;
+	float normal_scale;
 	uint flags;
-
-	PAD(1)
 
 	mat4 prev_transform;
 };

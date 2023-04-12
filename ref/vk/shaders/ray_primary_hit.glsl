@@ -44,7 +44,9 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 			T = normalize(T - dot(T, geom.normal_shading) * geom.normal_shading);
 			const vec3 B = normalize(cross(geom.normal_shading, T));
 			const mat3 TBN = mat3(T, B, geom.normal_shading);
-			const vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz * 2. - 1.; // TODO is this sampling correct for normal data?
+			vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz * 2. - 1.; // TODO is this sampling correct for normal data?
+			tnorm.xy *= kusok.normal_scale;
+			tnorm.z = sqrt(max(0., 1. - dot(tnorm.xy, tnorm.xy)));
 			geom.normal_shading = normalize(TBN * tnorm);
 		}
 #endif

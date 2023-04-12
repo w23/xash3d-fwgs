@@ -11,6 +11,7 @@ typedef struct {
 	vec4_t base_color;
 	float roughness;
 	float metalness;
+	float normal_scale;
 
 	qboolean set;
 } xvk_material_t;
