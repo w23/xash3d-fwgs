@@ -203,14 +203,16 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 	uint64_t *const timestamps = g_combuf.timestamp.values + cb->profiler.timestamps_offset;
 	const int timestamps_count = cb->profiler.scopes_count * 2;
 
-	vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, timestamps_count, timestamps_count * sizeof(uint64_t), timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+	if (timestamps_count) {
+		vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, timestamps_count, timestamps_count * sizeof(uint64_t), timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
 
-	const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs( timestamps[1], aprof_time_now_ns() );
-	const double timestamp_period = vk_core.physical_device.properties.limits.timestampPeriod;
+		const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs( timestamps[1], aprof_time_now_ns() );
+		const double timestamp_period = vk_core.physical_device.properties.limits.timestampPeriod;
 
-	for (int i = 0; i < timestamps_count; ++i) {
-		const uint64_t gpu_ns = timestamps[i] * timestamp_period;
-		timestamps[i] = timestamp_offset_ns + gpu_ns;
+		for (int i = 0; i < timestamps_count; ++i) {
+			const uint64_t gpu_ns = timestamps[i] * timestamp_period;
+			timestamps[i] = timestamp_offset_ns + gpu_ns;
+		}
 	}
 
 	APROF_SCOPE_END(function);
