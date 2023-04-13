@@ -611,12 +611,14 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 					float s_off = 0, t_off = 0;
 					float s_sc = 1, t_sc = 1;
 
-					if (psurf && (psurf->flags & Patch_Surface_STOffScale)) {
-						s_off = psurf->s_offscale[0];
-						t_off = psurf->t_offscale[0];
+					if (psurf && (psurf->flags & Patch_Surface_TexOffset)) {
+						s_off = psurf->tex_offset[0];
+						t_off = psurf->tex_offset[1];
+					}
 
-						s_sc = psurf->s_offscale[1];
-						t_sc = psurf->t_offscale[1];
+					if (psurf && (psurf->flags & Patch_Surface_TexScale)) {
+						s_sc = psurf->tex_scale[0];
+						t_sc = psurf->tex_scale[1];
 					}
 
 					const float s = s_off + s_sc * DotProduct( in_vertex->position, svec ) + svec[3];

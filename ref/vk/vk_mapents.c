@@ -387,14 +387,19 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			gEngine.Con_Reportf("Patch for surface %d: assign stvec\n", index);
 		}
 
-		if (have_fields & (Field__xvk_soffscale | Field__xvk_toffscale)) {
-			Vector2Copy(props->_xvk_soffscale, psurf->s_offscale);
-			Vector2Copy(props->_xvk_toffscale, psurf->t_offscale);
-			psurf->flags |= Patch_Surface_STOffScale;
-			gEngine.Con_Reportf("Patch for surface %d: assign st offset %f %f and scale %f %f\n",
-				index,
-				psurf->s_offscale[0], psurf->t_offscale[0],
-				psurf->s_offscale[1], psurf->t_offscale[1]
+		if (have_fields & Field__xvk_tex_scale) {
+			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
+			psurf->flags |= Patch_Surface_TexScale;
+			gEngine.Con_Reportf("Patch for surface %d: assign tex scale %f %f\n",
+				index, psurf->tex_scale[0], psurf->tex_scale[1]
+			);
+		}
+
+		if (have_fields & Field__xvk_tex_offset) {
+			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
+			psurf->flags |= Patch_Surface_TexOffset;
+			gEngine.Con_Reportf("Patch for surface %d: assign tex offset %f %f\n",
+				index, psurf->tex_offset[0], psurf->tex_offset[1]
 			);
 		}
 	}
