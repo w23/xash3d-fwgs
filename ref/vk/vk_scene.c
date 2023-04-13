@@ -144,8 +144,27 @@ static void destroyBrushModels( void ) {
 	}
 }
 
-static void reloadMaterials( void ) {
-	gEngine.Con_Printf("Reloading materials\n");
+static void loadMap(const model_t* const map) {
+	mapLoadBegin(map);
+
+	// Load light entities and patch data prior to loading map brush model
+	XVK_ParseMapEntities();
+
+	// Load PBR materials (depends on wadlist from parsed map entities)
+	XVK_ReloadMaterials();
+
+	// Parse patch data
+	// Depends on loaded materials. Must preceed loading brush models.
+	XVK_ParseMapPatches();
+
+	loadBrushModels();
+
+	loadLights(map);
+	mapLoadEnd(map);
+}
+
+static void reloadPatches( void ) {
+	gEngine.Con_Printf("Reloading patches and materials\n");
 
 	R_VkStagingFlushSync();
 
@@ -154,37 +173,9 @@ static void reloadMaterials( void ) {
 	destroyBrushModels();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
-	mapLoadBegin(map);
-
-	// Materials do affect patching, as new materials can be referenced in patch data
-	// So we must do the full sequence
-	XVK_ParseMapEntities();
-	XVK_ReloadMaterials();
-	XVK_ParseMapPatches();
-
-	// Assumes that the map has been loaded
-	loadBrushModels();
-
-	// Might have loaded new patch data, need to reload lighting data just in case
-	loadLights(map);
-	mapLoadEnd(map);
+	loadMap(map);
 
 	R_VkStagingFlushSync();
-}
-
-// Same as the above, but avoids reloading heavy materials data
-// Only reloads light entities, patches, rad files
-static void reloadPatches( void ) {
-	// Must re-parse map entities to initialize initial values before patching
-	XVK_ParseMapEntities();
-	// Wadlist doesn't change, so no need to reload materials here
-	XVK_ParseMapPatches();
-
-	// Assumes that the map brush model has been loaded
-
-	// Patching does disturb light sources, reinitialize
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
-	loadLights(map);
 }
 
 void VK_SceneInit( void )
@@ -195,9 +186,7 @@ void VK_SceneInit( void )
 	g_lists.draw_stack_pos = 0;
 
 	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_reload_materials", reloadMaterials, "Reload PBR materials");
-		gEngine.Cmd_AddCommand("vk_rtx_reload_patches", reloadPatches, "Reload patches (does not update surface deletion)");
-		gEngine.Cmd_AddCommand("vk_rtx_reload_rad", reloadPatches, "Reload RAD files for static lights");
+		gEngine.Cmd_AddCommand("vk_rtx_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
 	}
 }
 
@@ -254,22 +243,7 @@ void R_NewMap( void ) {
 
 	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
 
-	mapLoadBegin(map);
-
-	// Load light entities and patch data prior to loading map brush model
-	XVK_ParseMapEntities();
-
-	// Load PBR materials (depends on wadlist from parsed map entities)
-	XVK_ReloadMaterials();
-
-	// Parse patch data
-	// Depends on loaded materials. Must preceed loading brush models.
-	XVK_ParseMapPatches();
-
-	loadBrushModels();
-
-	loadLights(map);
-	mapLoadEnd(map);
+	loadMap(map);
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
