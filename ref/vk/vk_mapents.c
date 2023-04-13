@@ -135,6 +135,8 @@ static unsigned parseEntPropClassname(const char* value, class_name_e *out, unsi
 		*out = LightEnvironment;
 	} else if (Q_strcmp(value, "worldspawn") == 0) {
 		*out = Worldspawn;
+	} else if (Q_strcmp(value, "func_wall") == 0) {
+		*out = FuncWall;
 	} else {
 		*out = Ignored;
 	}
@@ -321,6 +323,23 @@ static void readWorldspawn( const entity_props_t *props ) {
 	Q_strcpy(g_map_entities.wadlist, props->wad);
 }
 
+static void readFuncWall( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
+	gEngine.Con_Reportf("func_wall entity model=\"%s\", props_count=%d\n", (have_fields & Field_model) ? props->model : "N/A", props_count);
+
+	if (g_map_entities.func_walls_count >= MAX_FUNC_WALL_ENTITIES) {
+		gEngine.Con_Printf(S_ERROR "Too many func_wall entities, max supported = %d\n", MAX_FUNC_WALL_ENTITIES);
+		return;
+	}
+
+	xvk_mapent_func_wall_t *const e = g_map_entities.func_walls + (g_map_entities.func_walls_count++);
+
+	Q_strcpy(e->model, props->model);
+
+	// TODO:
+	// "renderamt" "255"
+	// "rendermode" "4"
+}
+
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
@@ -437,6 +456,7 @@ static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) 
 
 static void parseEntities( char *string ) {
 	unsigned have_fields = 0;
+	int props_count = 0;
 	entity_props_t values;
 	char *pos = string;
 	//gEngine.Con_Reportf("ENTITIES: %s\n", pos);
@@ -452,6 +472,7 @@ static void parseEntities( char *string ) {
 		if (key[0] == '{') {
 			have_fields = None;
 			values = (entity_props_t){0};
+			props_count = 0;
 			continue;
 		} else if (key[0] == '}') {
 			const int target_fields = Field_targetname | Field_origin;
@@ -466,6 +487,10 @@ static void parseEntities( char *string ) {
 
 				case Worldspawn:
 					readWorldspawn( &values );
+					break;
+
+				case FuncWall:
+					readFuncWall( &values, have_fields, props_count );
 					break;
 
 				case Unknown:
@@ -500,6 +525,7 @@ static void parseEntities( char *string ) {
 		{
 			//gEngine.Con_Reportf("Unknown field %s with value %s\n", key, value);
 		}
+		++props_count;
 #undef CHECK_FIELD
 	}
 }
@@ -571,6 +597,7 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.num_lights = 0;
 	g_map_entities.single_environment_index = NoEnvironmentLights;
 	g_map_entities.entity_count = 0;
+	g_map_entities.func_walls_count = 0;
 
 	parseEntities( map->entities );
 	orientSpotlights();

@@ -381,6 +381,11 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		return;
 	}
 
+	// func_wall models have no geometries and should be ignored
+	if (!bmodel->render_model.num_geometries) {
+		return;
+	}
+
 	if (render_mode == kRenderTransColor) {
 		Vector4Set(bmodel->render_model.color,
 			ent->curstate.rendercolor.r / 255.f,
@@ -682,9 +687,28 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	return true;
 }
 
+static qboolean modelIsFuncWall( const model_t *const mod ) {
+	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+		const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+		if (Q_strcmp(mod->name, fw->model) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 qboolean VK_BrushModelLoad( model_t *mod ) {
 	if (mod->cache.data) {
 		gEngine.Con_Reportf( S_WARN "Model %s was already loaded\n", mod->name );
+		return true;
+	}
+
+	// Models referenced by func_wall entities are static and should be part of worldmodel
+	if (modelIsFuncWall(mod)) {
+		gEngine.Con_Reportf( "Model \"%s\" is func_wall, ignoring\n", mod->name);
+		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(vk_brush_model_t));
+		mod->cache.data = bmodel;
 		return true;
 	}
 
@@ -765,6 +789,14 @@ static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surfac
 }
 
 void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel ) {
+	vk_brush_model_t *const bmodel = mod->cache.data;
+	ASSERT(bmodel);
+
+	// Ignore func_wall models
+	if (!bmodel->render_model.num_geometries) {
+		return;
+	}
+
 	typedef struct {
 		int model_surface_index;
 		int surface_index;
@@ -808,9 +840,6 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		surface->surf = surf;
 		VectorCopy(emissive, surface->emissive);
 	}
-
-	vk_brush_model_t *const bmodel = mod->cache.data;
-	ASSERT(bmodel);
 
 	// Clear old per-geometry emissive values. The new emissive values will be assigned by the loop below only to the relevant geoms
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
