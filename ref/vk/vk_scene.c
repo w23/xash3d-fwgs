@@ -83,7 +83,79 @@ static void loadLights( const model_t *const map ) {
 	RT_LightsLoadEnd();
 }
 
+// Clears all old map data
+static void mapLoadBegin( const model_t *const map ) {
+	// TODO should we do something like VK_BrushBeginLoad?
+	VK_BrushStatsClear();
+
+	R_GeometryBuffer_MapClear();
+
+	VK_ClearLightmap();
+
+	// This is to ensure that we have computed lightstyles properly
+	VK_RunLightStyles();
+
+	if (vk_core.rtx)
+		VK_RayNewMap();
+
+	RT_LightsNewMap(map);
+}
+
+static void mapLoadEnd(const model_t *const map) {
+	// TODO should we do something like VK_BrushEndLoad?
+	VK_UploadLightmap();
+}
+
+static void loadBrushModels( void ) {
+	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
+
+	// Load all models at once
+	gEngine.Con_Reportf( "Num models: %d:\n", num_models );
+	for( int i = 0; i < num_models; i++ )
+	{
+		model_t	*m;
+		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
+			continue;
+
+		gEngine.Con_Reportf( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d\n", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
+
+		if( m->type != mod_brush )
+			continue;
+
+		if (!VK_BrushModelLoad(m))
+			gEngine.Host_Error( "Couldn't load model %s\n", m->name );
+	}
+}
+
+// Only used when reloading patches. In norma circumstances models get destroyed by the engine
+static void destroyBrushModels( void ) {
+	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
+	gEngine.Con_Printf("Destroying %d models\n", num_models);
+
+	for( int i = 0; i < num_models; i++ ) {
+		model_t *m;
+		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
+			continue;
+
+		if( m->type != mod_brush )
+			continue;
+
+		VK_BrushModelDestroy(m);
+	}
+}
+
 static void reloadMaterials( void ) {
+	gEngine.Con_Printf("Reloading materials\n");
+
+	R_VkStagingFlushSync();
+
+	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
+
+	destroyBrushModels();
+
+	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+	mapLoadBegin(map);
+
 	// Materials do affect patching, as new materials can be referenced in patch data
 	// So we must do the full sequence
 	XVK_ParseMapEntities();
@@ -91,10 +163,13 @@ static void reloadMaterials( void ) {
 	XVK_ParseMapPatches();
 
 	// Assumes that the map has been loaded
+	loadBrushModels();
 
 	// Might have loaded new patch data, need to reload lighting data just in case
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	loadLights(map);
+	mapLoadEnd(map);
+
+	R_VkStagingFlushSync();
 }
 
 // Same as the above, but avoids reloading heavy materials data
@@ -165,7 +240,6 @@ int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 
 // tell the renderer what new map is started
 void R_NewMap( void ) {
-	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 
 	// Existence of cache.data for the world means that we've already have loaded this map
@@ -178,20 +252,9 @@ void R_NewMap( void ) {
 	if (is_save_load)
 		return;
 
-	// TODO should we do something like VK_BrushBeginLoad?
-	VK_BrushStatsClear();
-
-	R_GeometryBuffer_MapClear();
-
-	VK_ClearLightmap();
-
-	// This is to ensure that we have computed lightstyles properly
-	VK_RunLightStyles();
-
 	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
 
-	if (vk_core.rtx)
-		VK_RayNewMap();
+	mapLoadBegin(map);
 
 	// Load light entities and patch data prior to loading map brush model
 	XVK_ParseMapEntities();
@@ -203,28 +266,10 @@ void R_NewMap( void ) {
 	// Depends on loaded materials. Must preceed loading brush models.
 	XVK_ParseMapPatches();
 
-	// Load all models at once
-	gEngine.Con_Reportf( "Num models: %d:\n", num_models );
-	for( int i = 0; i < num_models; i++ )
-	{
-		model_t	*m;
-		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
-			continue;
+	loadBrushModels();
 
-		gEngine.Con_Reportf( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d\n", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
-
-		if( m->type != mod_brush )
-			continue;
-
-		if (!VK_BrushModelLoad(m))
-			gEngine.Host_Error( "Couldn't load model %s\n", m->name );
-	}
-
-	RT_LightsNewMap(map);
 	loadLights(map);
-
-	// TODO should we do something like VK_BrushEndLoad?
-	VK_UploadLightmap();
+	mapLoadEnd(map);
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
