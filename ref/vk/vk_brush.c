@@ -704,14 +704,6 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 		return true;
 	}
 
-	// Models referenced by func_wall entities are static and should be part of worldmodel
-	if (modelIsFuncWall(mod)) {
-		gEngine.Con_Reportf( "Model \"%s\" is func_wall, ignoring\n", mod->name);
-		vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(vk_brush_model_t));
-		mod->cache.data = bmodel;
-		return true;
-	}
-
 	gEngine.Con_Reportf("%s: %s flags=%08x\n", __FUNCTION__, mod->name, mod->flags);
 
 	{
@@ -792,10 +784,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	vk_brush_model_t *const bmodel = mod->cache.data;
 	ASSERT(bmodel);
 
-	// Ignore func_wall models
-	if (!bmodel->render_model.num_geometries) {
-		return;
-	}
+	const qboolean is_static = is_worldmodel || modelIsFuncWall(mod);
 
 	typedef struct {
 		int model_surface_index;
@@ -847,8 +836,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		VectorClear(geom->emissive);
 	}
 
-	// Non-worldmodel brush models may move around and so must have their emissive surfaces treated as dynamic
-	if (!is_worldmodel) {
+	// Non-static brush models may move around and so must have their emissive surfaces treated as dynamic
+	if (!is_static) {
 		if (bmodel->render_model.dynamic_polylights)
 			Mem_Free(bmodel->render_model.dynamic_polylights);
 		bmodel->render_model.dynamic_polylights_count = emissive_surfaces_count;
@@ -860,9 +849,9 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		const emissive_surface_t* const s = emissive_surfaces + i;
 		const rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
 
-		// Worldmodel emissive surfaces are added immediately, as the worldmodel is always drawn and is static.
-		// Non-worldmodel ones will be applied later when the model is actually rendered
-		if (is_worldmodel) {
+		// Static emissive surfaces are added immediately, as they are drawn all the time.
+		// Non-static ones will be applied later when the model is actually rendered
+		if (is_static) {
 			RT_LightAddPolygon(&polylight);
 		} else {
 			bmodel->render_model.dynamic_polylights[i] = polylight;
@@ -872,5 +861,5 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		VectorCopy(polylight.emissive, bmodel->render_model.geometries[bmodel->surface_to_geometry_index[s->model_surface_index]].emissive);
 	}
 
-	gEngine.Con_Reportf("Loaded %d polylights for %smodel %s\n", emissive_surfaces_count, is_worldmodel ? "world" : "movable ", mod->name);
+	gEngine.Con_Reportf("Loaded %d polylights for %s model %s\n", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 }
