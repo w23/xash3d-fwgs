@@ -26,6 +26,7 @@
 	X(21, string, model, String) \
 	X(22, int, rendermode, Int) \
 	X(23, int, renderamt, Int) \
+	X(24, vec3_t, rendercolor, Vec3) \
 
 typedef enum {
 	Unknown = 0,
@@ -84,7 +85,8 @@ typedef struct {
 
 typedef struct {
 	string model;
-	int rendermode, renderamt;
+	int rendermode, renderamt, renderfx;
+	color24 rendercolor;
 
 	struct cl_entity_s *ent;
 } xvk_mapent_func_wall_t;

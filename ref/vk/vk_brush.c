@@ -371,14 +371,14 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 	return base;
 }
 
-void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model ) {
-	vk_brush_model_t *bmodel = mod->cache.data;
+void VK_BrushModelDraw( vk_brush_model_draw_t args ) {
+	vk_brush_model_t *bmodel = args.mod->cache.data;
 
-	if (ent)
-		ASSERT(mod == ent->model);
+	if (args.ent)
+		ASSERT(args.mod == args.ent->model);
 
 	if (!bmodel) {
-		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", mod->name);
+		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", args.mod->name);
 		return;
 	}
 
@@ -387,25 +387,24 @@ void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_m
 		return;
 	}
 
-	if (render_mode == kRenderTransColor) {
-		ASSERT(ent);
+	if (args.render_mode == kRenderTransColor) {
 		Vector4Set(bmodel->render_model.color,
-			ent->curstate.rendercolor.r / 255.f,
-			ent->curstate.rendercolor.g / 255.f,
-			ent->curstate.rendercolor.b / 255.f,
-			blend);
+			args.color.r / 255.f,
+			args.color.g / 255.f,
+			args.color.b / 255.f,
+			args.blend);
 	} else {
 		// Other render modes are not affected by entity current state color
-		Vector4Set(bmodel->render_model.color, 1, 1, 1, blend);
+		Vector4Set(bmodel->render_model.color, 1, 1, 1, args.blend);
 	}
 
 	// Only Normal and TransAlpha have lightmaps
 	// TODO: on big maps more than a single lightmap texture is possible
-	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
+	bmodel->render_model.lightmap = (args.render_mode == kRenderNormal || args.render_mode == kRenderTransAlpha) ? 1 : 0;
 
 	if (bmodel->num_water_surfaces) {
-		ASSERT(ent);
-		brushDrawWaterSurfaces(ent, bmodel->render_model.color);
+		ASSERT(args.ent);
+		brushDrawWaterSurfaces(args.ent, bmodel->render_model.color);
 	}
 
 	if (bmodel->render_model.num_geometries == 0)
@@ -413,12 +412,13 @@ void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_m
 
 	++g_brush.stat.models_drawn;
 
+	// TODO only iterate on potentially dynamic geometries
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
-		const int surface_index = geom->surf - mod->surfaces;
+		const int surface_index = geom->surf - args.mod->surfaces;
 		const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
-		if (render_mode == kRenderTransColor) {
+		if (args.render_mode == kRenderTransColor) {
 			// TransColor mode means no texture color is used
 			geom->texture = tglob.whiteTexture;
 		} else if (patch_surface && patch_surface->tex_id >= 0) {
@@ -427,13 +427,13 @@ void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_m
 		} else {
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
-			const texture_t *t = R_TextureAnimation(ent, geom->surf, texture_override);
+			const texture_t *t = R_TextureAnimation(args.ent, geom->surf, texture_override);
 			if (t->gl_texturenum >= 0)
 				geom->texture = t->gl_texturenum;
 		}
 	}
 
-	bmodel->render_model.render_type = brushRenderModeToRenderType(render_mode);
+	bmodel->render_model.render_type = brushRenderModeToRenderType(args.render_mode);
 	VK_RenderModelDraw(NULL, &bmodel->render_model);
 }
 

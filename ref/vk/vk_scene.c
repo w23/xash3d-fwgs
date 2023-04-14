@@ -596,10 +596,19 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 	switch (mod->type)
 	{
 		case mod_brush:
-			R_RotateForEntity( model, ent );
-			VK_RenderStateSetMatrixModel( model );
-			VK_BrushModelDraw( ent->model, ent, render_mode, blend, model );
-			break;
+			{
+				R_RotateForEntity( model, ent );
+				VK_RenderStateSetMatrixModel( model );
+				const vk_brush_model_draw_t draw = {
+					.mod = mod,
+					.ent = ent,
+					.color = ent->curstate.rendercolor,
+					.blend = blend,
+					.render_mode = render_mode,
+				};
+				VK_BrushModelDraw( draw );
+				break;
+			}
 
 		case mod_studio:
 			VK_RenderStateSetMatrixModel( matrix4x4_identity );
@@ -650,8 +659,14 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		cl_entity_t *world = gEngine.GetEntityByIndex( 0 );
 		if( world && world->model )
 		{
-			const float blend = 1.f;
-			VK_BrushModelDraw( world->model, world, kRenderNormal, blend, NULL );
+			const vk_brush_model_draw_t draw = {
+				.mod = world->model,
+				.ent = world,
+				.color = world->curstate.rendercolor,
+				.blend = 1.f,
+				.render_mode = kRenderNormal,
+			};
+			VK_BrushModelDraw( draw );
 		}
 		APROF_SCOPE_END(draw_worldbrush);
 	}
@@ -666,7 +681,16 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 				continue;
 
 			const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-			VK_BrushModelDraw(mod, NULL, fw->rendermode, fw->renderamt / 255.f, matrix4x4_identity);
+			const vk_brush_model_draw_t draw = {
+				.mod = mod,
+				.ent = NULL,
+				.color = fw->rendercolor,
+				.blend = fw->renderamt / 255.f,
+				.render_mode = fw->rendermode,
+			};
+
+			// FIXME renderfx
+			VK_BrushModelDraw(draw);
 		}
 	}
 

@@ -14,7 +14,16 @@ void VK_BrushShutdown( void );
 qboolean VK_BrushModelLoad(struct model_s *mod);
 void VK_BrushModelDestroy(struct model_s *mod);
 
-void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model );
+typedef struct {
+	const model_t *mod;
+	const cl_entity_t *ent;
+	int render_mode;
+	float blend;
+	color24 color;
+	//TODO const matrix4x4 *matrix;
+} vk_brush_model_draw_t;
+
+void VK_BrushModelDraw( vk_brush_model_draw_t args );
 void VK_BrushStatsClear( void );
 
 const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s, const struct texture_s *base_override );
