@@ -371,10 +371,11 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 	return base;
 }
 
-void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model ) {
-	// Expect all buffers to be bound
-	const model_t *mod = ent->model;
+void VK_BrushModelDraw( const model_t *mod, const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model ) {
 	vk_brush_model_t *bmodel = mod->cache.data;
+
+	if (ent)
+		ASSERT(mod == ent->model);
 
 	if (!bmodel) {
 		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", mod->name);
@@ -387,6 +388,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	}
 
 	if (render_mode == kRenderTransColor) {
+		ASSERT(ent);
 		Vector4Set(bmodel->render_model.color,
 			ent->curstate.rendercolor.r / 255.f,
 			ent->curstate.rendercolor.g / 255.f,
@@ -402,6 +404,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
 
 	if (bmodel->num_water_surfaces) {
+		ASSERT(ent);
 		brushDrawWaterSurfaces(ent, bmodel->render_model.color);
 	}
 
@@ -431,7 +434,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	}
 
 	bmodel->render_model.render_type = brushRenderModeToRenderType(render_mode);
-	VK_RenderModelDraw(ent, &bmodel->render_model);
+	VK_RenderModelDraw(NULL, &bmodel->render_model);
 }
 
 static qboolean renderableSurface( const msurface_t *surf, int i ) {

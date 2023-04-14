@@ -59,6 +59,8 @@ static struct {
 	draw_list_t	draw_stack[MAX_SCENE_STACK];
 	int		draw_stack_pos;
 	draw_list_t	*draw_list;
+
+	model_t *func_wall_models[MAX_FUNC_WALL_ENTITIES];
 } g_lists;
 
 static void loadLights( const model_t *const map ) {
@@ -127,6 +129,26 @@ static void loadBrushModels( void ) {
 	}
 }
 
+static void collectFuncWallModels( void ) {
+	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
+	for (int j = 0; j < g_map_entities.func_walls_count; ++j) {
+		xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + j;
+		g_lists.func_wall_models[j] = NULL;
+
+		for( int i = 0; i < num_models; i++ ) {
+			model_t *const mod = gEngine.pfnGetModelByIndex( i + 1 );
+			if (!mod)
+				continue;
+
+			if (Q_strcmp(fw->model, mod->name) == 0) {
+				gEngine.Con_Reportf("Adding func_wall model %d with name \"%s\"\n", i, mod->name);
+				g_lists.func_wall_models[j] = mod;
+				break;
+			}
+		}
+	}
+}
+
 // Only used when reloading patches. In norma circumstances models get destroyed by the engine
 static void destroyBrushModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
@@ -158,6 +180,7 @@ static void loadMap(const model_t* const map) {
 	XVK_ParseMapPatches();
 
 	loadBrushModels();
+	collectFuncWallModels();
 
 	loadLights(map);
 	mapLoadEnd(map);
@@ -191,7 +214,7 @@ void VK_SceneInit( void )
 }
 
 #define R_ModelOpaque( rm )	( rm == kRenderNormal )
-int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
+int R_FIXME_GetEntityRenderMode( const cl_entity_t *ent )
 {
 	//int		i, opaque, trans;
 	//mstudiotexture_t	*ptexture;
@@ -246,8 +269,7 @@ void R_NewMap( void ) {
 	loadMap(map);
 }
 
-qboolean R_AddEntity( struct cl_entity_s *clent, int type )
-{
+qboolean R_AddEntity( struct cl_entity_s *clent, int type ) {
 	/* if( !r_drawentities->value ) */
 	/* 	return false; // not allow to drawing */
 	int render_mode;
@@ -318,7 +340,6 @@ void R_ClearScreen( void )
 	// clear the scene befor start new frame
 	if( gEngine.drawFuncs->R_ClearScene != NULL )
 		gEngine.drawFuncs->R_ClearScene();
-
 }
 
 void R_PushScene( void )
@@ -577,7 +598,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 		case mod_brush:
 			R_RotateForEntity( model, ent );
 			VK_RenderStateSetMatrixModel( model );
-			VK_BrushModelDraw( ent, render_mode, blend, model );
+			VK_BrushModelDraw( ent->model, ent, render_mode, blend, model );
 			break;
 
 		case mod_studio:
@@ -630,9 +651,23 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		if( world && world->model )
 		{
 			const float blend = 1.f;
-			VK_BrushModelDraw( world, kRenderNormal, blend, NULL );
+			VK_BrushModelDraw( world->model, world, kRenderNormal, blend, NULL );
 		}
 		APROF_SCOPE_END(draw_worldbrush);
+	}
+
+	// Add all func_wall models to rendering unconditionally
+	// FIXME breaks traditional rendering dynamic switching
+	if (vk_core.rtx)
+	{
+		for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+			model_t *const mod = g_lists.func_wall_models[i];
+			if (!mod)
+				continue;
+
+			const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+			VK_BrushModelDraw(mod, NULL, fw->rendermode, fw->renderamt / 255.f, matrix4x4_identity);
+		}
 	}
 
 	{

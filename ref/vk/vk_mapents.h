@@ -24,6 +24,8 @@
 	X(19, vec2_t, _xvk_tex_offset, Vec2) \
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
 	X(21, string, model, String) \
+	X(22, int, rendermode, Int) \
+	X(23, int, renderamt, Int) \
 
 typedef enum {
 	Unknown = 0,
@@ -82,7 +84,9 @@ typedef struct {
 
 typedef struct {
 	string model;
-	// TODO rendermode, renderamt
+	int rendermode, renderamt;
+
+	struct cl_entity_s *ent;
 } xvk_mapent_func_wall_t;
 
 typedef struct {
