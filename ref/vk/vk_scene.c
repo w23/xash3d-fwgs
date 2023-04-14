@@ -280,6 +280,16 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type ) {
 	if( FBitSet( clent->curstate.effects, EF_NODRAW ))
 		return false; // done
 
+	// FIXME if current_frame_is_ray_traced
+	if (vk_core.rtx) {
+		// TODO faster check
+		// FIXME add offset
+		for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+			if (Q_strcmp(clent->model->name, g_map_entities.func_walls[i].model) == 0)
+				return true;
+		}
+	}
+
 	render_mode = R_FIXME_GetEntityRenderMode( clent );
 
 	/* TODO
@@ -461,99 +471,97 @@ static int R_TransEntityCompare( const void *a, const void *b)
 	return 0;
 }
 
-// FIXME where should this function be
-#define RP_NORMALPASS() true // FIXME ???
-int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
-{
+static int computeFxBlend( entity_state_t* const curstate, int entity_index, const vec3_t origin ) {
 	int	blend = 0;
 	float	offset, dist;
 	vec3_t	tmp;
 
-	offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
+	offset = (entity_index) * 363.0f; // Use ent index to de-sync these fx
 
-	switch( e->curstate.renderfx )
+	switch( curstate->renderfx )
 	{
 	case kRenderFxPulseSlowWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 2 + offset );
+		blend = curstate->renderamt + 0x40 * sin( gpGlobals->time * 2 + offset );
 		break;
 	case kRenderFxPulseFastWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 8 + offset );
+		blend = curstate->renderamt + 0x40 * sin( gpGlobals->time * 8 + offset );
 		break;
 	case kRenderFxPulseSlow:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 2 + offset );
+		blend = curstate->renderamt + 0x10 * sin( gpGlobals->time * 2 + offset );
 		break;
 	case kRenderFxPulseFast:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 8 + offset );
+		blend = curstate->renderamt + 0x10 * sin( gpGlobals->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
+#define RP_NORMALPASS() true // FIXME ???
 		if( RP_NORMALPASS( ))
 		{
-			if( e->curstate.renderamt > 0 )
-				e->curstate.renderamt -= 1;
-			else e->curstate.renderamt = 0;
+			if( curstate->renderamt > 0 )
+				curstate->renderamt -= 1;
+			else curstate->renderamt = 0;
 		}
-		blend = e->curstate.renderamt;
+		blend = curstate->renderamt;
 		break;
 	case kRenderFxFadeFast:
 		if( RP_NORMALPASS( ))
 		{
-			if( e->curstate.renderamt > 3 )
-				e->curstate.renderamt -= 4;
-			else e->curstate.renderamt = 0;
+			if( curstate->renderamt > 3 )
+				curstate->renderamt -= 4;
+			else curstate->renderamt = 0;
 		}
-		blend = e->curstate.renderamt;
+		blend = curstate->renderamt;
 		break;
 	case kRenderFxSolidSlow:
 		if( RP_NORMALPASS( ))
 		{
-			if( e->curstate.renderamt < 255 )
-				e->curstate.renderamt += 1;
-			else e->curstate.renderamt = 255;
+			if( curstate->renderamt < 255 )
+				curstate->renderamt += 1;
+			else curstate->renderamt = 255;
 		}
-		blend = e->curstate.renderamt;
+		blend = curstate->renderamt;
 		break;
 	case kRenderFxSolidFast:
 		if( RP_NORMALPASS( ))
 		{
-			if( e->curstate.renderamt < 252 )
-				e->curstate.renderamt += 4;
-			else e->curstate.renderamt = 255;
+			if( curstate->renderamt < 252 )
+				curstate->renderamt += 4;
+			else curstate->renderamt = 255;
 		}
-		blend = e->curstate.renderamt;
+		blend = curstate->renderamt;
 		break;
 	case kRenderFxStrobeSlow:
 		blend = 20 * sin( gpGlobals->time * 4 + offset );
 		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
+		else blend = curstate->renderamt;
 		break;
 	case kRenderFxStrobeFast:
 		blend = 20 * sin( gpGlobals->time * 16 + offset );
 		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
+		else blend = curstate->renderamt;
 		break;
 	case kRenderFxStrobeFaster:
 		blend = 20 * sin( gpGlobals->time * 36 + offset );
 		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
+		else blend = curstate->renderamt;
 		break;
 	case kRenderFxFlickerSlow:
 		blend = 20 * (sin( gpGlobals->time * 2 ) + sin( gpGlobals->time * 17 + offset ));
 		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
+		else blend = curstate->renderamt;
 		break;
 	case kRenderFxFlickerFast:
 		blend = 20 * (sin( gpGlobals->time * 16 ) + sin( gpGlobals->time * 23 + offset ));
 		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
+		else blend = curstate->renderamt;
 		break;
 	case kRenderFxHologram:
 	case kRenderFxDistort:
-		VectorCopy( e->origin, tmp );
+		VectorCopy( origin, tmp );
 		VectorSubtract( tmp, g_camera.vieworg, tmp );
 		dist = DotProduct( tmp, g_camera.vforward );
 
 		// turn off distance fade
-		if( e->curstate.renderfx == kRenderFxDistort )
+		if( curstate->renderfx == kRenderFxDistort )
 			dist = 1;
 
 		if( dist <= 0 )
@@ -562,20 +570,26 @@ int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
 		}
 		else
 		{
-			e->curstate.renderamt = 180;
-			if( dist <= 100 ) blend = e->curstate.renderamt;
-			else blend = (int) ((1.0f - ( dist - 100 ) * ( 1.0f / 400.0f )) * e->curstate.renderamt );
+			curstate->renderamt = 180;
+			if( dist <= 100 ) blend = curstate->renderamt;
+			else blend = (int) ((1.0f - ( dist - 100 ) * ( 1.0f / 400.0f )) * curstate->renderamt );
 			blend += gEngine.COM_RandomLong( -32, 31 );
 		}
 		break;
 	default:
-		blend = e->curstate.renderamt;
+		blend = curstate->renderamt;
 		break;
 	}
 
 	blend = bound( 0, blend, 255 );
 
 	return blend;
+}
+
+// FIXME where should this function be
+int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
+{
+	return computeFxBlend(&e->curstate, e->index, e->origin);
 }
 
 static void drawEntity( cl_entity_t *ent, int render_mode )
@@ -681,15 +695,26 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 				continue;
 
 			const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+
+			// FIXME this should be preserved between frames
+			entity_state_t curstate = {0};
+			curstate.renderamt = fw->renderamt;
+			curstate.renderfx = fw->renderfx;
+			const vec3_t origin = {0};
+			const float blend = fw->rendermode == kRenderNormal ? 1.f : computeFxBlend( &curstate, i, origin ) / 255.0f;
 			const vk_brush_model_draw_t draw = {
 				.mod = mod,
 				.ent = NULL,
 				.color = fw->rendercolor,
-				.blend = fw->renderamt / 255.f,
+				.blend = blend,
 				.render_mode = fw->rendermode,
 			};
 
-			// FIXME renderfx
+			matrix4x4 m;
+			Matrix3x4_LoadIdentity(m);
+			Matrix3x4_SetOrigin(m, fw->offset[0], fw->offset[1], fw->offset[2]);
+			VK_RenderStateSetMatrixModel( m );
+
 			VK_BrushModelDraw(draw);
 		}
 	}

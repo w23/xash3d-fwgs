@@ -343,6 +343,10 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 	if (have_fields & Field_renderamt)
 		e->renderamt = props->renderamt;
 
+	if (have_fields & Field_renderfx)
+		e->renderfx = props->renderfx;
+
+
 	if (have_fields & Field_rendermode)
 		e->rendermode = props->rendermode;
 
@@ -447,7 +451,7 @@ int findLightEntityWithIndex( int index ) {
 	return -1;
 }
 
-static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) {
+static void addPatchLightEntity( const entity_props_t *props, uint32_t have_fields ) {
 	for (int i = 0; i < props->_xvk_ent_id.num; ++i) {
 		const int ent_id = props->_xvk_ent_id.values[i];
 		const int light_index = findLightEntityWithIndex( ent_id );
@@ -464,6 +468,16 @@ static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) 
 		}
 
 		fillLightFromProps(g_map_entities.lights + light_index, props, have_fields, true, props->_xvk_ent_id.values[i]);
+	}
+}
+
+static void patchFuncWallEntity( const entity_props_t *props ) {
+	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+		xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+		if (Q_strcmp(props->model, fw->model) != 0)
+			continue;
+
+		VectorCopy(props->_xvk_offset, fw->offset);
 	}
 }
 
@@ -510,7 +524,9 @@ static void parseEntities( char *string ) {
 					if (have_fields & Field__xvk_surface_id) {
 						addPatchSurface( &values, have_fields );
 					} else if (have_fields & Field__xvk_ent_id) {
-						addPatchEntity( &values, have_fields );
+						addPatchLightEntity( &values, have_fields );
+					} else if ((have_fields & Field__xvk_offset) && (have_fields & Field_model)) {
+						patchFuncWallEntity( &values );
 					}
 					break;
 				case Ignored:

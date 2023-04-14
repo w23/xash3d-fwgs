@@ -27,6 +27,8 @@
 	X(22, int, rendermode, Int) \
 	X(23, int, renderamt, Int) \
 	X(24, vec3_t, rendercolor, Vec3) \
+	X(25, int, renderfx, Int) \
+	X(26, vec3_t, _xvk_offset, Vec3) \
 
 typedef enum {
 	Unknown = 0,
@@ -89,6 +91,7 @@ typedef struct {
 	color24 rendercolor;
 
 	struct cl_entity_s *ent;
+	vec3_t offset;
 } xvk_mapent_func_wall_t;
 
 typedef struct {
