@@ -784,7 +784,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	vk_brush_model_t *const bmodel = mod->cache.data;
 	ASSERT(bmodel);
 
-	const qboolean is_static = is_worldmodel || modelIsFuncWall(mod);
+	const qboolean is_func_wall = modelIsFuncWall(mod);
+	const qboolean is_static = is_worldmodel || is_func_wall;
 
 	typedef struct {
 		int model_surface_index;
@@ -844,10 +845,22 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		bmodel->render_model.dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->render_model.dynamic_polylights[0]) * emissive_surfaces_count);
 	}
 
+	matrix3x4 identity;
+	Matrix3x4_LoadIdentity(identity);
+
 	// Apply all emissive surfaces found
 	for (int i = 0; i < emissive_surfaces_count; ++i) {
 		const emissive_surface_t* const s = emissive_surfaces + i;
-		const rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
+
+		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
+
+		// func_wall surfaces do not really belong to BSP+PVS system, so they can't be used
+		// for lights visibility calculation directly.
+		if (is_func_wall) {
+			// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
+			polylight.dynamic = true;
+			polylight.transform_row = &identity;
+		}
 
 		// Static emissive surfaces are added immediately, as they are drawn all the time.
 		// Non-static ones will be applied later when the model is actually rendered
