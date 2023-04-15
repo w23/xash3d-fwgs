@@ -133,15 +133,8 @@ void VK_RayFrameBegin( void ) {
 	ASSERT(vk_core.rtx);
 
 	RT_VkAccelFrameBegin();
-
-	if (g_ray_model_state.freeze_models)
-		return;
-
 	XVK_RayModel_ClearForNextFrame();
-
 	R_PrevFrame_StartFrame();
-
-	// TODO shouldn't we do this in freeze models mode anyway?
 	RT_LightsFrameBegin();
 }
 
@@ -597,10 +590,6 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
-static void freezeModels( void ) {
-	g_ray_model_state.freeze_models = !g_ray_model_state.freeze_models;
-}
-
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -645,7 +634,6 @@ qboolean VK_RayInit( void )
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("vk_rtx_reload", reloadPipeline, "Reload RTX shader");
-	gEngine.Cmd_AddCommand("vk_rtx_freeze", freezeModels, "Freeze models, do not update/add/delete models from to-draw list");
 
 	return true;
 }

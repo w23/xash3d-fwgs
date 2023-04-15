@@ -220,9 +220,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 
 	ASSERT(vk_core.rtx);
 
-	if (g_ray_model_state.freeze_models)
-		return args.model->ray_model;
-
 	if (kusochki_count_offset == ALO_ALLOC_FAILED) {
 		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded on model %s\n", args.model->debug_name);
 		return NULL;
@@ -400,8 +397,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 }
 
 void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
-	ASSERT(!g_ray_model_state.freeze_models);
-
 	ASSERT(vk_core.rtx);
 	if (model->as != VK_NULL_HANDLE) {
 		//gEngine.Con_Reportf("Model %s destroying AS=%p blas_index=%d\n", model->debug_name, model->rtx.blas, blas_index);
@@ -447,9 +442,6 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	ASSERT(vk_core.rtx);
 	ASSERT(g_ray_model_state.frame.num_models <= ARRAYSIZE(g_ray_model_state.frame.models));
 	ASSERT(model->num_geoms == render_model->num_geometries);
-
-	if (g_ray_model_state.freeze_models)
-		return;
 
 	if (g_ray_model_state.frame.num_models == ARRAYSIZE(g_ray_model_state.frame.models)) {
 		gEngine.Con_Printf(S_ERROR "Ran out of AccelerationStructure slots\n");

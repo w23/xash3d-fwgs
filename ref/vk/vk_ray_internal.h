@@ -71,8 +71,6 @@ typedef struct {
 	} frame;
 
 	vk_ray_model_t models_cache[MODEL_CACHE_SIZE];
-
-	qboolean freeze_models;
 } xvk_ray_model_state_t;
 
 extern xvk_ray_model_state_t g_ray_model_state;
