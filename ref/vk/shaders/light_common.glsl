@@ -29,6 +29,10 @@ uint traceShadowRay(vec3 pos, vec3 dir, float dist, uint flags) {
 bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 	rayQueryEXT rq;
 	const uint flags =  0
+		// TODO figure out whether to turn off culling for alpha-tested geometry.
+		// Alpha tested geometry usually comes as thick double-sided brushes.
+		// Turning culling on makes shadows disappear from one side, which makes it look rather weird from one side.
+		// Turning culling off makes such geometry cast "double shadow", which looks a bit weird from both sides.
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
 		//| gl_RayFlagsNoOpaqueEXT
 		| gl_RayFlagsTerminateOnFirstHitEXT
@@ -84,6 +88,7 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 #elif defined(RAY_QUERY)
 	{
 		const uint flags =  0
+			// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
 			//| gl_RayFlagsCullFrontFacingTrianglesEXT
 			| gl_RayFlagsOpaqueEXT
 			| gl_RayFlagsTerminateOnFirstHitEXT
@@ -117,7 +122,8 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 
 	rayQueryEXT rq;
 	const uint flags = 0
-		| gl_RayFlagsCullFrontFacingTrianglesEXT
+		// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
+		//| gl_RayFlagsCullFrontFacingTrianglesEXT
 		| gl_RayFlagsOpaqueEXT
 		//| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT
@@ -133,6 +139,8 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		const uint geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 		const uint kusok_index = instance_kusochki_offset + geometry_index;
 		const Kusok kusok = getKusok(kusok_index);
+
+		// TODO this flag can be encoded into custom index, so that we'd need no extra indirection
 		if ((kusok.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0)
 			return true;
 	}
