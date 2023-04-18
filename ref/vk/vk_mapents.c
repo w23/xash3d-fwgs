@@ -334,6 +334,7 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 	xvk_mapent_func_wall_t *const e = g_map_entities.func_walls + (g_map_entities.func_walls_count++);
 
 	*e = (xvk_mapent_func_wall_t){0};
+
 	e->rendercolor.r = 255;
 	e->rendercolor.g = 255;
 	e->rendercolor.b = 255;
@@ -346,7 +347,6 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 	if (have_fields & Field_renderfx)
 		e->renderfx = props->renderfx;
 
-
 	if (have_fields & Field_rendermode)
 		e->rendermode = props->rendermode;
 
@@ -355,6 +355,8 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 		e->rendercolor.g = props->rendercolor[1];
 		e->rendercolor.b = props->rendercolor[2];
 	}
+
+	e->entity_index = g_map_entities.entity_count;
 }
 
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {

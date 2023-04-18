@@ -86,6 +86,7 @@ typedef struct {
 #define MAX_MAPENT_TARGETS 256
 
 typedef struct {
+	int entity_index;
 	string model;
 	int rendermode, renderamt, renderfx;
 	color24 rendercolor;

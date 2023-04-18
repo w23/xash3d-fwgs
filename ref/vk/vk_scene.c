@@ -576,6 +576,16 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 	{
 		case mod_brush:
 			R_RotateForEntity( model, ent );
+
+			// Patch func_wall offsets
+			// TODO universal entity patching by index O(1); don't loop like that
+			for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+				xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+				if (fw->entity_index == ent->index + 1) {
+					Matrix4x4_ConcatTranslate(model, fw->offset[0], fw->offset[1], fw->offset[2]);
+					break;
+				}
+			}
 			VK_RenderStateSetMatrixModel( model );
 			VK_BrushModelDraw( ent, render_mode, blend, model );
 			break;
