@@ -135,6 +135,8 @@ static unsigned parseEntPropClassname(const char* value, class_name_e *out, unsi
 		*out = LightEnvironment;
 	} else if (Q_strcmp(value, "worldspawn") == 0) {
 		*out = Worldspawn;
+	} else if (Q_strcmp(value, "func_wall") == 0) {
+		*out = FuncWall;
 	} else {
 		*out = Ignored;
 	}
@@ -321,6 +323,40 @@ static void readWorldspawn( const entity_props_t *props ) {
 	Q_strcpy(g_map_entities.wadlist, props->wad);
 }
 
+static void readFuncWall( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
+	gEngine.Con_Reportf("func_wall entity model=\"%s\", props_count=%d\n", (have_fields & Field_model) ? props->model : "N/A", props_count);
+
+	if (g_map_entities.func_walls_count >= MAX_FUNC_WALL_ENTITIES) {
+		gEngine.Con_Printf(S_ERROR "Too many func_wall entities, max supported = %d\n", MAX_FUNC_WALL_ENTITIES);
+		return;
+	}
+
+	xvk_mapent_func_wall_t *const e = g_map_entities.func_walls + (g_map_entities.func_walls_count++);
+
+	*e = (xvk_mapent_func_wall_t){0};
+	e->rendercolor.r = 255;
+	e->rendercolor.g = 255;
+	e->rendercolor.b = 255;
+
+	Q_strcpy(e->model, props->model);
+
+	if (have_fields & Field_renderamt)
+		e->renderamt = props->renderamt;
+
+	if (have_fields & Field_renderfx)
+		e->renderfx = props->renderfx;
+
+
+	if (have_fields & Field_rendermode)
+		e->rendermode = props->rendermode;
+
+	if (have_fields & Field_rendercolor) {
+		e->rendercolor.r = props->rendercolor[0];
+		e->rendercolor.g = props->rendercolor[1];
+		e->rendercolor.b = props->rendercolor[2];
+	}
+}
+
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
@@ -415,7 +451,7 @@ int findLightEntityWithIndex( int index ) {
 	return -1;
 }
 
-static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) {
+static void addPatchLightEntity( const entity_props_t *props, uint32_t have_fields ) {
 	for (int i = 0; i < props->_xvk_ent_id.num; ++i) {
 		const int ent_id = props->_xvk_ent_id.values[i];
 		const int light_index = findLightEntityWithIndex( ent_id );
@@ -435,8 +471,19 @@ static void addPatchEntity( const entity_props_t *props, uint32_t have_fields ) 
 	}
 }
 
+static void patchFuncWallEntity( const entity_props_t *props ) {
+	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+		xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+		if (Q_strcmp(props->model, fw->model) != 0)
+			continue;
+
+		VectorCopy(props->_xvk_offset, fw->offset);
+	}
+}
+
 static void parseEntities( char *string ) {
 	unsigned have_fields = 0;
+	int props_count = 0;
 	entity_props_t values;
 	char *pos = string;
 	//gEngine.Con_Reportf("ENTITIES: %s\n", pos);
@@ -452,6 +499,7 @@ static void parseEntities( char *string ) {
 		if (key[0] == '{') {
 			have_fields = None;
 			values = (entity_props_t){0};
+			props_count = 0;
 			continue;
 		} else if (key[0] == '}') {
 			const int target_fields = Field_targetname | Field_origin;
@@ -468,11 +516,17 @@ static void parseEntities( char *string ) {
 					readWorldspawn( &values );
 					break;
 
+				case FuncWall:
+					readFuncWall( &values, have_fields, props_count );
+					break;
+
 				case Unknown:
 					if (have_fields & Field__xvk_surface_id) {
 						addPatchSurface( &values, have_fields );
 					} else if (have_fields & Field__xvk_ent_id) {
-						addPatchEntity( &values, have_fields );
+						addPatchLightEntity( &values, have_fields );
+					} else if ((have_fields & Field__xvk_offset) && (have_fields & Field_model)) {
+						patchFuncWallEntity( &values );
 					}
 					break;
 				case Ignored:
@@ -500,6 +554,7 @@ static void parseEntities( char *string ) {
 		{
 			//gEngine.Con_Reportf("Unknown field %s with value %s\n", key, value);
 		}
+		++props_count;
 #undef CHECK_FIELD
 	}
 }
@@ -571,6 +626,7 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.num_lights = 0;
 	g_map_entities.single_environment_index = NoEnvironmentLights;
 	g_map_entities.entity_count = 0;
+	g_map_entities.func_walls_count = 0;
 
 	parseEntities( map->entities );
 	orientSpotlights();

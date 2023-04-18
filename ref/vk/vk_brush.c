@@ -682,6 +682,17 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 	return true;
 }
 
+static const xvk_mapent_func_wall_t *getModelFuncWallPatch( const model_t *const mod ) {
+	for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+		const xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+		if (Q_strcmp(mod->name, fw->model) == 0) {
+			return fw;
+		}
+	}
+
+	return NULL;
+}
+
 qboolean VK_BrushModelLoad( model_t *mod ) {
 	if (mod->cache.data) {
 		gEngine.Con_Reportf( S_WARN "Model %s was already loaded\n", mod->name );
@@ -765,6 +776,12 @@ static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surfac
 }
 
 void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel ) {
+	vk_brush_model_t *const bmodel = mod->cache.data;
+	ASSERT(bmodel);
+
+	const xvk_mapent_func_wall_t *func_wall = getModelFuncWallPatch(mod);
+	const qboolean is_static = is_worldmodel || func_wall;
+
 	typedef struct {
 		int model_surface_index;
 		int surface_index;
@@ -809,17 +826,14 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		VectorCopy(emissive, surface->emissive);
 	}
 
-	vk_brush_model_t *const bmodel = mod->cache.data;
-	ASSERT(bmodel);
-
 	// Clear old per-geometry emissive values. The new emissive values will be assigned by the loop below only to the relevant geoms
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		vk_render_geometry_t *const geom = bmodel->render_model.geometries + i;
 		VectorClear(geom->emissive);
 	}
 
-	// Non-worldmodel brush models may move around and so must have their emissive surfaces treated as dynamic
-	if (!is_worldmodel) {
+	// Non-static brush models may move around and so must have their emissive surfaces treated as dynamic
+	if (!is_static) {
 		if (bmodel->render_model.dynamic_polylights)
 			Mem_Free(bmodel->render_model.dynamic_polylights);
 		bmodel->render_model.dynamic_polylights_count = emissive_surfaces_count;
@@ -829,11 +843,23 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	// Apply all emissive surfaces found
 	for (int i = 0; i < emissive_surfaces_count; ++i) {
 		const emissive_surface_t* const s = emissive_surfaces + i;
-		const rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
 
-		// Worldmodel emissive surfaces are added immediately, as the worldmodel is always drawn and is static.
-		// Non-worldmodel ones will be applied later when the model is actually rendered
-		if (is_worldmodel) {
+		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
+
+		// func_wall surfaces do not really belong to BSP+PVS system, so they can't be used
+		// for lights visibility calculation directly.
+		if (func_wall) {
+			// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
+			polylight.dynamic = true;
+			matrix3x4 m;
+			Matrix3x4_LoadIdentity(m);
+			Matrix3x4_SetOrigin(m, func_wall->offset[0], func_wall->offset[1], func_wall->offset[2]);
+			polylight.transform_row = &m;
+		}
+
+		// Static emissive surfaces are added immediately, as they are drawn all the time.
+		// Non-static ones will be applied later when the model is actually rendered
+		if (is_static) {
 			RT_LightAddPolygon(&polylight);
 		} else {
 			bmodel->render_model.dynamic_polylights[i] = polylight;
@@ -843,5 +869,5 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		VectorCopy(polylight.emissive, bmodel->render_model.geometries[bmodel->surface_to_geometry_index[s->model_surface_index]].emissive);
 	}
 
-	gEngine.Con_Reportf("Loaded %d polylights for %smodel %s\n", emissive_surfaces_count, is_worldmodel ? "world" : "movable ", mod->name);
+	gEngine.Con_Reportf("Loaded %d polylights for %s model %s\n", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 }

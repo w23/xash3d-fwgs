@@ -23,6 +23,12 @@
 	X(18, vec4_t, _xvk_tvec, Vec4) \
 	X(19, vec2_t, _xvk_tex_offset, Vec2) \
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
+	X(21, string, model, String) \
+	X(22, int, rendermode, Int) \
+	X(23, int, renderamt, Int) \
+	X(24, vec3_t, rendercolor, Vec3) \
+	X(25, int, renderfx, Int) \
+	X(26, vec3_t, _xvk_offset, Vec3) \
 
 typedef enum {
 	Unknown = 0,
@@ -30,6 +36,7 @@ typedef enum {
 	LightSpot,
 	LightEnvironment,
 	Worldspawn,
+	FuncWall,
 	Ignored,
 } class_name_e;
 
@@ -79,6 +86,15 @@ typedef struct {
 #define MAX_MAPENT_TARGETS 256
 
 typedef struct {
+	string model;
+	int rendermode, renderamt, renderfx;
+	color24 rendercolor;
+
+	struct cl_entity_s *ent;
+	vec3_t offset;
+} xvk_mapent_func_wall_t;
+
+typedef struct {
 	int num_lights;
 	vk_light_entity_t lights[256];
 
@@ -89,6 +105,10 @@ typedef struct {
 
 	int num_targets;
 	xvk_mapent_target_t targets[MAX_MAPENT_TARGETS];
+
+#define MAX_FUNC_WALL_ENTITIES 64
+	int func_walls_count;
+	xvk_mapent_func_wall_t func_walls[MAX_FUNC_WALL_ENTITIES];
 } xvk_map_entities_t;
 
 extern xvk_map_entities_t g_map_entities;
