@@ -577,31 +577,17 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 		case mod_brush:
 			R_RotateForEntity( model, ent );
 
-			{
-				// Patch func_wall entities offsets
-				const int eindex = ent->index + 1; // TODO why is this off-by-1?
-				const xvk_mapent_func_wall_t *func_wall = NULL;
-				if (eindex >= 0 && eindex < g_map_entities.entity_count) {
-					const xvk_mapent_ref_t *const ref = g_map_entities.refs + eindex;
-					if (ref->class == FuncWall) {
-						func_wall = g_map_entities.func_walls + ref->index;
-					} else {
-						// Not found directly by index, find otherwise
-						// TODO this should be removed after we make sure the the index method above is enough
-						// FIXME nope, indexes are not stable
-						for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-							xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-							if (Q_strcmp(ent->model->name, fw->model) == 0) {
-								gEngine.Con_Printf(S_ERROR "Entity %s is func_wall=%d, but its ent->index=%d(+1=%d) is off (mapents: %d)\n", ent->model->name, i, ent->index, eindex, fw->entity_index);
-								//func_wall = fw;
-								break;
-							}
-						}
-					}
-
-					if (func_wall) {
+			// If this is potentially a func_wall model
+			if (ent->model->name[0] == '*') {
+				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
+					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
+					if (Q_strcmp(ent->model->name, fw->model) == 0) {
+						/* gEngine.Con_Reportf("ent->index=%d (%s) mapent:%d off=%f %f %f\n", */
+						/* 		ent->index, ent->model->name, fw->entity_index, */
+						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */
 						Matrix3x4_LoadIdentity(model);
-						Matrix4x4_SetOrigin(model, func_wall->origin[0], func_wall->origin[1], func_wall->origin[2]);
+						Matrix4x4_SetOrigin(model, fw->origin[0], fw->origin[1], fw->origin[2]);
+						break;
 					}
 				}
 			}

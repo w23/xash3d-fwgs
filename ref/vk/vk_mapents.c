@@ -348,12 +348,12 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 
 	*e = (xvk_mapent_func_wall_t){0};
 
+	Q_strcpy(e->model, props->model);
+
 	/* NOTE: not used
 	e->rendercolor.r = 255;
 	e->rendercolor.g = 255;
 	e->rendercolor.b = 255;
-
-	Q_strcpy(e->model, props->model);
 
 	if (have_fields & Field_renderamt)
 		e->renderamt = props->renderamt;
