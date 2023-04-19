@@ -853,7 +853,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			polylight.dynamic = true;
 			matrix3x4 m;
 			Matrix3x4_LoadIdentity(m);
-			Matrix3x4_SetOrigin(m, func_wall->offset[0], func_wall->offset[1], func_wall->offset[2]);
+			Matrix3x4_SetOrigin(m, func_wall->origin[0], func_wall->origin[1], func_wall->origin[2]);
 			polylight.transform_row = &m;
 		}
 

@@ -1,5 +1,7 @@
 #pragma once
 #include "xash3d_types.h"
+#include "const.h" // typedef word, needed for bspfile.h
+#include "bspfile.h" // MAX_MAP_ENTITIES
 
 #define ENT_PROP_LIST(X) \
 	X(0, vec3_t, origin, Vec3) \
@@ -24,11 +26,14 @@
 	X(19, vec2_t, _xvk_tex_offset, Vec2) \
 	X(20, vec2_t, _xvk_tex_scale, Vec2) \
 	X(21, string, model, String) \
+
+/* NOTE: not used
 	X(22, int, rendermode, Int) \
 	X(23, int, renderamt, Int) \
 	X(24, vec3_t, rendercolor, Vec3) \
 	X(25, int, renderfx, Int) \
 	X(26, vec3_t, _xvk_offset, Vec3) \
+*/
 
 typedef enum {
 	Unknown = 0,
@@ -38,6 +43,7 @@ typedef enum {
 	Worldspawn,
 	FuncWall,
 	Ignored,
+	Xvk_Target,
 } class_name_e;
 
 #define MAX_INT_ARRAY_SIZE 64
@@ -88,12 +94,20 @@ typedef struct {
 typedef struct {
 	int entity_index;
 	string model;
+	vec3_t origin;
+
+	/* NOTE: not used. Might be needed for #118 in the future.
 	int rendermode, renderamt, renderfx;
 	color24 rendercolor;
 
 	struct cl_entity_s *ent;
-	vec3_t offset;
+	*/
 } xvk_mapent_func_wall_t;
+
+typedef struct {
+	class_name_e class;
+	int index;
+} xvk_mapent_ref_t;
 
 typedef struct {
 	int num_lights;
@@ -110,6 +124,10 @@ typedef struct {
 #define MAX_FUNC_WALL_ENTITIES 64
 	int func_walls_count;
 	xvk_mapent_func_wall_t func_walls[MAX_FUNC_WALL_ENTITIES];
+
+	// TODO find out how to read this from the engine, or make its size dynamic
+//#define MAX_MAP_ENTITIES 2048
+	xvk_mapent_ref_t refs[MAX_MAP_ENTITIES];
 } xvk_map_entities_t;
 
 extern xvk_map_entities_t g_map_entities;
