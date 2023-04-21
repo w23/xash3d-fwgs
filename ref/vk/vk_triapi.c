@@ -42,13 +42,21 @@ int TriSpriteTexture( model_t *pSpriteModel, int frame )
 void TriRenderMode( int render_mode ) {
 	switch( render_mode )
 	{
-	case kRenderTransAlpha: g_triapi.render_type = kVkRenderType_A_1mA_R; break;
+	case kRenderTransAlpha:
+		g_triapi.render_type = kVkRenderType_A_1mA_R;
+		break;
 	case kRenderTransColor:
-	case kRenderTransTexture: g_triapi.render_type = kVkRenderType_A_1mA_RW; break;
+	case kRenderTransTexture:
+		g_triapi.render_type = kVkRenderType_A_1mA_RW;
+		break;
 	case kRenderGlow:
-	case kRenderTransAdd: g_triapi.render_type = kVkRenderType_A_1_R; break;
+	case kRenderTransAdd:
+		g_triapi.render_type = kVkRenderType_A_1_R;
+		break;
 	case kRenderNormal:
-	default: g_triapi.render_type = kVkRenderTypeSolid; break;
+	default:
+		g_triapi.render_type = kVkRenderTypeSolid;
+		break;
 	}
 }
 

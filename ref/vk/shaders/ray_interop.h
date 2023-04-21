@@ -89,6 +89,7 @@ struct Kusok {
 	float normal_scale;
 	uint flags;
 
+	// TODO per-model
 	mat4 prev_transform;
 };
 

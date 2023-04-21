@@ -238,7 +238,7 @@ static void EmitWaterPolys( const cl_entity_t *ent, const msurface_t *warp, qboo
 		const vk_render_geometry_t geometry = {
 			.texture = warp->texinfo->texture->gl_texturenum, // FIXME assert >= 0
 			.material = kXVkMaterialWater,
-			.surf = warp,
+			.surf_deprecate = warp,
 
 			.max_vertex = num_vertices,
 			.vertex_offset = buffer.vertices.unit_offset,
@@ -407,7 +407,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		vk_render_geometry_t *geom = bmodel->render_model.geometries + i;
-		const int surface_index = geom->surf - mod->surfaces;
+		const int surface_index = geom->surf_deprecate - mod->surfaces;
 		const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
 		if (render_mode == kRenderTransColor) {
@@ -419,7 +419,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		} else {
 			// Optionally patch by texture_s pointer and run animations
 			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
-			const texture_t *t = R_TextureAnimation(ent, geom->surf, texture_override);
+			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
 			if (t->gl_texturenum >= 0)
 				geom->texture = t->gl_texturenum;
 		}
@@ -561,7 +561,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 
 			VectorClear(model_geometry->emissive);
 
-			model_geometry->surf = surf;
+			model_geometry->surf_deprecate = surf;
 			model_geometry->texture = tex_id;
 
 			model_geometry->vertex_offset = buffer.vertices.unit_offset;

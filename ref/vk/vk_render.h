@@ -27,22 +27,40 @@ void VK_RenderStateSetMatrixModel(const matrix4x4 model);
 // FIXME these should be bits, not enums
 typedef enum {
 	kXVkMaterialRegular = 0,
+
+	// Set for dynamic water surface in vk_brush.c. Used to
+	// TYno NOT USED, REMOVE NOW.
+	// Remove: No prerequisites. Water material should be decided based on texture, not whether it's being drawn as dynamic water surface.
 	kXVkMaterialWater,
+
+	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
+	// Used: for setting KUSOK_MATERIAL_FLAG_SKYBOX for skybox texture sampling and environment shadows.
+	// Remove: pass it as a special texture/material index (e.g. -2).
 	kXVkMaterialSky,
+
+	// Set by beams and sprites.
+	// Used: as a negative flag for setting model color from emissive color. A bit tricky, don't really follow.
+	// Remove: ???
 	kXVkMaterialEmissive,
+
+	// Set by sprites.
+	// Used: glow means no depth test. Allows for slight ray overshoot (KUSOK_MATERIAL_FLAG_FIXME_GLOW). Desired effect: literally glow.
+	// Remove: should be able to extract this info from kRenderType
 	kXVkMaterialEmissiveGlow,
+
+	// Set for brush surfaces with dynamic UVs.
+	// Used: currently unused, conveyors are drawn incorrectly.
+	// Remove: it's more efficient to solve this via explicit list of dynamic-uv geometries.
 	kXVkMaterialConveyor,
+
+	// Set for chrome studio submodels.
+	// Used: ray tracing sets gray roughness texture to get smooth surface look.
+	// Remove: Have an explicit material for chrome surfaces.
 	kXVkMaterialChrome,
 } XVkMaterialType;
 
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
-
-	// Animated textures will be dynamic and change between frames
-	int texture;
-
-	// If this geometry is special, it will have a material type override
-	XVkMaterialType material;
 
 	uint32_t element_count;
 
@@ -50,10 +68,15 @@ typedef struct vk_render_geometry_s {
 	uint32_t max_vertex;
 
 	// Non-null only for brush models
-	// Used for:
-	// - updating animated textures for brush models
-	// - updating dynamic lights (TODO: can decouple from surface/brush models by providing texture_id and aabb directly here)
-	const struct msurface_s *surf;
+	// Used for updating animated textures for brush models
+	// Remove: have an explicit list of surfaces with animated textures
+	const struct msurface_s *surf_deprecate;
+
+	// Animated textures will be dynamic and change between frames
+	int texture;
+
+	// If this geometry is special, it will have a material type override
+	XVkMaterialType material;
 
 	// for kXVkMaterialEmissive{,Glow} and others
 	vec3_t emissive;
@@ -61,12 +84,45 @@ typedef struct vk_render_geometry_s {
 
 typedef enum {
 	kVkRenderTypeSolid,     // no blending, depth RW
+
+	// Mix alpha blending with depth test and write
+	// Set by:
+	// - brush:  kRenderTransColor
+	// - studio: kRenderTransColor, kRenderTransTexture, kRenderTransAlpha, kRenderGlow
+	// - sprite: kRenderTransColor, kRenderTransTexture
+	// - triapi: kRenderTransColor, kRenderTransTexture
 	kVkRenderType_A_1mA_RW, // blend: src*a + dst*(1-a), depth: RW
+
+	// Mix alpha blending with depth test only
+	// Set by:
+	// - brush:  kRenderTransTexture, kRenderGlow
+	// - sprite: kRenderTransAlpha
+	// - triapi: kRenderTransAlpha
 	kVkRenderType_A_1mA_R,  // blend: src*a + dst*(1-a), depth test
+
+	// Additive alpha blending, no depth
+	// Set by:
+	// - sprite: kRenderGlow
 	kVkRenderType_A_1,      // blend: src*a + dst, no depth test or write
+
+	// Additive alpha blending with depth test
+	// Set by:
+	// - brush: kRenderTransAdd
+	// - beams: all modes except kRenderNormal and beams going through triapi
+	// - sprite: kRenderTransAdd
+	// - triapi: kRenderTransAdd, kRenderGlow
 	kVkRenderType_A_1_R,    // blend: src*a + dst, depth test
+
+	// No blend, alpha test, depth test and write
+	// Set by:
+	// - brush: kRenderTransAlpha
 	kVkRenderType_AT,       // no blend, depth RW, alpha test
+
+	// Additive no alpha blend, depth test only
+	// Set by:
+	// - studio: kRenderTransAdd
 	kVkRenderType_1_1_R,    // blend: src + dst, depth test
+
 	kVkRenderType_COUNT
 } vk_render_type_e;
 
