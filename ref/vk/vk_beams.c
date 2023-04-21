@@ -398,7 +398,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 	{
 		const vk_render_geometry_t geometry = {
 			.texture = texture,
-			.material = kXVkMaterialEmissive,
+			.material = kXVkMaterialRegular,
 
 			.max_vertex = total_vertices,
 			.vertex_offset = buffer.vertices.unit_offset,

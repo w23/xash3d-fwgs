@@ -247,26 +247,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 
 	/* gEngine.Con_Reportf("Loading model %s, geoms: %d\n", args.model->debug_name, args.model->num_geometries); */
 
-	qboolean HACK_additive_emissive = false;
-
-	switch (args.model->render_type) {
-		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
-		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
-			HACK_additive_emissive = true;
-			break;
-		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write
-		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
-		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
-			HACK_additive_emissive = true;
-			break;
-		case kVkRenderTypeSolid:
-		case kVkRenderType_AT:
-			break;
-		case kVkRenderType_COUNT:
-			ASSERT(!"Invalid model render_type");
-			break;
-	}
-
 	for (int i = 0; i < args.model->num_geometries; ++i) {
 		vk_render_geometry_t *mg = args.model->geometries + i;
 		const uint32_t prim_count = mg->element_count / 3;
@@ -290,32 +270,11 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 					},
 			};
 
-#if 0
-		gEngine.Con_Reportf("  g%d: v(%#x %d %#x) V%d i(%#x %d %#x) I%d\n", i,
-			vertex_offset*sizeof(vk_vertex_t), mg->vertex_count * sizeof(vk_vertex_t), (vertex_offset + mg->vertex_count) * sizeof(vk_vertex_t), mg->vertex_count,
-			index_offset*sizeof(uint16_t), mg->element_count * sizeof(uint16_t), (index_offset + mg->element_count) * sizeof(uint16_t), mg->element_count);
-#endif
-
 		geom_build_ranges[i] = (VkAccelerationStructureBuildRangeInfoKHR) {
 			.primitiveCount = prim_count,
 			.primitiveOffset = mg->index_offset * sizeof(uint16_t),
 			.firstVertex = mg->vertex_offset,
 		};
-
-		/* { */
-		/* 	const uint32_t index_offset = mg->index_offset * sizeof(uint16_t); */
-		/* 	gEngine.Con_Reportf("  g%d: vertices:[%08x, %08x) indices:[%08x, %08x)\n", */
-		/* 		i, */
-		/* 		mg->vertex_offset * sizeof(vk_vertex_t), (mg->vertex_offset + mg->max_vertex) * sizeof(vk_vertex_t), */
-		/* 		index_offset, index_offset + mg->element_count * sizeof(uint16_t) */
-		/* 	); */
-		/* } */
-
-
-		if (HACK_additive_emissive && mg->material != kXVkMaterialEmissive && mg->material != kXVkMaterialEmissiveGlow) {
-			mg->material = kXVkMaterialEmissive;
-			VectorCopy(args.model->color, mg->emissive);
-		}
 
 		applyMaterialToKusok(kusochki + i, mg, args.model->color, false);
 		Matrix4x4_LoadIdentity(kusochki[i].prev_transform);
@@ -510,8 +469,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			vk_render_geometry_t *geom = render_model->geometries + i;
 
 			// FIXME an impedance mismatch: render_type is per-model, while materials and emissive color are per-geom
-			if (HACK_additive_emissive && geom->material != kXVkMaterialEmissive && geom->material != kXVkMaterialEmissiveGlow) {
-				geom->material = kXVkMaterialEmissive;
+			if (HACK_additive_emissive) {
 				VectorCopy(render_model->color, geom->emissive);
 			}
 

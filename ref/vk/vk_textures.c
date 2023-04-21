@@ -121,9 +121,7 @@ static vk_texture_t *Common_AllocTexture( const char *name, texFlags_t flags )
 
 	// copy initial params
 	Q_strncpy( tex->name, name, sizeof( tex->name ));
-	if( FBitSet( flags, TF_SKYSIDE ))
-		tex->texnum = tglob.skyboxbasenum++;
-	else tex->texnum = i; // texnum is used for fast acess into vk_textures array too
+	tex->texnum = i; // texnum is used for fast acess into vk_textures array too
 	tex->flags = flags;
 
 	// add to hash table

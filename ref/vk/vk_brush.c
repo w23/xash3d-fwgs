@@ -237,7 +237,7 @@ static void EmitWaterPolys( const cl_entity_t *ent, const msurface_t *warp, qboo
 
 		const vk_render_geometry_t geometry = {
 			.texture = warp->texinfo->texture->gl_texturenum, // FIXME assert >= 0
-			.material = kXVkMaterialWater,
+			.material = kXVkMaterialRegular,
 			.surf_deprecate = warp,
 
 			.max_vertex = num_vertices,
@@ -570,6 +570,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			model_geometry->index_offset = index_offset;
 
 			if( FBitSet( surf->flags, SURF_DRAWSKY )) {
+				//gEngine.Con_Printf("SURF_SKY: tex_id=%d\n", tex_id);
 				model_geometry->material = kXVkMaterialSky;
 			} else {
 				model_geometry->material = kXVkMaterialRegular;
@@ -579,7 +580,7 @@ static qboolean loadBrushSurfaces( model_sizes_t sizes, const model_t *mod ) {
 			}
 
 			if (FBitSet( surf->flags, SURF_CONVEYOR )) {
-				model_geometry->material = kXVkMaterialConveyor;
+				// FIXME make an explicit list of dynamic-uv geometries
 			}
 
 			VectorCopy(surf->texinfo->vecs[0], tangent);

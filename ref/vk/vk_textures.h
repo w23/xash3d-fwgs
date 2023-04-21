@@ -30,19 +30,16 @@ typedef struct vk_texture_s
 
 typedef struct vk_textures_global_s
 {
-	int		defaultTexture;   	// use for bad textures
-	int		particleTexture;
-	int		whiteTexture;
-	int		grayTexture;
-	int		blackTexture;
-	int		solidskyTexture;	// quake1 solid-sky layer
-	int		alphaskyTexture;	// quake1 alpha-sky layer
-	int		lightmapTextures[MAX_LIGHTMAPS];
-	int		dlightTexture;	// custom dlight texture
-	int		cinTexture;      	// cinematic texture
-
-	int		skytexturenum;	// this not a gl_texturenum!
-	int		skyboxbasenum;	// start with 5800 FIXME remove this, lewa says this is a GL1 hack
+	int defaultTexture;   	// use for bad textures
+	int particleTexture;
+	int whiteTexture;
+	int grayTexture;
+	int blackTexture;
+	int solidskyTexture;	// quake1 solid-sky layer
+	int alphaskyTexture;	// quake1 alpha-sky layer
+	int lightmapTextures[MAX_LIGHTMAPS];
+	int dlightTexture;	// custom dlight texture
+	int cinTexture;      	// cinematic texture
 
 	qboolean fCustomSkybox; // TODO do we need this for anything?
 

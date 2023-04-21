@@ -154,7 +154,7 @@ static void emitDynamicGeometry(int num_indices, const vec4_t color, const char*
 	{
 		const vk_render_geometry_t geometry = {
 			.texture = g_triapi.texture_index,
-			.material = (g_triapi.render_type == kVkRenderTypeSolid) ? kXVkMaterialRegular : kXVkMaterialEmissive,
+			.material = kXVkMaterialRegular,
 
 			.max_vertex = g_triapi.num_vertices,
 			.vertex_offset = buffer.vertices.unit_offset,

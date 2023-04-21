@@ -20,38 +20,19 @@ void VK_RenderStateSetMatrixModel(const matrix4x4 model);
 // for different things. There's also render_mode for entities which determine blending mode
 // and stuff.
 // For ray tracing we do need to assing a material to each rendered surface, so we need to
-// figure out what it is given heuristics like render_mode, texture name, etc.
-// For some things we don't even have that. E.g. water and sky surfaces are weird.
-// Lets just assigne water and sky materials to those geometries (and probably completely
-// disregard render_mode, as it should be irrelevant).
-// FIXME these should be bits, not enums
+// figure out what it is given heuristics like render_mode, texture name, surface flags, source entity type, etc.
 typedef enum {
 	kXVkMaterialRegular = 0,
-
-	// Set for dynamic water surface in vk_brush.c. Used to
-	// TYno NOT USED, REMOVE NOW.
-	// Remove: No prerequisites. Water material should be decided based on texture, not whether it's being drawn as dynamic water surface.
-	kXVkMaterialWater,
 
 	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
 	// Used: for setting KUSOK_MATERIAL_FLAG_SKYBOX for skybox texture sampling and environment shadows.
 	// Remove: pass it as a special texture/material index (e.g. -2).
 	kXVkMaterialSky,
 
-	// Set by beams and sprites.
-	// Used: as a negative flag for setting model color from emissive color. A bit tricky, don't really follow.
-	// Remove: ???
-	kXVkMaterialEmissive,
-
-	// Set by sprites.
-	// Used: glow means no depth test. Allows for slight ray overshoot (KUSOK_MATERIAL_FLAG_FIXME_GLOW). Desired effect: literally glow.
-	// Remove: should be able to extract this info from kRenderType
+	// Set by glow sprites only.
+	// Used: glow means no depth test. Allows for slight ray overshoot (KUSOK_MATERIAL_FLAG_FIXME_GLOW). Special exclusive case for sprites. Desired effect: "bloom" from bright light sources.
+	// Remove: in favor of "real" pbr hdr, tonemapping and bloop.
 	kXVkMaterialEmissiveGlow,
-
-	// Set for brush surfaces with dynamic UVs.
-	// Used: currently unused, conveyors are drawn incorrectly.
-	// Remove: it's more efficient to solve this via explicit list of dynamic-uv geometries.
-	kXVkMaterialConveyor,
 
 	// Set for chrome studio submodels.
 	// Used: ray tracing sets gray roughness texture to get smooth surface look.
