@@ -21,7 +21,7 @@ const float alpha_mask_threshold = .1f;
 
 void main() {
 	const Geometry geom = readHitGeometry(bary, ubo.ubo.ray_cone_width);
-	const uint tex_index = getKusok(geom.kusok_index).tex_base_color;
+	const uint tex_index = getKusok(geom.kusok_index).material.tex_base_color;
 	const vec4 texture_color = texture(textures[nonuniformEXT(tex_index)], geom.uv);
 
 	if (texture_color.a < alpha_mask_threshold) {

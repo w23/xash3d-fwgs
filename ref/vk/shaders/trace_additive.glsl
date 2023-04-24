@@ -15,15 +15,15 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const Kusok kusok = getKusok(geom.kusok_index);
 
-		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.tex_base_color)], geom.uv);
-		const vec3 color = texture_color.rgb * kusok.emissive * texture_color.a * kusok.color.a * SRGBtoLINEAR(geom.color.rgb * geom.color.a);
+		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
+		const vec3 color = texture_color.rgb * kusok.emissive * texture_color.a * kusok.model.color.a * SRGBtoLINEAR(geom.color.rgb * geom.color.a);
 
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
 
 		if (overshoot < 0.)
 			ret += color;
-		else if ((kusok.flags & KUSOK_MATERIAL_FLAG_FIXME_GLOW) != 0)
+		else if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_FIXME_GLOW) != 0)
 			ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
 	}
 	return ret;

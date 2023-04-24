@@ -138,7 +138,7 @@ void XVK_RayModel_Validate( void ) {
 
 		for (int j = 0; j < num_geoms; j++) {
 			const vk_kusok_data_t *kusok = kusochki + j;
-			const vk_texture_t *tex = findTexture(kusok->tex_base_color);
+			const vk_texture_t *tex = findTexture(kusok->material.tex_base_color);
 			ASSERT(tex);
 			ASSERT(tex->vk.image.view != VK_NULL_HANDLE);
 
@@ -165,30 +165,32 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	kusok->index_offset = geom->index_offset;
 	kusok->triangles = geom->element_count / 3;
 
-	kusok->tex_base_color = mat->tex_base_color;
-	kusok->tex_roughness = mat->tex_roughness;
-	kusok->tex_metalness = mat->tex_metalness;
-	kusok->tex_normalmap = mat->tex_normalmap;
+	kusok->material = (struct Material){
+		.flags = 0,
 
-	kusok->roughness = mat->roughness;
-	kusok->metalness = mat->metalness;
-	kusok->normal_scale = mat->normal_scale;
+		.tex_base_color = mat->tex_base_color,
+		.tex_roughness = mat->tex_roughness,
+		.tex_metalness = mat->tex_metalness,
+		.tex_normalmap = mat->tex_normalmap,
 
-	kusok->flags = 0;
+		.roughness = mat->roughness,
+		.metalness = mat->metalness,
+		.normal_scale = mat->normal_scale,
+	};
 
 	// HACK until there is a proper mechanism for patching materials, see https://github.com/w23/xash3d-fwgs/issues/213
 	// FIXME also this erases previous roughness unconditionally
 	if (HACK_reflective) {
-		kusok->tex_roughness = tglob.blackTexture;
+		kusok->material.tex_roughness = tglob.blackTexture;
 	} else if (!mat->set && geom->material == kXVkMaterialChrome) {
-		kusok->tex_roughness = tglob.grayTexture;
+		kusok->material.tex_roughness = tglob.grayTexture;
 	}
 
 	if (geom->material == kXVkMaterialSky)
-		kusok->flags |= KUSOK_MATERIAL_FLAG_SKYBOX;
+		kusok->material.flags |= KUSOK_MATERIAL_FLAG_SKYBOX;
 
 	if (geom->material == kXVkMaterialEmissiveGlow)
-		kusok->flags |= KUSOK_MATERIAL_FLAG_FIXME_GLOW;
+		kusok->material.flags |= KUSOK_MATERIAL_FLAG_FIXME_GLOW;
 
 	{
 		vec4_t gcolor;
@@ -196,17 +198,10 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		gcolor[1] = color[1] * mat->base_color[1];
 		gcolor[2] = color[2] * mat->base_color[2];
 		gcolor[3] = color[3] * mat->base_color[3];
-		Vector4Copy(gcolor, kusok->color);
+		Vector4Copy(gcolor, kusok->model.color);
 	}
 
 	VectorCopy(geom->emissive, kusok->emissive);
-
-/* FIXME these should be done in a different way
-	if (geom->material == kXVkMaterialConveyor) {
-		computeConveyorSpeed( entcolor, geom->texture, kusok->uv_speed );
-	} else */ {
-		kusok->uv_speed[0] = kusok->uv_speed[1] = 0.f;
-	}
 }
 
 vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
@@ -277,7 +272,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 		};
 
 		applyMaterialToKusok(kusochki + i, mg, args.model->color, false);
-		Matrix4x4_LoadIdentity(kusochki[i].prev_transform);
+		Matrix4x4_LoadIdentity(kusochki[i].model.prev_transform);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -475,7 +470,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 
 			applyMaterialToKusok(kusochki + i, geom, render_model->color, HACK_reflective);
 
-			Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->prev_transform);
+			Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
 		}
 
 		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */

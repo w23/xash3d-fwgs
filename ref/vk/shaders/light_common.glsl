@@ -63,7 +63,7 @@ bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 		};
 		const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, false);
 		const vec2 uv = baryMix(uvs[0], uvs[1], uvs[2], bary);
-		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.tex_base_color)], uv);
+		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], uv);
 
 		const float alpha_mask_threshold = .1f;
 		if (texture_color.a >= alpha_mask_threshold) {
@@ -141,7 +141,7 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		const Kusok kusok = getKusok(kusok_index);
 
 		// TODO this flag can be encoded into custom index, so that we'd need no extra indirection
-		if ((kusok.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0)
+		if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0)
 			return true;
 	}
 

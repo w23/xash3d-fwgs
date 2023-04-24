@@ -28,17 +28,16 @@ void main() {
 	payload.prev_pos_t = vec4(geom.prev_pos, 0.);
 
 	const Kusok kusok = getKusok(geom.kusok_index);
-	const uint tex_base_color = kusok.tex_base_color;
 
-	if ((tex_base_color & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
+	if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
 		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, gl_WorldRayDirectionEXT).rgb);
 		return;
 	} else {
-		payload.base_color_a = sampleTexture(tex_base_color, geom.uv, geom.uv_lods) * kusok.color;
-		payload.material_rmxx.r = (kusok.tex_roughness > 0) ? sampleTexture(kusok.tex_roughness, geom.uv, geom.uv_lods).r : kusok.roughness;
-		payload.material_rmxx.g = (kusok.tex_metalness > 0) ? sampleTexture(kusok.tex_metalness, geom.uv, geom.uv_lods).r : kusok.metalness;
+		payload.base_color_a = sampleTexture(kusok.material.tex_base_color, geom.uv, geom.uv_lods) * kusok.model.color;
+		payload.material_rmxx.r = sampleTexture(kusok.material.tex_roughness, geom.uv, geom.uv_lods).r * kusok.material.roughness;
+		payload.material_rmxx.g = sampleTexture(kusok.material.tex_metalness, geom.uv, geom.uv_lods).r * kusok.material.metalness;
 
-		const uint tex_normal = kusok.tex_normalmap;
+		const uint tex_normal = kusok.material.tex_normalmap;
 		vec3 T = geom.tangent;
 		if (tex_normal > 0 && dot(T,T) > .5) {
 			T = normalize(T - dot(T, geom.normal_shading) * geom.normal_shading);

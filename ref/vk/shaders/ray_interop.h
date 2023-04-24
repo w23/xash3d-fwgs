@@ -66,31 +66,49 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 #define KUSOK_MATERIAL_FLAG_SKYBOX (1<<0)
 #define KUSOK_MATERIAL_FLAG_FIXME_GLOW (1<<1)
 
-struct Kusok {
-	uint index_offset;
-	uint vertex_offset;
-	uint triangles;
+struct Material {
+	uint flags;
 
-	// Material
 	uint tex_base_color;
 
-	// TODO the color is per-model, not per-kusok
-	vec4 color;
-
-	vec3 emissive;
+	// TODO can be combined into a single texture
 	uint tex_roughness;
-
-	vec2 uv_speed; // for conveyors; TODO this can definitely be done in software more efficiently (there only a handful of these per map)
 	uint tex_metalness;
 	uint tex_normalmap;
+
+	// TODO:
+	// uint tex_emissive;
+	// uint tex_detail;
 
 	float roughness;
 	float metalness;
 	float normal_scale;
-	uint flags;
+};
 
-	// TODO per-model
+struct ModelMetadata {
+	vec4 color;
 	mat4 prev_transform;
+};
+
+struct Kusok {
+	// Geometry data
+	uint index_offset;
+	uint vertex_offset;
+	uint triangles;
+
+	// material below consists of scalar fields only, so it's not aligned to vec4.
+	// Alignt it here to vec4 explicitly, so that later vector fields are properly aligned (for simplicity).
+	uint _padding0;
+
+	// TODO reference into material table
+	STRUCT Material material;
+
+	// Per-kusok because individual surfaces can be patched
+	vec3 emissive;
+	PAD(1)
+
+	// TODO move into a separate model array, and reference it by gl_GeometryIndexEXT/rayQueryGetIntersectionGeometryIndexEXT
+	STRUCT ModelMetadata model;
 };
 
 struct PointLight {

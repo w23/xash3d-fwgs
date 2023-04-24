@@ -89,9 +89,9 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 	};
 
 	const vec3 prev_pos[3] = {
-		(kusok.prev_transform * vec4(GET_VERTEX(vi1).prev_pos, 1.f)).xyz,
-		(kusok.prev_transform * vec4(GET_VERTEX(vi2).prev_pos, 1.f)).xyz,
-		(kusok.prev_transform * vec4(GET_VERTEX(vi3).prev_pos, 1.f)).xyz,
+		(kusok.model.prev_transform * vec4(GET_VERTEX(vi1).prev_pos, 1.f)).xyz,
+		(kusok.model.prev_transform * vec4(GET_VERTEX(vi2).prev_pos, 1.f)).xyz,
+		(kusok.model.prev_transform * vec4(GET_VERTEX(vi3).prev_pos, 1.f)).xyz,
 	};
 
 	const vec2 uvs[3] = {

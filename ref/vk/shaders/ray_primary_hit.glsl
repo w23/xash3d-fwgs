@@ -28,24 +28,25 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	payload.prev_pos_t = vec4(geom.prev_pos, 0.);
 
 	const Kusok kusok = getKusok(geom.kusok_index);
+	const Material material = kusok.material;
 
-	if ((kusok.flags & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
+	if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
 		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
 		return;
 	} else {
-		payload.base_color_a = sampleTexture(kusok.tex_base_color, geom.uv, geom.uv_lods);
-		payload.material_rmxx.r = sampleTexture(kusok.tex_roughness, geom.uv, geom.uv_lods).r * kusok.roughness;
-		payload.material_rmxx.g = sampleTexture(kusok.tex_metalness, geom.uv, geom.uv_lods).r * kusok.metalness;
+		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
+		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
+		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;
 
 #ifndef RAY_BOUNCE
-		const uint tex_normal = kusok.tex_normalmap;
+		const uint tex_normal = material.tex_normalmap;
 		vec3 T = geom.tangent;
 		if (tex_normal > 0 && dot(T,T) > .5) {
 			T = normalize(T - dot(T, geom.normal_shading) * geom.normal_shading);
 			const vec3 B = normalize(cross(geom.normal_shading, T));
 			const mat3 TBN = mat3(T, B, geom.normal_shading);
 			vec3 tnorm = sampleTexture(tex_normal, geom.uv, geom.uv_lods).xyz * 2. - 1.; // TODO is this sampling correct for normal data?
-			tnorm.xy *= kusok.normal_scale;
+			tnorm.xy *= material.normal_scale;
 			tnorm.z = sqrt(max(0., 1. - dot(tnorm.xy, tnorm.xy)));
 			geom.normal_shading = normalize(TBN * tnorm);
 		}
@@ -68,7 +69,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		payload.emissive.rgb = payload.base_color_a.rgb;
 #endif
 
-	payload.base_color_a *= kusok.color;
+	payload.base_color_a *= kusok.model.color;
 }
 
 #endif // ifndef RAY_PRIMARY_HIT_GLSL_INCLUDED
