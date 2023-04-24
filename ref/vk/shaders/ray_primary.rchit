@@ -29,7 +29,7 @@ void main() {
 
 	const Kusok kusok = getKusok(geom.kusok_index);
 
-	if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
+	if (kusok.material.mode == MATERIAL_MODE_SKYBOX) {
 		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, gl_WorldRayDirectionEXT).rgb);
 		return;
 	} else {

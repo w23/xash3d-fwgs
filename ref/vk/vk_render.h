@@ -25,14 +25,9 @@ typedef enum {
 	kXVkMaterialRegular = 0,
 
 	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
-	// Used: for setting KUSOK_MATERIAL_FLAG_SKYBOX for skybox texture sampling and environment shadows.
+	// Used: for setting MATERIAL_MODE_SKYBOX for skybox texture sampling and environment shadows.
 	// Remove: pass it as a special texture/material index (e.g. -2).
 	kXVkMaterialSky,
-
-	// Set by glow sprites only.
-	// Used: glow means no depth test. Allows for slight ray overshoot (KUSOK_MATERIAL_FLAG_FIXME_GLOW). Special exclusive case for sprites. Desired effect: "bloom" from bright light sources.
-	// Remove: in favor of "real" pbr hdr, tonemapping and bloop.
-	kXVkMaterialEmissiveGlow,
 
 	// Set for chrome studio submodels.
 	// Used: ray tracing sets gray roughness texture to get smooth surface look.

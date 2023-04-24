@@ -155,7 +155,7 @@ void XVK_RayModel_Validate( void ) {
 	}
 }
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const vec4_t color, qboolean HACK_reflective) {
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const vec4_t model_color, uint32_t mode) {
 	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( geom->texture );
 	ASSERT(mat);
 
@@ -166,7 +166,7 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	kusok->triangles = geom->element_count / 3;
 
 	kusok->material = (struct Material){
-		.flags = 0,
+		.mode = mode,
 
 		.tex_base_color = mat->tex_base_color,
 		.tex_roughness = mat->tex_roughness,
@@ -178,26 +178,20 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		.normal_scale = mat->normal_scale,
 	};
 
-	// HACK until there is a proper mechanism for patching materials, see https://github.com/w23/xash3d-fwgs/issues/213
-	// FIXME also this erases previous roughness unconditionally
-	if (HACK_reflective) {
-		kusok->material.tex_roughness = tglob.blackTexture;
-	} else if (!mat->set && geom->material == kXVkMaterialChrome) {
+	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;
+	if (!mat->set && HACK_chrome)
 		kusok->material.tex_roughness = tglob.grayTexture;
-	}
 
 	if (geom->material == kXVkMaterialSky)
-		kusok->material.flags |= KUSOK_MATERIAL_FLAG_SKYBOX;
+		kusok->material.mode = MATERIAL_MODE_SKYBOX;
 
-	if (geom->material == kXVkMaterialEmissiveGlow)
-		kusok->material.flags |= KUSOK_MATERIAL_FLAG_FIXME_GLOW;
-
+	// FIXME modulates model_color with material->base_color which has different frequency
 	{
 		vec4_t gcolor;
-		gcolor[0] = color[0] * mat->base_color[0];
-		gcolor[1] = color[1] * mat->base_color[1];
-		gcolor[2] = color[2] * mat->base_color[2];
-		gcolor[3] = color[3] * mat->base_color[3];
+		gcolor[0] = model_color[0] * mat->base_color[0];
+		gcolor[1] = model_color[1] * mat->base_color[1];
+		gcolor[2] = model_color[2] * mat->base_color[2];
+		gcolor[3] = model_color[3] * mat->base_color[3];
 		Vector4Copy(gcolor, kusok->model.color);
 	}
 
@@ -271,7 +265,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			.firstVertex = mg->vertex_offset,
 		};
 
-		applyMaterialToKusok(kusochki + i, mg, args.model->color, false);
+		applyMaterialToKusok(kusochki + i, mg, args.model->color, MATERIAL_MODE_OPAQUE);
 		Matrix4x4_LoadIdentity(kusochki[i].model.prev_transform);
 	}
 
@@ -408,36 +402,30 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 		memcpy(draw_model->transform_row, *transform_row, sizeof(draw_model->transform_row));
 	}
 
-	qboolean HACK_reflective = false;
-	qboolean HACK_additive_emissive = false;
-
+	uint32_t material_mode = MATERIAL_MODE_OPAQUE;
 	switch (render_model->render_type) {
 		case kVkRenderTypeSolid:
-			draw_model->material_mode = MaterialMode_Opaque;
 			break;
 		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
 		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
-			// FIXME proper trasnlucency
-			//HACK_reflective = true;
-			//draw_model->material_mode = MaterialMode_Refractive;
-			HACK_additive_emissive = true;
-			draw_model->material_mode = MaterialMode_Additive;
+			material_mode = MATERIAL_MODE_BLEND_MIX;
 			break;
-
-		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write
+		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only
+			material_mode = MATERIAL_MODE_BLEND_GLOW;
+			break;
 		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
 		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
-			HACK_additive_emissive = true;
-			draw_model->material_mode = MaterialMode_Additive;
+			material_mode = MATERIAL_MODE_BLEND_ADD;
 			break;
-
 		case kVkRenderType_AT: // no blend, depth RW, alpha test
-			draw_model->material_mode = MaterialMode_Opaque_AlphaTest;
+			material_mode = MATERIAL_MODE_OPAQUE_ALPHA_TEST;
 			break;
 
 		default:
 			gEngine.Host_Error("Unexpected render type %d\n", render_model->render_type);
 	}
+
+	draw_model->material_mode = material_mode;
 
 // TODO optimize:
 // - collect list of geoms for which we could update anything (animated textues, uvs, etc)
@@ -464,11 +452,11 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			vk_render_geometry_t *geom = render_model->geometries + i;
 
 			// FIXME an impedance mismatch: render_type is per-model, while materials and emissive color are per-geom
-			if (HACK_additive_emissive) {
-				VectorCopy(render_model->color, geom->emissive);
-			}
+			/* if (HACK_additive_emissive) { */
+			/* 	VectorCopy(render_model->color, geom->emissive); */
+			/* } */
 
-			applyMaterialToKusok(kusochki + i, geom, render_model->color, HACK_reflective);
+			applyMaterialToKusok(kusochki + i, geom, render_model->color, material_mode);
 
 			Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
 		}

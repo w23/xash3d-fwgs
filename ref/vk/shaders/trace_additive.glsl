@@ -10,7 +10,7 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		| gl_RayFlagsNoOpaqueEXT // force all to be non-opaque
 		;
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_ADDITIVE, pos, 0., dir, L + additive_soft_overshoot);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + additive_soft_overshoot);
 	while (rayQueryProceedEXT(rq)) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const Kusok kusok = getKusok(geom.kusok_index);
@@ -23,7 +23,7 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 
 		if (overshoot < 0.)
 			ret += color;
-		else if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_FIXME_GLOW) != 0)
+		else if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW)
 			ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
 	}
 	return ret;

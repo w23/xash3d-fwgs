@@ -140,8 +140,7 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		const uint kusok_index = instance_kusochki_offset + geometry_index;
 		const Kusok kusok = getKusok(kusok_index);
 
-		// TODO this flag can be encoded into custom index, so that we'd need no extra indirection
-		if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0)
+		if (kusok.material.mode != MATERIAL_MODE_SKYBOX)
 			return true;
 	}
 

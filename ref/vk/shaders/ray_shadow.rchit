@@ -12,5 +12,5 @@ void main() {
 	const Kusok kusok = getKusok(kusok_index);
 	const uint tex_base_color = kusok.material.tex_base_color;
 
-	payload_shadow.hit_type = ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0) ? SHADOW_HIT : SHADOW_SKY ;
+	payload_shadow.hit_type = (kusok.material.mode != MATERIAL_MODE_SKYBOX) ? SHADOW_HIT : SHADOW_SKY ;
 }

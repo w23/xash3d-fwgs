@@ -189,25 +189,31 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				.accelerationStructureReference = getASAddress(model->model->as), // TODO cache this addr
 			};
 			switch (model->material_mode) {
-				case MaterialMode_Opaque:
+				case MATERIAL_MODE_OPAQUE:
+				case MATERIAL_MODE_SKYBOX:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 					break;
-				case MaterialMode_Opaque_AlphaTest:
+				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
 					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
 					break;
-				case MaterialMode_Refractive:
+				case MATERIAL_MODE_TRANSLUCENT:
 					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
 					break;
-				case MaterialMode_Additive:
-					inst[i].mask = GEOMETRY_BIT_ADDITIVE;
+				case MATERIAL_MODE_BLEND_ADD:
+				case MATERIAL_MODE_BLEND_MIX:
+				case MATERIAL_MODE_BLEND_GLOW:
+					inst[i].mask = GEOMETRY_BIT_BLEND;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+					break;
+				default:
+					gEngine.Host_Error("Unexpected material mode %d\n", model->material_mode);
 					break;
 			}
 			memcpy(&inst[i].transform, model->transform_row, sizeof(VkTransformMatrixKHR));

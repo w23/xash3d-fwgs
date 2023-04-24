@@ -31,13 +31,7 @@ typedef struct Kusok vk_kusok_data_t;
 typedef struct {
 	matrix3x4 transform_row;
 	vk_ray_model_t *model;
-	enum {
-		MaterialMode_Opaque,
-		MaterialMode_Opaque_AlphaTest,
-		MaterialMode_Refractive,
-		// TODO MaterialMode_Subtractive,
-		MaterialMode_Additive,
-	} material_mode;
+	uint32_t material_mode; // MATERIAL_MODE_ from ray_interop.h
 } vk_ray_draw_model_t;
 
 typedef struct {

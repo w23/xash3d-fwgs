@@ -30,7 +30,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Kusok kusok = getKusok(geom.kusok_index);
 	const Material material = kusok.material;
 
-	if ((kusok.material.flags & KUSOK_MATERIAL_FLAG_SKYBOX) != 0) {
+	if (kusok.material.mode == MATERIAL_MODE_SKYBOX) {
 		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
 		return;
 	} else {
