@@ -241,6 +241,9 @@ void R_NewMap( void ) {
 	if (is_save_load)
 		return;
 
+	// Make sure that we're not rendering anything before starting to mess with GPU objects
+	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+
 	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
 
 	loadMap(map);

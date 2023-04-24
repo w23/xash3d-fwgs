@@ -214,21 +214,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 		return NULL;
 	}
 
-	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_ray_model_state.kusochki_buffer.buffer,
-		.offset = kusochki_count_offset * sizeof(vk_kusok_data_t),
-		.size = args.model->num_geometries * sizeof(vk_kusok_data_t),
-		.alignment = 16,
-	};
-	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
-
-	if (!kusok_staging.ptr) {
-		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov for model %s\n", args.model->num_geometries, args.model->debug_name);
-		return NULL;
-	}
-
-	vk_kusok_data_t *const kusochki = kusok_staging.ptr;
-
 	// FIXME don't touch allocator each frame many times pls
 	geoms = Mem_Calloc(vk_core.pool, args.model->num_geometries * sizeof(*geoms));
 	geom_max_prim_counts = Mem_Malloc(vk_core.pool, args.model->num_geometries * sizeof(*geom_max_prim_counts));
@@ -264,12 +249,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			.primitiveOffset = mg->index_offset * sizeof(uint16_t),
 			.firstVertex = mg->vertex_offset,
 		};
-
-		applyMaterialToKusok(kusochki + i, mg, args.model->color, MATERIAL_MODE_OPAQUE);
-		Matrix4x4_LoadIdentity(kusochki[i].model.prev_transform);
 	}
-
-	R_VkStagingUnlock(kusok_staging.handle);
 
 	// FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
 	vk_combuf_t *const combuf = R_VkStagingCommit();
@@ -282,14 +262,6 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			.buffer = args.buffer,
 			.offset = 0, // FIXME
 			.size = VK_WHOLE_SIZE, // FIXME
-		}, {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			//.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR, // FIXME
-			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT, // FIXME
-			.buffer = staging_args.buffer,
-			.offset = staging_args.offset,
-			.size = staging_args.size,
 		} };
 		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -327,7 +299,7 @@ vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
 			} else {
 				ray_model->kusochki_offset = kusochki_count_offset;
 				ray_model->dynamic = args.model->dynamic;
-				ray_model->kusochki_updated_this_frame = true;
+				ray_model->kusochki_updated_this_frame = false;
 
 				if (vk_core.debug)
 					validateModel(ray_model);
@@ -431,7 +403,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 // - collect list of geoms for which we could update anything (animated textues, uvs, etc)
 // - update only those through staging
 // - also consider tracking whether the main model color has changed (that'd need to update everything yay)
-	if (!model->kusochki_updated_this_frame) // FIXME enabling this makes dynamic models crash the gpu (?!)
+	if (!model->kusochki_updated_this_frame)
 	{
 		const vk_staging_buffer_args_t staging_args = {
 			.buffer = g_ray_model_state.kusochki_buffer.buffer,
@@ -452,6 +424,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 			vk_render_geometry_t *geom = render_model->geometries + i;
 
 			// FIXME an impedance mismatch: render_type is per-model, while materials and emissive color are per-geom
+			// TODO not sure if needed
 			/* if (HACK_additive_emissive) { */
 			/* 	VectorCopy(render_model->color, geom->emissive); */
 			/* } */

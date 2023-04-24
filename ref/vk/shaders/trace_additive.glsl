@@ -21,10 +21,26 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
 
+//#define DEBUG_BLEND_MODES
+#ifdef DEBUG_BLEND_MODES
+		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
+			ret += vec3(1., 0., 0.);
+			//ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
+		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
+			ret += vec3(0., 1., 0.);
+		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+			ret += vec3(0., 0., 1.);
+		} else if (kusok.material.mode == MATERIAL_MODE_TRANSLUCENT) {
+			ret += vec3(0., 1., 1.);
+		} else if (kusok.material.mode == MATERIAL_MODE_OPAQUE) {
+			ret += vec3(1., 1., 1.);
+		}
+#else
 		if (overshoot < 0.)
 			ret += color;
 		else if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW)
 			ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
+#endif
 	}
 	return ret;
 }
