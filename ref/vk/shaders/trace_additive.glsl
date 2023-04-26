@@ -52,10 +52,6 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 		} else if (overshoot < 0.) {
 			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
 				emissive += color;
-				//emissive += kusok.model.color.rgb;
-				//emissive += kusok.emissive.rgb;
-				//emissive += geom.vertex_color.rgb;
-				//emissive += texture_color.rgb;
 			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
 #ifdef WEIGHTED_OIT
 				alpha_sum += alpha;
@@ -76,6 +72,7 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 #ifdef WEIGHTED_OIT
 		if (alpha_sum > 1e-4)
 			background = color_sum / alpha_sum * (1. - alpha_m1_mul) + background * alpha_m1_mul;
+		emissive *= alpha_m1_mul;
 #endif
 	}
 }
