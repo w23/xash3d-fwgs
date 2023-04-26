@@ -167,7 +167,10 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		hit_material.roughness = payload.material_rmxx.r;
 		computeLighting(hit_pos, hit_shading_normal, throughput, -bounce_direction, hit_material, ldiffuse, lspecular);
 
-		const vec3 final_color = ldiffuse + lspecular + traceAdditive(pos, bounce_direction, payload.hit_t.w);
+		vec3 background = ldiffuse + lspecular;
+		vec3 emissive = vec3(0.);
+		traceAdditive(pos, bounce_direction, payload.hit_t.w, emissive, background);
+		const vec3 final_color = emissive + background;
 
 		if (brdf_type == DIFFUSE_TYPE)
 			diffuse += final_color;

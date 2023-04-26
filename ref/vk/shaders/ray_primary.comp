@@ -102,7 +102,7 @@ void main() {
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	}
 
-	payload.emissive.rgb += traceAdditive(ray.origin, ray.direction, L);
+	traceAdditive(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
 
 	imageStore(out_position_t, pix, payload.hit_t);
 	imageStore(out_base_color_a, pix, payload.base_color_a);

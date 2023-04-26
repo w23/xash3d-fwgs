@@ -377,9 +377,11 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 	uint32_t material_mode = MATERIAL_MODE_OPAQUE;
 	switch (render_model->render_type) {
 		case kVkRenderTypeSolid:
+			material_mode = MATERIAL_MODE_OPAQUE;
 			break;
 		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
 		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
+			// FIXME where is MATERIAL_MODE_TRANSLUCENT??1
 			material_mode = MATERIAL_MODE_BLEND_MIX;
 			break;
 		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only

@@ -72,6 +72,10 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 #define MATERIAL_MODE_SKYBOX 6
 
 struct Material {
+	// TODO this should be moved to ModelMetadata, as granularity of this is per-model
+	// EXCEPT for skybox. Sky surfaces are all over the place in worldbrush.
+	// Maybe tex_base_color should have a special value for skybox.
+	// Moving this to model would allow us to make kusochki mostly static (except for animated textures)
 	uint mode;
 
 	uint tex_base_color;

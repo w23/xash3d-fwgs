@@ -1,9 +1,8 @@
 #ifndef TRACE_ADDITIVE_GLSL_INCLUDED
 #define TRACE_ADDITIVE_GLSL_INCLUDED
 
-vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
+void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 background) {
 	const float additive_soft_overshoot = 16.;
-	vec3 ret = vec3(0., 0., 0.);
 	rayQueryEXT rq;
 	const uint flags = 0
 		| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -16,7 +15,8 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 		const Kusok kusok = getKusok(geom.kusok_index);
 
 		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
-		const vec3 color = texture_color.rgb * kusok.emissive * texture_color.a * kusok.model.color.a * SRGBtoLINEAR(geom.color.rgb * geom.color.a);
+		const float alpha = texture_color.a * kusok.model.color.a * geom.color.a;
+		const vec3 color = texture_color.rgb * SRGBtoLINEAR(geom.color.rgb) * alpha;
 
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
@@ -36,13 +36,23 @@ vec3 traceAdditive(vec3 pos, vec3 dir, float L) {
 			ret += vec3(1., 1., 1.);
 		}
 #else
-		if (overshoot < 0.)
-			ret += color;
-		else if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW)
-			ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
+		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
+			// Glow is additive + small overshoot
+			emissive += color * kusok.emissive * smoothstep(additive_soft_overshoot, 0., overshoot);
+		} else if (overshoot < 0.) {
+			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
+				emissive += color * kusok.emissive;
+			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+				// FIXME OIT incorrect
+				emissive = emissive * (1. - alpha) + color;
+				background *= (1. - alpha);
+			} else {
+				// Signal unhandled blending type
+				emissive += vec3(1., 0., 1.);
+			}
+		}
 #endif
 	}
-	return ret;
 }
 
 #endif //ifndef TRACE_ADDITIVE_GLSL_INCLUDED
