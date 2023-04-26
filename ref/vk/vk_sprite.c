@@ -738,7 +738,7 @@ static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec
 			.element_count = 6,
 			.index_offset = buffer.indices.unit_offset,
 
-			.emissive = {color[0], color[1], color[2]},
+			.emissive = {1,1,1},
 		};
 
 		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, "%s", debug_name );

@@ -66,10 +66,11 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))
-		payload.emissive.rgb = payload.base_color_a.rgb;
+		payload.emissive.rgb *= payload.base_color_a.rgb;
 #endif
 
 	payload.base_color_a *= kusok.model.color;
+	payload.emissive.rgb *= kusok.model.color.rgb;
 }
 
 #endif // ifndef RAY_PRIMARY_HIT_GLSL_INCLUDED

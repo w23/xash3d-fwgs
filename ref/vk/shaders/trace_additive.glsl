@@ -25,8 +25,8 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 		const Kusok kusok = getKusok(geom.kusok_index);
 
 		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
-		const float alpha = texture_color.a * kusok.model.color.a * geom.color.a;
-		const vec3 color = texture_color.rgb * SRGBtoLINEAR(geom.color.rgb) * alpha;
+		const float alpha = texture_color.a * kusok.model.color.a * geom.vertex_color.a;
+		const vec3 color = kusok.model.color.rgb * texture_color.rgb * SRGBtoLINEAR(geom.vertex_color.rgb) * alpha;
 
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
@@ -48,10 +48,14 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 #else
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
-			emissive += color * kusok.emissive * smoothstep(additive_soft_overshoot, 0., overshoot);
+			emissive += color * smoothstep(additive_soft_overshoot, 0., overshoot);
 		} else if (overshoot < 0.) {
 			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
-				emissive += color * kusok.emissive;
+				emissive += color;
+				//emissive += kusok.model.color.rgb;
+				//emissive += kusok.emissive.rgb;
+				//emissive += geom.vertex_color.rgb;
+				//emissive += texture_color.rgb;
 			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
 #ifdef WEIGHTED_OIT
 				alpha_sum += alpha;

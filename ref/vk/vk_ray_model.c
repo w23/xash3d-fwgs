@@ -424,15 +424,7 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 
 		for (int i = 0; i < render_model->num_geometries; ++i) {
 			vk_render_geometry_t *geom = render_model->geometries + i;
-
-			// FIXME an impedance mismatch: render_type is per-model, while materials and emissive color are per-geom
-			// TODO not sure if needed
-			/* if (HACK_additive_emissive) { */
-			/* 	VectorCopy(render_model->color, geom->emissive); */
-			/* } */
-
 			applyMaterialToKusok(kusochki + i, geom, render_model->color, material_mode);
-
 			Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
 		}
 
