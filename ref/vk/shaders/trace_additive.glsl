@@ -3,6 +3,16 @@
 
 void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 background) {
 	const float additive_soft_overshoot = 16.;
+
+#define WEIGHTED_OIT
+#ifdef WEIGHTED_OIT
+	// See https://jcgt.org/published/0002/02/09/
+	// Morgan McGuire and Louis Bavoil, Weighted Blended Order-Independent Transparency, Journal of Computer Graphics Techniques (JCGT), vol. 2, no. 2, 122-141, 2013
+	float alpha_sum = 0.;
+	float alpha_m1_mul = 1.;
+	vec3 color_sum = vec3(0.);
+#endif
+
 	rayQueryEXT rq;
 	const uint flags = 0
 		| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -24,16 +34,16 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 //#define DEBUG_BLEND_MODES
 #ifdef DEBUG_BLEND_MODES
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
-			ret += vec3(1., 0., 0.);
+			emissive += vec3(1., 0., 0.);
 			//ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
 		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
-			ret += vec3(0., 1., 0.);
+			emissive += vec3(0., 1., 0.);
 		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
-			ret += vec3(0., 0., 1.);
+			emissive += vec3(0., 0., 1.);
 		} else if (kusok.material.mode == MATERIAL_MODE_TRANSLUCENT) {
-			ret += vec3(0., 1., 1.);
+			emissive += vec3(0., 1., 1.);
 		} else if (kusok.material.mode == MATERIAL_MODE_OPAQUE) {
-			ret += vec3(1., 1., 1.);
+			emissive += vec3(1., 1., 1.);
 		}
 #else
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
@@ -43,14 +53,25 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
 				emissive += color * kusok.emissive;
 			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+#ifdef WEIGHTED_OIT
+				alpha_sum += alpha;
+				alpha_m1_mul *= (1. - alpha);
+				color_sum += color;
+#else
 				// FIXME OIT incorrect
 				emissive = emissive * (1. - alpha) + color;
 				background *= (1. - alpha);
+#endif
 			} else {
 				// Signal unhandled blending type
 				emissive += vec3(1., 0., 1.);
 			}
 		}
+#endif // DEBUG_BLEND_MODES
+
+#ifdef WEIGHTED_OIT
+		if (alpha_sum > 1e-4)
+			background = color_sum / alpha_sum * (1. - alpha_m1_mul) + background * alpha_m1_mul;
 #endif
 	}
 }
