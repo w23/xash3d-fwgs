@@ -1,8 +1,9 @@
-#ifndef TRACE_ADDITIVE_GLSL_INCLUDED
-#define TRACE_ADDITIVE_GLSL_INCLUDED
+#ifndef TRACE_SIMPLE_BLENDING_GLSL_INCLUDED
+#define TRACE_SIMPLE_BLENDING_GLSL_INCLUDED
 
-void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 background) {
-	const float additive_soft_overshoot = 16.;
+// Traces geometry with simple blending. Simple means that it's only additive or mix/coverage, and it doesn't participate in lighting, and it doesn't reflect/refract rays.
+void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 background) {
+	const float glow_soft_overshoot = 16.;
 
 	// TODO probably a better way would be to sort only MIX entries.
 	// ADD/GLOW are order-independent relative to each other, but not to MIX
@@ -23,7 +24,7 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		| gl_RayFlagsNoOpaqueEXT // force all to be non-opaque
 		;
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + additive_soft_overshoot);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + glow_soft_overshoot);
 	while (rayQueryProceedEXT(rq)) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const Kusok kusok = getKusok(geom.kusok_index);
@@ -36,7 +37,7 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 #ifdef DEBUG_BLEND_MODES
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			emissive += vec3(1., 0., 0.);
-			//ret += color * smoothstep(additive_soft_overshoot, 0., overshoot);
+			//ret += color * smoothstep(glow_soft_overshoot, 0., overshoot);
 		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
 			emissive += vec3(0., 1., 0.);
 		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
@@ -53,7 +54,7 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
-			const float overshoot_factor = smoothstep(additive_soft_overshoot, 0., overshoot);
+			const float overshoot_factor = smoothstep(glow_soft_overshoot, 0., overshoot);
 			color *= overshoot_factor;
 			alpha = 0.;
 		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
@@ -111,4 +112,4 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 	background *= revealage;
 }
 
-#endif //ifndef TRACE_ADDITIVE_GLSL_INCLUDED
+#endif //ifndef TRACE_SIMPLE_BLENDING_GLSL_INCLUDED

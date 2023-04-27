@@ -40,7 +40,7 @@ layout(set=0, binding=21, rgba16f) uniform writeonly image2D out_indirect_specul
 #define BINDING_LIGHT_CLUSTERS 18
 #include "light.glsl"
 
-#include "trace_additive.glsl"
+#include "trace_simple_blending.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
@@ -169,7 +169,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 
 		vec3 background = ldiffuse + lspecular;
 		vec3 emissive = vec3(0.);
-		traceAdditive(pos, bounce_direction, payload.hit_t.w, emissive, background);
+		traceSimpleBlending(pos, bounce_direction, payload.hit_t.w, emissive, background);
 		const vec3 final_color = emissive + background;
 
 		if (brdf_type == DIFFUSE_TYPE)

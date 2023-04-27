@@ -23,7 +23,7 @@ RAY_PRIMARY_OUTPUTS(X)
 
 layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 
-#include "trace_additive.glsl"
+#include "trace_simple_blending.glsl"
 
 struct Ray {
 	vec3 origin, direction;
@@ -102,7 +102,7 @@ void main() {
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	}
 
-	traceAdditive(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
+	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
 
 	imageStore(out_position_t, pix, payload.hit_t);
 	imageStore(out_base_color_a, pix, payload.base_color_a);
