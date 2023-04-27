@@ -62,7 +62,12 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	//payload.emissive.rgb = kusok.emissive * SRGBtoLINEAR(payload.base_color_a.rgb);
 	//payload.emissive.rgb = clamp((kusok.emissive * (1.0/3.0) / 20), 0, 1.0) * SRGBtoLINEAR(payload.base_color_a.rgb);
 	//payload.emissive.rgb = (sqrt(sqrt(kusok.emissive)) * (1.0/3.0)) * SRGBtoLINEAR(payload.base_color_a.rgb);
-	payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	if (material.tex_emissive == 0) {
+		payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	} else {
+		const vec3 emissive = sampleTexture(material.tex_emissive, geom.uv, geom.uv_lods).rgb;
+		payload.emissive.rgb = kusok.material.emissive_scale * emissive;
+	}
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))
