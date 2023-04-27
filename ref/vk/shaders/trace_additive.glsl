@@ -46,6 +46,16 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 			emissive += vec3(1., 1., 1.);
 		}
 #else
+
+#ifdef WEIGHTED_OIT
+		// TODO Glow overshoot
+		if (overshoot < 0.) {
+			alpha_m1_mul *= (1. - alpha);
+			alpha_sum += alpha;
+			color_sum += color;
+		}
+#else
+		// FIXME OIT incorrect
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
 			emissive += color * smoothstep(additive_soft_overshoot, 0., overshoot);
@@ -53,28 +63,25 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
 				emissive += color;
 			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
-#ifdef WEIGHTED_OIT
-				alpha_sum += alpha;
-				alpha_m1_mul *= (1. - alpha);
-				color_sum += color;
-#else
-				// FIXME OIT incorrect
+				// FIXME this depends on the right order
 				emissive = emissive * (1. - alpha) + color;
 				background *= (1. - alpha);
-#endif
 			} else {
 				// Signal unhandled blending type
 				emissive += vec3(1., 0., 1.);
 			}
 		}
+#endif // WEIGHTED_OIT
 #endif // DEBUG_BLEND_MODES
+	}
 
 #ifdef WEIGHTED_OIT
-		if (alpha_sum > 1e-4)
-			background = color_sum / alpha_sum * (1. - alpha_m1_mul) + background * alpha_m1_mul;
-		emissive *= alpha_m1_mul;
+	background *= alpha_m1_mul;
+	emissive *= alpha_m1_mul;
+
+	if (alpha_sum > 1e-4)
+		emissive += color_sum / alpha_sum * (1. - alpha_m1_mul);
 #endif
-	}
 }
 
 #endif //ifndef TRACE_ADDITIVE_GLSL_INCLUDED
