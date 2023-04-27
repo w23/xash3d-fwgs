@@ -302,6 +302,8 @@ void RT_VkAccelNewMap(void) {
 	const int accels_alignment = 256; // TODO where does this come from?
 	ASSERT(vk_core.rtx);
 
+	g_accel.frame.scratch_offset = 0;
+
 	if (g_accel.accels_buffer_alloc)
 		aloPoolDestroy(g_accel.accels_buffer_alloc);
 	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, expected_accels, accels_alignment);
