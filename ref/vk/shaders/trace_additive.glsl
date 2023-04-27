@@ -4,14 +4,18 @@
 void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 background) {
 	const float additive_soft_overshoot = 16.;
 
-#define WEIGHTED_OIT
-#ifdef WEIGHTED_OIT
-	// See https://jcgt.org/published/0002/02/09/
-	// Morgan McGuire and Louis Bavoil, Weighted Blended Order-Independent Transparency, Journal of Computer Graphics Techniques (JCGT), vol. 2, no. 2, 122-141, 2013
-	float alpha_sum = 0.;
-	float alpha_m1_mul = 1.;
-	vec3 color_sum = vec3(0.);
-#endif
+	// TODO probably a better way would be to sort only MIX entries.
+	// ADD/GLOW are order-independent relative to each other, but not to MIX
+	struct BlendEntry {
+		vec3 add;
+		float blend;
+		float depth;
+	};
+
+	// VGPR usage :FeelsBadMan:
+#define MAX_ENTRIES 8
+	uint entries_count = 0;
+	BlendEntry entries[MAX_ENTRIES];
 
 	rayQueryEXT rq;
 	const uint flags = 0
@@ -23,13 +27,10 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 	while (rayQueryProceedEXT(rq)) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const Kusok kusok = getKusok(geom.kusok_index);
-
-		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
-		const float alpha = texture_color.a * kusok.model.color.a * geom.vertex_color.a;
-		const vec3 color = kusok.model.color.rgb * texture_color.rgb * SRGBtoLINEAR(geom.vertex_color.rgb) * alpha;
-
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
+		if (overshoot > 0. && kusok.material.mode != MATERIAL_MODE_BLEND_GLOW)
+			continue;
 
 //#define DEBUG_BLEND_MODES
 #ifdef DEBUG_BLEND_MODES
@@ -46,42 +47,68 @@ void traceAdditive(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout vec3 
 			emissive += vec3(1., 1., 1.);
 		}
 #else
+		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
+		float alpha = texture_color.a * kusok.model.color.a * geom.vertex_color.a;
+		vec3 color = kusok.model.color.rgb * texture_color.rgb * SRGBtoLINEAR(geom.vertex_color.rgb) * alpha;
 
-#ifdef WEIGHTED_OIT
-		// TODO Glow overshoot
-		if (overshoot < 0.) {
-			alpha_m1_mul *= (1. - alpha);
-			alpha_sum += alpha;
-			color_sum += color;
-		}
-#else
-		// FIXME OIT incorrect
 		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
-			emissive += color * smoothstep(additive_soft_overshoot, 0., overshoot);
-		} else if (overshoot < 0.) {
-			if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
-				emissive += color;
-			} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
-				// FIXME this depends on the right order
-				emissive = emissive * (1. - alpha) + color;
-				background *= (1. - alpha);
-			} else {
-				// Signal unhandled blending type
-				emissive += vec3(1., 0., 1.);
-			}
+			const float overshoot_factor = smoothstep(additive_soft_overshoot, 0., overshoot);
+			color *= overshoot_factor;
+			alpha = 0.;
+		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
+			// Additive doesn't attenuate what's behind
+			alpha = 0.;
+		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+			// Handled in composite step below
+		} else {
+			// Signal unhandled blending type
+			color = vec3(1., 0., 1.);
 		}
-#endif // WEIGHTED_OIT
-#endif // DEBUG_BLEND_MODES
+
+		// Collect in random order
+		entries[entries_count].add = color;
+		entries[entries_count].blend = alpha;
+		entries[entries_count].depth = hit_t;
+
+		++entries_count;
+
+		if (entries_count == MAX_ENTRIES) {
+			// Max blended entries count exceeded
+			// TODO show it as error somehow?
+			break;
+		}
+#endif // !DEBUG_BLEND_MODES
 	}
 
-#ifdef WEIGHTED_OIT
-	background *= alpha_m1_mul;
-	emissive *= alpha_m1_mul;
+	if (entries_count == 0)
+		return;
 
-	if (alpha_sum > 1e-4)
-		emissive += color_sum / alpha_sum * (1. - alpha_m1_mul);
-#endif
+	// Tyno O(N^2) sort
+	for (uint i = 0; i < entries_count; ++i) {
+		uint min_i = i;
+		for (uint j = i+1; j < entries_count; ++j) {
+			if (entries[min_i].depth > entries[j].depth) {
+				min_i = j;
+			}
+		}
+		if (min_i != i) {
+			BlendEntry tmp = entries[min_i];
+			entries[min_i] = entries[i];
+			entries[i] = tmp;
+		}
+	}
+
+	// Composite everything in the right order
+	float revealage = 1.;
+	vec3 add = vec3(0.);
+	for (uint i = 0; i < entries_count; ++i) {
+		add += entries[i].add * revealage;
+		revealage *= 1. - entries[i].blend;
+	}
+
+	emissive = emissive * revealage + add;
+	background *= revealage;
 }
 
 #endif //ifndef TRACE_ADDITIVE_GLSL_INCLUDED
