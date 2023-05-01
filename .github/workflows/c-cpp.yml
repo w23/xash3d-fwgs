@@ -97,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
 # Disable flatpak build temporarily due to lack of Vulkan SDK in there.
 #    needs: [build, flatpak]
+    needs: [build]
     if: ${{ github.event_name == 'push' }}
     steps:
     - name: Remove old release
