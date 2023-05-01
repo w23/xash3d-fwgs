@@ -87,6 +87,7 @@ void main() {
 		// 2. Same as the above, but also with a completely independent TLAS. Why: no need to mask-check geometry for opaque-vs-alpha
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const uint tex_base_color = getKusok(geom.kusok_index).material.tex_base_color;
+		// Should never happen: skybox is opaque if (tex_base_color == TEX_BASE_SKYBOX)
 		const vec4 texture_color = texture(textures[nonuniformEXT(tex_base_color)], geom.uv);
 
 		const float alpha_mask_threshold = .1f;

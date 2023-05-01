@@ -56,6 +56,7 @@ struct Geometry {
 
 #ifdef RAY_QUERY
 Geometry readHitGeometry(rayQueryEXT rq, float ray_cone_width, vec2 bary) {
+	const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, true);
 	const int instance_kusochki_offset = rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true);
 	const int geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 	const int primitive_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
@@ -64,6 +65,7 @@ Geometry readHitGeometry(rayQueryEXT rq, float ray_cone_width, vec2 bary) {
 	const float hit_t = rayQueryGetIntersectionTEXT(rq, true);
 #else
 Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
+	const int model_index = gl_InstanceID;
 	const int instance_kusochki_offset = gl_InstanceCustomIndexEXT;
 	const int geometry_index = gl_GeometryIndexEXT;
 	const int primitive_index = gl_PrimitiveID;
@@ -88,10 +90,11 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 		objectToWorld * vec4(GET_VERTEX(vi3).pos, 1.f),
 	};
 
+	const ModelHeader model = getModelHeader(model_index);
 	const vec3 prev_pos[3] = {
-		(kusok.model.prev_transform * vec4(GET_VERTEX(vi1).prev_pos, 1.f)).xyz,
-		(kusok.model.prev_transform * vec4(GET_VERTEX(vi2).prev_pos, 1.f)).xyz,
-		(kusok.model.prev_transform * vec4(GET_VERTEX(vi3).prev_pos, 1.f)).xyz,
+		(model.prev_transform * vec4(GET_VERTEX(vi1).prev_pos, 1.f)).xyz,
+		(model.prev_transform * vec4(GET_VERTEX(vi2).prev_pos, 1.f)).xyz,
+		(model.prev_transform * vec4(GET_VERTEX(vi3).prev_pos, 1.f)).xyz,
 	};
 
 	const vec2 uvs[3] = {

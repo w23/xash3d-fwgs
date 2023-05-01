@@ -45,6 +45,7 @@
 		X(TLAS, tlas) \
 		X(Buffer, ubo) \
 		X(Buffer, kusochki) \
+		X(Buffer, model_headers) \
 		X(Buffer, indices) \
 		X(Buffer, vertices) \
 		X(Buffer, lights) \
@@ -201,6 +202,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	// TODO move this to ray model producer
 	RES_SET_SBUFFER_FULL(kusochki, g_ray_model_state.kusochki_buffer);
+	RES_SET_SBUFFER_FULL(model_headers, g_ray_model_state.model_headers_buffer);
 
 	// TODO move these to vk_geometry
 	RES_SET_SBUFFER_FULL(indices, args->render_args->geometry_data);
@@ -219,6 +221,13 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
 			.buffer = g_ray_model_state.kusochki_buffer.buffer,
+			.offset = 0,
+			.size = VK_WHOLE_SIZE,
+		}, {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+			.buffer = g_ray_model_state.model_headers_buffer.buffer,
 			.offset = 0,
 			.size = VK_WHOLE_SIZE,
 		} };
@@ -631,6 +640,14 @@ qboolean VK_RayInit( void )
 		// FIXME complain, handle
 		return false;
 	}
+
+	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_ACCELS,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("vk_rtx_reload", reloadPipeline, "Reload RTX shader");
@@ -643,6 +660,7 @@ void VK_RayShutdown( void ) {
 
 	destroyMainpipe();
 
+	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
 	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
 

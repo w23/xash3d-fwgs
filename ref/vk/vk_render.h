@@ -25,7 +25,7 @@ typedef enum {
 	kXVkMaterialRegular = 0,
 
 	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
-	// Used: for setting MATERIAL_MODE_SKYBOX for skybox texture sampling and environment shadows.
+	// Used: for setting TEX_BASE_SKYBOX for skybox texture sampling and environment shadows.
 	// Remove: pass it as a special texture/material index (e.g. -2).
 	kXVkMaterialSky,
 

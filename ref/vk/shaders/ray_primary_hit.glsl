@@ -30,7 +30,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Kusok kusok = getKusok(geom.kusok_index);
 	const Material material = kusok.material;
 
-	if (kusok.material.mode == MATERIAL_MODE_SKYBOX) {
+	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
 		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, rayDirection).rgb);
 		return;
 	} else {
@@ -69,8 +69,12 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		payload.emissive.rgb *= payload.base_color_a.rgb;
 #endif
 
-	payload.base_color_a *= kusok.model.color;
-	payload.emissive.rgb *= kusok.model.color.rgb;
+	const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, true);
+	const ModelHeader model = getModelHeader(model_index);
+	const vec4 color = model.color * kusok.material.base_color;
+
+	payload.base_color_a *= color;
+	payload.emissive.rgb *= color.rgb;
 }
 
 #endif // ifndef RAY_PRIMARY_HIT_GLSL_INCLUDED

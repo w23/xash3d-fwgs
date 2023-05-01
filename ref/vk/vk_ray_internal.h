@@ -60,6 +60,10 @@ typedef struct {
 	vk_buffer_t kusochki_buffer;
 	r_debuffer_t kusochki_alloc;
 
+	// Model header
+	// Array of struct ModelHeader: color, material_mode, prev_transform
+	vk_buffer_t model_headers_buffer;
+
 	// Per-frame data that is accumulated between RayFrameBegin and End calls
 	struct {
 		int num_models;

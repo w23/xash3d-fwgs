@@ -69,15 +69,10 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 #define MATERIAL_MODE_BLEND_ADD 3
 #define MATERIAL_MODE_BLEND_MIX 4
 #define MATERIAL_MODE_BLEND_GLOW 5
-#define MATERIAL_MODE_SKYBOX 6
+
+#define TEX_BASE_SKYBOX 0xffffffffu
 
 struct Material {
-	// TODO this should be moved to ModelMetadata, as granularity of this is per-model
-	// EXCEPT for skybox. Sky surfaces are all over the place in worldbrush.
-	// Maybe tex_base_color should have a special value for skybox.
-	// Moving this to model would allow us to make kusochki mostly static (except for animated textures)
-	uint mode;
-
 	uint tex_base_color;
 
 	// TODO can be combined into a single texture
@@ -92,11 +87,16 @@ struct Material {
 	float roughness;
 	float metalness;
 	float normal_scale;
+	PAD(1)
+
+	vec4 base_color;
 };
 
-struct ModelMetadata {
-	vec4 color;
+struct ModelHeader {
 	mat4 prev_transform;
+	vec4 color;
+	uint mode;
+	PAD(3)
 };
 
 struct Kusok {
@@ -109,15 +109,12 @@ struct Kusok {
 	// Alignt it here to vec4 explicitly, so that later vector fields are properly aligned (for simplicity).
 	uint _padding0;
 
-	// TODO reference into material table
-	STRUCT Material material;
-
 	// Per-kusok because individual surfaces can be patched
 	vec3 emissive;
 	PAD(1)
 
-	// TODO move into a separate model array, and reference it by gl_GeometryIndexEXT/rayQueryGetIntersectionGeometryIndexEXT
-	STRUCT ModelMetadata model;
+	// TODO reference into material table
+	STRUCT Material material;
 };
 
 struct PointLight {

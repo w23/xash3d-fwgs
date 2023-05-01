@@ -27,44 +27,43 @@ void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout
 	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + glow_soft_overshoot);
 	while (rayQueryProceedEXT(rq)) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
+		const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, false);
+		const ModelHeader model = getModelHeader(model_index);
 		const Kusok kusok = getKusok(geom.kusok_index);
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
-		if (overshoot > 0. && kusok.material.mode != MATERIAL_MODE_BLEND_GLOW)
+		if (overshoot > 0. && model.mode != MATERIAL_MODE_BLEND_GLOW)
 			continue;
 
 //#define DEBUG_BLEND_MODES
 #ifdef DEBUG_BLEND_MODES
-		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
+		if (model.mode == MATERIAL_MODE_BLEND_GLOW) {
 			emissive += vec3(1., 0., 0.);
 			//ret += color * smoothstep(glow_soft_overshoot, 0., overshoot);
-		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
+		} else if (model.mode == MATERIAL_MODE_BLEND_ADD) {
 			emissive += vec3(0., 1., 0.);
-		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+		} else if (model.mode == MATERIAL_MODE_BLEND_MIX) {
 			emissive += vec3(0., 0., 1.);
-		} else if (kusok.material.mode == MATERIAL_MODE_TRANSLUCENT) {
+		} else if (model.mode == MATERIAL_MODE_TRANSLUCENT) {
 			emissive += vec3(0., 1., 1.);
-		} else if (kusok.material.mode == MATERIAL_MODE_OPAQUE) {
+		} else if (model.mode == MATERIAL_MODE_OPAQUE) {
 			emissive += vec3(1., 1., 1.);
 		}
 #else
 		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], geom.uv);
+		const vec4 mm_color = model.color * kusok.material.base_color;
+		float alpha = mm_color.a * texture_color.a * geom.vertex_color.a;
+		vec3 color = mm_color.rgb * SRGBtoLINEAR(texture_color.rgb) * geom.vertex_color.rgb * alpha;
 
-		// "Linearizing" alpha, while looking weird conceptually in the code, is necessary to make it look close to the original.
-		// TODO figure out whether texture alpha needs to be linearized too. Don't have good examples to look at.
-		// TODO this also makes sprites look dull, so likely kusok.model.color linearization should only apply to brush models, not sprites. This is better done when passing brush model to ray tracer.
-		float alpha = SRGBtoLINEAR(texture_color.a * kusok.model.color.a) * geom.vertex_color.a;
-		vec3 color = kusok.model.color.rgb * SRGBtoLINEAR(texture_color.rgb) * geom.vertex_color.rgb * alpha;
-
-		if (kusok.material.mode == MATERIAL_MODE_BLEND_GLOW) {
+		if (model.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
 			const float overshoot_factor = smoothstep(glow_soft_overshoot, 0., overshoot);
 			color *= overshoot_factor;
 			alpha = 0.;
-		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_ADD) {
+		} else if (model.mode == MATERIAL_MODE_BLEND_ADD) {
 			// Additive doesn't attenuate what's behind
 			alpha = 0.;
-		} else if (kusok.material.mode == MATERIAL_MODE_BLEND_MIX) {
+		} else if (model.mode == MATERIAL_MODE_BLEND_MIX) {
 			// Handled in composite step below
 		} else {
 			// Signal unhandled blending type

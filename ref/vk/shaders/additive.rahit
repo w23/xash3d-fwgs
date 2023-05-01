@@ -30,7 +30,8 @@ void main() {
 	// TODO mips
 	const uint tex_index = kusok.material.tex_base_color;
 	const vec4 texture_color = texture(textures[nonuniformEXT(tex_index)], texture_uv);
-	const vec3 color = texture_color.rgb * kusok.model.color.rgb * texture_color.a * kusok.model.color.a;
+	const vec4 mm_color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;
+	const vec3 color = texture_color.rgb * mm_color.rgb * texture_color.a * mm_color.a;
 
 	const float overshoot = gl_HitTEXT - payload_additive.ray_distance;
 

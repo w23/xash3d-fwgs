@@ -155,7 +155,7 @@ void XVK_RayModel_Validate( void ) {
 	}
 }
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const vec4_t model_color, uint32_t mode) {
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom) {
 	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( geom->texture );
 	ASSERT(mat);
 
@@ -165,9 +165,8 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	kusok->index_offset = geom->index_offset;
 	kusok->triangles = geom->element_count / 3;
 
+	// Material data itself is mostly static. Except for animated textures, which just get a new material slot for each frame.
 	kusok->material = (struct Material){
-		.mode = mode,
-
 		.tex_base_color = mat->tex_base_color,
 		.tex_roughness = mat->tex_roughness,
 		.tex_metalness = mat->tex_metalness,
@@ -178,24 +177,18 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		.normal_scale = mat->normal_scale,
 	};
 
+	// TODO emissive is potentially "dynamic", not tied to the material directly, as it is specified per-surface in rad files
+	VectorCopy(geom->emissive, kusok->emissive);
+	Vector4Copy(mat->base_color, kusok->material.base_color);
+
+	// TODO should be patched by the Chrome material source itself to generate a static chrome material
 	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;
 	if (!mat->set && HACK_chrome)
 		kusok->material.tex_roughness = tglob.grayTexture;
 
+	// Purely static. Once a sky forever a sky.
 	if (geom->material == kXVkMaterialSky)
-		kusok->material.mode = MATERIAL_MODE_SKYBOX;
-
-	// FIXME modulates model_color with material->base_color which has different frequency
-	{
-		vec4_t gcolor;
-		gcolor[0] = model_color[0] * mat->base_color[0];
-		gcolor[1] = model_color[1] * mat->base_color[1];
-		gcolor[2] = model_color[2] * mat->base_color[2];
-		gcolor[3] = model_color[3] * mat->base_color[3];
-		Vector4Copy(gcolor, kusok->model.color);
-	}
-
-	VectorCopy(geom->emissive, kusok->emissive);
+		kusok->material.tex_base_color = TEX_BASE_SKYBOX;
 }
 
 vk_ray_model_t* VK_RayModelCreate( vk_ray_model_init_t args ) {
@@ -329,7 +322,7 @@ void VK_RayModelDestroy( struct vk_ray_model_s *model ) {
 	}
 }
 
-// TODO move this to some common place with traditional renderer
+// TODO move this to vk_brush
 static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_t speed) {
 	float sy, cy;
 	float flConveyorSpeed = 0.0f;
@@ -358,6 +351,7 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 	speed[1] = sy * flRate;
 }
 
+// TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
 static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model, uint32_t material_mode, const int *geom_indexes, int geom_indexes_count) {
 	// TODO can we sort all animated geometries (in brush) to have only a single range here?
 	for (int i = 0; i < geom_indexes_count; ++i) {
@@ -379,8 +373,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
 
 		vk_render_geometry_t *geom = render_model->geometries + index;
-		applyMaterialToKusok(kusochki + 0, geom, render_model->color, material_mode);
-		Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + 0)->model.prev_transform);
+		applyMaterialToKusok(kusochki + 0, geom);
 
 		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
 		/* 		render_model->debug_name, */
@@ -413,8 +406,7 @@ static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_rende
 
 	for (int i = 0; i < render_model->num_geometries; ++i) {
 		vk_render_geometry_t *geom = render_model->geometries + i;
-		applyMaterialToKusok(kusochki + i, geom, render_model->color, material_mode);
-		Matrix4x4_ToArrayFloatGL(render_model->prev_transform, (float*)(kusochki + i)->model.prev_transform);
+		applyMaterialToKusok(kusochki + i, geom);
 	}
 
 	/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */

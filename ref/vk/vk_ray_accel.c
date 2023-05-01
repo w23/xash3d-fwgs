@@ -5,6 +5,10 @@
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
 #include "vk_combuf.h"
+#include "vk_staging.h"
+#include "vk_math.h"
+
+#include "xash3d_mathlib.h"
 
 #define MAX_SCRATCH_BUFFER (32*1024*1024)
 #define MAX_ACCELS_BUFFER (64*1024*1024)
@@ -178,6 +182,15 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 
 	// Upload all blas instances references to GPU mem
 	{
+		const vk_staging_region_t headers_lock = R_VkStagingLockForBuffer((vk_staging_buffer_args_t){
+			.buffer = g_ray_model_state.model_headers_buffer.buffer,
+			.offset = 0,
+			.size = g_ray_model_state.frame.num_models * sizeof(struct ModelHeader),
+			.alignment = 16,
+		});
+
+		ASSERT(headers_lock.ptr);
+
 		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
 		for (int i = 0; i < g_ray_model_state.frame.num_models; ++i) {
 			const vk_ray_draw_model_t* const model = g_ray_model_state.frame.models + i;
@@ -190,7 +203,6 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			};
 			switch (model->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
-				case MATERIAL_MODE_SKYBOX:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
@@ -217,7 +229,14 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 					break;
 			}
 			memcpy(&inst[i].transform, model->transform_row, sizeof(VkTransformMatrixKHR));
+
+			struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
+			header->mode = model->material_mode;
+			Vector4Copy(model->model->color, header->color);
+			Matrix4x4_ToArrayFloatGL(model->model->prev_transform, (float*)header->prev_transform);
 		}
+
+		R_VkStagingUnlock(headers_lock.handle);
 	}
 
 	g_accel_.stats.blas_count = g_ray_model_state.frame.num_models;
@@ -225,14 +244,14 @@ void RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	// Barrier for building all BLASes
 	// BLAS building is now in cmdbuf, need to synchronize with results
 	{
-		VkBufferMemoryBarrier bmb[] = { {
+		VkBufferMemoryBarrier bmb[] = {{
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, // | VK_ACCESS_TRANSFER_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
 			.buffer = g_accel.accels_buffer.buffer,
 			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
 			.size = g_ray_model_state.frame.num_models * sizeof(VkAccelerationStructureInstanceKHR),
-		} };
+		}};
 		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,

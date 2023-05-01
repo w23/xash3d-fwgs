@@ -140,7 +140,7 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		const uint kusok_index = instance_kusochki_offset + geometry_index;
 		const Kusok kusok = getKusok(kusok_index);
 
-		if (kusok.material.mode != MATERIAL_MODE_SKYBOX)
+		if (kusok.material.tex_base_color != TEX_BASE_SKYBOX)
 			return true;
 	}
 
