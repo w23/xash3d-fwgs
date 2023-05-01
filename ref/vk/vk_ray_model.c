@@ -172,10 +172,12 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		.tex_roughness = mat->tex_roughness,
 		.tex_metalness = mat->tex_metalness,
 		.tex_normalmap = mat->tex_normalmap,
+		.tex_emissive = mat->tex_emissive,
 
 		.roughness = mat->roughness,
 		.metalness = mat->metalness,
 		.normal_scale = mat->normal_scale,
+		.emissive_scale = mat->emissive_scale,
 	};
 
 	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;

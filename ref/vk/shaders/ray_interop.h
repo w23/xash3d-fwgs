@@ -80,18 +80,22 @@ struct Material {
 
 	uint tex_base_color;
 
-	// TODO can be combined into a single texture
+	// TODO these three can be combined into a single texture
 	uint tex_roughness;
 	uint tex_metalness;
 	uint tex_normalmap;
 
+	uint tex_emissive;
+
 	// TODO:
-	// uint tex_emissive;
 	// uint tex_detail;
 
 	float roughness;
 	float metalness;
 	float normal_scale;
+	float emissive_scale;
+
+	PAD(2)
 };
 
 struct ModelMetadata {

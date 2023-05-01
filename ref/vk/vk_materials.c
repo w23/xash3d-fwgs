@@ -13,10 +13,12 @@ static xvk_material_t k_default_material = {
 		.tex_metalness = 0,
 		.tex_roughness = 0,
 		.tex_normalmap = 0,
+		.tex_emissive = 0,
 
 		.metalness = 0.f,
 		.roughness = 1.f,
 		.normal_scale = 1.f,
+		.emissive_scale = 1.f,
 		.base_color = { 1.f, 1.f, 1.f, 1.f },
 
 		.set = false,
@@ -153,6 +155,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				tex_id_dest = &current_material.tex_metalness;
 			} else if (Q_stricmp(key, "roughness_map") == 0) {
 				tex_id_dest = &current_material.tex_roughness;
+			} else if (Q_stricmp(key, "emissive_map") == 0) {
+				tex_id_dest = &current_material.tex_emissive;
 			} else if (Q_stricmp(key, "roughness") == 0) {
 				sscanf(value, "%f", &current_material.roughness);
 			} else if (Q_stricmp(key, "metalness") == 0) {
@@ -160,6 +164,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				metalness_set = true;
 			} else if (Q_stricmp(key, "normal_scale") == 0) {
 				sscanf(value, "%f", &current_material.normal_scale);
+			} else if (Q_stricmp(key, "emissive") == 0) {
+				sscanf(value, "%f", &current_material.emissive_scale);
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {
