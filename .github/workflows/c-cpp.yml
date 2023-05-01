@@ -92,40 +92,40 @@ jobs:
   #       manifest-path: scripts/flatpak/${{ matrix.app }}.yml
   #   - name: Upload engine (prereleases)
   #     run: bash scripts/continious_upload.sh ${{ matrix.app }}.flatpak
-  release:
-    name: "Upload releases"
-    runs-on: ubuntu-latest
-# Disable flatpak build temporarily due to lack of Vulkan SDK in there.
+
+# Completely disable uplodaing, as it does not make any sense for Vulkan branch for now
+#  release:
+#    name: "Upload releases"
+#    runs-on: ubuntu-latest
 #    needs: [build, flatpak]
-    needs: [build]
-    if: ${{ github.event_name == 'push' }}
-    steps:
-    - name: Remove old release
-      uses: FWGS/delete-tag-and-release@v0.2.1-dev
-      with:
-        tag_name: ${{ github.ref_name == 'master' && 'continuous' || format('continuous-{0}', github.ref_name) }}
-        delete_release: true
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Fetch artifacts
-      uses: actions/download-artifact@v3.0.1
-      with:
-        path: artifacts/
-    - name: Repackage binaries and allow GitHub to process removed release for few seconds
-      run: |
-        cd artifacts/
-        for i in artifact-* su.xash.Engine.*; do
-          mv "$i"/* .
-          rm -rf "$i"
-        done
-        ls -R .
-        cd ../
-        sleep 20s
-    - name: Upload new release
-      uses: FWGS/action-gh-release@v0.1.15
-      with:
-        name: Xash3D FWGS Continuous ${{ github.ref_name }} Build
-        tag_name: ${{ github.ref_name == 'master' && 'continuous' || format('continuous-{0}', github.ref_name) }}
-        prerelease: true
-        token: ${{ secrets.GITHUB_TOKEN }}
-        files: artifacts/*
-        draft: false
+#    if: ${{ github.event_name == 'push' }}
+#    steps:
+#    - name: Remove old release
+#      uses: FWGS/delete-tag-and-release@v0.2.1-dev
+#      with:
+#        tag_name: ${{ github.ref_name == 'master' && 'continuous' || format('continuous-{0}', github.ref_name) }}
+#        delete_release: true
+#        github_token: ${{ secrets.GITHUB_TOKEN }}
+#    - name: Fetch artifacts
+#      uses: actions/download-artifact@v3.0.1
+#      with:
+#        path: artifacts/
+#    - name: Repackage binaries and allow GitHub to process removed release for few seconds
+#      run: |
+#        cd artifacts/
+#        for i in artifact-* su.xash.Engine.*; do
+#          mv "$i"/* .
+#          rm -rf "$i"
+#        done
+#        ls -R .
+#        cd ../
+#        sleep 20s
+#    - name: Upload new release
+#      uses: FWGS/action-gh-release@v0.1.15
+#      with:
+#        name: Xash3D FWGS Continuous ${{ github.ref_name }} Build
+#        tag_name: ${{ github.ref_name == 'master' && 'continuous' || format('continuous-{0}', github.ref_name) }}
+#        prerelease: true
+#        token: ${{ secrets.GITHUB_TOKEN }}
+#        files: artifacts/*
+#        draft: false
