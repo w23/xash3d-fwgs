@@ -2147,7 +2147,7 @@ static void R_StudioDrawPoints( void )
 	if (g_studio.rendermode2 == kRenderTransAdd) {
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
 	}
-	VK_RenderModelDynamicBegin( studioRenderModeToRenderType(RI.currententity->curstate.rendermode), color, "%s", m_pSubModel->name );
+	VK_RenderModelDynamicBegin( studioRenderModeToRenderType(RI.currententity->curstate.rendermode), color, m_matrix4x4_identity, "%s", m_pSubModel->name );
 
 	g_studio.numverts = g_studio.numelems = 0;
 

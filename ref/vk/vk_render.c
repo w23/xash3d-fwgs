@@ -16,6 +16,7 @@
 #include "alolcator.h"
 #include "profiler.h"
 #include "r_speeds.h"
+#include "camera.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -43,8 +44,6 @@ static struct {
 
 	vk_buffer_t uniform_buffer;
 	uint32_t ubo_align;
-
-	float fov_angle_y;
 
 	struct {
 		int dynamic_model_count;
@@ -282,7 +281,7 @@ static struct {
 	draw_command_t draw_commands[MAX_DRAW_COMMANDS];
 	int num_draw_commands;
 
-	matrix4x4 model, view, projection;
+	matrix4x4 vk_projection;
 
 	qboolean current_frame_is_ray_traced;
 } g_render_state;
@@ -351,10 +350,6 @@ void VK_RenderShutdown( void )
 
 enum {
 	UNIFORM_UNSET = 0,
-	UNIFORM_SET_MATRIX_MODEL = 2,
-	UNIFORM_SET_MATRIX_VIEW = 4,
-	UNIFORM_SET_MATRIX_PROJECTION = 8,
-	UNIFORM_SET_ALL = UNIFORM_SET_MATRIX_MODEL | UNIFORM_SET_MATRIX_VIEW | UNIFORM_SET_MATRIX_PROJECTION,
 	UNIFORM_UPLOADED = 16,
 };
 
@@ -387,35 +382,17 @@ static const matrix4x4 vk_proj_fixup = {
 	{0, 0, 0, 1}
 };
 
-void VK_RenderStateSetMatrixProjection(const matrix4x4 projection, float fov_angle_y)
-{
-	g_render_state.uniform_data_set_mask |= UNIFORM_SET_MATRIX_PROJECTION;
-	Matrix4x4_Concat( g_render_state.projection, vk_proj_fixup, projection );
-	g_render.fov_angle_y = fov_angle_y;
+void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp ) {
+	R_SetupCamera(rvp);
+	Matrix4x4_Concat(g_render_state.vk_projection, vk_proj_fixup, g_camera.projectionMatrix);
 }
 
-void VK_RenderStateSetMatrixView(const matrix4x4 view)
-{
-	g_render_state.uniform_data_set_mask |= UNIFORM_SET_MATRIX_VIEW;
-	Matrix4x4_Copy(g_render_state.view, view);
-}
-
-void VK_RenderStateSetMatrixModel( const matrix4x4 model )
-{
-	g_render_state.uniform_data_set_mask |= UNIFORM_SET_MATRIX_MODEL;
-	Matrix4x4_Copy(g_render_state.model, model);
-
-	// Assume that projection and view matrices are already properly set
-	ASSERT(g_render_state.uniform_data_set_mask & UNIFORM_SET_MATRIX_VIEW);
-	ASSERT(g_render_state.uniform_data_set_mask & UNIFORM_SET_MATRIX_PROJECTION);
-
-	{
-		matrix4x4 mv, mvp;
-		// TODO this can be cached (on a really slow device?)
-		Matrix4x4_Concat(mv, g_render_state.view, g_render_state.model);
-		Matrix4x4_Concat(mvp, g_render_state.projection, mv);
-		Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
-	}
+void VK_RenderStateSetMatrixModel( const matrix4x4 model ) {
+	matrix4x4 mv, mvp;
+	// TODO this can be cached (on a really slow device?)
+	Matrix4x4_Concat(mv, g_camera.viewMatrix, model);
+	Matrix4x4_Concat(mvp, g_render_state.vk_projection, mv);
+	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
 static uint32_t allocUniform( uint32_t size, uint32_t alignment ) {
@@ -474,11 +451,6 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	ASSERT(draw->pipeline_index < ARRAYSIZE(g_render.pipelines));
 	ASSERT(draw->lightmap >= 0);
 	ASSERT(draw->texture >= 0);
-
-	if ((g_render_state.uniform_data_set_mask & UNIFORM_SET_ALL) != UNIFORM_SET_ALL) {
-		gEngine.Con_Printf( S_ERROR "Not all uniform state was initialized prior to rendering\n" );
-		return;
-	}
 
 	if (g_render_state.num_draw_commands >= ARRAYSIZE(g_render_state.draw_commands)) {
 		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
@@ -659,15 +631,15 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 				.height = h,
 			},
 
-			.projection = &g_render_state.projection,
-			.view = &g_render_state.view,
+			.projection = &g_render_state.vk_projection,
+			.view = &g_camera.viewMatrix,
 
 			.geometry_data = {
 				.buffer = geom_buffer,
 				.size = VK_WHOLE_SIZE,
 			},
 
-			.fov_angle_y = g_render.fov_angle_y,
+			.fov_angle_y = g_camera.fov_y,
 		};
 
 		VK_RayFrameEnd(&args);
@@ -685,6 +657,7 @@ qboolean VK_RenderModelInit( vk_render_model_t *model ) {
 		model->ray_model = VK_RayModelCreate(args);
 		model->dynamic_polylights = NULL;
 		model->dynamic_polylights_count = 0;
+		Matrix4x4_LoadIdentity(model->transform);
 		return !!model->ray_model;
 	}
 
@@ -708,6 +681,8 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 	int index_offset = -1;
 	int vertex_offset = 0;
 
+	VK_RenderStateSetMatrixModel( model->transform );
+
 	// TODO get rid of this dirty ubo thing
 	Vector4Copy(model->color, g_render_state.dirty_uniform_data.color);
 	ASSERT(model->lightmap <= MAX_LIGHTMAPS);
@@ -717,14 +692,14 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 
 	if (g_render_state.current_frame_is_ray_traced) {
 		if (ent != NULL && model != NULL) {
-			R_PrevFrame_SaveCurrentState( ent->index, g_render_state.model );
+			R_PrevFrame_SaveCurrentState( ent->index, model->transform );
 			R_PrevFrame_ModelTransform( ent->index, model->prev_transform );
 		}
 		else {
-			Matrix4x4_Copy( model->prev_transform, g_render_state.model );
+			Matrix4x4_Copy( model->prev_transform, model->transform );
 		}
 
-		VK_RayFrameAddModel(model->ray_model, model, (const matrix3x4*)g_render_state.model);
+		VK_RayFrameAddModel(model->ray_model, model);
 
 		return;
 	}
@@ -791,7 +766,7 @@ static struct {
 	vk_render_geometry_t geometries[MAX_DYNAMIC_GEOMETRY];
 } g_dynamic_model = {0};
 
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const char *debug_name_fmt, ... ) {
+void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix4x4 transform, const char *debug_name_fmt, ... ) {
 	va_list argptr;
 	va_start( argptr, debug_name_fmt );
 	vsnprintf(g_dynamic_model.model.debug_name, sizeof(g_dynamic_model.model.debug_name), debug_name_fmt, argptr );
@@ -803,6 +778,10 @@ void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t colo
 	g_dynamic_model.model.render_type = render_type;
 	g_dynamic_model.model.lightmap = 0;
 	Vector4Copy(color, g_dynamic_model.model.color);
+	if (transform)
+		Matrix4x4_Copy(g_dynamic_model.model.transform, transform);
+	else
+		Matrix4x4_LoadIdentity(g_dynamic_model.model.transform);
 }
 void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
 	ASSERT(g_dynamic_model.model.geometries);

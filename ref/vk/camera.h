@@ -14,10 +14,7 @@ typedef struct vk_global_camera_s {
 	int viewport[4];
 	//gl_frustum_t frustum;
 
-	matrix4x4 objectMatrix; // currententity matrix
-	matrix4x4 worldviewMatrix; // modelview for world
-	matrix4x4 modelviewMatrix; // worldviewMatrix * objectMatrix
-
+	matrix4x4 viewMatrix;
 	matrix4x4 projectionMatrix;
 	matrix4x4 worldviewProjectionMatrix; // worldviewMatrix * projectionMatrix
 } vk_global_camera_t;
@@ -31,4 +28,5 @@ void R_SetupCamera( const struct ref_viewpass_s *rvp );
 int R_WorldToScreen( const vec3_t point, vec3_t screen );
 int TriWorldToScreen( const float *world, float *screen );
 
+// TODO move to infotool.h
 void XVK_CameraDebugPrintCenterEntity( void );

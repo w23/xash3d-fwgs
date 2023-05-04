@@ -410,7 +410,7 @@ static void R_DrawSegs( vec3_t source, vec3_t delta, float width, float scale, f
 		};
 
 		vk_render_type_e render_type = render_mode == kRenderNormal ? kVkRenderTypeSolid : kVkRenderType_A_1_R;
-		VK_RenderModelDynamicBegin( render_type, color, "beam" /* TODO its name */ );
+		VK_RenderModelDynamicBegin( render_type, color, m_matrix4x4_identity, "beam" /* TODO its name */ );
 		VK_RenderModelDynamicAddGeometry( &geometry );
 		VK_RenderModelDynamicCommit();
 	}
@@ -1120,10 +1120,6 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 		color[3] = (1.f - pbeam->t) * pbeam->brightness;
 	else
 		color[3] = pbeam->brightness;
-
-	// FIXME VK what is our vk_render matrix state now? do we have all matrices set properly?
-	// TODO this can be done only once for all beams, i.e. before calling CL_DrawEFX
-	VK_RenderStateSetMatrixModel( m_matrix4x4_identity );
 
 	// TODO gl renderer has per-vertex color that is updated using brightness and whatever
 	VK_RenderDebugLabelBegin( "beam" );

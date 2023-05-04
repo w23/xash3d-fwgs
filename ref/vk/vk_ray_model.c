@@ -421,7 +421,7 @@ static qboolean uploadKusochki(const vk_ray_model_t *const model, const vk_rende
 	return true;
 }
 
-void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render_model, const matrix3x4 *transform_row) {
+void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render_model) {
 	vk_ray_draw_model_t* draw_model = g_ray_model_state.frame.models + g_ray_model_state.frame.num_models;
 
 	ASSERT(vk_core.rtx);
@@ -486,14 +486,14 @@ void VK_RayFrameAddModel( vk_ray_model_t *model, const vk_render_model_t *render
 
 	for (int i = 0; i < render_model->dynamic_polylights_count; ++i) {
 		rt_light_add_polygon_t *const polylight = render_model->dynamic_polylights + i;
-		polylight->transform_row = (const matrix3x4*)transform_row;
+		polylight->transform_row = (const matrix3x4*)render_model->transform;
 		polylight->dynamic = true;
 		RT_LightAddPolygon(polylight);
 	}
 
 	draw_model->model = model;
-	memcpy(draw_model->transform_row, *transform_row, sizeof(draw_model->transform_row));
 	draw_model->material_mode = material_mode;
+	Matrix3x4_Copy(draw_model->transform_row, render_model->transform);
 
 	g_ray_model_state.frame.num_models++;
 }

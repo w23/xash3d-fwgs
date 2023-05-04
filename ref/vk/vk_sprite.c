@@ -743,7 +743,7 @@ static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec
 			.emissive = {1,1,1},
 		};
 
-		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, "%s", debug_name );
+		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, m_matrix4x4_identity, "%s", debug_name );
 		VK_RenderModelDynamicAddGeometry( &geometry );
 		VK_RenderModelDynamicCommit();
 	}

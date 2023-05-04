@@ -165,7 +165,7 @@ static void emitDynamicGeometry(int num_indices, const vec4_t color, const char*
 			.emissive = { color[0], color[1], color[2] },
 		};
 
-		VK_RenderModelDynamicBegin( g_triapi.render_type, color, name );
+		VK_RenderModelDynamicBegin( g_triapi.render_type, color, m_matrix4x4_identity, name );
 		VK_RenderModelDynamicAddGeometry( &geometry );
 		VK_RenderModelDynamicCommit();
 	}

@@ -6,14 +6,8 @@
 qboolean VK_RenderInit( void );
 void VK_RenderShutdown( void );
 
-// Set UBO state for next VK_RenderScheduleDraw calls
-// Why? Xash Ref code is organized in a way where we can't reliably pass this info with
-// ScheduleDraw itself, so we need to either set up per-submodule global state, or
-// centralize this global state in here
-void VK_RenderStateSetMatrixProjection(const matrix4x4 proj, float fov_angle_y);
-void VK_RenderStateSetMatrixView(const matrix4x4 view);
-void VK_RenderStateSetMatrixModel(const matrix4x4 model);
-
+struct ref_viewpass_s;
+void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 
 // Quirk for passing surface type to the renderer
 // xash3d does not really have a notion of materials. Instead there are custom code paths
@@ -130,6 +124,8 @@ typedef struct vk_render_model_s {
 	struct rt_light_add_polygon_s *dynamic_polylights;
 	int dynamic_polylights_count;
 
+	matrix4x4 transform;
+
 	// previous frame ObjectToWorld (model) matrix
 	matrix4x4 prev_transform;
 } vk_render_model_t;
@@ -138,7 +134,7 @@ qboolean VK_RenderModelInit( vk_render_model_t* model );
 void VK_RenderModelDestroy( vk_render_model_t* model );
 void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model );
 
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const char *debug_name_fmt, ... );
+void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix4x4 transform, const char *debug_name_fmt, ... );
 void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom );
 void VK_RenderModelDynamicCommit( void );
 

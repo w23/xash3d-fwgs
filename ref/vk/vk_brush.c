@@ -271,7 +271,7 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color )
+static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, const matrix4x4 transform )
 {
 	const model_t *model = ent->model;
 	vec3_t		mins, maxs;
@@ -295,7 +295,7 @@ static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color )
 	// if( R_CullBox( mins, maxs ))
 	// 	return;
 
-	VK_RenderModelDynamicBegin( brushRenderModeToRenderType(ent->curstate.rendermode), color, "%s water", model->name );
+	VK_RenderModelDynamicBegin( brushRenderModeToRenderType(ent->curstate.rendermode), color, transform, "%s water", model->name );
 
 	// Iterate through all surfaces, find *TURB*
 	for( int i = 0; i < model->nummodelsurfaces; i++ )
@@ -393,7 +393,7 @@ static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *
 	return true;
 }
 
-void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model ) {
+void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 transform ) {
 	// Expect all buffers to be bound
 	const model_t *mod = ent->model;
 	vk_brush_model_t *bmodel = mod->cache.data;
@@ -402,6 +402,11 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 		gEngine.Con_Printf( S_ERROR "Model %s wasn't loaded\n", mod->name);
 		return;
 	}
+
+	if (transform)
+		Matrix4x4_Copy(bmodel->render_model.transform, transform);
+	else
+		Matrix4x4_LoadIdentity(bmodel->render_model.transform);
 
 	Vector4Set(bmodel->render_model.color, 1.f, 1.f, 1.f, 1.f);
 	vk_render_type_e render_type = kVkRenderTypeSolid;
@@ -446,7 +451,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
 
 	if (bmodel->num_water_surfaces) {
-		brushDrawWaterSurfaces(ent, bmodel->render_model.color);
+		brushDrawWaterSurfaces(ent, bmodel->render_model.color, bmodel->render_model.transform);
 	}
 
 	if (bmodel->render_model.num_geometries == 0)

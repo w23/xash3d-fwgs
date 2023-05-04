@@ -107,9 +107,9 @@ void R_SetupCamera( const ref_viewpass_t *rvp )
 	*/
 
 	R_SetupProjectionMatrix( g_camera.projectionMatrix );
-	R_SetupModelviewMatrix( g_camera.modelviewMatrix );
+	R_SetupModelviewMatrix( g_camera.viewMatrix );
 
-	Matrix4x4_Concat( g_camera.worldviewProjectionMatrix, g_camera.projectionMatrix, g_camera.modelviewMatrix );
+	Matrix4x4_Concat( g_camera.worldviewProjectionMatrix, g_camera.projectionMatrix, g_camera.viewMatrix );
 }
 
 int R_WorldToScreen( const vec3_t point, vec3_t screen )
