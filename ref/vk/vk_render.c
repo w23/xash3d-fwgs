@@ -282,6 +282,7 @@ static struct {
 	int num_draw_commands;
 
 	matrix4x4 vk_projection;
+	matrix4x4 projection_view;
 
 	qboolean current_frame_is_ray_traced;
 } g_render_state;
@@ -385,14 +386,7 @@ static const matrix4x4 vk_proj_fixup = {
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp ) {
 	R_SetupCamera(rvp);
 	Matrix4x4_Concat(g_render_state.vk_projection, vk_proj_fixup, g_camera.projectionMatrix);
-}
-
-void VK_RenderStateSetMatrixModel( const matrix4x4 model ) {
-	matrix4x4 mv, mvp;
-	// TODO this can be cached (on a really slow device?)
-	Matrix4x4_Concat(mv, g_camera.viewMatrix, model);
-	Matrix4x4_Concat(mvp, g_render_state.vk_projection, mv);
-	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
+	Matrix4x4_Concat(g_render_state.projection_view, g_render_state.vk_projection, g_camera.viewMatrix);
 }
 
 static uint32_t allocUniform( uint32_t size, uint32_t alignment ) {
@@ -675,13 +669,19 @@ void VK_RenderModelDestroy( vk_render_model_t* model ) {
 	}
 }
 
+static void uboComputeAndSetMVPFromModel( const matrix4x4 model ) {
+	matrix4x4 mvp;
+	Matrix4x4_Concat(mvp, g_render_state.projection_view, model);
+	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
+}
+
 void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 	int current_texture = -1;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	VK_RenderStateSetMatrixModel( model->transform );
+	uboComputeAndSetMVPFromModel( model->transform );
 
 	// TODO get rid of this dirty ubo thing
 	Vector4Copy(model->color, g_render_state.dirty_uniform_data.color);
