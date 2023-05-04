@@ -89,6 +89,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		char key[1024];
 		char value[1024];
 
+		const char *const line_begin = pos;
 		pos = COM_ParseFile(pos, key, sizeof(key));
 		ASSERT(Q_strlen(key) < sizeof(key));
 		if (!pos)
@@ -190,7 +191,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 			} else {
-				gEngine.Con_Printf(S_ERROR "Unknown material key %s\n", key);
+				gEngine.Con_Printf(S_ERROR "Unknown material key \"%s\" on line `%.*s`\n", key, (int)(pos - line_begin), line_begin);
 				continue;
 			}
 		}
