@@ -26,9 +26,21 @@ static struct {
 	xvk_material_t materials[MAX_TEXTURES];
 } g_materials;
 
+static struct {
+	int mat_files_read;
+	int texture_lookups;
+	int texture_loads;
+	uint64_t material_file_read_duration_ns;
+	uint64_t texture_lookup_duration_ns;
+	uint64_t texture_load_duration_ns;
+} g_stats;
+
 static int loadTexture( const char *filename, qboolean force_reload ) {
+	const uint64_t load_begin_ns = aprof_time_now_ns();
 	const int tex_id = force_reload ? XVK_LoadTextureReplace( filename, NULL, 0, 0 ) : VK_LoadTexture( filename, NULL, 0, 0 );
-	gEngine.Con_Reportf("Loading texture %s => %d\n", filename, tex_id);
+	gEngine.Con_Reportf("Loaded texture %s => %d\n", filename, tex_id);
+	g_stats.texture_loads++;
+	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
 	return tex_id ? tex_id : -1;
 }
 
@@ -45,25 +57,23 @@ static void makePath(char *out, size_t out_size, const char *value, const char *
 #define MAKE_PATH(out, value) \
 	makePath(out, sizeof(out), value, path_begin, path_end)
 
-static struct {
-	int mat_files_read;
-	int texture_lookups;
-	int texture_loads;
-	int texture_lookup_duration_ns;
-	int texture_load_duration_ns;
-} g_stats;
-
 static void loadMaterialsFromFile( const char *filename, int depth ) {
 	fs_offset_t size;
 	const char *const path_begin = filename;
 	const char *path_end = Q_strrchr(filename, '/');
+
+	const uint64_t load_file_begin_ns = aprof_time_now_ns();
 	byte *data = gEngine.fsapi->LoadFile( filename, 0, false );
+	g_stats.material_file_read_duration_ns +=  aprof_time_now_ns() - load_file_begin_ns;
+
 	char *pos = (char*)data;
 	xvk_material_t current_material = k_default_material;
 	int current_material_index = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
 	qboolean metalness_set = false;
+
+	string basecolor_map, normal_map, metal_map, roughness_map;
 
 	gEngine.Con_Reportf("Loading materials from %s\n", filename);
 
@@ -90,12 +100,30 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			force_reload = false;
 			create = false;
 			metalness_set = false;
+			basecolor_map[0] = normal_map[0] = metal_map[0] = roughness_map[0] = '\0';
 			continue;
 		}
 
 		if (key[0] == '}') {
 			if (current_material_index < 0)
 				continue;
+
+#define LOAD_TEXTURE_FOR(name, field) do { \
+			if (name[0] != '\0') { \
+				char texture_path[256]; \
+				MAKE_PATH(texture_path, name); \
+				const int tex_id = loadTexture(texture_path, force_reload); \
+				if (tex_id < 0) { \
+					gEngine.Con_Printf(S_ERROR "Failed to load texture \"%s\" for "#name"\n", name); \
+				} else { \
+					current_material.field = tex_id; \
+				} \
+			}} while(0)
+
+			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color);
+			LOAD_TEXTURE_FOR(normal_map, tex_normalmap);
+			LOAD_TEXTURE_FOR(metal_map, tex_metalness);
+			LOAD_TEXTURE_FOR(roughness_map, tex_roughness);
 
 			// If there's no explicit basecolor_map value, use the "for" target texture
 			if (current_material.tex_base_color == -1)
@@ -143,16 +171,15 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				gEngine.Con_Printf(S_ERROR "material: max include depth %d reached when including '%s' from '%s'\n", MAX_INCLUDE_DEPTH, value, filename);
 			}
 		} else {
-			char texture_path[256];
 			int *tex_id_dest = NULL;
 			if (Q_stricmp(key, "basecolor_map") == 0) {
-				tex_id_dest = &current_material.tex_base_color;
+				Q_strncpy(basecolor_map, value, sizeof(basecolor_map));
 			} else if (Q_stricmp(key, "normal_map") == 0) {
-				tex_id_dest = &current_material.tex_normalmap;
+				Q_strncpy(normal_map, value, sizeof(normal_map));
 			} else if (Q_stricmp(key, "metal_map") == 0) {
-				tex_id_dest = &current_material.tex_metalness;
+				Q_strncpy(metal_map, value, sizeof(metal_map));
 			} else if (Q_stricmp(key, "roughness_map") == 0) {
-				tex_id_dest = &current_material.tex_roughness;
+				Q_strncpy(roughness_map, value, sizeof(roughness_map));
 			} else if (Q_stricmp(key, "roughness") == 0) {
 				sscanf(value, "%f", &current_material.roughness);
 			} else if (Q_stricmp(key, "metalness") == 0) {
@@ -165,22 +192,6 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else {
 				gEngine.Con_Printf(S_ERROR "Unknown material key %s\n", key);
 				continue;
-			}
-
-			MAKE_PATH(texture_path, value);
-
-			if (tex_id_dest) {
-				const uint64_t load_begin_ns = aprof_time_now_ns();
-				const int tex_id = loadTexture(texture_path, force_reload);
-				g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
-
-				if (tex_id < 0) {
-					gEngine.Con_Printf(S_ERROR "Failed to load texture \"%s\" for key \"%s\"\n", value, key);
-					continue;
-				}
-
-				*tex_id_dest = tex_id;
-				g_stats.texture_loads++;
 			}
 		}
 	}
@@ -237,9 +248,10 @@ void XVK_ReloadMaterials( void ) {
 	// Print out statistics
 	{
 		const int duration_ms = (aprof_time_now_ns() - begin_time_ns) / 1000000ull;
-		gEngine.Con_Printf("Loading materials took %dms, .mat files parsed: %d. Texture lookups: %d (%dms). Texture loads: %d (%dms).\n",
+		gEngine.Con_Printf("Loading materials took %dms, .mat files parsed: %d (fread: %dms). Texture lookups: %d (%dms). Texture loads: %d (%dms).\n",
 			duration_ms,
 			g_stats.mat_files_read,
+			(int)(g_stats.material_file_read_duration_ns / 1000000ull),
 			g_stats.texture_lookups,
 			(int)(g_stats.texture_lookup_duration_ns / 1000000ull),
 			g_stats.texture_loads,
