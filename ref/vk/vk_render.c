@@ -250,11 +250,11 @@ typedef struct {
 #define MAX_DEBUG_NAME_LENGTH 32
 
 typedef struct render_draw_s {
+	uint32_t ubo_offset; // FIXME move this to draw
 	int lightmap, texture;
 	int pipeline_index;
 	uint32_t element_count;
 	uint32_t index_offset, vertex_offset;
-	/* TODO this should be a separate thing? */ struct { float r, g, b; } emissive;
 } render_draw_t;
 
 enum draw_command_type_e {
@@ -267,11 +267,7 @@ typedef struct {
 	enum draw_command_type_e type;
 	union {
 		char debug_label[MAX_DEBUG_NAME_LENGTH];
-		struct {
-			render_draw_t draw;
-			uint32_t ubo_offset;
-			matrix3x4 transform;
-		} draw;
+		render_draw_t draw;
 	};
 } draw_command_t;
 
@@ -497,10 +493,9 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	}
 
 	draw_command = drawCmdAlloc();
-	draw_command->draw.draw = *draw;
+	draw_command->draw = *draw;
 	draw_command->draw.ubo_offset = ubo_offset;
 	draw_command->type = DrawDraw;
-	Matrix3x4_Copy(draw_command->draw.transform, g_render_state.model);
 }
 
 // Return offset of dlights data into UBO buffer
@@ -616,26 +611,26 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf )
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc.ubo_sets, 1, &ubo_offset);
 		}
 
-		if (pipeline != draw->draw.draw.pipeline_index) {
-			pipeline = draw->draw.draw.pipeline_index;
+		if (pipeline != draw->draw.pipeline_index) {
+			pipeline = draw->draw.pipeline_index;
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipelines[pipeline]);
 		}
 
-		if (lightmap != draw->draw.draw.lightmap) {
-			lightmap = draw->draw.draw.lightmap;
+		if (lightmap != draw->draw.lightmap) {
+			lightmap = draw->draw.lightmap;
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &findTexture(lightmap)->vk.descriptor, 0, NULL);
 		}
 
-		if (texture != draw->draw.draw.texture)
+		if (texture != draw->draw.texture)
 		{
-			texture = draw->draw.draw.texture;
+			texture = draw->draw.texture;
 			// TODO names/enums for binding points
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &findTexture(texture)->vk.descriptor, 0, NULL);
 		}
 
 		// Only indexed mode is supported
-		ASSERT(draw->draw.draw.index_offset >= 0);
-		vkCmdDrawIndexed(cmdbuf, draw->draw.draw.element_count, 1, draw->draw.draw.index_offset, draw->draw.draw.vertex_offset, 0);
+		ASSERT(draw->draw.index_offset >= 0);
+		vkCmdDrawIndexed(cmdbuf, draw->draw.element_count, 1, draw->draw.index_offset, draw->draw.vertex_offset, 0);
 	}
 }
 
