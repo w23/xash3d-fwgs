@@ -40,3 +40,10 @@
 "_xvk_surface_id" "931 1702" // +0~GENERIC86B    60  220 170  10000
 "_light" "20 220 170 80000"
 }
+
+
+// fix broken beams
+{
+"_xvk_ent_id" "166 163"
+"renderamt" "128"
+}

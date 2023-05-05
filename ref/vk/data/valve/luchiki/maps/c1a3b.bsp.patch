@@ -1,0 +1,10 @@
+// section 1
+// remova hack spot lights
+{
+"_xvk_ent_id" "146"
+}
+{
+"_xvk_surface_id" "622" // +0~LIGHT3A       180 180 230  25000
+"_light" "180 180 230 105000"
+}
+
