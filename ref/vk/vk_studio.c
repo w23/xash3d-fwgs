@@ -1,4 +1,5 @@
 #include "vk_studio.h"
+#include "com_model.h"
 #include "vk_common.h"
 #include "vk_textures.h"
 #include "vk_render.h"
@@ -873,7 +874,7 @@ void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 			Matrix3x4_FromOriginQuat( bonematrix, q[i], pos[i] );
 			if( pbones[i].parent == -1 )
 			{
-				Matrix3x4_ConcatTransforms( g_studio.bonestransform[i], g_studio.rotationmatrix, bonematrix );
+				Matrix3x4_Copy( g_studio.bonestransform[i], bonematrix );
 				Matrix3x4_Copy( g_studio.lighttransform[i], g_studio.bonestransform[i] );
 
 				// apply client-side effects to the transformation matrix
@@ -1031,7 +1032,7 @@ void R_StudioSetupBones( cl_entity_t *e )
 
 		if( pbones[i].parent == -1 )
 		{
-			Matrix3x4_ConcatTransforms( g_studio.bonestransform[i], g_studio.rotationmatrix, bonematrix );
+			Matrix3x4_Copy( g_studio.bonestransform[i], bonematrix );
 			Matrix3x4_Copy( g_studio.lighttransform[i], g_studio.bonestransform[i] );
 
 			// apply client-side effects to the transformation matrix
@@ -2147,7 +2148,7 @@ static void R_StudioDrawPoints( void )
 	if (g_studio.rendermode2 == kRenderTransAdd) {
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
 	}
-	VK_RenderModelDynamicBegin( studioRenderModeToRenderType(RI.currententity->curstate.rendermode), color, m_matrix4x4_identity, "%s", m_pSubModel->name );
+	VK_RenderModelDynamicBegin( studioRenderModeToRenderType(RI.currententity->curstate.rendermode), color, g_studio.rotationmatrix, "%s", m_pSubModel->name );
 
 	g_studio.numverts = g_studio.numelems = 0;
 
@@ -3239,14 +3240,19 @@ void R_DrawViewModel( void )
 
 	switch( RI.currententity->model->type )
 	{
-		/* FIXME VK
 	case mod_alias:
+		/* FIXME VK
 		R_DrawAliasModel( RI.currententity );
 		break;
 		*/
 	case mod_studio:
 		R_StudioSetupTimings();
 		R_StudioDrawModelInternal( RI.currententity, STUDIO_RENDER );
+		break;
+	case mod_sprite:
+	case mod_brush:
+	case mod_bad:
+		// Complain, impossible
 		break;
 	}
 
