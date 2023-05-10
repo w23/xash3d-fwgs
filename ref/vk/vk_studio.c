@@ -2165,6 +2165,10 @@ static void R_StudioDrawPoints( void )
 	pskinref = (short *)((byte *)m_pStudioHeader + m_pStudioHeader->skinindex);
 	if( m_skinnum != 0 ) pskinref += (m_skinnum * m_pStudioHeader->numskinref);
 
+	matrix4x4 rotationmatrix = {0}, rotationmatrix_inv = {0};
+	Matrix3x4_Copy(rotationmatrix, g_studio.rotationmatrix);
+	Matrix4x4_Invert_Simple(rotationmatrix_inv, rotationmatrix);
+
 	if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ) && m_pSubModel->blendvertinfoindex != 0 && m_pSubModel->blendnorminfoindex != 0 )
 	{
 		mstudioboneweight_t	*pvertweight = (mstudioboneweight_t *)((byte *)m_pStudioHeader + m_pSubModel->blendvertinfoindex);
@@ -2178,7 +2182,7 @@ static void R_StudioDrawPoints( void )
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 		}
 
-		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.worldtransform );
+		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.worldtransform, rotationmatrix_inv);
 		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
 		for( i = 0; i < m_pSubModel->numverts; i++ )
 		{
@@ -2194,11 +2198,14 @@ static void R_StudioDrawPoints( void )
 	}
 	else
 	{
-		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.bonestransform );
+		R_PrevFrame_SaveCurrentBoneTransforms( RI.currententity->index, g_studio.bonestransform, rotationmatrix_inv );
+
 		matrix3x4* prev_bones_transforms = R_PrevFrame_BoneTransforms( RI.currententity->index );
 		for( i = 0; i < m_pSubModel->numverts; i++ )
 		{
-			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], g_studio.verts[i] );
+			vec3_t v;
+			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], v);
+			Matrix3x4_VectorTransform( rotationmatrix_inv, v, g_studio.verts[i] );
 			Matrix3x4_VectorTransform( prev_bones_transforms[pvertbone[i]], pstudioverts[i], g_studio.prev_verts[i] );
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 		}

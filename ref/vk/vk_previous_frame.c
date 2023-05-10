@@ -15,6 +15,7 @@
 #include "protocol.h"
 #include "enginefeatures.h"
 #include "pm_movevars.h"
+#include "xash3d_types.h"
 
 #include <memory.h>
 #include <stdlib.h>
@@ -67,7 +68,7 @@ void R_PrevFrame_StartFrame( void )
 	g_prev.previous_frame_id = (g_prev.frame_index - 1) % PREV_FRAMES_COUNT;
 }
 
-void R_PrevFrame_SaveCurrentBoneTransforms( int entity_id, matrix3x4* bones_transforms )
+void R_PrevFrame_SaveCurrentBoneTransforms( int entity_id, matrix3x4* bones_transforms, const matrix4x4 rotationmatrix_inv )
 {
 	prev_state_t *current_frame = CURRENT_FRAME();
 
@@ -78,7 +79,9 @@ void R_PrevFrame_SaveCurrentBoneTransforms( int entity_id, matrix3x4* bones_tran
 
 	for( int i = 0; i < MAXSTUDIOBONES; i++ )
 	{
-		Matrix3x4_Copy( current_frame->bones_worldtransform[i], bones_transforms[i] );
+		// FIXME I don't see how this can work. It has only a single copy of bones transforms, but they are not global, they're per-model
+		// Better way to handle this would be to avoid messing with bones_transforms at all, and just cache post-transformed vertices
+		Matrix3x4_ConcatTransforms( current_frame->bones_worldtransform[i], bones_transforms[i], rotationmatrix_inv );
 	}
 }
 

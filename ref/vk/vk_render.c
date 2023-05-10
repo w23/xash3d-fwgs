@@ -21,6 +21,7 @@
 #include "eiface.h"
 #include "xash3d_mathlib.h"
 #include "protocol.h" // MAX_DLIGHTS
+#include "xash3d_types.h"
 
 #include <memory.h>
 
@@ -763,10 +764,11 @@ void VK_RenderModelDraw( const cl_entity_t *ent, vk_render_model_t* model ) {
 
 static struct {
 	vk_render_model_t model;
+	matrix4x4 transform;
 	vk_render_geometry_t geometries[MAX_DYNAMIC_GEOMETRY];
 } g_dynamic_model = {0};
 
-void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix4x4 transform, const char *debug_name_fmt, ... ) {
+void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t color, const matrix3x4 transform, const char *debug_name_fmt, ... ) {
 	va_list argptr;
 	va_start( argptr, debug_name_fmt );
 	vsnprintf(g_dynamic_model.model.debug_name, sizeof(g_dynamic_model.model.debug_name), debug_name_fmt, argptr );
@@ -778,10 +780,9 @@ void VK_RenderModelDynamicBegin( vk_render_type_e render_type, const vec4_t colo
 	g_dynamic_model.model.render_type = render_type;
 	g_dynamic_model.model.lightmap = 0;
 	Vector4Copy(color, g_dynamic_model.model.color);
+	Matrix4x4_LoadIdentity(g_dynamic_model.transform);
 	if (transform)
-		Matrix4x4_Copy(g_dynamic_model.model.transform, transform);
-	else
-		Matrix4x4_LoadIdentity(g_dynamic_model.model.transform);
+		Matrix3x4_Copy(g_dynamic_model.transform, transform);
 }
 void VK_RenderModelDynamicAddGeometry( const vk_render_geometry_t *geom ) {
 	ASSERT(g_dynamic_model.model.geometries);
@@ -799,6 +800,7 @@ void VK_RenderModelDynamicCommit( void ) {
 		g_render.stats.dynamic_model_count++;
 		g_dynamic_model.model.dynamic = true;
 		VK_RenderModelInit( &g_dynamic_model.model );
+		Matrix4x4_Copy(g_dynamic_model.model.transform, g_dynamic_model.transform);
 		VK_RenderModelDraw( NULL, &g_dynamic_model.model );
 	}
 
