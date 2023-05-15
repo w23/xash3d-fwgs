@@ -58,8 +58,8 @@ prev_state_t* prevStateInArrayBounds( int frame_storage_id, int entity_id )
 	return &g_prev.prev_states[frame_storage_id][clamped_entity_id];
 }
 
-#define PREV_FRAME() prevStateInArrayBounds( g_prev.previous_frame_id, entity_id )
-#define CURRENT_FRAME() prevStateInArrayBounds( g_prev.current_frame_id, entity_id )
+#define PREV_FRAME(entity_id) prevStateInArrayBounds( g_prev.previous_frame_id, (entity_id) )
+#define CURRENT_FRAME(entity_id) prevStateInArrayBounds( g_prev.current_frame_id, (entity_id) )
 
 void R_PrevFrame_StartFrame( void )
 {
@@ -70,7 +70,7 @@ void R_PrevFrame_StartFrame( void )
 
 void R_PrevFrame_SaveCurrentBoneTransforms( int entity_id, matrix3x4* bones_transforms, const matrix4x4 rotationmatrix_inv )
 {
-	prev_state_t *current_frame = CURRENT_FRAME();
+	prev_state_t *current_frame = CURRENT_FRAME(entity_id);
 
 	if (current_frame->bones_frame_updated == g_prev.frame_index)
 		return; // already updated for this entity
@@ -78,16 +78,12 @@ void R_PrevFrame_SaveCurrentBoneTransforms( int entity_id, matrix3x4* bones_tran
 	current_frame->bones_frame_updated = g_prev.frame_index;
 
 	for( int i = 0; i < MAXSTUDIOBONES; i++ )
-	{
-		// FIXME I don't see how this can work. It has only a single copy of bones transforms, but they are not global, they're per-model
-		// Better way to handle this would be to avoid messing with bones_transforms at all, and just cache post-transformed vertices
-		Matrix3x4_ConcatTransforms( current_frame->bones_worldtransform[i], bones_transforms[i], rotationmatrix_inv );
-	}
+		Matrix3x4_ConcatTransforms( current_frame->bones_worldtransform[i], rotationmatrix_inv, bones_transforms[i] );
 }
 
 void R_PrevFrame_SaveCurrentState( int entity_id, matrix4x4 model_transform )
 {
-	prev_state_t* current_frame = CURRENT_FRAME();
+	prev_state_t* current_frame = CURRENT_FRAME(entity_id);
 
 	if (current_frame->frame_updated == g_prev.frame_index)
 		return; // already updated for this entity
@@ -99,29 +95,29 @@ void R_PrevFrame_SaveCurrentState( int entity_id, matrix4x4 model_transform )
 
 matrix3x4* R_PrevFrame_BoneTransforms( int entity_id )
 {
-	prev_state_t* prev_frame = PREV_FRAME();
+	prev_state_t* prev_frame = PREV_FRAME(entity_id);
 
 	// fallback to current frame if previous is outdated
 	if (prev_frame->bones_frame_updated != g_prev.frame_index - 1)
-		return CURRENT_FRAME()->bones_worldtransform;
+		return CURRENT_FRAME(entity_id)->bones_worldtransform;
 
 	return prev_frame->bones_worldtransform;
 }
 
 void R_PrevFrame_ModelTransform( int entity_id, matrix4x4 model_matrix )
 {
-	prev_state_t* prev_frame = PREV_FRAME();
+	prev_state_t* prev_frame = PREV_FRAME(entity_id);
 
 	// fallback to current frame if previous is outdated
 	if (prev_frame->frame_updated != g_prev.frame_index - 1)
-		prev_frame = CURRENT_FRAME();
+		prev_frame = CURRENT_FRAME(entity_id);
 
 	Matrix4x4_Copy(model_matrix, prev_frame->model_transform);
 }
 
 float R_PrevFrame_Time( int entity_id )
 {
-	prev_state_t* prev_frame = PREV_FRAME();
+	prev_state_t* prev_frame = PREV_FRAME(entity_id);
 
 	// fallback to current frame if previous is outdated
 	if (prev_frame->frame_updated != g_prev.frame_index - 1)

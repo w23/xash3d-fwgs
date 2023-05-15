@@ -874,7 +874,7 @@ void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 			Matrix3x4_FromOriginQuat( bonematrix, q[i], pos[i] );
 			if( pbones[i].parent == -1 )
 			{
-				Matrix3x4_Copy( g_studio.bonestransform[i], bonematrix );
+				Matrix3x4_ConcatTransforms( g_studio.bonestransform[i], g_studio.rotationmatrix, bonematrix );
 				Matrix3x4_Copy( g_studio.lighttransform[i], g_studio.bonestransform[i] );
 
 				// apply client-side effects to the transformation matrix
@@ -1032,7 +1032,7 @@ void R_StudioSetupBones( cl_entity_t *e )
 
 		if( pbones[i].parent == -1 )
 		{
-			Matrix3x4_Copy( g_studio.bonestransform[i], bonematrix );
+			Matrix3x4_ConcatTransforms( g_studio.bonestransform[i], g_studio.rotationmatrix, bonematrix );
 			Matrix3x4_Copy( g_studio.lighttransform[i], g_studio.bonestransform[i] );
 
 			// apply client-side effects to the transformation matrix
@@ -2178,7 +2178,11 @@ static void R_StudioDrawPoints( void )
 		for( i = 0; i < m_pSubModel->numverts; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pvertweight[i], g_studio.worldtransform, skinMat );
-			Matrix3x4_VectorTransform( skinMat, pstudioverts[i], g_studio.verts[i] );
+
+			vec3_t v;
+			Matrix3x4_VectorTransform( skinMat, pstudioverts[i], v);
+			Matrix3x4_VectorTransform( rotationmatrix_inv, v, g_studio.verts[i] );
+
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
 		}
 
@@ -2193,7 +2197,10 @@ static void R_StudioDrawPoints( void )
 		for( i = 0; i < m_pSubModel->numnorms; i++ )
 		{
 			R_StudioComputeSkinMatrix( &pnormweight[i], g_studio.worldtransform, skinMat );
-			Matrix3x4_VectorRotate( skinMat, pstudionorms[i], g_studio.norms[i] );
+
+			vec3_t v;
+			Matrix3x4_VectorRotate( skinMat, pstudionorms[i], v);
+			Matrix3x4_VectorRotate( rotationmatrix_inv, v, g_studio.norms[i] );
 		}
 	}
 	else
@@ -2206,8 +2213,9 @@ static void R_StudioDrawPoints( void )
 			vec3_t v;
 			Matrix3x4_VectorTransform( g_studio.bonestransform[pvertbone[i]], pstudioverts[i], v);
 			Matrix3x4_VectorTransform( rotationmatrix_inv, v, g_studio.verts[i] );
-			Matrix3x4_VectorTransform( prev_bones_transforms[pvertbone[i]], pstudioverts[i], g_studio.prev_verts[i] );
 			R_LightStrength( pvertbone[i], pstudioverts[i], g_studio.lightpos[i] );
+
+			Matrix3x4_VectorTransform( prev_bones_transforms[pvertbone[i]], pstudioverts[i], g_studio.prev_verts[i] );
 		}
 	}
 
