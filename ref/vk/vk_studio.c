@@ -2165,6 +2165,8 @@ static void R_StudioDrawPoints( void )
 	pskinref = (short *)((byte *)m_pStudioHeader + m_pStudioHeader->skinindex);
 	if( m_skinnum != 0 ) pskinref += (m_skinnum * m_pStudioHeader->numskinref);
 
+	// Compute inverse entity matrix, as we need vertices to be in local model space instead of global world space.
+	// Ideally, we'd just avoid multiplying vertices by entity matrix in R_StudioMergeBones and friends. But unfortunately games themselves seem to be premultiplying bone matrices by entity matrix, so we need to manually undo this multiplication here.
 	matrix4x4 rotationmatrix = {0}, rotationmatrix_inv = {0};
 	Matrix3x4_Copy(rotationmatrix, g_studio.rotationmatrix);
 	Matrix4x4_Invert_Simple(rotationmatrix_inv, rotationmatrix);
