@@ -104,7 +104,7 @@ static void mapLoadEnd(const model_t *const map) {
 	VK_UploadLightmap();
 }
 
-static void loadBrushModels( void ) {
+static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
 	// Load all models at once
@@ -117,11 +117,20 @@ static void loadBrushModels( void ) {
 
 		gEngine.Con_Reportf( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d\n", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
-		if( m->type != mod_brush )
-			continue;
+		switch (m->type) {
+			case mod_brush:
+				if (!VK_BrushModelLoad(m))
+					gEngine.Host_Error( "Couldn't load brush model %s\n", m->name );
+				break;
 
-		if (!VK_BrushModelLoad(m))
-			gEngine.Host_Error( "Couldn't load model %s\n", m->name );
+			case mod_studio:
+				if (!R_StudioModelPreload(m))
+					gEngine.Host_Error( "Couldn't preload studio model %s\n", m->name );
+				break;
+
+			default:
+				break;
+		}
 	}
 }
 
@@ -140,7 +149,7 @@ static void loadMap(const model_t* const map) {
 	// Depends on loaded materials. Must preceed loading brush models.
 	XVK_ParseMapPatches();
 
-	loadBrushModels();
+	preloadModels();
 
 	loadLights(map);
 	mapLoadEnd(map);

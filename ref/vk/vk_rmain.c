@@ -133,7 +133,9 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		switch( mod->type )
 		{
 			case mod_studio:
-				Mod_LoadStudioModel( mod, buffer, &loaded );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
+				// TODO we might benefit a tiny bit (a few ms loading time) from reusing studio models from previous map
 				break;
 			case mod_sprite:
 				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
@@ -142,8 +144,8 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 				Mod_LoadAliasModel( mod, buffer, &loaded );
 				break;
 			case mod_brush:
-				// FIXME this happens before we get R_NewMap, which frees all current buffers
-				// loaded = VK_LoadBrushModel( mod, buffer );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
 				break;
 			default: gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
 		}

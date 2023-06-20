@@ -24,6 +24,8 @@ static xvk_material_t k_default_material = {
 
 static struct {
 	xvk_material_t materials[MAX_TEXTURES];
+
+	qboolean verbose_logs;
 } g_materials;
 
 static struct {
@@ -38,7 +40,8 @@ static struct {
 static int loadTexture( const char *filename, qboolean force_reload ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
 	const int tex_id = force_reload ? XVK_LoadTextureReplace( filename, NULL, 0, 0 ) : VK_LoadTexture( filename, NULL, 0, 0 );
-	gEngine.Con_Reportf("Loaded texture %s => %d\n", filename, tex_id);
+	if (g_materials.verbose_logs)
+		gEngine.Con_Reportf("Loaded texture %s => %d\n", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
 	return tex_id ? tex_id : -1;
@@ -75,7 +78,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	string basecolor_map, normal_map, metal_map, roughness_map;
 
-	gEngine.Con_Reportf("Loading materials from %s\n", filename);
+	if (g_materials.verbose_logs)
+		gEngine.Con_Reportf("Loading materials from %s\n", filename);
 
 	if ( !data )
 		return;
@@ -140,8 +144,9 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				current_material.metalness = 1.f;
 			}
 
-			gEngine.Con_Reportf("Creating%s material for texture %s(%d)\n", create?" new":"",
-				findTexture(current_material_index)->name, current_material_index);
+			if (g_materials.verbose_logs)
+				gEngine.Con_Reportf("Creating%s material for texture %s(%d)\n", create?" new":"",
+					findTexture(current_material_index)->name, current_material_index);
 
 			g_materials.materials[current_material_index] = current_material;
 			g_materials.materials[current_material_index].set = true;

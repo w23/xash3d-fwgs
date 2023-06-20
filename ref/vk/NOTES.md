@@ -360,3 +360,37 @@ rt_model:
 - cl_entity_t
 	- sequence -- references studio model sequence
 	- animtime/frame -- references animation state within sequence
+
+# E282
+## Studio model tracking
+`m_pStudioHeader` is set from:
+- `R_StudioSetHeader()` from:
+	- EXTERNAL
+	- `R_StudioDrawModel()`
+	- `R_StudioDrawPlayer()`
+- `R_StudioDrawPlayer()`
+
+## Detecting static/unchanged studio submodels
+### Parse `studiohdr_t` eagerly
+Go deeply into sequences, animations, etc and figure out whether vertices will actually change.
+Might not catch models which are not being animated right now, i.e. current frame is the same as previous one, altough it is not guaranteed to be so.
+This potentially conflicts with game logic updating bonetransforms manually even though there are no recorded animations in studio file.
+
+### Detect changes dynamically
+Let it process vertices as usual, but then compute hash of vertices values.
+Depends on floating point vertices coordinates being bit-perfect same every time, even for moving entities. This is not strictly speaking true because studio model rendering is organized in such a way that bone matrices are pre-multiplied by entity transform matrix. This is done outside of vk_studio.c, and in game dll,which we have no control over. We then undo this multiplication. Given floating point nature of all of this garbage, there will be precision errors and resulting coordinates are not guaranteed to be the same even for completely static models.
+
+### Lazily detect static models, and draw the rest as fully dynamic with fast build
+- Detect simple static cases (one sequence, one frame), and pre-build those.
+- For everything else, just build it from scratch every frame w/o caching or anything.
+If that is not fast enough, then we can proceed with more involved per-entity caching, BLAS updates, cache eviction, etc.
+
+TODO: can we not have a BLAS/model for each submodel? Can it be per-model instead? This would need prior knowledge of submodel count, mesh count, vertices and indices counts. (Potentially conflicts with game dll doing weird things, e.g. skipping certain submodels based on whatever game specific logic)
+
+### Action plan
+- [ ] Try to pre-build static studio models. If fails (e.g. still need dynamic knowledge for the first build), then build it lazily, i.e. when the model is rendered for the first time.
+	- [ ] Needs tracking of model cache entry whenever `m_pStudioHeader` is set.
+- [ ] Add a cache for entities, store all prev_* stuff there.
+	- [ ] Needs tracking of entity cache entry whenever `RI.currententity` is set.
+
+- [ ] Alternative model/entity tracking: just check current ptrs in `R_StudioDrawPoints()` and update them if changed.

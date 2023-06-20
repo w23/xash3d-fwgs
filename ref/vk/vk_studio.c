@@ -79,7 +79,6 @@ typedef struct
 	vec3_t		verts[MAXSTUDIOVERTS];
 	vec3_t		norms[MAXSTUDIOVERTS];
 	vec3_t tangents[MAXSTUDIOVERTS];
-
 	vec3_t		prev_verts[MAXSTUDIOVERTS]; // last frame state for motion vectors
 
 	// lighting state
@@ -112,10 +111,6 @@ typedef struct
 
 	// playermodels
 	player_model_t  player_models[MAX_CLIENTS];
-
-	// drawelements renderer
-	uint			numverts;
-	uint			numelems;
 } studio_draw_state_t;
 
 // studio-related cvars
@@ -140,7 +135,7 @@ studiohdr_t		*m_pStudioHeader;
 float			m_flGaitMovement;
 int			g_iBackFaceCull;
 int			g_nTopColor, g_nBottomColor;	// remap colors
-int			g_nFaceFlags, g_nForceFaceFlags;
+int			g_nForceFaceFlags;
 
 // FIXME VK this should be promoted to somewhere global-ish, and done properly
 // For now it's just a hack to get studio models to compile basically
@@ -151,41 +146,119 @@ static struct {
 } RI;
 
 typedef struct {
+	vk_render_model_t model;
+	r_geometry_range_t geometry_range;
+	vk_render_geometry_t *geometries;
+	int geometries_count;
+	int vertex_count, index_count;
+} r_studio_render_submodel_t;
+
+typedef struct {
 	const mstudiomodel_t *key_submodel;
 
 	// Non-NULL for animated instances
 	const cl_entity_t *key_entity;
 
-	vk_render_model_t render_model;
-	r_geometry_range_t geometry_range;
-	vk_render_geometry_t *geometries;
-	int geometries_count;
-	int vertex_count, index_count;
+	r_studio_render_submodel_t render;
 } r_studio_model_cache_entry_t;
 
+typedef struct {
+	vec3_t *prev_verts;
+} r_studio_entity_submodel_t;
+
+typedef struct {
+	const cl_entity_t *key_entity;
+	int model_index;
+
+	//matrix3x4 transform;
+	matrix3x4 prev_transform;
+
+	r_studio_entity_submodel_t *submodels;
+} r_studio_entity_model_t;
+
+typedef struct {
+	const studiohdr_t *key_model;
+
+	// Model contains no animations and can be used directly
+	qboolean is_static;
+
+	// Pre-built submodels for static, NULL if not static
+	r_studio_render_submodel_t *render_submodels;
+} r_studio_cached_model_t;
+
 static struct {
-#define MAX_CACHED_STUDIO_MODELS 1024
+#define MAX_CACHED_STUDIO_SUBMODELS 1024
 	// TODO proper map/hash table
-	r_studio_model_cache_entry_t entries[MAX_CACHED_STUDIO_MODELS];
+	r_studio_model_cache_entry_t entries[MAX_CACHED_STUDIO_SUBMODELS];
 	int entries_count;
+
+#define MAX_STUDIO_MODELS 256
+	r_studio_cached_model_t models[MAX_STUDIO_MODELS];
+	int models_count;
+
+	// TODO hash table
+	r_studio_entity_model_t *entities;
+	int entities_count;
 } g_studio_cache;
+
+static void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel ) {
+	R_RenderModelDestroy(&submodel->model);
+	R_GeometryRangeFree(&submodel->geometry_range);
+	Mem_Free(submodel->geometries);
+	submodel->geometries = NULL;
+	submodel->geometries_count = 0;
+	submodel->vertex_count = 0;
+	submodel->index_count = 0;
+}
 
 void R_StudioCacheClear( void ) {
 	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
 		r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
 		ASSERT(entry->key_submodel);
-		R_RenderModelDestroy(&entry->render_model);
-		R_GeometryRangeFree(&entry->geometry_range);
-		Mem_Free(entry->geometries);
 		entry->key_submodel = 0;
 		entry->key_entity = NULL;
-		entry->geometries = NULL;
-		entry->geometries_count = 0;
-		entry->vertex_count = 0;
-		entry->index_count = 0;
+
+		studioRenderSubmodelDestroy(&entry->render);
 	}
 
 	g_studio_cache.entries_count = 0;
+	g_studio_cache.models_count = 0;
+}
+
+static qboolean isStudioModelDynamic(const studiohdr_t *hdr) {
+	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
+	if (hdr->numseq == 0)
+		return false;
+
+	for (int i = 0; i < hdr->numseq; ++i) {
+		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
+		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
+
+		// TODO read the sequence and verify that the animation data does in fact animate
+		// There are known cases where all the data is the same and no animation happens
+	}
+
+	// This is rather conservative.
+	// TODO We might be able to cache:
+	// - individual sequences w/o animation frames
+	// - individual submodels that are not affected by any sequences or animations
+	const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + 0;
+	return hdr->numseq > 1 || (pseqdesc->fps > 0 && pseqdesc->numframes > 1);
+}
+
+qboolean R_StudioModelPreload(model_t *mod) {
+	const studiohdr_t *const hdr = (const studiohdr_t *)gEngine.Mod_Extradata( mod_studio, mod);
+
+	ASSERT(g_studio_cache.models_count < MAX_STUDIO_MODELS);
+
+	g_studio_cache.models[g_studio_cache.models_count++] = (r_studio_cached_model_t){
+		.key_model = hdr,
+		.is_static = !isStudioModelDynamic(hdr),
+	};
+
+	// TODO if it is static, pregenerate the geometry
+
+	return true;
 }
 
 static const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent) {
@@ -197,25 +270,6 @@ static const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const ms
 	}
 
 	return NULL;
-}
-
-void R_StudioInit( void )
-{
-	Matrix3x4_LoadIdentity( g_studio.rotationmatrix );
-
-	// g-cont. cvar disabled by Valve
-//	gEngine.Cvar_RegisterVariable( &r_shadows );
-
-	g_studio.interpolate = true;
-	g_studio.framecount = 0;
-	m_fDoRemap = false;
-
-	R_SPEEDS_COUNTER(g_studio_stats.models_count, "models", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_studio_stats.submodels_total, "submodels_total", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
-
-	R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
 }
 
 /*
@@ -412,23 +466,11 @@ void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, matrix3x
 	}
 }
 
-/*
-===============
-pfnGetCurrentEntity
-
-===============
-*/
 static cl_entity_t *pfnGetCurrentEntity( void )
 {
 	return RI.currententity;
 }
 
-/*
-===============
-pfnPlayerInfo
-
-===============
-*/
 player_info_t *pfnPlayerInfo( int index )
 {
 	if( !RI.drawWorld )
@@ -437,23 +479,11 @@ player_info_t *pfnPlayerInfo( int index )
 	return gEngine.pfnPlayerInfo( index );
 }
 
-/*
-===============
-pfnMod_ForName
-
-===============
-*/
 static model_t *pfnMod_ForName( const char *model, int crash )
 {
 	return gEngine.Mod_ForName( model, crash, false );
 }
 
-/*
-===============
-pfnGetPlayerState
-
-===============
-*/
 entity_state_t *R_StudioGetPlayerState( int index )
 {
 	if( !RI.drawWorld )
@@ -462,12 +492,6 @@ entity_state_t *R_StudioGetPlayerState( int index )
 	return gEngine.pfnGetPlayerState( index );
 }
 
-/*
-===============
-pfnGetViewEntity
-
-===============
-*/
 static cl_entity_t *pfnGetViewEntity( void )
 {
 	return gEngine.GetViewModel();
@@ -998,12 +1022,6 @@ void R_StudioSetupBones( cl_entity_t *e )
 	}
 }
 
-/*
-====================
-StudioSaveBones
-
-====================
-*/
 static void R_StudioSaveBones( void )
 {
 	mstudiobone_t	*pbones;
@@ -1200,12 +1218,6 @@ void R_StudioGenerateNormals( void )
 	}
 }
 
-/*
-====================
-StudioSetupChrome
-
-====================
-*/
 void R_StudioSetupChrome( float *pchrome, int bone, vec3_t normal )
 {
 	float	n;
@@ -1243,12 +1255,6 @@ void R_StudioSetupChrome( float *pchrome, int bone, vec3_t normal )
 	pchrome[1] = (n + 1.0f) * 32.0f;
 }
 
-/*
-====================
-StudioCalcAttachments
-
-====================
-*/
 static void R_StudioCalcAttachments( void )
 {
 	mstudioattachment_t	*pAtt;
@@ -1263,12 +1269,6 @@ static void R_StudioCalcAttachments( void )
 	}
 }
 
-/*
-===============
-pfnStudioSetupModel
-
-===============
-*/
 static void R_StudioSetupModel( int bodypart, void **ppbodypart, void **ppsubmodel )
 {
 	int	index;
@@ -1287,12 +1287,6 @@ static void R_StudioSetupModel( int bodypart, void **ppbodypart, void **ppsubmod
 	if( ppsubmodel ) *ppsubmodel = m_pSubModel;
 }
 
-/*
-===============
-R_StudioCheckBBox
-
-===============
-*/
 static int R_StudioCheckBBox( void )
 {
 	if( !RI.currententity || !RI.currentmodel )
@@ -1301,12 +1295,6 @@ static int R_StudioCheckBBox( void )
 	return R_StudioComputeBBox( NULL );
 }
 
-/*
-===============
-R_StudioDynamicLight
-
-===============
-*/
 void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
 	movevars_t	*mv = gEngine.pfnGetMoveVars();
@@ -1885,6 +1873,7 @@ typedef struct {
 	const vec3_t *pstudionorms;
 	float s, t;
 	int texture;
+	int face_flags;
 
 	uint32_t vertices_offset;
 	uint32_t indices_offset;
@@ -1898,8 +1887,7 @@ typedef struct {
 } build_submodel_mesh_t;
 
 static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
-	float	*lv;
-	int	i;
+	int i;
 	uint32_t vertex_offset = 0, index_offset = 0;
 
 	int num_vertices = 0, num_indices = 0;
@@ -1927,7 +1915,7 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 			VectorCopy(g_studio.tangents[args.ptricmds[0]], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
 
-			if (FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+			if (FBitSet( args.face_flags, STUDIO_NF_CHROME ))
 			{
 				// FIXME also support glow mode
 				const int idx = args.ptricmds[1];
@@ -1979,9 +1967,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 	ASSERT(vertex_offset == num_vertices);
 
 	*args.out_geometry = (vk_render_geometry_t){
-		//.lightmap = tglob.whiteTexture,
 		.texture = args.texture,
-		.material = FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
+		.material = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
 
 		.vertex_offset = args.vertices_offset,
 		.max_vertex = num_vertices,
@@ -2100,7 +2087,7 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		return false;
 	}
 
-	g_studio.numverts = g_studio.numelems = 0;
+	// FIXME VK entity->curstate.skin can potentially be animated
 
 	// safety bounding the skinnum
 	const int m_skinnum = bound( 0, RI.currententity->curstate.skin, ( m_pStudioHeader->numskinfamilies - 1 ));
@@ -2186,13 +2173,14 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	qboolean need_sort = false;
 	for( int j = 0, k = 0; j < m_pSubModel->nummesh; j++ )
 	{
-		g_nFaceFlags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
+		const int face_flags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
 
 		// fill in sortedmesh info
-		g_studio.meshes[j].flags = g_nFaceFlags;
+		g_studio.meshes[j].flags = face_flags;
 		g_studio.meshes[j].mesh = &pmesh[j];
 
-		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))
+		// FIXME VK cannot into "dynamic" blending/alpha-test
+		if( FBitSet( face_flags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))
 			need_sort = true;
 
 		if( RI.currententity->curstate.rendermode == kRenderTransAdd )
@@ -2201,7 +2189,7 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 			{
 				// FIXME VK
 				const struct { float blend; } tr = {1.f};
-				if( FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+				if( FBitSet( face_flags, STUDIO_NF_CHROME ))
 					R_StudioSetupChrome( g_studio.chrome[k], *pnormbone, (float *)pstudionorms );
 				VectorSet( g_studio.lightvalues[k], g_studio.blend, g_studio.blend, g_studio.blend );
 			}
@@ -2211,10 +2199,10 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 			for( int  i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ ) {
 				float lv_tmp;
 				if( FBitSet( m_pStudioHeader->flags, STUDIO_HAS_BONEWEIGHTS ))
-					R_StudioLighting( &lv_tmp, -1, g_nFaceFlags, g_studio.norms[k] );
-				else R_StudioLighting( &lv_tmp, *pnormbone, g_nFaceFlags, (float *)pstudionorms );
+					R_StudioLighting( &lv_tmp, -1, face_flags, g_studio.norms[k] );
+				else R_StudioLighting( &lv_tmp, *pnormbone, face_flags, (float *)pstudionorms );
 
-				if( FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+				if( FBitSet( face_flags, STUDIO_NF_CHROME ))
 					R_StudioSetupChrome( g_studio.chrome[k], *pnormbone, (float *)pstudionorms );
 				VectorScale( g_studio.lightcolor, lv_tmp, g_studio.lightvalues[k] );
 			}
@@ -2238,14 +2226,14 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		const mstudiomesh_t *const pmesh = g_studio.meshes[j].mesh;
 		const short *const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh->triindex);
 
-		g_nFaceFlags = ptexture[pskinref[pmesh->skinref]].flags | g_nForceFaceFlags;
+		const int face_flags = ptexture[pskinref[pmesh->skinref]].flags | g_nForceFaceFlags;
 
 		const float s = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].width;
 		const float t = 1.0f / (float)ptexture[pskinref[pmesh->skinref]].height;
 
 		/* FIXME VK
 		const float oldblend = g_studio.blend;
-		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
+		if( FBitSet( face_flags, STUDIO_NF_MASKED ))
 		{
 			pglEnable( GL_ALPHA_TEST );
 			pglAlphaFunc( GL_GREATER, 0.5f );
@@ -2253,7 +2241,7 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 			if( R_ModelOpaque( RI.currententity->curstate.rendermode ))
 				g_studio.blend = 1.0f;
 		}
-		else if( FBitSet( g_nFaceFlags, STUDIO_NF_ADDITIVE ))
+		else if( FBitSet( face_flags, STUDIO_NF_ADDITIVE ))
 		{
 			if( R_ModelOpaque( RI.currententity->curstate.rendermode ))
 			{
@@ -2268,9 +2256,9 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 
 		const int texture = R_StudioSetupSkin( m_pStudioHeader, pskinref[pmesh->skinref] );
 
-		/* FIXME VK if( FBitSet( g_nFaceFlags, STUDIO_NF_CHROME ))
+		/* FIXME VK if( FBitSet( face_flags, STUDIO_NF_CHROME ))
 			R_StudioDrawChromeMesh( ptricmds, pstudionorms, s, t, shellscale );
-		else if( FBitSet( g_nFaceFlags, STUDIO_NF_UV_COORDS ))
+		else if( FBitSet( face_flags, STUDIO_NF_UV_COORDS ))
 			R_StudioDrawFloatMesh( ptricmds, pstudionorms );
 		else*/
 
@@ -2280,6 +2268,7 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 			.s = s,
 			.t = t,
 			.texture = texture,
+			.face_flags = face_flags,
 			.vertices_offset = args.geometry->vertices.unit_offset + vertices_offset,
 			.indices_offset = args.geometry->indices.unit_offset + indices_offset,
 			.dst_vertices = geom_lock.vertices + vertices_offset,
@@ -2293,12 +2282,12 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		ASSERT(indices_offset <= args.index_count);
 
 		/* FIXME VK
-		if( FBitSet( g_nFaceFlags, STUDIO_NF_MASKED ))
+		if( FBitSet( face_flags, STUDIO_NF_MASKED ))
 		{
 			pglAlphaFunc( GL_GREATER, DEFAULT_ALPHATEST );
 			pglDisable( GL_ALPHA_TEST );
 		}
-		else if( FBitSet( g_nFaceFlags, STUDIO_NF_ADDITIVE ) && R_ModelOpaque( RI.currententity->curstate.rendermode ))
+		else if( FBitSet( face_flags, STUDIO_NF_ADDITIVE ) && R_ModelOpaque( RI.currententity->curstate.rendermode ))
 		{
 			pglDepthMask( GL_TRUE );
 			pglDisable( GL_BLEND );
@@ -2314,27 +2303,9 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	return true;
 }
 
-static qboolean isStudioModelDynamic(const studiohdr_t *hdr) {
-	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
-	if (hdr->numseq == 0)
-		return false;
-
-	for (int i = 0; i < hdr->numseq; ++i) {
-		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
-		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
-	}
-
-	// This is rather conservative.
-	// TODO We might be able to cache:
-	// - individual sequences w/o animation frames
-	// - individual submodels that are not affected by any sequences or animations
-	const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + 0;
-	return hdr->numseq > 1 || (pseqdesc->fps > 0 && pseqdesc->numframes > 1);
-}
-
 static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel, const cl_entity_t *ent ) {
-	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_MODELS) {
-		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_MODELS);
+	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_SUBMODELS) {
+		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_SUBMODELS);
 		return NULL;
 	}
 
@@ -2378,14 +2349,16 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 	*entry = (r_studio_model_cache_entry_t){
 		.key_submodel = submodel,
 		.key_entity = is_dynamic ? ent : NULL,
-		.geometries = geometries,
-		.geometries_count = submodel->nummesh,
-		.geometry_range = geometry,
-		.vertex_count = vertex_count,
-		.index_count = index_count,
+		.render = {
+			.geometries = geometries,
+			.geometries_count = submodel->nummesh,
+			.geometry_range = geometry,
+			.vertex_count = vertex_count,
+			.index_count = index_count,
+		},
 	};
 
-	if (!R_RenderModelCreate( &entry->render_model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate( &entry->render.model, (vk_render_model_init_t){
 		.name = submodel->name,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
@@ -2406,16 +2379,16 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry) {
 	if (!buildStudioSubmodelGeometry((build_submodel_geometry_t){
 		.submodel = entry->key_submodel,
-		.geometry = &entry->geometry_range,
-		.geometries = entry->geometries,
-		.vertex_count = entry->vertex_count,
-		.index_count = entry->index_count,
+		.geometry = &entry->render.geometry_range,
+		.geometries = entry->render.geometries,
+		.vertex_count = entry->render.vertex_count,
+		.index_count = entry->render.index_count,
 	})) {
 		gEngine.Con_Printf(S_ERROR "Unable to build geometry for submodel %s", entry->key_submodel->name);
 		return;
 	}
 
-	if (!R_RenderModelUpdate(&entry->render_model)) {
+	if (!R_RenderModelUpdate(&entry->render.model)) {
 		gEngine.Con_Printf(S_ERROR "Unable to update render model for submodel %s", entry->key_submodel->name);
 	}
 
@@ -2438,6 +2411,9 @@ static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry
  *   - dynamic: per-entity
 */
 
+// Draws studio model submodel.
+// Can be called externally, i.e. from game dll.
+// Expects m_pStudioHeader, m_pSubModel, RI.currententity, etc to be already set up
 static void R_StudioDrawPoints( void ) {
 	if( !m_pStudioHeader || !m_pSubModel || !m_pSubModel->nummesh)
 		return;
@@ -2466,8 +2442,8 @@ static void R_StudioDrawPoints( void ) {
 	matrix4x4 transform;
 	Matrix4x4_LoadIdentity(transform);
 	Matrix3x4_Copy(transform, g_studio.rotationmatrix);
-	R_RenderModelDraw(&cached_model->render_model, (r_model_draw_t){
-		.render_type = RI.currententity->curstate.rendermode,
+	R_RenderModelDraw(&cached_model->render.model, (r_model_draw_t){
+		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = /* FIXME */ &transform,
@@ -2648,57 +2624,27 @@ static void R_StudioClientEvents( void )
 	}
 }
 
-/*
-===============
-R_StudioGetForceFaceFlags
-
-===============
-*/
 int R_StudioGetForceFaceFlags( void )
 {
 	return g_nForceFaceFlags;
 }
 
-/*
-===============
-R_StudioSetForceFaceFlags
-
-===============
-*/
 void R_StudioSetForceFaceFlags( int flags )
 {
 	g_nForceFaceFlags = flags;
 }
 
-/*
-===============
-pfnStudioSetHeader
-
-===============
-*/
 void R_StudioSetHeader( studiohdr_t *pheader )
 {
 	m_pStudioHeader = pheader;
 	m_fDoRemap = false;
 }
 
-/*
-===============
-R_StudioSetRenderModel
-
-===============
-*/
 void R_StudioSetRenderModel( model_t *model )
 {
 	RI.currentmodel = model;
 }
 
-/*
-===============
-R_StudioSetupRenderer
-
-===============
-*/
 static void R_StudioSetupRenderer( int rendermode )
 {
 	studiohdr_t	*phdr = m_pStudioHeader;
@@ -3676,17 +3622,26 @@ void CL_InitStudioAPI( void )
 
 void VK_StudioInit( void )
 {
-	R_StudioInit();
+	Matrix3x4_LoadIdentity( g_studio.rotationmatrix );
+
+	// g-cont. cvar disabled by Valve
+//	gEngine.Cvar_RegisterVariable( &r_shadows );
+
+	g_studio.interpolate = true;
+	g_studio.framecount = 0;
+	m_fDoRemap = false;
+
+	R_SPEEDS_COUNTER(g_studio_stats.models_count, "models", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_total, "submodels_total", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
+
+	R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
 }
 
 void VK_StudioShutdown( void )
 {
 	R_StudioCacheClear();
-}
-
-void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("(%s)", mod->name);
 }
 
 void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
