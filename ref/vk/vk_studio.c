@@ -10,6 +10,7 @@
 #include "vk_cvar.h"
 #include "camera.h"
 #include "r_speeds.h"
+#include "vk_studio_model.h"
 
 #include "xash3d_mathlib.h"
 #include "const.h"
@@ -144,133 +145,6 @@ static struct {
 	cl_entity_t *currententity;
 	model_t *currentmodel;
 } RI;
-
-typedef struct {
-	vk_render_model_t model;
-	r_geometry_range_t geometry_range;
-	vk_render_geometry_t *geometries;
-	int geometries_count;
-	int vertex_count, index_count;
-} r_studio_render_submodel_t;
-
-typedef struct {
-	const mstudiomodel_t *key_submodel;
-
-	// Non-NULL for animated instances
-	const cl_entity_t *key_entity;
-
-	r_studio_render_submodel_t render;
-} r_studio_model_cache_entry_t;
-
-typedef struct {
-	vec3_t *prev_verts;
-} r_studio_entity_submodel_t;
-
-typedef struct {
-	const cl_entity_t *key_entity;
-	int model_index;
-
-	//matrix3x4 transform;
-	matrix3x4 prev_transform;
-
-	r_studio_entity_submodel_t *submodels;
-} r_studio_entity_model_t;
-
-typedef struct {
-	const studiohdr_t *key_model;
-
-	// Model contains no animations and can be used directly
-	qboolean is_static;
-
-	// Pre-built submodels for static, NULL if not static
-	r_studio_render_submodel_t *render_submodels;
-} r_studio_cached_model_t;
-
-static struct {
-#define MAX_CACHED_STUDIO_SUBMODELS 1024
-	// TODO proper map/hash table
-	r_studio_model_cache_entry_t entries[MAX_CACHED_STUDIO_SUBMODELS];
-	int entries_count;
-
-#define MAX_STUDIO_MODELS 256
-	r_studio_cached_model_t models[MAX_STUDIO_MODELS];
-	int models_count;
-
-	// TODO hash table
-	r_studio_entity_model_t *entities;
-	int entities_count;
-} g_studio_cache;
-
-static void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel ) {
-	R_RenderModelDestroy(&submodel->model);
-	R_GeometryRangeFree(&submodel->geometry_range);
-	Mem_Free(submodel->geometries);
-	submodel->geometries = NULL;
-	submodel->geometries_count = 0;
-	submodel->vertex_count = 0;
-	submodel->index_count = 0;
-}
-
-void R_StudioCacheClear( void ) {
-	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
-		r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
-		ASSERT(entry->key_submodel);
-		entry->key_submodel = 0;
-		entry->key_entity = NULL;
-
-		studioRenderSubmodelDestroy(&entry->render);
-	}
-
-	g_studio_cache.entries_count = 0;
-	g_studio_cache.models_count = 0;
-}
-
-static qboolean isStudioModelDynamic(const studiohdr_t *hdr) {
-	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
-	if (hdr->numseq == 0)
-		return false;
-
-	for (int i = 0; i < hdr->numseq; ++i) {
-		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
-		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
-
-		// TODO read the sequence and verify that the animation data does in fact animate
-		// There are known cases where all the data is the same and no animation happens
-	}
-
-	// This is rather conservative.
-	// TODO We might be able to cache:
-	// - individual sequences w/o animation frames
-	// - individual submodels that are not affected by any sequences or animations
-	const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + 0;
-	return hdr->numseq > 1 || (pseqdesc->fps > 0 && pseqdesc->numframes > 1);
-}
-
-qboolean R_StudioModelPreload(model_t *mod) {
-	const studiohdr_t *const hdr = (const studiohdr_t *)gEngine.Mod_Extradata( mod_studio, mod);
-
-	ASSERT(g_studio_cache.models_count < MAX_STUDIO_MODELS);
-
-	g_studio_cache.models[g_studio_cache.models_count++] = (r_studio_cached_model_t){
-		.key_model = hdr,
-		.is_static = !isStudioModelDynamic(hdr),
-	};
-
-	// TODO if it is static, pregenerate the geometry
-
-	return true;
-}
-
-static const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent) {
-	// FIXME hash table, there are hundreds of entries
-	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
-		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
-		if (entry->key_submodel == submodel && (entry->key_entity == NULL || entry->key_entity == ent))
-			return entry;
-	}
-
-	return NULL;
-}
 
 /*
 ================
@@ -2304,10 +2178,9 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 }
 
 static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel, const cl_entity_t *ent ) {
-	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_SUBMODELS) {
-		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_SUBMODELS);
+	r_studio_model_cache_entry_t *const entry = studioSubModelCacheAlloc();
+	if (!entry)
 		return NULL;
-	}
 
 	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
 
@@ -2344,8 +2217,6 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 
 	const qboolean is_dynamic = isStudioModelDynamic(m_pStudioHeader);
 
-	r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + g_studio_cache.entries_count;
-
 	*entry = (r_studio_model_cache_entry_t){
 		.key_submodel = submodel,
 		.key_entity = is_dynamic ? ent : NULL,
@@ -2370,8 +2241,6 @@ static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstu
 		// FIXME sync up with staging and free
 		return NULL;
 	}
-
-	++g_studio_cache.entries_count;
 
 	return entry;
 }
@@ -2420,9 +2289,9 @@ static void R_StudioDrawPoints( void ) {
 
 	const r_studio_model_cache_entry_t *cached_model = findSubModelInCacheForEntity( m_pSubModel, RI.currententity );
 
-	if (!cached_model)
+	if (!cached_model) {
 		cached_model = buildCachedStudioSubModel(m_pSubModel, RI.currententity);
-	else if (cached_model->key_entity) {
+	} else if (cached_model->key_entity) {
 		updateCachedStudioSubModel(cached_model);
 	}
 
@@ -3636,7 +3505,7 @@ void VK_StudioInit( void )
 	R_SPEEDS_COUNTER(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
 
-	R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
+	VK_StudioModelInit();
 }
 
 void VK_StudioShutdown( void )
