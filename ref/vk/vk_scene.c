@@ -243,6 +243,8 @@ void R_NewMap( void ) {
 	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
 
 	loadMap(map);
+
+	R_StudioResetPlayerModels();
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )

@@ -11,6 +11,7 @@
 #include "camera.h"
 #include "r_speeds.h"
 #include "vk_studio_model.h"
+#include "vk_entity_data.h"
 
 #include "xash3d_mathlib.h"
 #include "const.h"
@@ -145,6 +146,11 @@ static struct {
 	cl_entity_t *currententity;
 	model_t *currentmodel;
 } RI;
+
+static struct {
+	r_studio_entity_model_t *entmodel;
+	int bodypart_index;
+} g_studio_current;
 
 /*
 ================
@@ -340,94 +346,10 @@ void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, matrix3x
 	}
 }
 
-static cl_entity_t *pfnGetCurrentEntity( void )
-{
-	return RI.currententity;
-}
-
-player_info_t *pfnPlayerInfo( int index )
-{
-	if( !RI.drawWorld )
-		index = -1;
-
-	return gEngine.pfnPlayerInfo( index );
-}
-
-static model_t *pfnMod_ForName( const char *model, int crash )
-{
-	return gEngine.Mod_ForName( model, crash, false );
-}
-
-entity_state_t *R_StudioGetPlayerState( int index )
-{
-	if( !RI.drawWorld )
-		return &RI.currententity->curstate;
-
-	return gEngine.pfnGetPlayerState( index );
-}
-
-static cl_entity_t *pfnGetViewEntity( void )
-{
-	return gEngine.GetViewModel();
-}
-
-static void pfnGetEngineTimes( int *framecount, double *current, double *old )
-{
-	/* FIXME VK NOT IMPLEMENTED */
-	/* if( framecount ) *framecount = tr.realframecount; */
-	if( framecount ) *framecount = 0;
-	if( current ) *current = gpGlobals->time;
-	if( old ) *old =   gpGlobals->oldtime;
-}
-
-static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *forwardv )
-{
-	if( origin ) VectorCopy( g_camera.vieworg, origin );
-	if( forwardv ) VectorCopy( g_camera.vforward, forwardv );
-	if( rightv ) VectorCopy( g_camera.vright, rightv );
-	if( upv ) VectorCopy( g_camera.vup, upv );
-}
 
 static model_t *R_GetChromeSprite( void )
 {
 	return gEngine.GetDefaultSprite( REF_CHROME_SPRITE );
-}
-
-static int fixme_studio_models_drawn;
-
-static void pfnGetModelCounters( int **s, int **a )
-{
-	*s = &g_studio.framecount;
-
-	/* FIXME VK NOT IMPLEMENTED */
-	/* *a = &r_stats.c_studio_models_drawn; */
-	*a = &fixme_studio_models_drawn;
-}
-
-static void pfnGetAliasScale( float *x, float *y )
-{
-	if( x ) *x = 1.0f;
-	if( y ) *y = 1.0f;
-}
-
-static float ****pfnStudioGetBoneTransform( void )
-{
-	return (float ****)g_studio.bonestransform;
-}
-
-static float ****pfnStudioGetLightTransform( void )
-{
-	return (float ****)g_studio.lighttransform;
-}
-
-static float ***pfnStudioGetAliasTransform( void )
-{
-	return NULL;
-}
-
-static float ***pfnStudioGetRotationMatrix( void )
-{
-	return (float ***)g_studio.rotationmatrix;
 }
 
 void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch )
@@ -1150,6 +1072,8 @@ static void R_StudioSetupModel( int bodypart, void **ppbodypart, void **ppsubmod
 	if( bodypart > m_pStudioHeader->numbodyparts )
 		bodypart = 0;
 
+	g_studio_current.bodypart_index = bodypart;
+
 	m_pBodyPart = (mstudiobodyparts_t *)((byte *)m_pStudioHeader + m_pStudioHeader->bodypartindex) + bodypart;
 
 	index = RI.currententity->curstate.body / m_pBodyPart->base;
@@ -1781,12 +1705,13 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 
 		for(int j = 0; j < vertices ; ++j, ++dst_vtx, args.ptricmds += 4 )
 		{
+			const int vi = args.ptricmds[0];
 			*dst_vtx = (vk_vertex_t){0};
 
-			VectorCopy(g_studio.verts[args.ptricmds[0]], dst_vtx->pos);
-			VectorCopy(g_studio.prev_verts[args.ptricmds[0]], dst_vtx->prev_pos);
-			VectorCopy(g_studio.norms[args.ptricmds[0]], dst_vtx->normal);
-			VectorCopy(g_studio.tangents[args.ptricmds[0]], dst_vtx->tangent);
+			VectorCopy(g_studio.verts[vi], dst_vtx->pos);
+			VectorCopy(g_studio.prev_verts[vi], dst_vtx->prev_pos);
+			VectorCopy(g_studio.norms[vi], dst_vtx->normal);
+			VectorCopy(g_studio.tangents[vi], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
 
 			if (FBitSet( args.face_flags, STUDIO_NF_CHROME ))
@@ -1945,21 +1870,17 @@ static vk_render_type_e studioRenderModeToRenderType( int render_mode ) {
 }
 
 typedef struct {
-	const mstudiomodel_t *submodel;
+	//const mstudiomodel_t *submodel;
 	const r_geometry_range_t *geometry;
 	vk_render_geometry_t *geometries;
 	int vertex_count, index_count;
 } build_submodel_geometry_t;
 
-static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
+static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	// FIXME: do not reference global things like RI.* m_pStudio* here, pass everything by args
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(args.geometry);
-	if (!geom_lock.vertices) {
-		gEngine.Con_Printf(S_ERROR "Unable to lock staging for %d vertices %d indices for submodel %s",
-			args.vertex_count, args.index_count, args.submodel->name);
-		R_GeometryRangeFree(args.geometry);
-		return false;
-	}
+	ASSERT(geom_lock.vertices);
+	ASSERT(geom_lock.indices);
 
 	// FIXME VK entity->curstate.skin can potentially be animated
 
@@ -2174,94 +2095,79 @@ static qboolean buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	}
 
 	R_GeometryRangeUnlock(&geom_lock);
-	return true;
 }
 
-static const r_studio_model_cache_entry_t *buildCachedStudioSubModel( const mstudiomodel_t *submodel, const cl_entity_t *ent ) {
-	r_studio_model_cache_entry_t *const entry = studioSubModelCacheAlloc();
-	if (!entry)
-		return NULL;
+static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_submodel, const mstudiomodel_t *submodel, qboolean is_static) {
 
-	const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
-
+	// Compute vertex and index counts.
+	// TODO should this be part of r_studio_model_info_t?
 	int vertex_count = 0, index_count = 0;
-	for( int i = 0; i < submodel->nummesh; i++ ) {
-		const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh[i].triindex);
-		addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
+	{
+		const mstudiomesh_t *const pmesh = (mstudiomesh_t *)((byte *)m_pStudioHeader + m_pSubModel->meshindex);
+		for(int i = 0; i < submodel->nummesh; i++) {
+			const short* const ptricmds = (short *)((byte *)m_pStudioHeader + pmesh[i].triindex);
+			addVerticesIndicesCounts(ptricmds, &vertex_count, &index_count);
+		}
+
+		ASSERT(vertex_count > 0);
+		ASSERT(index_count > 0);
 	}
 
-	ASSERT(vertex_count > 0);
-	ASSERT(index_count > 0);
-
+	// TODO can be coalesced into a single allocation for the entire model
 	const r_geometry_range_t geometry = R_GeometryRangeAlloc(vertex_count, index_count);
 	if (geometry.block_handle.size == 0) {
 		gEngine.Con_Printf(S_ERROR "Unable to allocate %d vertices %d indices for submodel %s\n",
 			vertex_count, index_count, submodel->name);
-		return NULL;
+		return false;
 	}
 
+	// TODO can be coalesced
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
 	ASSERT(geometries);
 
-	if (!buildStudioSubmodelGeometry((build_submodel_geometry_t){
-		.submodel = submodel,
+	buildStudioSubmodelGeometry((build_submodel_geometry_t){
+		//.submodel = submodel,
 		.geometry = &geometry,
 		.geometries = geometries,
 		.vertex_count = vertex_count,
 		.index_count = index_count,
-	})) {
-		gEngine.Con_Printf(S_ERROR "Unable to build geometry for submodel %s", submodel->name);
-		// FIXME leaks
-		return NULL;
-	}
+	});
 
-	const qboolean is_dynamic = isStudioModelDynamic(m_pStudioHeader);
-
-	*entry = (r_studio_model_cache_entry_t){
-		.key_submodel = submodel,
-		.key_entity = is_dynamic ? ent : NULL,
-		.render = {
-			.geometries = geometries,
-			.geometries_count = submodel->nummesh,
-			.geometry_range = geometry,
-			.vertex_count = vertex_count,
-			.index_count = index_count,
-		},
+	*render_submodel = (r_studio_render_submodel_t){
+		.geometries = geometries,
+		.geometries_count = submodel->nummesh,
+		.geometry_range = geometry,
+		.vertex_count = vertex_count,
+		.index_count = index_count,
 	};
 
-	if (!R_RenderModelCreate( &entry->render.model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate(&render_submodel->model, (vk_render_model_init_t){
 		.name = submodel->name,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
-		.dynamic = is_dynamic,
+		.dynamic = !is_static,
 	})) {
 		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
 		Mem_Free(geometries);
 		// FIXME everything else leaks ;_;
 		// FIXME sync up with staging and free
-		return NULL;
+		memset(render_submodel, 0, sizeof(*render_submodel));
+		return false;
 	}
 
-	return entry;
+	return true;
 }
 
-static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry) {
-	if (!buildStudioSubmodelGeometry((build_submodel_geometry_t){
-		.submodel = entry->key_submodel,
-		.geometry = &entry->render.geometry_range,
-		.geometries = entry->render.geometries,
-		.vertex_count = entry->render.vertex_count,
-		.index_count = entry->render.index_count,
-	})) {
-		gEngine.Con_Printf(S_ERROR "Unable to build geometry for submodel %s", entry->key_submodel->name);
-		return;
-	}
+static qboolean studioSubmodelRenderUpdate(const r_studio_render_submodel_t *submodel_render) {
+	buildStudioSubmodelGeometry((build_submodel_geometry_t){
+		//.submodel = submodel_render->key_submodel,
+		.geometry = &submodel_render->geometry_range,
+		.geometries = submodel_render->geometries,
+		.vertex_count = submodel_render->vertex_count,
+		.index_count = submodel_render->index_count,
+	});
 
-	if (!R_RenderModelUpdate(&entry->render.model)) {
-		gEngine.Con_Printf(S_ERROR "Unable to update render model for submodel %s", entry->key_submodel->name);
-	}
-
-	++g_studio_stats.submodels_dynamic;
+	return R_RenderModelUpdate(&submodel_render->model);
 }
 
 /* TODO
@@ -2280,38 +2186,99 @@ static void updateCachedStudioSubModel(const r_studio_model_cache_entry_t *entry
  *   - dynamic: per-entity
 */
 
-// Draws studio model submodel.
+static void studioEntityModelDestroy(void *userdata) {
+	r_studio_entity_model_t *entmodel = (r_studio_entity_model_t*)userdata;
+	if (entmodel->submodels) {
+		for (int i = 0; i < entmodel->num_submodels; ++i) {
+			studioRenderSubmodelDestroy(entmodel->submodels + i);
+		}
+		Mem_Free(entmodel->submodels);
+	}
+}
+
+static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entity) {
+	r_studio_entity_model_t *const entmodel = Mem_Calloc(vk_core.pool, sizeof(r_studio_entity_model_t));
+
+	entmodel->num_submodels = m_pStudioHeader->numbodyparts; // TODO is this correct number?
+	entmodel->submodels = Mem_Calloc(vk_core.pool, sizeof(*entmodel->submodels) * entmodel->num_submodels);
+
+	Matrix3x4_Copy(entmodel->prev_transform, g_studio.rotationmatrix);
+
+	entmodel->model_info = getStudioModelInfo(entity->model);
+	ASSERT(entmodel->model_info);
+
+	return entmodel;
+}
+
+static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) {
+	r_studio_entity_model_t *entmodel = (r_studio_entity_model_t*)VK_EntityDataGet(entity);
+	if (entmodel)
+		return entmodel;
+
+	entmodel = studioEntityModelCreate(entity);
+	if (!entmodel) {
+		gEngine.Con_Printf(S_ERROR "Cannot create studio entity model for %s\n", entity->model->name);
+		return NULL;
+	}
+
+	gEngine.Con_Reportf("Created studio entity %p model %s: %p (submodels=%d, dynamic=%d)\n", entity, entity->model->name, entmodel, entmodel->num_submodels, !entmodel->model_info->is_static );
+
+	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
+	return entmodel;
+}
+
+// Draws current studio model submodel
 // Can be called externally, i.e. from game dll.
 // Expects m_pStudioHeader, m_pSubModel, RI.currententity, etc to be already set up
 static void R_StudioDrawPoints( void ) {
 	if( !m_pStudioHeader || !m_pSubModel || !m_pSubModel->nummesh)
 		return;
 
-	const r_studio_model_cache_entry_t *cached_model = findSubModelInCacheForEntity( m_pSubModel, RI.currententity );
+	ASSERT(g_studio_current.bodypart_index >= 0);
 
-	if (!cached_model) {
-		cached_model = buildCachedStudioSubModel(m_pSubModel, RI.currententity);
-	} else if (cached_model->key_entity) {
-		updateCachedStudioSubModel(cached_model);
+	// Ideally, this "get current entity and model" stuff should happen early, when we're just starting to
+	// draw this entity/model. However, call structure/graph is a bit weird: we start rendering in ref code,
+	// but relevant states (transform, various headers) are updated only later, and potentially in game dll code.
+	// So we're forced to do this later here, when it is guaranteed that all the relevant state has been set.
+	if (!g_studio_current.entmodel)
+		g_studio_current.entmodel = studioEntityModelGet(RI.currententity);
+
+	ASSERT(g_studio_current.bodypart_index >= 0);
+	ASSERT(g_studio_current.bodypart_index < g_studio_current.entmodel->num_submodels);
+	r_studio_render_submodel_t *const render_submodel = g_studio_current.entmodel->submodels + g_studio_current.bodypart_index;
+
+	const qboolean is_static = g_studio_current.entmodel->model_info->is_static;
+
+	if (!render_submodel->geometries) {
+		if (!studioSubmodelRenderInit(render_submodel, m_pSubModel, is_static)) {
+			gEngine.Con_Printf(S_ERROR "Unable to init studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+			return;
+		}
+
+		gEngine.Con_Reportf("Initialized studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+	} else if (!is_static) {
+		if (!studioSubmodelRenderUpdate(render_submodel)) {
+			gEngine.Con_Printf(S_ERROR "Unable to update studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+			return;
+		}
 	}
 
-	if (!cached_model)
-		return;
-
-	if (!cached_model->key_entity) {
+	if (is_static)
 		++g_studio_stats.submodels_static;
-	}
+	else
+		++g_studio_stats.submodels_dynamic;
 
 	vec4_t color = {1, 1, 1, g_studio.blend};
-	if (g_studio.rendermode2 == kRenderTransAdd) {
+	if (g_studio.rendermode2 == kRenderTransAdd)
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
-	}
 
 	// TODO r_model_draw_t.transform should be matrix3x4
 	matrix4x4 transform;
 	Matrix4x4_LoadIdentity(transform);
 	Matrix3x4_Copy(transform, g_studio.rotationmatrix);
-	R_RenderModelDraw(&cached_model->render.model, (r_model_draw_t){
+
+	// TODO coalesce this into a single draw per studio model, not submodel
+	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
 		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
 		.color = &color,
 		.transform = &transform,
@@ -2339,6 +2306,8 @@ void R_StudioResetPlayerModels( void )
 {
 	memset( g_studio.player_models, 0, sizeof( g_studio.player_models ));
 }
+
+static player_info_t *pfnPlayerInfo( int index );
 
 static model_t *R_StudioSetupPlayerModel( int index )
 {
@@ -2969,6 +2938,8 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 	return 1;
 }
 
+static entity_state_t *R_StudioGetPlayerState( int index );
+
 static int R_StudioDrawModel( int flags )
 {
 	alight_t	lighting;
@@ -3064,21 +3035,40 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 {
 	VK_RenderDebugLabelBegin( e->model->name );
 
+	// TODO 2023-07-30:
+	// - get the entity model instance
+	//   - creation needs skel, which needs m_pStudioHeader that is set much later
+	// - reset its submodules state
+
+	// Mark this a new model to draw
+	g_studio_current.entmodel = NULL;
+	g_studio_current.bodypart_index = -1;
+
 	++g_studio_stats.models_count;
 
 	if( !RI.drawWorld )
 	{
 		if( e->player )
 			R_StudioDrawPlayer( flags, &e->curstate );
-		else R_StudioDrawModel( flags );
+		else
+			R_StudioDrawModel( flags );
 	}
 	else
 	{
 		// select the properly method
 		if( e->player )
 			pStudioDraw->StudioDrawPlayer( flags, R_StudioGetPlayerState( e->index - 1 ));
-		else pStudioDraw->StudioDrawModel( flags );
+		else
+			pStudioDraw->StudioDrawModel( flags );
 	}
+
+	// TODO 2023-07-30:
+	// - verifty submodule state
+	// - commit the rendering
+
+	// Reset current state, no drawing should happen outside of this function
+	g_studio_current.entmodel = NULL;
+	g_studio_current.bodypart_index = -1;
 
 	VK_RenderDebugLabelEnd();
 }
@@ -3367,6 +3357,54 @@ void Mod_StudioUnloadTextures( void *data )
 	}
 }
 
+static cl_entity_t *pfnGetCurrentEntity( void )
+{
+	return RI.currententity;
+}
+
+static player_info_t *pfnPlayerInfo( int index )
+{
+	if( !RI.drawWorld )
+		index = -1;
+
+	return gEngine.pfnPlayerInfo( index );
+}
+
+static model_t *pfnMod_ForName( const char *model, int crash )
+{
+	return gEngine.Mod_ForName( model, crash, false );
+}
+
+static entity_state_t *R_StudioGetPlayerState( int index )
+{
+	if( !RI.drawWorld )
+		return &RI.currententity->curstate;
+
+	return gEngine.pfnGetPlayerState( index );
+}
+
+static cl_entity_t *pfnGetViewEntity( void )
+{
+	return gEngine.GetViewModel();
+}
+
+static void pfnGetEngineTimes( int *framecount, double *current, double *old )
+{
+	/* FIXME VK NOT IMPLEMENTED */
+	/* if( framecount ) *framecount = tr.realframecount; */
+	if( framecount ) *framecount = 0;
+	if( current ) *current = gpGlobals->time;
+	if( old ) *old =   gpGlobals->oldtime;
+}
+
+static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *forwardv )
+{
+	if( origin ) VectorCopy( g_camera.vieworg, origin );
+	if( forwardv ) VectorCopy( g_camera.vforward, forwardv );
+	if( rightv ) VectorCopy( g_camera.vright, rightv );
+	if( upv ) VectorCopy( g_camera.vup, upv );
+}
+
 static model_t *pfnModelHandle( int modelindex )
 {
 	return gEngine.pfnGetModelByIndex( modelindex );
@@ -3410,6 +3448,43 @@ static void R_StudioDrawAbsBBox( void )
 static void R_StudioDrawBones( void )
 {
 	PRINT_NOT_IMPLEMENTED();
+}
+
+static int fixme_studio_models_drawn;
+
+static void pfnGetModelCounters( int **s, int **a )
+{
+	*s = &g_studio.framecount;
+
+	/* FIXME VK NOT IMPLEMENTED */
+	/* *a = &r_stats.c_studio_models_drawn; */
+	*a = &fixme_studio_models_drawn;
+}
+
+static void pfnGetAliasScale( float *x, float *y )
+{
+	if( x ) *x = 1.0f;
+	if( y ) *y = 1.0f;
+}
+
+static float ****pfnStudioGetBoneTransform( void )
+{
+	return (float ****)g_studio.bonestransform;
+}
+
+static float ****pfnStudioGetLightTransform( void )
+{
+	return (float ****)g_studio.lighttransform;
+}
+
+static float ***pfnStudioGetAliasTransform( void )
+{
+	return NULL;
+}
+
+static float ***pfnStudioGetRotationMatrix( void )
+{
+	return (float ***)g_studio.rotationmatrix;
 }
 
 static engine_studio_api_t gStudioAPI =

@@ -24,3 +24,5 @@ void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t an
 qboolean R_StudioModelPreload(model_t *mod);
 
 void R_StudioCacheClear( void );
+
+void R_StudioResetPlayerModels( void );
