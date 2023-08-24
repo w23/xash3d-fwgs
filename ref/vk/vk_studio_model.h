@@ -57,8 +57,6 @@ const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomo
 r_studio_model_cache_entry_t *studioSubModelCacheAlloc(void);
 */
 
-qboolean isStudioModelDynamic(const studiohdr_t *hdr);
-
 void VK_StudioModelInit(void);
 
 // Entity model cache/pool
