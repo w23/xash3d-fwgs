@@ -2097,8 +2097,7 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	R_GeometryRangeUnlock(&geom_lock);
 }
 
-static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_submodel, const mstudiomodel_t *submodel, qboolean is_static) {
-
+static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_submodel, const mstudiomodel_t *submodel, qboolean is_dynamic) {
 	// Compute vertex and index counts.
 	// TODO should this be part of r_studio_model_info_t?
 	int vertex_count = 0, index_count = 0;
@@ -2145,7 +2144,7 @@ static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_subm
 		.name = submodel->name,
 		.geometries = geometries,
 		.geometries_count = submodel->nummesh,
-		.dynamic = !is_static,
+		.dynamic = is_dynamic,
 	})) {
 		gEngine.Con_Printf(S_ERROR "Unable to create render model for studio submodel %s", submodel->name);
 		Mem_Free(geometries);
@@ -2221,10 +2220,20 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 		return NULL;
 	}
 
-	gEngine.Con_Reportf("Created studio entity %p model %s: %p (submodels=%d, dynamic=%d)\n", entity, entity->model->name, entmodel, entmodel->num_submodels, !entmodel->model_info->is_static );
+	gEngine.Con_Reportf("Created studio entity %p model %s: %p (submodels=%d)\n", entity, entity->model->name, entmodel, entmodel->num_submodels);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
 	return entmodel;
+}
+
+static const r_studio_submodel_info_t *studioModelFindSubmodelInfo(void) {
+	for (int i = 0; i < g_studio_current.entmodel->model_info->submodels_count; ++i) {
+		const r_studio_submodel_info_t *const subinfo = g_studio_current.entmodel->model_info->submodels + i;
+		if (subinfo->submodel_key == m_pSubModel)
+			return subinfo;
+	}
+
+	return NULL;
 }
 
 // Draws current studio model submodel
@@ -2247,26 +2256,32 @@ static void R_StudioDrawPoints( void ) {
 	ASSERT(g_studio_current.bodypart_index < g_studio_current.entmodel->num_submodels);
 	r_studio_render_submodel_t *const render_submodel = g_studio_current.entmodel->submodels + g_studio_current.bodypart_index;
 
-	const qboolean is_static = g_studio_current.entmodel->model_info->is_static;
+	const r_studio_submodel_info_t *const subinfo = studioModelFindSubmodelInfo();
+	if (!subinfo) {
+		gEngine.Con_Printf(S_ERROR "Submodel %s info not found for model %s, this should be impossible\n", m_pSubModel->name, m_pStudioHeader->name);
+		return;
+	}
+
+	const qboolean is_dynamic = subinfo->is_dynamic;
 
 	if (!render_submodel->geometries) {
-		if (!studioSubmodelRenderInit(render_submodel, m_pSubModel, is_static)) {
+		if (!studioSubmodelRenderInit(render_submodel, m_pSubModel, is_dynamic)) {
 			gEngine.Con_Printf(S_ERROR "Unable to init studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
 			return;
 		}
 
 		gEngine.Con_Reportf("Initialized studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
-	} else if (!is_static) {
+	} else if (is_dynamic) {
 		if (!studioSubmodelRenderUpdate(render_submodel)) {
 			gEngine.Con_Printf(S_ERROR "Unable to update studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
 			return;
 		}
 	}
 
-	if (is_static)
-		++g_studio_stats.submodels_static;
-	else
+	if (is_dynamic)
 		++g_studio_stats.submodels_dynamic;
+	else
+		++g_studio_stats.submodels_static;
 
 	vec4_t color = {1, 1, 1, g_studio.blend};
 	if (g_studio.rendermode2 == kRenderTransAdd)

@@ -12,25 +12,26 @@ typedef struct {
 } r_studio_render_submodel_t;
 
 typedef struct {
-	/* TODO
-	int indices_offset;
-	int vertices_offset;
-	int geometries_offset;
-	int vertices_count;
-	int indices_count;
-	int geometries_count;
-} r_studio_submodel_into_t;
+	const mstudiomodel_t *submodel_key;
+
+	/* int indices_offset; */
+	/* int vertices_offset; */
+	/* int geometries_offset; */
+	/* int vertices_count; */
+	/* int indices_count; */
+	/* int geometries_count; */
+	qboolean is_dynamic;
+
+	// TODO int verts_count; for prev_verts
+} r_studio_submodel_info_t;
 
 typedef struct {
-	int total_vertices;
-	int total_indices;
-	int total_geometries;
-	int submodels_count;
-	r_studio_submodel_into_t *submodels;
-	*/
-	qboolean is_static;
+	/* int total_vertices; */
+	/* int total_indices; */
+	/* int total_geometries; */
 
-	// TODO static render model
+	int submodels_count;
+	r_studio_submodel_info_t *submodels;
 } r_studio_model_info_t;
 
 /* deprecate

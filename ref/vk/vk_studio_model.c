@@ -61,10 +61,58 @@ void R_StudioCacheClear( void ) {
 	g_studio_cache.entries_count = 0;
 */
 
+	for (int i = 0; i < g_studio_cache.models_count; ++i) {
+		r_studio_model_info_t *info = &g_studio_cache.models[i].info;
+		if (info->submodels)
+			Mem_Free(info->submodels);
+	}
 	g_studio_cache.models_count = 0;
 }
 
-static void studioSubmodelCalcBones(int numbones, const mstudiobone_t *pbone, const mstudioanim_t *panim, int frame, float out_pos[][3], vec4_t *out_q) {
+// FIXME:
+// - [ ] (CRASH) Cache coherence: entities are reused between frames for different studio models. Catch and handle it. If it was literally reused between sequential frames, then we're screwed, because we can't delete the previous one, as it might be still in use on GPU. Needs refcounts infrastructure.
+// - [ ] (POTENTIAL CRASH) g_studio_current.bodypartindex doesn't directly correspond to a single mstudiosubmodel_t. Currently it's tracked as it does. This can break and crash.
+// - [ ] Proper submodel cache (by pointer, these pointers should be stable)
+/*
+ * - submodels[] (global? per-model?)
+ *   - mstudiosubmodel_t *key
+ *   - qboolean is_static (if true, there's only one render_model_t that is instanced by all users)
+ *   - entries[entries_count|entries_capacity]
+ *     - r_studio_render_submodel_t render_submodel
+ *     - int refcount (is in use by anything? only needed for cache cleaning really, which we can work around by waiting for gpu idle and having hiccups, which is fine as long as this is a really rare situation)
+ *     - int used_frames_ago (or last_used_frame)
+ */
+
+// Action items:
+// 3. When R_StudioDrawPoints()
+//   a. Get the correct studio entmodel from the cache. For prev_transform, etc.
+//   b. Get the correct submodel render model from the cache.
+//   c. If there's no such submodel, generate the vertices and cache it.
+//   d. If there is:
+//     1. Static is instanced (a single vk_render_model_t used by everyone with different transform matrices and potentially texture patches). No vertices generation is needed
+//     2. Non-static ones need vertices updates each frame.
+//   e. Submit the submodel for rendering.
+
+// TODO Potential optimization for the above: (MIGHT STILL NEED THIS FOR DENOISER MOVE VECTORS)
+// Keep last used submodel within studio entmodel. Keep last generated verts. Compare new verts with previous ones. If they are the same, do not rebuild the BLAS.
+
+// TODO
+// - [ ] (MORE MODELS CAN BE STATIC) Bones are global, calculated only once per frame for the entire studio model. Submodels reference an indexed subset of bones.
+
+// DONE?
+// - [x] How to find all studio model submodels regardless of bodyparts. -- NIKAQUE. they all are under bodyparts
+//
+// - [x] Is crossbow model really static? -- THIS SEEMS OK
+
+static struct {
+	vec4_t first_q[MAXSTUDIOBONES];
+	float first_pos[MAXSTUDIOBONES][3];
+
+	vec4_t q[MAXSTUDIOBONES];
+	float pos[MAXSTUDIOBONES][3];
+} gb;
+
+static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const mstudioanim_t *panim, int frame, float out_pos[][3], vec4_t *out_q) {
 	for(int b = 0; b < numbones; b++ ) {
 		// TODO check pbone->bonecontroller, if the bone can be dynamically controlled by entity
 		float *const adj = NULL;
@@ -88,134 +136,87 @@ qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsi
 	return false;
 }
 
-// FIXME:
-// - [ ] (CRASH) Cache coherence: entities are reused between frames for different studio models. Catch and handle it. If it was literally reused between sequential frames, then we're screwed, because we can't delete the previous one, as it might be still in use on GPU. Needs refcounts infrastructure.
-// - [ ] (POTENTIAL CRASH) g_studio_current.bodypartindex doesn't directly correspond to a single mstudiosubmodel_t. Currently it's tracked as it does. This can break and crash.
-// - [ ] Proper submodel cache (by pointer, these pointers should be stable)
-/*
- * - submodels[] (global? per-model?)
- *   - mstudiosubmodel_t *key
- *   - qboolean is_static (if true, there's only one render_model_t that is instanced by all users)
- *   - entries[entries_count|entries_capacity]
- *     - r_studio_render_submodel_t render_submodel
- *     - int refcount (is in use by anything? only needed for cache cleaning really, which we can work around by waiting for gpu idle and having hiccups, which is fine as long as this is a really rare situation)
- *     - int used_frames_ago (or last_used_frame)
- */
+static qboolean isBoneSame(int b) {
+	if (!Vector4CompareEpsilon(gb.first_q[b], gb.q[b], 1e-4f))
+		return false;
 
-// Action items:
-// 1. Try to extract per-submodel static-ness data:
-//   a. Count all submodels (can limit by max submodels constant, only seen ~11 max)
-//   b. Have an array of submodels static-ness, set to true.
-//   c. While iterating through bones for all sequences, update static-ness if specific bones for that submodel has changed; Do not break early if any other bone has changed.
-// 2. Pre-allocate submodels cache, as we now know all submodels. Fill it with is_static data.
-// 3. When R_StudioDrawPoints()
-//   a. Get the correct studio entmodel from the cache. For prev_transform, etc.
-//   b. Get the correct submodel render model from the cache.
-//   c. If there's no such submodel, generate the vertices and cache it.
-//   d. If there is:
-//     1. Static is instanced (a single vk_render_model_t used by everyone with different transform matrices and potentially texture patches). No vertices generation is needed
-//     2. Non-static ones need vertices updates each frame.
-//   e. Submit the submodel for rendering.
+	if (!VectorCompareEpsilon(gb.first_pos[b], gb.pos[b], 1e-4f))
+		return false;
 
-// TODO Potential optimization for the above: (MIGHT STILL NEED THIS FOR DENOISER MOVE VECTORS)
-// Keep last used submodel within studio entmodel. Keep last generated verts. Compare new verts with previous ones. If they are the same, do not rebuild the BLAS.
+	return true;
+}
 
-// TODO
-// - [ ] (MORE MODELS CAN BE STATIC) Bones are global, calculated only once per frame for the entire studio model. Submodels reference an indexed subset of bones.
-
-// DONE?
-// - [x] How to find all studio model submodels regardless of bodyparts. -- NIKAQUE. they all are under bodyparts
-//
-// - [x] Is crossbow model really static? -- THIS SEEMS OK
-/* [2023:08:24|13:37:23] Studio model valve/models/w_crossbow.mdl, sequences = 2: */
-/* [2023:08:24|13:37:23]   0: fps=30.000000 numframes=1 */
-/* [2023:08:24|13:37:23]   1: fps=30.000000 numframes=7 */
-/* [2023:08:24|13:37:23]  Bodypart 0/0: body (nummodels=1) */
-/* [2023:08:24|13:37:23]   Submodel 0: w_crossbow */
-/* [2023:08:24|13:37:23] Studio model valve/models/w_crossbow.mdl bones are static */
-/* [2023:08:24|13:37:23] Studio model valve/models/w_satchel.mdl, sequences = 2: */
-/* [2023:08:24|13:37:23]   0: fps=30.000000 numframes=1 */
-/* [2023:08:24|13:37:23]   1: fps=30.000000 numframes=101 */
-/* [2023:08:24|13:37:23]  Bodypart 0/0: studio (nummodels=1) */
-/* [2023:08:24|13:37:23]   Submodel 0: world_satchel */
-/* [2023:08:24|13:37:23] Studio model valve/models/w_satchel.mdl bones are static */
-
-static qboolean areStudioBonesDynamic(const model_t *const model, const studiohdr_t *const hdr) {
-	qboolean is_static = true;
+static void studioModelProcessBonesAnimations(const model_t *const model, const studiohdr_t *const hdr, r_studio_submodel_info_t *submodels, int submodels_count) {
 	for (int i = 0; i < hdr->numseq; ++i) {
 		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
 
 		const mstudiobone_t* const pbone = (mstudiobone_t *)((byte *)hdr + hdr->boneindex);
 		const mstudioanim_t* const panim = gEngine.R_StudioGetAnim( (studiohdr_t*)hdr, (model_t*)model, (mstudioseqdesc_t*)pseqdesc );
 
-		vec4_t first_q[MAXSTUDIOBONES];
-		float first_pos[MAXSTUDIOBONES][3];
+		// Compute the first frame bones to compare with
+		studioModelCalcBones(hdr->numbones, pbone, panim, 0, gb.first_pos, gb.first_q);
 
-		studioSubmodelCalcBones(hdr->numbones, pbone, panim, 0, first_pos, first_q);
-
+		// Compute bones for each frame
 		for (int frame = 1; frame < pseqdesc->numframes; ++frame) {
-			vec4_t q[MAXSTUDIOBONES];
-			float pos[MAXSTUDIOBONES][3];
-			studioSubmodelCalcBones(hdr->numbones, pbone, panim, frame, pos, q);
+			studioModelCalcBones(hdr->numbones, pbone, panim, frame, gb.pos, gb.q);
 
-			for (int b = 0; b < hdr->numbones; ++b) {
-				if (!Vector4CompareEpsilon(first_q[b], q[b], 1e-4f)){
-					is_static = false;
-					break;
-				}
+			// Compate bones for each submodel
+			for (int si = 0; si < submodels_count; ++si) {
+				r_studio_submodel_info_t *const subinfo = submodels + si;
 
-				if (!VectorCompareEpsilon(first_pos[b], pos[b], 1e-4f)){
-					is_static = false;
-					break;
-				}
-			}
+				// Once detected as dynamic, there's no point in checking further
+				if (subinfo->is_dynamic)
+					continue;
 
-			if (!is_static)
-				break;
-		}
-	}
+				const mstudiomodel_t *const submodel = subinfo->submodel_key;
+				const qboolean use_boneweights = FBitSet(hdr->flags, STUDIO_HAS_BONEWEIGHTS) && submodel->blendvertinfoindex != 0 && submodel->blendnorminfoindex != 0;
 
-	gEngine.Con_Reportf("Studio model %s bones are %s\n", hdr->name, is_static ? "static" : "dynamic");
-	return !is_static;
+				if (use_boneweights) {
+					const mstudioboneweight_t *const pvertweight = (mstudioboneweight_t *)((byte *)hdr + submodel->blendvertinfoindex);
+					for(int vi = 0; vi < submodel->numverts; vi++) {
+						for (int bi = 0; bi < 4; ++bi) {
+							const int8_t bone = pvertweight[vi].bone[bi];
+							if (bone == -1)
+								break;
+
+							subinfo->is_dynamic |= !isBoneSame(bone);
+							if (subinfo->is_dynamic)
+								break;
+						}
+						if (subinfo->is_dynamic)
+							break;
+					} // for submodel verts
+
+				} /* use_boneweights */ else {
+					const byte *const pvertbone = ((const byte *)hdr + submodel->vertinfoindex);
+					for(int vi = 0; vi < submodel->numverts; vi++) {
+							subinfo->is_dynamic |= !isBoneSame(pvertbone[vi]);
+							if (subinfo->is_dynamic)
+								break;
+					}
+				} // no use_boneweights
+			} // for all submodels
+		} // for all frames
+	} // for all sequences
 }
 
-static qboolean isStudioModelDynamic(const model_t *model, const studiohdr_t *hdr) {
-	qboolean is_dynamic = false;
-
-	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
-	if (hdr->numseq == 0)
-		return false;
-
-	for (int i = 0; i < hdr->numseq; ++i) {
-		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
-		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
-
-		// TODO read the sequence and verify that the animation data does in fact animate
-		// There are known cases where all the data is the same and no animation happens
-	}
-
-	// This is rather conservative.
-	// TODO We might be able to cache:
-	// - individual sequences w/o animation frames
-	// - individual submodels that are not affected by any sequences or animations
-	// - animation sequences without real animations (all frames are the same)
-	// - etc
-	/* const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + 0; */
-	/* const qboolean is_dynamic = hdr->numseq > 1 || (pseqdesc->fps > 0 && pseqdesc->numframes > 1); */
-	/* gEngine.Con_Reportf("Studio model %s is %s\n", hdr->name, is_dynamic ? "dynamic" : "static"); */
-
+// Get submodels count and/or fill submodels array
+static int studioModelGetSubmodels(const studiohdr_t *hdr, r_studio_submodel_info_t *out_submodels) {
+	int count = 0;
 	for (int i = 0; i < hdr->numbodyparts; ++i) {
 		const mstudiobodyparts_t* const bodypart = (mstudiobodyparts_t *)((byte *)hdr + hdr->bodypartindex) + i;
-		gEngine.Con_Reportf(" Bodypart %d/%d: %s (nummodels=%d)\n", i, hdr->numbodyparts - 1, bodypart->name, bodypart->nummodels);
-		for (int j = 0; j < bodypart->nummodels; ++j) {
-			const mstudiomodel_t * const submodel = (mstudiomodel_t *)((byte *)hdr + bodypart->modelindex) + j;
-			gEngine.Con_Reportf("  Submodel %d: %s\n", j, submodel->name);
+		if (out_submodels) {
+			gEngine.Con_Reportf(" Bodypart %d/%d: %s (nummodels=%d)\n", i, hdr->numbodyparts - 1, bodypart->name, bodypart->nummodels);
+			for (int j = 0; j < bodypart->nummodels; ++j) {
+				const mstudiomodel_t * const submodel = (mstudiomodel_t *)((byte *)hdr + bodypart->modelindex) + j;
+				gEngine.Con_Reportf("  Submodel %d: %s\n", j, submodel->name);
+				out_submodels[count++].submodel_key = submodel;
+			}
+		} else {
+			count += bodypart->nummodels;
 		}
 	}
-
-	is_dynamic |= areStudioBonesDynamic(model, hdr);
-
-	return is_dynamic;
+	return count;
 }
 
 qboolean R_StudioModelPreload(model_t *mod) {
@@ -223,14 +224,32 @@ qboolean R_StudioModelPreload(model_t *mod) {
 
 	ASSERT(g_studio_cache.models_count < MAX_STUDIO_MODELS);
 
-	g_studio_cache.models[g_studio_cache.models_count++] = (r_studio_model_info_entry_t){
-		.studio_header_key = hdr,
-		.info = {
-			.is_static = !isStudioModelDynamic(mod, hdr),
-		}
-	};
+	r_studio_model_info_entry_t *entry = &g_studio_cache.models[g_studio_cache.models_count++];
+	entry->studio_header_key = hdr;
 
-	// TODO if it is static, pregenerate the geometry
+	gEngine.Con_Reportf("Studio model %s, sequences = %d:\n", hdr->name, hdr->numseq);
+	for (int i = 0; i < hdr->numseq; ++i) {
+		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
+		gEngine.Con_Reportf("  %d: fps=%f numframes=%d\n", i, pseqdesc->fps, pseqdesc->numframes);
+	}
+
+	// Get submodel array
+	const int submodels_count = studioModelGetSubmodels(hdr, NULL);
+	r_studio_submodel_info_t *submodels = Mem_Calloc(vk_core.pool, sizeof(*submodels) * submodels_count);
+	studioModelGetSubmodels(hdr, submodels);
+
+	studioModelProcessBonesAnimations(mod, hdr, submodels, submodels_count);
+
+	qboolean is_dynamic = false;
+	gEngine.Con_Reportf(" submodels_count: %d\n", submodels_count);
+	for (int i = 0; i < submodels_count; ++i) {
+		const r_studio_submodel_info_t *const subinfo = submodels + i;
+		is_dynamic |= subinfo->is_dynamic;
+		gEngine.Con_Reportf("  Submodel %d/%d: name=\"%s\", is_dynamic=%d\n", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
+	}
+
+	entry->info.submodels_count = submodels_count;
+	entry->info.submodels = submodels;
 
 	return true;
 }
