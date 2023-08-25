@@ -3,60 +3,40 @@
 #include "vk_render.h"
 #include "vk_geometry.h"
 
-typedef struct {
+struct r_studio_submodel_info_s;
+typedef struct r_studio_submodel_render_s {
 	vk_render_model_t model;
 	r_geometry_range_t geometry_range;
 	vk_render_geometry_t *geometries;
+
+	// TODO figure out how to precompute this and store it in info
 	int geometries_count;
 	int vertex_count, index_count;
-} r_studio_render_submodel_t;
 
-typedef struct {
+	// TODO vec3_t prev_verts;
+
+	struct {
+		struct r_studio_submodel_info_s *info;
+		struct r_studio_submodel_render_s *next;
+	} _;
+} r_studio_submodel_render_t;
+
+typedef struct r_studio_submodel_info_s {
 	const mstudiomodel_t *submodel_key;
-
-	/* int indices_offset; */
-	/* int vertices_offset; */
-	/* int geometries_offset; */
-	/* int vertices_count; */
-	/* int indices_count; */
-	/* int geometries_count; */
 	qboolean is_dynamic;
 
 	// TODO int verts_count; for prev_verts
+
+	r_studio_submodel_render_t *cached_head;
 } r_studio_submodel_info_t;
 
-typedef struct {
-	/* int total_vertices; */
-	/* int total_indices; */
-	/* int total_geometries; */
+r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *info);
+void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submodel);
 
+typedef struct {
 	int submodels_count;
 	r_studio_submodel_info_t *submodels;
 } r_studio_model_info_t;
-
-/* deprecate
-typedef struct {
-	const mstudiomodel_t *key_submodel;
-
-	// Non-NULL for animated instances
-	const cl_entity_t *key_entity;
-
-	r_studio_render_submodel_t render;
-} r_studio_model_cache_entry_t;
-
-typedef struct {
-	const studiohdr_t *key_model;
-
-	// Model contains no animations and can be used directly
-	qboolean is_static;
-
-	// Pre-built submodels for static, NULL if not static
-	r_studio_render_submodel_t *render_submodels;
-} r_studio_cached_model_t;
-
-const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent);
-r_studio_model_cache_entry_t *studioSubModelCacheAlloc(void);
-*/
 
 void VK_StudioModelInit(void);
 
@@ -67,11 +47,9 @@ typedef struct {
 
 	// ??? probably unnecessary matrix3x4 transform;
 	matrix3x4 prev_transform;
-	// TODO vec3_t *prev_verts;
 
-	// FIXME this is bodyparts, not submodels. Body parts can theoretically switch submodels used at runtime.
-	int num_submodels;
-	r_studio_render_submodel_t *submodels;
+	int bodyparts_count;
+	r_studio_submodel_render_t **bodyparts;
 } r_studio_entity_model_t;
 
 //r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t *ent);
@@ -80,6 +58,6 @@ typedef struct {
 
 //void studioEntityModelClear(void);
 
-void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel );
+void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel );
 
 r_studio_model_info_t *getStudioModelInfo(model_t *model);

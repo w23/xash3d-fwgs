@@ -2097,7 +2097,7 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	R_GeometryRangeUnlock(&geom_lock);
 }
 
-static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_submodel, const mstudiomodel_t *submodel, qboolean is_dynamic) {
+static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_submodel, const mstudiomodel_t *submodel, qboolean is_dynamic) {
 	// Compute vertex and index counts.
 	// TODO should this be part of r_studio_model_info_t?
 	int vertex_count = 0, index_count = 0;
@@ -2132,13 +2132,11 @@ static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_subm
 		.index_count = index_count,
 	});
 
-	*render_submodel = (r_studio_render_submodel_t){
-		.geometries = geometries,
-		.geometries_count = submodel->nummesh,
-		.geometry_range = geometry,
-		.vertex_count = vertex_count,
-		.index_count = index_count,
-	};
+	render_submodel->geometries = geometries;
+	render_submodel->geometries_count = submodel->nummesh;
+	render_submodel->geometry_range = geometry;
+	render_submodel->vertex_count = vertex_count;
+	render_submodel->index_count = index_count;
 
 	if (!R_RenderModelCreate(&render_submodel->model, (vk_render_model_init_t){
 		.name = submodel->name,
@@ -2157,7 +2155,7 @@ static qboolean studioSubmodelRenderInit(r_studio_render_submodel_t *render_subm
 	return true;
 }
 
-static qboolean studioSubmodelRenderUpdate(const r_studio_render_submodel_t *submodel_render) {
+static qboolean studioSubmodelRenderUpdate(const r_studio_submodel_render_t *submodel_render) {
 	buildStudioSubmodelGeometry((build_submodel_geometry_t){
 		//.submodel = submodel_render->key_submodel,
 		.geometry = &submodel_render->geometry_range,
@@ -2187,20 +2185,20 @@ static qboolean studioSubmodelRenderUpdate(const r_studio_render_submodel_t *sub
 
 static void studioEntityModelDestroy(void *userdata) {
 	r_studio_entity_model_t *entmodel = (r_studio_entity_model_t*)userdata;
-	if (entmodel->submodels) {
-		for (int i = 0; i < entmodel->num_submodels; ++i) {
-			studioRenderSubmodelDestroy(entmodel->submodels + i);
-		}
-		Mem_Free(entmodel->submodels);
+	for (int i = 0; i < entmodel->bodyparts_count; ++i) {
+		r_studio_submodel_render_t *const render = entmodel->bodyparts[i];
+		studioSubmodelRenderModelRelease(render);
 	}
+	if (entmodel->bodyparts)
+		Mem_Free(entmodel->bodyparts);
 }
 
 static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entity) {
 	r_studio_entity_model_t *const entmodel = Mem_Calloc(vk_core.pool, sizeof(r_studio_entity_model_t));
 
 	entmodel->studio_header = m_pStudioHeader;
-	entmodel->num_submodels = m_pStudioHeader->numbodyparts; // TODO is this correct number?
-	entmodel->submodels = Mem_Calloc(vk_core.pool, sizeof(*entmodel->submodels) * entmodel->num_submodels);
+	entmodel->bodyparts_count = m_pStudioHeader->numbodyparts; // TODO is this correct number?
+	entmodel->bodyparts = Mem_Calloc(vk_core.pool, sizeof(*entmodel->bodyparts) * entmodel->bodyparts_count);
 
 	Matrix3x4_Copy(entmodel->prev_transform, g_studio.rotationmatrix);
 
@@ -2221,15 +2219,16 @@ static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) 
 		return NULL;
 	}
 
-	gEngine.Con_Reportf("Created studio entity %p model %s: %p (submodels=%d)\n", entity, entity->model->name, entmodel, entmodel->num_submodels);
+	gEngine.Con_Reportf("Created studio entity %p model %s: %p (bodyparts=%d)\n",
+		entity, entity->model->name, entmodel, entmodel->bodyparts_count);
 
 	VK_EntityDataSet(entity, entmodel, &studioEntityModelDestroy);
 	return entmodel;
 }
 
-static const r_studio_submodel_info_t *studioModelFindSubmodelInfo(void) {
+static r_studio_submodel_info_t *studioModelFindSubmodelInfo(void) {
 	for (int i = 0; i < g_studio_current.entmodel->model_info->submodels_count; ++i) {
-		const r_studio_submodel_info_t *const subinfo = g_studio_current.entmodel->model_info->submodels + i;
+		r_studio_submodel_info_t *const subinfo = g_studio_current.entmodel->model_info->submodels + i;
 		if (subinfo->submodel_key == m_pSubModel)
 			return subinfo;
 	}
@@ -2254,16 +2253,31 @@ static void R_StudioDrawPoints( void ) {
 		g_studio_current.entmodel = studioEntityModelGet(RI.currententity);
 
 	ASSERT(g_studio_current.bodypart_index >= 0);
-	ASSERT(g_studio_current.bodypart_index < g_studio_current.entmodel->num_submodels);
-	r_studio_render_submodel_t *const render_submodel = g_studio_current.entmodel->submodels + g_studio_current.bodypart_index;
+	ASSERT(g_studio_current.bodypart_index < g_studio_current.entmodel->bodyparts_count);
 
-	const r_studio_submodel_info_t *const subinfo = studioModelFindSubmodelInfo();
-	if (!subinfo) {
-		gEngine.Con_Printf(S_ERROR "Submodel %s info not found for model %s, this should be impossible\n", m_pSubModel->name, m_pStudioHeader->name);
-		return;
+	r_studio_submodel_render_t *render_submodel = g_studio_current.entmodel->bodyparts[g_studio_current.bodypart_index];
+
+	// Submodels for bodyparts can potentially change at runtime
+	if (!render_submodel || render_submodel->_.info->submodel_key != m_pSubModel) {
+		if (render_submodel) {
+			gEngine.Con_Reportf(S_WARN "Detected bodypart submodel change from %s to %s for model %s entity %p(%d)\n", render_submodel->_.info->submodel_key->name, m_pSubModel->name, m_pStudioHeader->name, RI.currententity, RI.currententity->index);
+
+			studioSubmodelRenderModelRelease(render_submodel);
+			render_submodel = g_studio_current.entmodel->bodyparts[g_studio_current.bodypart_index] = NULL;
+		}
+
+		r_studio_submodel_info_t *const subinfo = studioModelFindSubmodelInfo();
+		if (!subinfo) {
+			gEngine.Con_Printf(S_ERROR "Submodel %s info not found for model %s, this should be impossible\n", m_pSubModel->name, m_pStudioHeader->name);
+			return;
+		}
+
+		render_submodel = g_studio_current.entmodel->bodyparts[g_studio_current.bodypart_index] = studioSubmodelRenderModelAcquire(subinfo);
+		ASSERT(render_submodel);
+		ASSERT(render_submodel->_.info);
 	}
 
-	const qboolean is_dynamic = subinfo->is_dynamic;
+	const qboolean is_dynamic = render_submodel->_.info->is_dynamic;
 
 	if (!render_submodel->geometries) {
 		if (!studioSubmodelRenderInit(render_submodel, m_pSubModel, is_dynamic)) {
@@ -2271,7 +2285,7 @@ static void R_StudioDrawPoints( void ) {
 			return;
 		}
 
-		gEngine.Con_Reportf("Initialized studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);
+		gEngine.Con_Reportf("Initialized studio submodel for %s // %s\n", RI.currentmodel->name, render_submodel->_.info->submodel_key->name);
 	} else if (is_dynamic) {
 		if (!studioSubmodelRenderUpdate(render_submodel)) {
 			gEngine.Con_Printf(S_ERROR "Unable to update studio submodel for %s/%d\n", RI.currentmodel->name, g_studio_current.bodypart_index);

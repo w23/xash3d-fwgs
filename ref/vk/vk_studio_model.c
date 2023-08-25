@@ -6,104 +6,54 @@
 
 #define MODULE_NAME "studio"
 
+// FIXME:
+// - [ ] (CRASH) Cache coherence: entities are reused between frames for different studio models. Catch and handle it.
+//   If it was literally reused between sequential frames, then we're screwed, because we can't delete the previous one, as it might be still in use on GPU. Needs refcounts infrastructure.
+//   Currently we just push render_submodels being released back into cache. And we don't destroy them ever.
+//   This needs to change.
+// TODO add clearing cache function. Also make sure that it is called on shutdown.
+
+// TODO Potential optimization: (MIGHT STILL NEED THIS FOR DENOISER MOVE VECTORS)
+// Keep last generated verts. Compare new verts with previous ones. If they are the same, do not rebuild the BLAS.
+
 typedef struct {
 	const studiohdr_t *studio_header_key;
 	r_studio_model_info_t info;
 } r_studio_model_info_entry_t;
 
-/*
-typedef struct {
-	// BOTH must match
-	const cl_entity_t *key_entity;
-	const model_t *key_model;
-
-	r_studio_entity_model_t entmodel;
-} r_studio_entity_model_entry_t;
-*/
-
 static struct {
-/*
-#define MAX_CACHED_STUDIO_SUBMODELS 1024
-	// TODO proper map/hash table
-	r_studio_model_cache_entry_t entries[MAX_CACHED_STUDIO_SUBMODELS];
-	int entries_count;
-*/
-
 #define MAX_STUDIO_MODELS 256
 	r_studio_model_info_entry_t models[MAX_STUDIO_MODELS];
 	int models_count;
-
-	// TODO hash table
-	//r_studio_entity_model_entry_t *entmodels;
-	//int entmodels_count;
 } g_studio_cache;
 
-void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel ) {
+void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
 	R_RenderModelDestroy(&submodel->model);
 	R_GeometryRangeFree(&submodel->geometry_range);
 	if (submodel->geometries)
 		Mem_Free(submodel->geometries);
-	submodel->geometries = NULL;
-	submodel->geometries_count = 0;
-	submodel->vertex_count = 0;
-	submodel->index_count = 0;
+}
+
+static void studioSubmodelInfoDestroy(r_studio_submodel_info_t *subinfo) {
+	while (subinfo->cached_head) {
+		r_studio_submodel_render_t *render = subinfo->cached_head;
+		subinfo->cached_head = subinfo->cached_head->_.next;
+		studioRenderSubmodelDestroy(render);
+	}
 }
 
 void R_StudioCacheClear( void ) {
-/*
-	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
-		r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
-		ASSERT(entry->key_submodel);
-		entry->key_submodel = 0;
-		entry->key_entity = NULL;
-
-		studioRenderSubmodelDestroy(&entry->render);
-	}
-	g_studio_cache.entries_count = 0;
-*/
-
 	for (int i = 0; i < g_studio_cache.models_count; ++i) {
 		r_studio_model_info_t *info = &g_studio_cache.models[i].info;
+
+		for (int j = 0; j < info->submodels_count; ++j)
+			studioSubmodelInfoDestroy(info->submodels + j);
+
 		if (info->submodels)
 			Mem_Free(info->submodels);
 	}
 	g_studio_cache.models_count = 0;
 }
-
-// FIXME:
-// - [ ] (CRASH) Cache coherence: entities are reused between frames for different studio models. Catch and handle it. If it was literally reused between sequential frames, then we're screwed, because we can't delete the previous one, as it might be still in use on GPU. Needs refcounts infrastructure.
-// - [ ] (POTENTIAL CRASH) g_studio_current.bodypartindex doesn't directly correspond to a single mstudiosubmodel_t. Currently it's tracked as it does. This can break and crash.
-// - [ ] Proper submodel cache (by pointer, these pointers should be stable)
-/*
- * - submodels[] (global? per-model?)
- *   - mstudiosubmodel_t *key
- *   - qboolean is_static (if true, there's only one render_model_t that is instanced by all users)
- *   - entries[entries_count|entries_capacity]
- *     - r_studio_render_submodel_t render_submodel
- *     - int refcount (is in use by anything? only needed for cache cleaning really, which we can work around by waiting for gpu idle and having hiccups, which is fine as long as this is a really rare situation)
- *     - int used_frames_ago (or last_used_frame)
- */
-
-// Action items:
-// 3. When R_StudioDrawPoints()
-//   a. Get the correct studio entmodel from the cache. For prev_transform, etc.
-//   b. Get the correct submodel render model from the cache.
-//   c. If there's no such submodel, generate the vertices and cache it.
-//   d. If there is:
-//     1. Static is instanced (a single vk_render_model_t used by everyone with different transform matrices and potentially texture patches). No vertices generation is needed
-//     2. Non-static ones need vertices updates each frame.
-//   e. Submit the submodel for rendering.
-
-// TODO Potential optimization for the above: (MIGHT STILL NEED THIS FOR DENOISER MOVE VECTORS)
-// Keep last used submodel within studio entmodel. Keep last generated verts. Compare new verts with previous ones. If they are the same, do not rebuild the BLAS.
-
-// TODO
-// - [ ] (MORE MODELS CAN BE STATIC) Bones are global, calculated only once per frame for the entire studio model. Submodels reference an indexed subset of bones.
-
-// DONE?
-// - [x] How to find all studio model submodels regardless of bodyparts. -- NIKAQUE. they all are under bodyparts
-//
-// - [x] Is crossbow model really static? -- THIS SEEMS OK
 
 static struct {
 	vec4_t first_q[MAXSTUDIOBONES];
@@ -268,34 +218,37 @@ r_studio_model_info_t *getStudioModelInfo(model_t *model) {
 	return NULL;
 }
 
-
-/*
-const r_studio_model_cache_entry_t *findSubModelInCacheForEntity(const mstudiomodel_t *submodel, const cl_entity_t *ent) {
-	// FIXME hash table, there are hundreds of entries
-	for (int i = 0; i < g_studio_cache.entries_count; ++i) {
-		const r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + i;
-		if (entry->key_submodel == submodel && (entry->key_entity == NULL || entry->key_entity == ent))
-			return entry;
-	}
-
-	return NULL;
-}
-
-r_studio_model_cache_entry_t *studioSubModelCacheAlloc(void) {
-	if (g_studio_cache.entries_count == MAX_CACHED_STUDIO_SUBMODELS) {
-		PRINT_NOT_IMPLEMENTED_ARGS("Studio submodel cache overflow at %d", MAX_CACHED_STUDIO_SUBMODELS);
-		return NULL;
-	}
-
-	r_studio_model_cache_entry_t *const entry = g_studio_cache.entries + g_studio_cache.entries_count;
-	++g_studio_cache.entries_count;
-
-	return entry;
-}
-*/
-
-// TODO ? void studioSubModelCacheFree(r_studio_model_cache_entry_t*);
-
 void VK_StudioModelInit(void) {
-	// ... R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
+	// FIXME R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
+}
+
+r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *subinfo) {
+	r_studio_submodel_render_t *render = NULL;
+	if (subinfo->cached_head) {
+		render = subinfo->cached_head;
+		if (subinfo->is_dynamic) {
+			subinfo->cached_head = render->_.next;
+			render->_.next = NULL;
+		}
+		return render;
+	}
+
+	render = Mem_Calloc(vk_core.pool, sizeof(*render));
+	render->_.info = subinfo;
+
+	if (!subinfo->is_dynamic)
+		subinfo->cached_head = render;
+
+	return render;
+}
+
+void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submodel) {
+	if (!render_submodel)
+		return;
+
+	if (!render_submodel->_.info->is_dynamic)
+		return;
+
+	render_submodel->_.next = render_submodel->_.info->cached_head;
+	render_submodel->_.info->cached_head = render_submodel;
 }
