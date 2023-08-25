@@ -62,19 +62,16 @@ void VK_StudioModelInit(void);
 
 // Entity model cache/pool
 typedef struct {
+	const studiohdr_t *studio_header;
 	const r_studio_model_info_t *model_info;
 
 	// ??? probably unnecessary matrix3x4 transform;
 	matrix3x4 prev_transform;
 	// TODO vec3_t *prev_verts;
 
+	// FIXME this is bodyparts, not submodels. Body parts can theoretically switch submodels used at runtime.
 	int num_submodels;
 	r_studio_render_submodel_t *submodels;
-
-	// TODO: coalesce submodels into as few allocations as possible
-	//vk_render_model_t render_model;
-	//r_geometry_range_t geometry_range;
-	//vk_render_geometry_t *geometries;
 } r_studio_entity_model_t;
 
 //r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t *ent);
@@ -82,11 +79,6 @@ typedef struct {
 // TOOD manual cleanup function? free unused?
 
 //void studioEntityModelClear(void);
-
-// TODO need:
-// 1. studio entity:
-//   - transform
-//   - tracks visited submodels. clears on next frame / m_pStudioHeader set/entity draw
 
 void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel );
 

@@ -2198,6 +2198,7 @@ static void studioEntityModelDestroy(void *userdata) {
 static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entity) {
 	r_studio_entity_model_t *const entmodel = Mem_Calloc(vk_core.pool, sizeof(r_studio_entity_model_t));
 
+	entmodel->studio_header = m_pStudioHeader;
 	entmodel->num_submodels = m_pStudioHeader->numbodyparts; // TODO is this correct number?
 	entmodel->submodels = Mem_Calloc(vk_core.pool, sizeof(*entmodel->submodels) * entmodel->num_submodels);
 
@@ -2211,7 +2212,7 @@ static r_studio_entity_model_t *studioEntityModelCreate(const cl_entity_t *entit
 
 static r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t* entity) {
 	r_studio_entity_model_t *entmodel = (r_studio_entity_model_t*)VK_EntityDataGet(entity);
-	if (entmodel)
+	if (entmodel && entmodel->studio_header == m_pStudioHeader)
 		return entmodel;
 
 	entmodel = studioEntityModelCreate(entity);

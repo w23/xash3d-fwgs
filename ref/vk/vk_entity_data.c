@@ -44,7 +44,7 @@ void VK_EntityDataSet(const struct cl_entity_s* entity, void *userdata, entity_d
 			entry->dtor(entry->userdata);
 			entry->userdata = userdata;
 			entry->dtor = dtor;
-			break;
+			return;
 		}
 	}
 

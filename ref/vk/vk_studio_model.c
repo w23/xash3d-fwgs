@@ -41,7 +41,8 @@ static struct {
 void studioRenderSubmodelDestroy( r_studio_render_submodel_t *submodel ) {
 	R_RenderModelDestroy(&submodel->model);
 	R_GeometryRangeFree(&submodel->geometry_range);
-	Mem_Free(submodel->geometries);
+	if (submodel->geometries)
+		Mem_Free(submodel->geometries);
 	submodel->geometries = NULL;
 	submodel->geometries_count = 0;
 	submodel->vertex_count = 0;
