@@ -19,6 +19,7 @@
 #include "camera.h"
 #include "vk_mapents.h"
 #include "profiler.h"
+#include "vk_entity_data.h"
 
 #include "com_strings.h"
 #include "ref_params.h"
@@ -85,6 +86,7 @@ static void loadLights( const model_t *const map ) {
 
 // Clears all old map data
 static void mapLoadBegin( const model_t *const map ) {
+	VK_EntityDataClear();
 	R_StudioCacheClear();
 	R_GeometryBuffer_MapClear();
 

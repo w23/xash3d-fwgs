@@ -6,16 +6,6 @@
 
 #define MODULE_NAME "studio"
 
-// FIXME:
-// - [ ] (CRASH) Cache coherence: entities are reused between frames for different studio models. Catch and handle it.
-//   If it was literally reused between sequential frames, then we're screwed, because we can't delete the previous one, as it might be still in use on GPU. Needs refcounts infrastructure.
-//   Currently we just push render_submodels being released back into cache. And we don't destroy them ever.
-//   This needs to change.
-// TODO add clearing cache function. Also make sure that it is called on shutdown.
-
-// TODO Potential optimization: (MIGHT STILL NEED THIS FOR DENOISER MOVE VECTORS)
-// Keep last generated verts. Compare new verts with previous ones. If they are the same, do not rebuild the BLAS.
-
 typedef struct {
 	const studiohdr_t *studio_header_key;
 	r_studio_model_info_t info;
@@ -25,6 +15,9 @@ static struct {
 #define MAX_STUDIO_MODELS 256
 	r_studio_model_info_entry_t models[MAX_STUDIO_MODELS];
 	int models_count;
+
+	int submodels_cached_dynamic;
+	int submodels_cached_static;
 } g_studio_cache;
 
 void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
@@ -35,6 +28,9 @@ void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
 }
 
 static void studioSubmodelInfoDestroy(r_studio_submodel_info_t *subinfo) {
+	// Not zero means that something still holds a cached render submodel instance somewhere
+	ASSERT(subinfo->render_refcount == 0);
+
 	while (subinfo->cached_head) {
 		r_studio_submodel_render_t *render = subinfo->cached_head;
 		subinfo->cached_head = subinfo->cached_head->_.next;
@@ -53,6 +49,8 @@ void R_StudioCacheClear( void ) {
 			Mem_Free(info->submodels);
 	}
 	g_studio_cache.models_count = 0;
+
+	g_studio_cache.submodels_cached_dynamic = g_studio_cache.submodels_cached_static = 0;
 }
 
 static struct {
@@ -219,7 +217,8 @@ r_studio_model_info_t *getStudioModelInfo(model_t *model) {
 }
 
 void VK_StudioModelInit(void) {
-	// FIXME R_SPEEDS_METRIC(g_studio_cache.entries_count, "cached_submodels", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_static, "submodels_cached_static", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_dynamic, "submodels_cached_dynamic", kSpeedsMetricCount);
 }
 
 r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *subinfo) {
@@ -230,21 +229,30 @@ r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_i
 			subinfo->cached_head = render->_.next;
 			render->_.next = NULL;
 		}
+		subinfo->render_refcount++;
 		return render;
 	}
 
 	render = Mem_Calloc(vk_core.pool, sizeof(*render));
 	render->_.info = subinfo;
 
-	if (!subinfo->is_dynamic)
+	if (!subinfo->is_dynamic) {
 		subinfo->cached_head = render;
+		++g_studio_cache.submodels_cached_static;
+	} else {
+		++g_studio_cache.submodels_cached_dynamic;
+	}
 
+	subinfo->render_refcount++;
 	return render;
 }
 
 void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submodel) {
 	if (!render_submodel)
 		return;
+
+	ASSERT(render_submodel->_.info->render_refcount > 0);
+	render_submodel->_.info->render_refcount--;
 
 	if (!render_submodel->_.info->is_dynamic)
 		return;

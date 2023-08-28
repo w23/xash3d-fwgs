@@ -4,6 +4,11 @@
 #include "vk_geometry.h"
 
 struct r_studio_submodel_info_s;
+
+// Submodel render data that is enough to render given submodel
+// Included render model (that also incapsulates BLAS)
+// This can be static (built once), or dynamic (updated frequently)
+// Lives in per-model-info submodel cache
 typedef struct r_studio_submodel_render_s {
 	vk_render_model_t model;
 	r_geometry_range_t geometry_range;
@@ -21,6 +26,7 @@ typedef struct r_studio_submodel_render_s {
 	} _;
 } r_studio_submodel_render_t;
 
+// Submodel metadata and render-model cache
 typedef struct r_studio_submodel_info_s {
 	const mstudiomodel_t *submodel_key;
 	qboolean is_dynamic;
@@ -28,8 +34,12 @@ typedef struct r_studio_submodel_info_s {
 	// TODO int verts_count; for prev_verts
 
 	r_studio_submodel_render_t *cached_head;
+
+	// Mostly for debug: how many cached render models were acquired and not given back
+	int render_refcount;
 } r_studio_submodel_info_t;
 
+// Submodel cache functions, used in vk_studio.c
 r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *info);
 void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submodel);
 
@@ -38,7 +48,7 @@ typedef struct {
 	r_studio_submodel_info_t *submodels;
 } r_studio_model_info_t;
 
-void VK_StudioModelInit(void);
+r_studio_model_info_t *getStudioModelInfo(model_t *model);
 
 // Entity model cache/pool
 typedef struct {
@@ -52,12 +62,5 @@ typedef struct {
 	r_studio_submodel_render_t **bodyparts;
 } r_studio_entity_model_t;
 
-//r_studio_entity_model_t *studioEntityModelGet(const cl_entity_t *ent);
-
-// TOOD manual cleanup function? free unused?
-
-//void studioEntityModelClear(void);
-
-void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel );
-
-r_studio_model_info_t *getStudioModelInfo(model_t *model);
+void VK_StudioModelInit(void);
+//void VK_StudioModelShutdown(void);

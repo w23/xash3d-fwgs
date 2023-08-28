@@ -22,6 +22,7 @@
 #include "vk_sprite.h"
 #include "vk_beams.h"
 #include "vk_combuf.h"
+#include "vk_entity_data.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -809,6 +810,8 @@ qboolean R_VkInit( void )
 
 void R_VkShutdown( void ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+
+	VK_EntityDataClear();
 
 	R_SpriteShutdown();
 
