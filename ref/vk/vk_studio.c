@@ -2260,7 +2260,8 @@ static void R_StudioDrawPoints( void ) {
 	// Submodels for bodyparts can potentially change at runtime
 	if (!render_submodel || render_submodel->_.info->submodel_key != m_pSubModel) {
 		if (render_submodel) {
-			gEngine.Con_Reportf(S_WARN "Detected bodypart submodel change from %s to %s for model %s entity %p(%d)\n", render_submodel->_.info->submodel_key->name, m_pSubModel->name, m_pStudioHeader->name, RI.currententity, RI.currententity->index);
+			// This does happen in practice a lot. Shouldn't be a warning.
+			// gEngine.Con_Reportf(S_WARN "Detected bodypart submodel change from %s to %s for model %s entity %p(%d)\n", render_submodel->_.info->submodel_key->name, m_pSubModel->name, m_pStudioHeader->name, RI.currententity, RI.currententity->index);
 
 			studioSubmodelRenderModelRelease(render_submodel);
 			render_submodel = g_studio_current.entmodel->bodyparts[g_studio_current.bodypart_index] = NULL;
@@ -2307,7 +2308,6 @@ static void R_StudioDrawPoints( void ) {
 	Matrix4x4_LoadIdentity(transform);
 	Matrix3x4_Copy(transform, g_studio.rotationmatrix);
 
-	// TODO coalesce this into a single draw per studio model, not submodel
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
 		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
 		.color = &color,
@@ -3065,11 +3065,6 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 {
 	VK_RenderDebugLabelBegin( e->model->name );
 
-	// TODO 2023-07-30:
-	// - get the entity model instance
-	//   - creation needs skel, which needs m_pStudioHeader that is set much later
-	// - reset its submodules state
-
 	// Mark this a new model to draw
 	g_studio_current.entmodel = NULL;
 	g_studio_current.bodypart_index = -1;
@@ -3091,10 +3086,6 @@ static void R_StudioDrawModelInternal( cl_entity_t *e, int flags )
 		else
 			pStudioDraw->StudioDrawModel( flags );
 	}
-
-	// TODO 2023-07-30:
-	// - verifty submodule state
-	// - commit the rendering
 
 	// Reset current state, no drawing should happen outside of this function
 	g_studio_current.entmodel = NULL;
