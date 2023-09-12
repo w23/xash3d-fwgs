@@ -30,6 +30,7 @@ typedef struct r_studio_submodel_render_s {
 typedef struct r_studio_submodel_info_s {
 	const mstudiomodel_t *submodel_key;
 	qboolean is_dynamic;
+	//qboolean has_bonecontroller;
 
 	// TODO int verts_count; for prev_verts
 

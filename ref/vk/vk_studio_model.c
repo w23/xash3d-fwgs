@@ -57,21 +57,33 @@ void R_StudioCacheClear( void ) {
 	g_studio_cache.submodels_cached_dynamic = g_studio_cache.submodels_cached_static = 0;
 }
 
-static struct {
-	vec4_t first_q[MAXSTUDIOBONES];
-	float first_pos[MAXSTUDIOBONES][3];
+typedef struct {
+	matrix3x4 mat;
+} bone_transform_t;
 
-	vec4_t q[MAXSTUDIOBONES];
-	float pos[MAXSTUDIOBONES][3];
+static struct {
+	bone_transform_t first[MAXSTUDIOBONES];
+	bone_transform_t current[MAXSTUDIOBONES];
 } gb;
 
-static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const mstudioanim_t *panim, int frame, float out_pos[][3], vec4_t *out_q) {
+static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const mstudioanim_t *panim, int frame, bone_transform_t *out) {
 	for(int b = 0; b < numbones; b++ ) {
 		// TODO check pbone->bonecontroller, if the bone can be dynamically controlled by entity
+		// So far we havent't seen any cases where bonecontroller presence makes static submodels dynamic
 		float *const adj = NULL;
 		const float interpolation = 0;
-		R_StudioCalcBoneQuaternion( frame, interpolation, pbone + b, panim + b, adj, out_q[b] );
-		R_StudioCalcBonePosition( frame, interpolation, pbone + b, panim + b, adj, out_pos[b] );
+		vec4_t q;
+		vec3_t pos;
+		R_StudioCalcBoneQuaternion( frame, interpolation, pbone + b, panim + b, adj, q );
+		R_StudioCalcBonePosition( frame, interpolation, pbone + b, panim + b, adj, pos );
+
+		matrix3x4 bonematrix;
+		Matrix3x4_FromOriginQuat(bonematrix, q, pos);
+		if (pbone[b].parent >= 0) {
+			Matrix3x4_ConcatTransforms(out[b].mat, out[pbone[b].parent].mat, bonematrix);
+		} else {
+			Matrix3x4_Copy(out[b].mat, bonematrix);
+		}
 	}
 }
 
@@ -90,28 +102,41 @@ qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsi
 }
 
 static qboolean isBoneSame(int b) {
-	if (!Vector4CompareEpsilon(gb.first_q[b], gb.q[b], 1e-4f))
-		return false;
-
-	if (!VectorCompareEpsilon(gb.first_pos[b], gb.pos[b], 1e-4f))
-		return false;
+	for (int i = 0; i < 3; ++i)
+		if (!Vector4CompareEpsilon(gb.first[b].mat[i], gb.current[b].mat[i], 1e-4f))
+			return false;
 
 	return true;
 }
 
+/* static qboolean canBoneBeControlled(const mstudiobone_t* pbone, int b) { */
+/* 	pbone += b; */
+/* 	for (int i = 0; i < COUNTOF(pbone->bonecontroller); ++i) { */
+/* 		if (pbone->bonecontroller[i] >= 0) */
+/* 			return true; */
+/* 	} */
+/* 	return false; */
+/* } */
+
 static void studioModelProcessBonesAnimations(const model_t *const model, const studiohdr_t *const hdr, r_studio_submodel_info_t *submodels, int submodels_count) {
+	const mstudiobone_t* const pbone = (mstudiobone_t *)((byte *)hdr + hdr->boneindex);
+
+	/* for (int i = 0; i < hdr->numbones; ++i) { */
+	/* 	const mstudiobone_t* const bone = pbone + i; */
+	/* 	INFO("  Bone %i: %s", i, bone->name); */
+	/* } */
+
 	for (int i = 0; i < hdr->numseq; ++i) {
 		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
 
-		const mstudiobone_t* const pbone = (mstudiobone_t *)((byte *)hdr + hdr->boneindex);
 		const mstudioanim_t* const panim = gEngine.R_StudioGetAnim( (studiohdr_t*)hdr, (model_t*)model, (mstudioseqdesc_t*)pseqdesc );
 
 		// Compute the first frame bones to compare with
-		studioModelCalcBones(hdr->numbones, pbone, panim, 0, gb.first_pos, gb.first_q);
+		studioModelCalcBones(hdr->numbones, pbone, panim, 0, gb.first);
 
 		// Compute bones for each frame
 		for (int frame = 1; frame < pseqdesc->numframes; ++frame) {
-			studioModelCalcBones(hdr->numbones, pbone, panim, frame, gb.pos, gb.q);
+			studioModelCalcBones(hdr->numbones, pbone, panim, frame, gb.current);
 
 			// Compate bones for each submodel
 			for (int si = 0; si < submodels_count; ++si) {
@@ -143,11 +168,16 @@ static void studioModelProcessBonesAnimations(const model_t *const model, const 
 				} /* use_boneweights */ else {
 					const byte *const pvertbone = ((const byte *)hdr + submodel->vertinfoindex);
 					for(int vi = 0; vi < submodel->numverts; vi++) {
-							subinfo->is_dynamic |= !isBoneSame(pvertbone[vi]);
-							if (subinfo->is_dynamic)
-								break;
+						const byte bone = pvertbone[vi];
+						subinfo->is_dynamic |= !isBoneSame(bone);
+						if (subinfo->is_dynamic)
+							break;
 					}
 				} // no use_boneweights
+
+				/* if (subinfo->has_bonecontroller && !subinfo->is_dynamic) { */
+				/* 	WARN("Submodel %s is static, but can be affected by bonecontroller", subinfo->submodel_key->name); */
+				/* } */
 			} // for all submodels
 		} // for all frames
 	} // for all sequences
@@ -198,6 +228,7 @@ const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 	for (int i = 0; i < submodels_count; ++i) {
 		const r_studio_submodel_info_t *const subinfo = submodels + i;
 		is_dynamic |= subinfo->is_dynamic;
+		//DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d has_bonecontroller=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic, subinfo->has_bonecontroller);
 		DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
 	}
 
