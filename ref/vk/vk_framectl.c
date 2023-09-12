@@ -258,7 +258,7 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 	APROF_SCOPE_END(render_frame);
 }
 
-static void enqueueRendering( vk_combuf_t* combuf ) {
+static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	const VkClearValue clear_value[] = {
 		{.color = {{1., 0., 0., 0.}}},
 		{.depthStencil = {1., 0.}} // TODO reverse-z
@@ -272,8 +272,8 @@ static void enqueueRendering( vk_combuf_t* combuf ) {
 	if (vk_frame.rtx_enabled)
 		VK_RenderEndRTX( combuf, g_frame.current.framebuffer.view, g_frame.current.framebuffer.image, g_frame.current.framebuffer.width, g_frame.current.framebuffer.height );
 
-	{
-		VkRenderPassBeginInfo rpbi = {
+	if (draw) {
+		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
 			.renderArea.extent.width = g_frame.current.framebuffer.width,
@@ -283,33 +283,34 @@ static void enqueueRendering( vk_combuf_t* combuf ) {
 			.framebuffer = g_frame.current.framebuffer.framebuffer,
 		};
 		vkCmdBeginRenderPass(cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-	}
 
-	{
-		const VkViewport viewport[] = {
-			{0.f, 0.f, (float)g_frame.current.framebuffer.width, (float)g_frame.current.framebuffer.height, 0.f, 1.f},
-		};
-		const VkRect2D scissor[] = {{
-			{0, 0},
-			{g_frame.current.framebuffer.width, g_frame.current.framebuffer.height},
-		}};
+		{
+			const VkViewport viewport[] = {
+				{0.f, 0.f, (float)g_frame.current.framebuffer.width, (float)g_frame.current.framebuffer.height, 0.f, 1.f},
+			};
+			const VkRect2D scissor[] = {{
+				{0, 0},
+				{g_frame.current.framebuffer.width, g_frame.current.framebuffer.height},
+			}};
 
-		vkCmdSetViewport(cmdbuf, 0, ARRAYSIZE(viewport), viewport);
-		vkCmdSetScissor(cmdbuf, 0, ARRAYSIZE(scissor), scissor);
+			vkCmdSetViewport(cmdbuf, 0, ARRAYSIZE(viewport), viewport);
+			vkCmdSetScissor(cmdbuf, 0, ARRAYSIZE(scissor), scissor);
+		}
 	}
 
 	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( cmdbuf );
+		VK_RenderEnd( cmdbuf, draw );
 
-	R_VkOverlay_DrawAndFlip( cmdbuf );
+	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
 
-	vkCmdEndRenderPass(cmdbuf);
+	if (draw)
+		vkCmdEndRenderPass(cmdbuf);
 
 	g_frame.current.phase = Phase_RenderingEnqueued;
 }
 
 // FIXME pass frame, not combuf (possible desync)
-static void submit( vk_combuf_t* combuf, qboolean wait ) {
+static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	ASSERT(g_frame.current.phase == Phase_RenderingEnqueued);
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
@@ -332,33 +333,50 @@ static void submit( vk_combuf_t* combuf, qboolean wait ) {
 			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 		};
 
+#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
+		struct { \
+			TYPE items[MAX_SIZE]; \
+			int count; \
+		} NAME
+
+#define BOUNDED_ARRAY_APPEND(var, item) \
+		do { \
+			ASSERT(var.count < COUNTOF(var.items)); \
+			var.items[var.count++] = item; \
+		} while(0)
+
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
 		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
-		const VkSemaphore waitophores[] = {
-			frame->sem_framebuffer_ready,
-			prev_frame->sem_done2,
-		};
-		const VkSemaphore signalphores[] = {
-			frame->sem_done,
-			frame->sem_done2,
-		};
+		BOUNDED_ARRAY(waitophores, VkSemaphore, 2) = {0};
+		BOUNDED_ARRAY(signalphores, VkSemaphore, 2) = {0};
+
+		if (draw) {
+			BOUNDED_ARRAY_APPEND(waitophores, frame->sem_framebuffer_ready);
+			BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done);
+		}
+
+		BOUNDED_ARRAY_APPEND(waitophores, prev_frame->sem_done2);
+		BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done2);
+
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.pNext = NULL,
+			.waitSemaphoreCount = waitophores.count,
+			.pWaitSemaphores = waitophores.items,
+			.pWaitDstStageMask = stageflags,
 			.commandBufferCount = cmdbufs[0] ? 2 : 1,
 			.pCommandBuffers = cmdbufs[0] ? cmdbufs : cmdbufs + 1,
-			.waitSemaphoreCount = COUNTOF(waitophores),
-			.pWaitSemaphores = waitophores,
-			.pWaitDstStageMask = stageflags,
-			.signalSemaphoreCount = COUNTOF(signalphores),
-			.pSignalSemaphores = signalphores,
+			.signalSemaphoreCount = signalphores.count,
+			.pSignalSemaphores = signalphores.items,
 		};
 		//gEngine.Con_Printf("SYNC: wait for semaphore %d, signal semaphore %d\n", (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES, g_frame.current.index);
 		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, frame->fence_done));
 		g_frame.current.phase = Phase_Submitted;
 	}
 
-	R_VkSwapchainPresent(g_frame.current.framebuffer.index, frame->sem_done);
+	if (g_frame.current.framebuffer.framebuffer != VK_NULL_HANDLE)
+		R_VkSwapchainPresent(g_frame.current.framebuffer.index, frame->sem_done);
+
 	g_frame.current.framebuffer = (r_vk_swapchain_framebuffer_t){0};
 
 	if (wait) {
@@ -384,9 +402,10 @@ void R_EndFrame( void )
 
 	if (g_frame.current.phase == Phase_FrameBegan) {
 		vk_combuf_t *const combuf = g_frame.frames[g_frame.current.index].combuf;
-		enqueueRendering( combuf );
-		submit( combuf, false );
-		//submit( cmdbuf, true );
+		const qboolean draw = g_frame.current.framebuffer.framebuffer != VK_NULL_HANDLE;
+		enqueueRendering( combuf, draw );
+		submit( combuf, false, draw );
+		//submit( cmdbuf, true, draw );
 	}
 
 	APROF_SCOPE_END(end_frame);
@@ -523,7 +542,8 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 	}
 
 	// Make sure that all rendering ops are enqueued
-	enqueueRendering( combuf );
+	const qboolean draw = true;
+	enqueueRendering( combuf, draw );
 
 	{
 		// Barrier 1: dest image
@@ -628,7 +648,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
 	}
 
-	submit( combuf, true );
+	submit( combuf, true, draw );
 
 	// copy bytes to buffer
 	{

@@ -254,7 +254,7 @@ void R_VkOverlay_Shutdown( void ) {
 	vkDestroyPipelineLayout(vk_core.device, g2d.pipeline_layout, NULL);
 }
 
-void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf ) {
+static void drawOverlay( VkCommandBuffer cmdbuf ) {
 	DEBUG_BEGIN(cmdbuf, "2d overlay");
 
 	{
@@ -275,6 +275,11 @@ void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf ) {
 	}
 
 	DEBUG_END(cmdbuf);
+}
+
+void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf, qboolean draw ) {
+	if (draw)
+		drawOverlay(cmdbuf);
 
 	clearAccumulated();
 }

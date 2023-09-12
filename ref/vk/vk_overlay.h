@@ -11,4 +11,5 @@ void CL_FillRGBABlend( float x, float y, float w, float h, int r, int g, int b, 
 
 qboolean R_VkOverlay_Init( void );
 void R_VkOverlay_Shutdown( void );
-void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf );
+
+void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf, qboolean draw );

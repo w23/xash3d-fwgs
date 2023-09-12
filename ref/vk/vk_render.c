@@ -525,8 +525,11 @@ void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 	}
 }
 
-void VK_RenderEnd( VkCommandBuffer cmdbuf )
+void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 {
+	if (!draw)
+		return;
+
 	// TODO we can sort collected draw commands for more efficient and correct rendering
 	// that requires adding info about distance to camera for correct order-dependent blending
 

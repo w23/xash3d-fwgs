@@ -268,9 +268,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
-	// Feed tlas with dynamic data
-	RT_DynamicModelProcessFrame();
-
 	// TODO move this to "TLAS producer"
 	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
 
@@ -541,6 +538,13 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	}
 
 	ASSERT(g_rtx.mainpipe_out);
+
+	// Feed tlas with dynamic data
+	RT_DynamicModelProcessFrame();
+
+	// Do not draw when we have no swapchain
+	if (args->dst.image_view == VK_NULL_HANDLE)
+		return;
 
 	if (g_ray_model_state.frame.instances_count == 0) {
 		const r_vkimage_blit_args blit_args = {

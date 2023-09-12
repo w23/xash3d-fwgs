@@ -61,7 +61,7 @@ static void destroySwapchainAndFramebuffers( VkSwapchainKHR swapchain ) {
 	vkDestroySwapchainKHR(vk_core.device, swapchain, NULL);
 }
 
-qboolean recreateSwapchain( qboolean force ) {
+static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 	const uint32_t prev_num_images = g_swapchain.num_images;
 	uint32_t new_width, new_height;
 
@@ -79,6 +79,10 @@ qboolean recreateSwapchain( qboolean force ) {
 
 	new_width = clamp_u32(new_width, surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width);
 	new_height = clamp_u32(new_height, surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height);
+
+	if (new_height == 0 || new_width == 0) {
+		return false;
+	}
 
 	if (new_width == g_swapchain.width && new_height == g_swapchain.height && !force)
 		return true;
@@ -187,7 +191,7 @@ qboolean R_VkSwapchainInit( VkRenderPass render_pass, VkFormat depth_format ) {
 	g_swapchain.render_pass = render_pass;
 	g_swapchain.depth_format = depth_format;
 
-	return recreateSwapchain( true );
+	return recreateSwapchainIfNeeded( true );
 }
 
 void R_VkSwapchainShutdown( void ) {
@@ -201,7 +205,9 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 
 	for (;;) {
 		// Check that swapchain has the same size
-		recreateSwapchain(!!g_swapchain.recreate_requested);
+		if (!recreateSwapchainIfNeeded(!!g_swapchain.recreate_requested)) {
+			goto finalize;
+		}
 
 		APROF_SCOPE_DECLARE_BEGIN_EX(vkAcquireNextImageKHR, "vkAcquireNextImageKHR", APROF_SCOPE_FLAG_WAIT);
 		const VkResult acquire_result = vkAcquireNextImageKHR(vk_core.device, g_swapchain.swapchain, UINT64_MAX, sem_image_available, VK_NULL_HANDLE, &ret.index);
@@ -223,12 +229,12 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 			case VK_ERROR_DEVICE_LOST:
 				gEngine.Host_Error("vkAcquireNextImageKHR returned %s, this is unrecoverable, crashing.\n", R_VkResultName(acquire_result));
 				XVK_CHECK(acquire_result);
-				return ret;
+				goto finalize;
 
 			case VK_TIMEOUT:
 			case VK_NOT_READY:
 				gEngine.Con_Printf(S_ERROR "vkAcquireNextImageKHR returned %s (%0#x), frame will be lost\n", R_VkResultName(acquire_result), acquire_result);
-				return ret;
+				goto finalize;
 
 			case VK_ERROR_OUT_OF_DATE_KHR:
 			case VK_ERROR_SURFACE_LOST_KHR:
@@ -238,7 +244,7 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 
 				if (g_swapchain.recreate_requested) {
 					gEngine.Con_Printf(S_WARN "second vkAcquireNextImageKHR failed with %s, frame will be lost\n", R_VkResultName(acquire_result));
-					return ret;
+					goto finalize;
 				}
 
 				++g_swapchain.recreate_requested;
@@ -254,8 +260,8 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 	ret.image = g_swapchain.images[ret.index];
 	ret.view = g_swapchain.image_views[ret.index];
 
+finalize:
 	APROF_SCOPE_END(function);
-
 	return ret;
 }
 
