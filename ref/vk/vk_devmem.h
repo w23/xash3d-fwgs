@@ -9,7 +9,10 @@ typedef struct vk_devmem_s {
 	uint32_t offset;
 	void *mapped;
 
-	struct { int devmem, block; } priv_;
+	// Internal
+	int _slot_index;
+	int _block_index; 
+	int _block_size;
 } vk_devmem_t;
 
 vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemoryPropertyFlags props, VkMemoryAllocateFlags flags);

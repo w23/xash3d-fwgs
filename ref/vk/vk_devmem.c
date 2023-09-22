@@ -1,8 +1,11 @@
 #include "vk_devmem.h"
 #include "alolcator.h"
+#include "r_speeds.h"
 
-#define MAX_DEVMEM_ALLOCS 16
+#define MAX_DEVMEM_ALLOC_SLOTS 16
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
+
+#define MODULE_NAME "devmem"
 
 typedef struct {
 	uint32_t type_index;
@@ -11,18 +14,73 @@ typedef struct {
 	VkDeviceMemory device_memory;
 	VkDeviceSize size;
 
-	void *map;
+	void *mapped;
 	int refcount;
 
 	struct alo_pool_s *allocator;
-} vk_device_memory_t;
+} vk_device_memory_slot_t;
 
 static struct {
-	vk_device_memory_t allocs[MAX_DEVMEM_ALLOCS];
-	int num_allocs;
+	vk_device_memory_slot_t alloc_slots[MAX_DEVMEM_ALLOC_SLOTS];
+	int alloc_slots_count;
+
+	int device_allocated;
+	int allocated_current;
+	int allocated_total;
+	int freed_total;
 
 	qboolean verbose;
 } g_vk_devmem;
+
+#define VKMEMPROPFLAGS_COUNT 5
+#define VKMEMPROPFLAGS_MINSTRLEN (VKMEMPROPFLAGS_COUNT + 1)
+
+// Fills string `out_flags` with characters at each corresponding flag slot.
+// Returns number of flags set.
+static int VK_MemoryPropertyFlags_String( VkMemoryPropertyFlags flags, char *out_flags, size_t out_flags_size ) {
+	ASSERT( out_flags_size >= VKMEMPROPFLAGS_MINSTRLEN );
+	int set_flags = 0;
+	if ( out_flags_size < VKMEMPROPFLAGS_MINSTRLEN ) {
+		out_flags[0] = '\0';
+		return set_flags;
+	}
+
+	int flag = 0;
+	if ( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT     )  {out_flags[flag] = 'D'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT     )  {out_flags[flag] = 'V'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT    )  {out_flags[flag] = 'C'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT      )  {out_flags[flag] = '$'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT )  {out_flags[flag] = 'L'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	// VK_MEMORY_PROPERTY_PROTECTED_BIT
+	// VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD
+	// VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD
+	// VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV
+	out_flags[flag] = '\0';
+
+	return set_flags;
+}
+
+#define VKMEMALLOCFLAGS_COUNT 3
+#define VKMEMALLOCFLAGS_MINSTRLEN (VKMEMALLOCFLAGS_COUNT + 1)
+
+// Fills string `out_flags` with characters at each corresponding flag slot.
+// Returns number of flags set.
+static int VK_MemoryAllocateFlags_String( VkMemoryAllocateFlags flags, char *out_flags, size_t out_flags_size ) {
+	ASSERT( out_flags_size >= VKMEMALLOCFLAGS_MINSTRLEN );
+	int set_flags = 0;
+	if ( out_flags_size < VKMEMALLOCFLAGS_MINSTRLEN ) {
+		out_flags[0] = '\0';
+		return set_flags;
+	}
+
+	int flag = 0;
+	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_MASK_BIT                   )  {out_flags[flag] = 'M'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT                )  {out_flags[flag] = 'A'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT )  {out_flags[flag] = 'R'; set_flags += 1;}  else  {out_flags[flag] = '-';}  flag += 1;
+	out_flags[flag] = '\0';
+
+	return set_flags;
+}
 
 static int findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
 	for (int i = 0; i < (int)vk_core.physical_device.memory_properties2.memoryProperties.memoryTypeCount; ++i) {
@@ -48,8 +106,8 @@ static VkDeviceSize optimalSize(VkDeviceSize size) {
 }
 
 static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemoryAllocateFlags allocate_flags) {
-	if (g_vk_devmem.num_allocs == MAX_DEVMEM_ALLOCS) {
-		gEngine.Host_Error("Ran out of device memory allocation slots\n");
+	if ( g_vk_devmem.alloc_slots_count == MAX_DEVMEM_ALLOC_SLOTS ) {
+		gEngine.Host_Error( "Ran out of device memory allocation slots\n" );
 		return -1;
 	}
 
@@ -66,49 +124,59 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 			.memoryTypeIndex = type_index,
 		};
 
-		if (g_vk_devmem.verbose) {
-			gEngine.Con_Reportf("allocateDeviceMemory size=%llu memoryTypeBits=0x%x allocate_flags=0x%x => typeIndex=%d\n",
-				(unsigned long long)mai.allocationSize, req.memoryTypeBits,
-				allocate_flags,
-				mai.memoryTypeIndex);
+		if ( g_vk_devmem.verbose ) {
+			char allocate_flags_str[VKMEMALLOCFLAGS_MINSTRLEN];
+			VK_MemoryAllocateFlags_String( allocate_flags, &allocate_flags_str[0], sizeof( allocate_flags_str ) );
+			unsigned long long size = (unsigned long long) mai.allocationSize;
+			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %llu, memoryTypeBits: 0x%x, allocate_flags: %s => typeIndex: %d }\n",
+				size, req.memoryTypeBits, allocate_flags_str, mai.memoryTypeIndex );
 		}
 		ASSERT(mai.memoryTypeIndex != UINT32_MAX);
 
-		vk_device_memory_t *device_memory = g_vk_devmem.allocs + g_vk_devmem.num_allocs;
-		XVK_CHECK(vkAllocateMemory(vk_core.device, &mai, NULL, &device_memory->device_memory));
-		device_memory->property_flags = vk_core.physical_device.memory_properties2.memoryProperties.memoryTypes[mai.memoryTypeIndex].propertyFlags;
-		device_memory->allocate_flags = allocate_flags;
-		device_memory->type_index = mai.memoryTypeIndex;
-		device_memory->refcount = 0;
-		device_memory->size = mai.allocationSize;
+		vk_device_memory_slot_t *slot = &g_vk_devmem.alloc_slots[g_vk_devmem.alloc_slots_count];
+		XVK_CHECK( vkAllocateMemory( vk_core.device, &mai, NULL, &slot->device_memory ) );
 
-		device_memory->allocator = aloPoolCreate(device_memory->size, 0, 16);
+		VkPhysicalDeviceMemoryProperties properties = vk_core.physical_device.memory_properties2.memoryProperties;
+		slot->property_flags = properties.memoryTypes[mai.memoryTypeIndex].propertyFlags;
+		slot->allocate_flags = allocate_flags;
+		slot->type_index     = mai.memoryTypeIndex;
+		slot->refcount       = 0;
+		slot->size           = mai.allocationSize;
 
-		if (device_memory->property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-			XVK_CHECK(vkMapMemory(vk_core.device, device_memory->device_memory, 0, device_memory->size, 0, &device_memory->map));
+		g_vk_devmem.device_allocated += mai.allocationSize;
+
+		const int expected_allocations = 0;
+		const int min_alignment = 16;
+		slot->allocator = aloPoolCreate( slot->size, expected_allocations, min_alignment );
+
+		if ( slot->property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) {
+			XVK_CHECK( vkMapMemory( vk_core.device, slot->device_memory, 0, slot->size, 0, &slot->mapped ) );
+			if ( g_vk_devmem.verbose ) {
+				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%x, device_memory: 0x%x, size: %llu }\n",
+					vk_core.device, slot->device_memory, slot->size );
+			}
 		} else {
-			device_memory->map = NULL;
+			slot->mapped = NULL;
 		}
 	}
 
-	return g_vk_devmem.num_allocs++;
+	return g_vk_devmem.alloc_slots_count++;
 }
 
-vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemoryPropertyFlags prop_flags, VkMemoryAllocateFlags allocate_flags) {
-	vk_devmem_t ret = {0};
-	int device_memory_index = -1;
-	alo_block_t block;
-	const int type_index = findMemoryWithType(req.memoryTypeBits, prop_flags);
+vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemoryPropertyFlags property_flags, VkMemoryAllocateFlags allocate_flags) {
+	vk_devmem_t devmem = {0};
+	const int type_index = findMemoryWithType(req.memoryTypeBits, property_flags);
 
-	if (g_vk_devmem.verbose) {
-		gEngine.Con_Reportf("VK_DevMemAllocate name=\"%s\" size=%llu alignment=%llu memoryTypeBits=0x%x prop_flags=%c%c%c%c%c allocate_flags=0x%x => type_index=%d\n",
-			name, (unsigned long long)req.size, (unsigned long long)req.alignment, req.memoryTypeBits,
-			prop_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ? 'D' : '.',
-			prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ? 'V' : '.',
-			prop_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ? 'C' : '.',
-			prop_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ? '$' : '.',
-			prop_flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT ? 'L' : '.',
-			allocate_flags, type_index);
+	if ( g_vk_devmem.verbose ) {
+		char property_flags_str[VKMEMPROPFLAGS_MINSTRLEN];
+		char allocate_flags_str[VKMEMALLOCFLAGS_MINSTRLEN];
+		VK_MemoryPropertyFlags_String( property_flags, &property_flags_str[0], sizeof( property_flags_str ) );
+		VK_MemoryAllocateFlags_String( allocate_flags, &allocate_flags_str[0], sizeof( allocate_flags_str ) );
+
+		unsigned long long req_size      = (unsigned long long) req.size;
+		unsigned long long req_alignment = (unsigned long long) req.alignment;
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: %s, allocate_flags: %s => type_index: %d }\n",
+			name, req_size, req_alignment, req.memoryTypeBits, property_flags_str, allocate_flags_str, type_index );
 	}
 
 	if (vk_core.rtx) {
@@ -117,87 +185,106 @@ vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemo
 		allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
 	}
 
-	for (int i = 0; i < g_vk_devmem.num_allocs; ++i) {
-		vk_device_memory_t *const device_memory = g_vk_devmem.allocs + i;
-		if (device_memory->type_index != type_index)
+	alo_block_t block;
+	int slot_index = -1;
+	for ( int _slot_index = 0 ; _slot_index < g_vk_devmem.alloc_slots_count; _slot_index += 1 ) {
+		vk_device_memory_slot_t *const slot = g_vk_devmem.alloc_slots + _slot_index;
+		if ( slot->type_index != type_index )
 			continue;
 
-		if ((device_memory->allocate_flags & allocate_flags) != allocate_flags)
+		if ( (slot->allocate_flags & allocate_flags ) != allocate_flags )
 			continue;
 
-		if ((device_memory->property_flags & prop_flags) != prop_flags)
+		if ( ( slot->property_flags & property_flags ) != property_flags )
 			continue;
 
-		block = aloPoolAllocate(device_memory->allocator, req.size, req.alignment);
-		if (block.size == 0)
+		block = aloPoolAllocate( slot->allocator, req.size, req.alignment );
+		if ( block.size == 0 )
 			continue;
 
-		device_memory_index = i;
+		slot_index = _slot_index;
 		break;
 	}
 
-	if (device_memory_index < 0) {
-		device_memory_index = allocateDeviceMemory(req, type_index, allocate_flags);
-		ASSERT(device_memory_index >= 0);
-		if (device_memory_index < 0)
-			return ret;
+	if ( slot_index < 0 ) {
+		slot_index = allocateDeviceMemory( req, type_index, allocate_flags );
+		ASSERT( slot_index >= 0 );
+		if ( slot_index < 0 )
+			return devmem;
 
-		block = aloPoolAllocate(g_vk_devmem.allocs[device_memory_index].allocator, req.size, req.alignment);
-		ASSERT(block.size != 0);
+		struct alo_pool_s *allocator = g_vk_devmem.alloc_slots[slot_index].allocator;
+		block = aloPoolAllocate( allocator, req.size, req.alignment );
+		ASSERT( block.size != 0 );
 	}
 
 	{
-		vk_device_memory_t *const device_memory = g_vk_devmem.allocs + device_memory_index;
-		ret.device_memory = device_memory->device_memory;
-		ret.offset = block.offset;
-		ret.mapped = device_memory->map ? (char*)device_memory->map + block.offset : NULL;
+		vk_device_memory_slot_t *const slot = g_vk_devmem.alloc_slots + slot_index;
+		devmem.device_memory = slot->device_memory;
+		devmem.offset        = block.offset;
+		devmem.mapped        = slot->mapped ? (char *)slot->mapped + block.offset : NULL;
 
 		if (g_vk_devmem.verbose) {
-			gEngine.Con_Reportf("Allocated devmem=%d block=%d offset=%d size=%d\n", device_memory_index, block.index, (int)block.offset, (int)block.size);
+			gEngine.Con_Reportf("  ^3->^7 Allocated: { slot: %d, block: %d, offset: %d, size: %d }\n", 
+			slot_index, block.index, (int)block.offset, (int)block.size);
 		}
 
-		device_memory->refcount++;
-		ret.priv_.devmem = device_memory_index;
-		ret.priv_.block = block.index;
+		slot->refcount++;
+		devmem._slot_index  = slot_index;
+		devmem._block_index = block.index;
+		devmem._block_size  = block.size;
 
-		return ret;
+		g_vk_devmem.allocated_current += block.size;
+		g_vk_devmem.allocated_total   += block.size;
+
+		return devmem;
 	}
 }
 
 void VK_DevMemFree(const vk_devmem_t *mem) {
-	ASSERT(mem->priv_.devmem >= 0);
-	ASSERT(mem->priv_.devmem < g_vk_devmem.num_allocs);
+	ASSERT( mem->_slot_index >= 0 );
+	ASSERT( mem->_slot_index < g_vk_devmem.alloc_slots_count );
 
-	vk_device_memory_t *const device_memory = g_vk_devmem.allocs + mem->priv_.devmem;
-	ASSERT(mem->device_memory == device_memory->device_memory);
+	int slot_index = mem->_slot_index;
+	vk_device_memory_slot_t *const slot = g_vk_devmem.alloc_slots + slot_index;
+	ASSERT( mem->device_memory == slot->device_memory );
 
-	if (g_vk_devmem.verbose) {
-		gEngine.Con_Reportf("Freeing devmem=%d block=%d\n", mem->priv_.devmem, mem->priv_.block);
+	if ( g_vk_devmem.verbose ) {
+		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d }\n", slot_index, mem->_block_index );
 	}
 
-	aloPoolFree(device_memory->allocator, mem->priv_.block);
+	aloPoolFree( slot->allocator, mem->_block_index );
 
-	device_memory->refcount--;
+	g_vk_devmem.allocated_current -= mem->_block_size;
+	g_vk_devmem.freed_total += mem->_block_size;
+
+	slot->refcount--;
 }
 
 qboolean VK_DevMemInit( void ) {
-	g_vk_devmem.verbose = !!gEngine.Sys_CheckParm("-vkdebugmem");
+	g_vk_devmem.verbose = gEngine.Sys_CheckParm( "-vkdebugmem" );
+
+	R_SPEEDS_METRIC( g_vk_devmem.alloc_slots_count, "allocated_slots"  , kSpeedsMetricCount );
+	R_SPEEDS_METRIC( g_vk_devmem.device_allocated , "device_allocated" , kSpeedsMetricBytes );
+	R_SPEEDS_METRIC( g_vk_devmem.allocated_current, "allocated_current", kSpeedsMetricBytes );
+	R_SPEEDS_METRIC( g_vk_devmem.allocated_total  , "allocated_total"  , kSpeedsMetricBytes );
+	R_SPEEDS_METRIC( g_vk_devmem.freed_total      , "freed_total"      , kSpeedsMetricBytes );
+	
 	return true;
 }
 
 void VK_DevMemDestroy( void ) {
-	for (int i = 0; i < g_vk_devmem.num_allocs; ++i) {
-		const vk_device_memory_t *const device_memory = g_vk_devmem.allocs + i;
-		ASSERT(device_memory->refcount == 0);
+	for ( int slot_index = 0; slot_index < g_vk_devmem.alloc_slots_count; slot_index += 1 ) {
+		const vk_device_memory_slot_t *const slot = g_vk_devmem.alloc_slots + slot_index;
+		ASSERT( slot->refcount == 0 );
 
 		// TODO check that everything has been freed
-		aloPoolDestroy(device_memory->allocator);
+		aloPoolDestroy( slot->allocator );
 
-		if (device_memory->map)
-			vkUnmapMemory(vk_core.device, device_memory->device_memory);
+		if ( slot->mapped )
+			vkUnmapMemory( vk_core.device, slot->device_memory );
 
-		vkFreeMemory(vk_core.device, device_memory->device_memory, NULL);
+		vkFreeMemory( vk_core.device, slot->device_memory, NULL );
 	}
 
-	g_vk_devmem.num_allocs = 0;
+	g_vk_devmem.alloc_slots_count = 0;
 }
