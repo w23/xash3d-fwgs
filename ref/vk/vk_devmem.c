@@ -83,19 +83,20 @@ static int VK_MemoryAllocateFlags_String( VkMemoryAllocateFlags flags, char *out
 }
 
 static int findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
-	for (int i = 0; i < (int)vk_core.physical_device.memory_properties2.memoryProperties.memoryTypeCount; ++i) {
-		if (!(type_index_bits & (1 << i)))
+	VkPhysicalDeviceMemoryProperties properties = vk_core.physical_device.memory_properties2.memoryProperties;
+	for ( int type = 0; type < (int)properties.memoryTypeCount; type += 1 ) {
+		if ( !( type_index_bits & ( 1 << type ) ) )
 			continue;
 
-		if ((vk_core.physical_device.memory_properties2.memoryProperties.memoryTypes[i].propertyFlags & flags) == flags)
-			return i;
+		if ( ( properties.memoryTypes[type].propertyFlags & flags ) == flags )
+			return type;
 	}
 
 	return UINT32_MAX;
 }
 
 static VkDeviceSize optimalSize(VkDeviceSize size) {
-	if (size < DEFAULT_ALLOCATION_SIZE)
+	if ( size < DEFAULT_ALLOCATION_SIZE )
 		return DEFAULT_ALLOCATION_SIZE;
 
 	// TODO:
@@ -131,7 +132,7 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %llu, memoryTypeBits: 0x%x, allocate_flags: %s => typeIndex: %d }\n",
 				size, req.memoryTypeBits, allocate_flags_str, mai.memoryTypeIndex );
 		}
-		ASSERT(mai.memoryTypeIndex != UINT32_MAX);
+		ASSERT( mai.memoryTypeIndex != UINT32_MAX );
 
 		vk_device_memory_slot_t *slot = &g_vk_devmem.alloc_slots[g_vk_devmem.alloc_slots_count];
 		XVK_CHECK( vkAllocateMemory( vk_core.device, &mai, NULL, &slot->device_memory ) );
@@ -179,7 +180,7 @@ vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemo
 			name, req_size, req_alignment, req.memoryTypeBits, property_flags_str, allocate_flags_str, type_index );
 	}
 
-	if (vk_core.rtx) {
+	if ( vk_core.rtx ) {
 		// TODO this is needed only for the ray tracer and only while there's no proper staging
 		// Once staging is established, we can avoid forcing this on every devmem allocation
 		allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
