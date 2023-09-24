@@ -115,17 +115,20 @@ static void speedsPrintf( const char *msg, ... ) {
 
 static void metricTypeSnprintf(char *buf, int buf_size, int value, r_speeds_metric_type_t type) {
 	switch (type) {
-		case kSpeedsMetricCount:
+		case kSpeedsMetricCount: {
 			Q_snprintf( buf, buf_size, "%d", value );
 			break;
-		case kSpeedsMetricBytes:
+		}
+		case kSpeedsMetricBytes: {
 			char *memory_str = Q_memprint( (float) value );
 			Q_strncpy( buf, memory_str, buf_size );
 			break;
-		case kSpeedsMetricMicroseconds:
+		}
+		case kSpeedsMetricMicroseconds: {
 			float msecs = value * 1e-3f; // us -> ms
 			Q_snprintf( buf, buf_size, "%.03f ms", msecs );
 			break;
+		}
 	}
 }
 
