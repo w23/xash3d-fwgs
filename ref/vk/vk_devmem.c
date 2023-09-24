@@ -153,8 +153,12 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 		if ( slot->property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) {
 			XVK_CHECK( vkMapMemory( vk_core.device, slot->device_memory, 0, slot->size, 0, &slot->mapped ) );
 			if ( g_vk_devmem.verbose ) {
-				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%x, device_memory: 0x%x, size: %llu }\n",
-					vk_core.device, slot->device_memory, slot->size );
+				size_t size          = (size_t) slot->size;
+				size_t device        = (size_t) vk_core.device;
+				size_t device_memory = (size_t) slot->device_memory;
+				// `z` - specifies `size_t` length
+				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, device_memory: 0x%zx, size: %zu }\n",
+					device, device_memory, size );
 			}
 		} else {
 			slot->mapped = NULL;
