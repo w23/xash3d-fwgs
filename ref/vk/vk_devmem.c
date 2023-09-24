@@ -7,7 +7,7 @@
 
 #define MODULE_NAME "devmem"
 
-typedef struct {
+typedef struct vk_device_memory_slot_s {
 	uint32_t type_index;
 	VkMemoryPropertyFlags property_flags; // device vs host
 	VkMemoryAllocateFlags allocate_flags;
@@ -20,17 +20,67 @@ typedef struct {
 	struct alo_pool_s *allocator;
 } vk_device_memory_slot_t;
 
+typedef struct vk_devmem_allocation_stats_s {
+	// Note:
+	// `..._current` - Current size or number of allocations which gets updated on every allocation and deallocation.
+	// `..._total`   - Total size or number of allocations through the whole program runtime.
+
+	int allocations_current;  // Current number of active (not freed) allocations.
+	int allocated_current;    // Current size of allocated memory.
+	int allocations_total;    // Total number of memory allocations.
+	int allocated_total;      // Total size of allocated memory.
+	int frees_total;          // Total number of memory deallocations (frees).
+	int freed_total;          // Total size of deallocated (freed) memory.
+} vk_devmem_allocation_stats_t;
+
 static struct {
 	vk_device_memory_slot_t alloc_slots[MAX_DEVMEM_ALLOC_SLOTS];
 	int alloc_slots_count;
 
+	// Size of memory allocated on logical device `VkDevice` 
+	// (which is basically bound to physical device `VkPhysicalDevice`).
 	int device_allocated;
-	int allocated_current;
-	int allocated_total;
-	int freed_total;
+
+	// Allocation statistics for each usage type.
+	vk_devmem_allocation_stats_t stats[VK_DEVMEM_USAGE_TYPES_COUNT];
 
 	qboolean verbose;
 } g_vk_devmem;
+
+// Register allocation in overall stats and for the corresponding type too.
+// This is "scalable" approach, which can be simplified if needed.
+#define REGISTER_ALLOCATION( type, size )                                     \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current += 1;     \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   += size;  \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_total   += 1;     \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_total     += size;  \
+	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) {  \
+		if ( type_idx == type ) {                                             \
+			g_vk_devmem.stats[type_idx].allocations_current += 1;             \
+			g_vk_devmem.stats[type_idx].allocated_current   += size;          \
+			g_vk_devmem.stats[type_idx].allocations_total   += 1;             \
+			g_vk_devmem.stats[type_idx].allocated_total     += size;          \
+			break;                                                            \
+		}                                                                     \
+	}
+
+// Register deallocation (freeing) in overall stats and for the corresponding type too.
+// This is "scalable" approach, which can be simplified if needed.
+#define REGISTER_FREE( type, size )                                           \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current -= 1;     \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   -= size;  \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].frees_total         += 1;     \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].freed_total         += size;  \
+	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) {  \
+		if ( type_idx == type ) {                                             \
+			g_vk_devmem.stats[type_idx].allocations_current -= 1;             \
+			g_vk_devmem.stats[type_idx].allocated_current   -= size;          \
+			g_vk_devmem.stats[type_idx].frees_total         += 1;             \
+			g_vk_devmem.stats[type_idx].freed_total         += size;          \
+			break;                                                            \
+		}                                                                     \
+	}
+
 
 #define VKMEMPROPFLAGS_COUNT 5
 #define VKMEMPROPFLAGS_MINSTRLEN (VKMEMPROPFLAGS_COUNT + 1)
@@ -168,8 +218,12 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 	return g_vk_devmem.alloc_slots_count++;
 }
 
-vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemoryPropertyFlags property_flags, VkMemoryAllocateFlags allocate_flags) {
-	vk_devmem_t devmem = {0};
+vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_type, vk_devmem_allocate_args_t devmem_allocate_args) {
+	VkMemoryRequirements  req            = devmem_allocate_args.requirements;
+	VkMemoryPropertyFlags property_flags = devmem_allocate_args.property_flags;
+	VkMemoryAllocateFlags allocate_flags = devmem_allocate_args.allocate_flags;
+	
+	vk_devmem_t devmem = { .usage_type = usage_type };
 	const int type_index = findMemoryWithType(req.memoryTypeBits, property_flags);
 
 	if ( g_vk_devmem.verbose ) {
@@ -178,10 +232,12 @@ vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemo
 		VK_MemoryPropertyFlags_String( property_flags, &property_flags_str[0], sizeof( property_flags_str ) );
 		VK_MemoryAllocateFlags_String( allocate_flags, &allocate_flags_str[0], sizeof( allocate_flags_str ) );
 
+		const char *usage_type_str = VK_DevMemUsageTypeString( usage_type );
+
 		unsigned long long req_size      = (unsigned long long) req.size;
 		unsigned long long req_alignment = (unsigned long long) req.alignment;
-		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: %s, allocate_flags: %s => type_index: %d }\n",
-			name, req_size, req_alignment, req.memoryTypeBits, property_flags_str, allocate_flags_str, type_index );
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: %s, allocate_flags: %s => type_index: %d }\n",
+			name, usage_type_str, req_size, req_alignment, req.memoryTypeBits, property_flags_str, allocate_flags_str, type_index );
 	}
 
 	if ( vk_core.rtx ) {
@@ -238,8 +294,7 @@ vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemo
 		devmem._block_index = block.index;
 		devmem._block_size  = block.size;
 
-		g_vk_devmem.allocated_current += block.size;
-		g_vk_devmem.allocated_total   += block.size;
+		REGISTER_ALLOCATION( usage_type, block.size );
 
 		return devmem;
 	}
@@ -259,23 +314,51 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 
 	aloPoolFree( slot->allocator, mem->_block_index );
 
-	g_vk_devmem.allocated_current -= mem->_block_size;
-	g_vk_devmem.freed_total += mem->_block_size;
+	REGISTER_FREE( mem->usage_type, mem->_block_size );
 
 	slot->refcount--;
+}
+
+// Little helper macro to turn anything into string.
+#define STRING( str ) #str
+
+// Register single stats variable.
+#define REGISTER_STATS_METRIC( var, metric_name, var_name, metric_type ) \
+	R_SpeedsRegisterMetric( &(var), MODULE_NAME, metric_name, metric_type, /*reset*/ false, var_name, __FILE__, __LINE__ );
+
+// NOTE(nilsoncore): I know, this is a mess... Sorry.
+// It could have been avoided by having short `VK_DevMemUsageTypes` enum names,
+// but I have done it this way because I want those enum names to be as descriptive as possible.
+// This basically replaces those enum names with ones provided by suffixes, which are just their endings. 
+#define REGISTER_STATS_METRICS( usage_type, usage_suffix ) { \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocations_current, STRING( allocations_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocations_current ), kSpeedsMetricCount ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_current, STRING( allocated_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_current ), kSpeedsMetricBytes );       \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocations_total, STRING( allocations_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocations_total ), kSpeedsMetricCount );       \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_total, STRING( allocated_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_total ), kSpeedsMetricBytes );             \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].frees_total, STRING( frees_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].frees_total ), kSpeedsMetricCount );                         \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].freed_total, STRING( freed_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].freed_total ), kSpeedsMetricBytes );                         \
 }
 
 qboolean VK_DevMemInit( void ) {
 	g_vk_devmem.verbose = gEngine.Sys_CheckParm( "-vkdebugmem" );
 
-	R_SPEEDS_METRIC( g_vk_devmem.alloc_slots_count, "allocated_slots"  , kSpeedsMetricCount );
-	R_SPEEDS_METRIC( g_vk_devmem.device_allocated , "device_allocated" , kSpeedsMetricBytes );
-	R_SPEEDS_METRIC( g_vk_devmem.allocated_current, "allocated_current", kSpeedsMetricBytes );
-	R_SPEEDS_METRIC( g_vk_devmem.allocated_total  , "allocated_total"  , kSpeedsMetricBytes );
-	R_SPEEDS_METRIC( g_vk_devmem.freed_total      , "freed_total"      , kSpeedsMetricBytes );
+	// Register standalone metrics.
+	R_SPEEDS_METRIC( g_vk_devmem.alloc_slots_count, "allocated_slots", kSpeedsMetricCount );
+	R_SPEEDS_METRIC( g_vk_devmem.device_allocated, "device_allocated", kSpeedsMetricBytes );
+	
+	// Register stats metrics for each usage type.
+	// Maybe these metrics should be enabled by `-vkdebugmem` too?
+	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_ALL, _ALL );
+	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_BUFFER, _BUFFER );
+	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_IMAGE, _IMAGE );
 	
 	return true;
 }
+
+// NOTE(nilsoncore):
+// It has to be undefined only after `VK_DevMemInit` because
+// otherwise the function would not know what this is.
+#undef STRING
 
 void VK_DevMemDestroy( void ) {
 	for ( int slot_index = 0; slot_index < g_vk_devmem.alloc_slots_count; slot_index += 1 ) {
@@ -292,4 +375,17 @@ void VK_DevMemDestroy( void ) {
 	}
 
 	g_vk_devmem.alloc_slots_count = 0;
+}
+
+const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type ) {
+	ASSERT( type >= VK_DEVMEM_USAGE_TYPE_ALL );
+	ASSERT( type < VK_DEVMEM_USAGE_TYPES_COUNT );
+
+	switch ( type ) {
+		case VK_DEVMEM_USAGE_TYPE_ALL:     return "ALL";
+		case VK_DEVMEM_USAGE_TYPE_BUFFER:  return "BUFFER";
+		case VK_DEVMEM_USAGE_TYPE_IMAGE:   return "IMAGE";
+	}
+
+	return "(unknown)";
 }
