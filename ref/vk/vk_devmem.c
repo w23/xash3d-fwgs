@@ -25,12 +25,16 @@ typedef struct vk_devmem_allocation_stats_s {
 	// `..._current` - Current size or number of allocations which gets updated on every allocation and deallocation.
 	// `..._total`   - Total size or number of allocations through the whole program runtime.
 
-	int allocations_current;  // Current number of active (not freed) allocations.
-	int allocated_current;    // Current size of allocated memory.
-	int allocations_total;    // Total number of memory allocations.
-	int allocated_total;      // Total size of allocated memory.
-	int frees_total;          // Total number of memory deallocations (frees).
-	int freed_total;          // Total size of deallocated (freed) memory.
+	int allocations_current;       // Current number of active (not freed) allocations.
+	int allocated_current;         // Current size of allocated memory.
+	int allocations_total;         // Total number of memory allocations.
+	int allocated_total;           // Total size of allocated memory.
+	int frees_total;               // Total number of memory deallocations (frees).
+	int freed_total;               // Total size of deallocated (freed) memory.
+	int align_holes_current;       // Current number of alignment holes in active (not freed) allocations.
+	int align_holes_size_current;  // Current size of alignment holes in active (not freed) allocations.
+	int align_holes_total;         // Total number of alignment holes in all of allocations made.
+	int align_holes_size_total;    // Total size of alignment holes in all of allocations made.
 } vk_devmem_allocation_stats_t;
 
 static struct {
@@ -49,36 +53,59 @@ static struct {
 
 // Register allocation in overall stats and for the corresponding type too.
 // This is "scalable" approach, which can be simplified if needed.
-#define REGISTER_ALLOCATION( type, size )                                     \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current += 1;     \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   += size;  \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_total   += 1;     \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_total     += size;  \
-	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) {  \
-		if ( type_idx == type ) {                                             \
-			g_vk_devmem.stats[type_idx].allocations_current += 1;             \
-			g_vk_devmem.stats[type_idx].allocated_current   += size;          \
-			g_vk_devmem.stats[type_idx].allocations_total   += 1;             \
-			g_vk_devmem.stats[type_idx].allocated_total     += size;          \
-			break;                                                            \
-		}                                                                     \
-	}
+#define REGISTER_ALLOCATION( type, size, alignment ) { \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current += 1; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   += size; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_total   += 1; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_total     += size; \
+	int alignment_hole = size % alignment; \
+	if ( alignment_hole > 0 ) { \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_current      += 1; \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_size_current += alignment_hole; \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_total        += 1; \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_size_total   += alignment_hole; \
+	} \
+	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) { \
+		if ( type_idx == type ) { \
+			g_vk_devmem.stats[type_idx].allocations_current += 1; \
+			g_vk_devmem.stats[type_idx].allocated_current   += size; \
+			g_vk_devmem.stats[type_idx].allocations_total   += 1; \
+			g_vk_devmem.stats[type_idx].allocated_total     += size; \
+			if ( alignment_hole > 0 ) { \
+				g_vk_devmem.stats[type_idx].align_holes_current      += 1; \
+				g_vk_devmem.stats[type_idx].align_holes_size_current += alignment_hole; \
+				g_vk_devmem.stats[type_idx].align_holes_total        += 1; \
+				g_vk_devmem.stats[type_idx].align_holes_size_total   += alignment_hole; \
+			} \
+			break; \
+		} \
+	} \
+}
 
 // Register deallocation (freeing) in overall stats and for the corresponding type too.
 // This is "scalable" approach, which can be simplified if needed.
-#define REGISTER_FREE( type, size )                                           \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current -= 1;     \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   -= size;  \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].frees_total         += 1;     \
-	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].freed_total         += size;  \
-	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) {  \
-		if ( type_idx == type ) {                                             \
-			g_vk_devmem.stats[type_idx].allocations_current -= 1;             \
-			g_vk_devmem.stats[type_idx].allocated_current   -= size;          \
-			g_vk_devmem.stats[type_idx].frees_total         += 1;             \
-			g_vk_devmem.stats[type_idx].freed_total         += size;          \
-			break;                                                            \
-		}                                                                     \
+#define REGISTER_FREE( type, size, alignment ) \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocations_current -= 1; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].allocated_current   -= size; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].frees_total         += 1; \
+	g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].freed_total         += size; \
+	int alignment_hole = size % alignment; \
+	if ( alignment_hole > 0 ) { \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_current      -= 1; \
+		g_vk_devmem.stats[VK_DEVMEM_USAGE_TYPE_ALL].align_holes_size_current -= alignment_hole; \
+	} \
+	for ( int type_idx = VK_DEVMEM_USAGE_TYPE_ALL + 1; type_idx < VK_DEVMEM_USAGE_TYPES_COUNT; type_idx += 1 ) { \
+		if ( type_idx == type ) { \
+			g_vk_devmem.stats[type_idx].allocations_current -= 1; \
+			g_vk_devmem.stats[type_idx].allocated_current   -= size; \
+			g_vk_devmem.stats[type_idx].frees_total         += 1; \
+			g_vk_devmem.stats[type_idx].freed_total         += size; \
+			break; \
+			if ( alignment_hole > 0 ) { \
+				g_vk_devmem.stats[type_idx].align_holes_current      -= 1; \
+				g_vk_devmem.stats[type_idx].align_holes_size_current -= alignment_hole; \
+			} \
+		} \
 	}
 
 
@@ -290,11 +317,12 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 		}
 
 		slot->refcount++;
-		devmem._slot_index  = slot_index;
-		devmem._block_index = block.index;
-		devmem._block_size  = block.size;
+		devmem._slot_index      = slot_index;
+		devmem._block_index     = block.index;
+		devmem._block_size      = block.size;
+		devmem._block_alignment = req.alignment;
 
-		REGISTER_ALLOCATION( usage_type, block.size );
+		REGISTER_ALLOCATION( usage_type, block.size, req.alignment );
 
 		return devmem;
 	}
@@ -309,12 +337,15 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 	ASSERT( mem->device_memory == slot->device_memory );
 
 	if ( g_vk_devmem.verbose ) {
-		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d }\n", slot_index, mem->_block_index );
+		const char *usage_type = VK_DevMemUsageTypeString( mem->usage_type );
+		int align_hole = mem->_block_size % mem->_block_alignment;
+		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d, usage: %s, size: %d, alignment: %d, hole: %d }\n",
+			slot_index, mem->_block_index, usage_type, mem->_block_size, mem->_block_alignment, align_hole );
 	}
 
 	aloPoolFree( slot->allocator, mem->_block_index );
 
-	REGISTER_FREE( mem->usage_type, mem->_block_size );
+	REGISTER_FREE( mem->usage_type, mem->_block_size, mem->_block_alignment );
 
 	slot->refcount--;
 }
@@ -332,11 +363,15 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 // This basically replaces those enum names with ones provided by suffixes, which are just their endings. 
 #define REGISTER_STATS_METRICS( usage_type, usage_suffix ) { \
  	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocations_current, STRING( allocations_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocations_current ), kSpeedsMetricCount ); \
- 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_current, STRING( allocated_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_current ), kSpeedsMetricBytes );       \
- 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocations_total, STRING( allocations_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocations_total ), kSpeedsMetricCount );       \
- 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_total, STRING( allocated_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_total ), kSpeedsMetricBytes );             \
- 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].frees_total, STRING( frees_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].frees_total ), kSpeedsMetricCount );                         \
- 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].freed_total, STRING( freed_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].freed_total ), kSpeedsMetricBytes );                         \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_current, STRING( allocated_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_current ), kSpeedsMetricBytes ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocations_total, STRING( allocations_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocations_total ), kSpeedsMetricCount ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].allocated_total, STRING( allocated_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].allocated_total ), kSpeedsMetricBytes ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].frees_total, STRING( frees_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].frees_total ), kSpeedsMetricCount ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].freed_total, STRING( freed_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].freed_total ), kSpeedsMetricBytes ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].align_holes_current, STRING( align_holes_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].align_holes_current ), kSpeedsMetricCount ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].align_holes_size_current, STRING( align_holes_size_current##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].align_holes_size_current ), kSpeedsMetricBytes ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].align_holes_total, STRING( align_holes_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].align_holes_total ), kSpeedsMetricCount ); \
+ 	REGISTER_STATS_METRIC( g_vk_devmem.stats[usage_type].align_holes_size_total, STRING( align_holes_size_total##usage_suffix ), STRING( g_vk_devmem.stats[usage_suffix].align_holes_size_total ), kSpeedsMetricBytes ); \
 }
 
 qboolean VK_DevMemInit( void ) {

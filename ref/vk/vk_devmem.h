@@ -31,6 +31,7 @@ typedef struct vk_devmem_s {
 	int _slot_index;
 	int _block_index; 
 	int _block_size;
+	int _block_alignment;
 } vk_devmem_t;
 
 typedef struct vk_devmem_allocate_args_s {
