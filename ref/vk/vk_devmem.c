@@ -275,12 +275,12 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 
 	alo_block_t block;
 	int slot_index = -1;
-	for ( int _slot_index = 0 ; _slot_index < g_vk_devmem.alloc_slots_count; _slot_index += 1 ) {
+	for ( int _slot_index = 0; _slot_index < g_vk_devmem.alloc_slots_count; _slot_index += 1 ) {
 		vk_device_memory_slot_t *const slot = g_vk_devmem.alloc_slots + _slot_index;
 		if ( slot->type_index != type_index )
 			continue;
 
-		if ( (slot->allocate_flags & allocate_flags ) != allocate_flags )
+		if ( ( slot->allocate_flags & allocate_flags ) != allocate_flags )
 			continue;
 
 		if ( ( slot->property_flags & property_flags ) != property_flags )
@@ -311,9 +311,9 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 		devmem.offset        = block.offset;
 		devmem.mapped        = slot->mapped ? (char *)slot->mapped + block.offset : NULL;
 
-		if (g_vk_devmem.verbose) {
-			gEngine.Con_Reportf("  ^3->^7 Allocated: { slot: %d, block: %d, offset: %d, size: %d }\n", 
-			slot_index, block.index, (int)block.offset, (int)block.size);
+		if ( g_vk_devmem.verbose ) {
+			gEngine.Con_Reportf( "  ^3->^7 Allocated: { slot: %d, block: %d, offset: %d, size: %d }\n", 
+				slot_index, block.index, (int)block.offset, (int)block.size );
 		}
 
 		slot->refcount++;
@@ -382,7 +382,7 @@ qboolean VK_DevMemInit( void ) {
 	R_SPEEDS_METRIC( g_vk_devmem.device_allocated, "device_allocated", kSpeedsMetricBytes );
 	
 	// Register stats metrics for each usage type.
-	// Maybe these metrics should be enabled by `-vkdebugmem` too?
+	// Maybe these metrics should be enabled only with `-vkdebugmem`?
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_ALL, _ALL );
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_BUFFER, _BUFFER );
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_IMAGE, _IMAGE );
