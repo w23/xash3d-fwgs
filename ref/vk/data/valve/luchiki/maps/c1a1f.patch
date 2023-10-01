@@ -151,3 +151,19 @@
 { 
 "_xvk_ent_id" "282" // remove hack light entity
 }
+
+// fix gate
+{
+"_xvk_smoothing_group" "796 795 807 800 809 808 805 801" // maybe 780
+}
+{
+"_xvk_surface_id" "796 795 807 800 809 808 805 801 796 780"
+"_xvk_texture" "generic_metal1" // TODO: texture -> material
+}
+{
+"_xvk_smoothing_group" "766 765 772 773 777 776 768 769"
+}
+{
+"_xvk_surface_id" "766 765 772 773 777 776 768 769"
+"_xvk_texture" "generic_metal1" // TODO: texture -> material
+}

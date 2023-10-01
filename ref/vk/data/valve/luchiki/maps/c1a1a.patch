@@ -13,6 +13,5 @@
 // mirror in toilet
 {
 "_xvk_surface_id" "1936 1934 1933"
-//"_xvk_texture" "mirror"
-"_xvk_texture" "pbr/colors/white.png" // HACK
+"_xvk_texture" "mirror_broken"
 }

@@ -135,4 +135,7 @@
 "_light" "233 186 0 80"
 }
 
-
+{
+"_xvk_ent_id" "39"
+"_xvk_map_material" "generic028 generic_metal1" // FIXME
+}
