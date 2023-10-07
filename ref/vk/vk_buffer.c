@@ -18,11 +18,10 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 		memreq.alignment = ALIGN_UP(memreq.alignment, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 	}
 
-	usage = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 	vk_devmem_allocate_args_t args = (vk_devmem_allocate_args_t) {
 		.requirements = memreq,
 		.property_flags = flags,
-		.allocate_flags = usage,
+		.allocate_flags = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0,
 	};
 	buf->devmem = VK_DevMemAllocateBuffer( debug_name, args );
 

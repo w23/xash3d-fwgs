@@ -45,10 +45,9 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 
 	vkGetImageMemoryRequirements(vk_core.device, image.image, &memreq);
 
-	VkMemoryPropertyFlags memory_props = (create->memory_props) ? create->memory_props : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	vk_devmem_allocate_args_t args = (vk_devmem_allocate_args_t) {
 		.requirements = memreq,
-		.property_flags = memory_props,
+		.property_flags = (create->memory_props) ? create->memory_props : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		.allocate_flags = 0,
 	};
 	image.devmem = VK_DevMemAllocateImage( create->debug_name, args );
