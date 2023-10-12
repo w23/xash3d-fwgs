@@ -18,15 +18,16 @@ GNU General Public License for more details.
 #include "ktx2.h"
 
 qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t filesize ) {
+	ktx_header_t header;
+
 	if( filesize < KTX_MINIMAL_HEADER_SIZE )
 		return false;
 
-	if ( memcmp(buffer, KTX_IDENTIFIER, KTX_IDENTIFIER_SIZE) != 0) {
+	if ( memcmp(buffer, KTX_IDENTIFIER, KTX_IDENTIFIER_SIZE) != 0 ) {
 		Con_DPrintf( S_ERROR "%s: (%s) has invalid identifier\n", __FUNCTION__, name );
 		return false;
 	}
 
-	ktx_header_t header;
 	memcpy(&header, buffer + KTX_IDENTIFIER_SIZE, sizeof header);
 
 	/* ktx_index_t index; */
@@ -48,7 +49,7 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 	// FIXME format-dependent
 	image.flags = IMAGE_HAS_COLOR; // | IMAGE_HAS_ALPHA
 
-	image.rgba = Mem_Malloc( host.imagepool, image.size);
+	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	memcpy(image.rgba, buffer, image.size);
 
 	return true;
