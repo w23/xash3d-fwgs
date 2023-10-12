@@ -716,103 +716,26 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	}
 
 	{
-		// 	5.1 upload buf -> image:layout:DST
-		// 		5.1.1 transitionToLayout(UNDEFINED -> DST)
-		VkImageMemoryBarrier image_barrier = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = tex->vk.image.image,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = mipCount,
-				.baseArrayLayer = 0,
-				.layerCount = num_layers,
-			}};
+		R_VkImageUploadBegin(&tex->vk.image);
 
-		{
-			// cmdbuf may become invalidated in locks in the loops below
-			const VkCommandBuffer cmdbuf = R_VkStagingGetCommandBuffer();
-			vkCmdPipelineBarrier(cmdbuf,
-					VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-					VK_PIPELINE_STAGE_TRANSFER_BIT,
-					0, 0, NULL, 0, NULL, 1, &image_barrier);
-		}
-
-		// 		5.1.2 copyBufferToImage for all mip levels
 		for (int layer = 0; layer < num_layers; ++layer) {
 			for (int mip = 0; mip < mipCount; ++mip) {
 				const rgbdata_t *const pic = layers[layer];
-				byte *buf = pic->buffer;
 				const int width = Q_max( 1, ( pic->width >> mip ));
 				const int height = Q_max( 1, ( pic->height >> mip ));
 				const size_t mip_size = CalcImageSize( pic->type, width, height, 1 );
-				const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(format);
-				const vk_staging_image_args_t staging_args = {
-					.image = tex->vk.image.image,
-					.region = (VkBufferImageCopy) {
-						.bufferOffset = 0,
-						.bufferRowLength = 0,
-						.bufferImageHeight = 0,
-						.imageSubresource = (VkImageSubresourceLayers){
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.mipLevel = mip,
-							.baseArrayLayer = layer,
-							.layerCount = 1,
-						},
-						.imageExtent = (VkExtent3D){
-							.width = width,
-							.height = height,
-							.depth = 1,
-						},
-					},
-					.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-					.size = mip_size,
-					.alignment = texel_block_size,
-				};
+				byte *const buf = pic->buffer;
 
-				const vk_staging_region_t staging = R_VkStagingLockForImage(staging_args);
-				ASSERT(staging.ptr);
-				memcpy(staging.ptr, buf, mip_size);
-
+				R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, buf);
 				tex->total_size += mip_size;
 
 				// Build mip in place for the next mip level
 				if ( mip < mipCount - 1 )
-				{
 					BuildMipMap( buf, width, height, 1, tex->flags );
-				}
-
-				R_VkStagingUnlock(staging.handle);
 			}
 		}
 
-		// TODO Don't change layout here. Alternatively:
-		// I. Attach layout metadata to the image, and request its change next time it is used.
-		// II. Build-in layout transfer to staging commit and do it there on commit.
-		const VkCommandBuffer cmdbuf = R_VkStagingCommit()->cmdbuf;
-
-		// 	5.2 image:layout:DST -> image:layout:SAMPLED
-		// 		5.2.1 transitionToLayout(DST -> SHADER_READ_ONLY)
-		image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		image_barrier.subresourceRange = (VkImageSubresourceRange){
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = mipCount,
-			.baseArrayLayer = 0,
-			.layerCount = num_layers,
-		};
-		vkCmdPipelineBarrier(cmdbuf,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // FIXME incorrect, we also use them in compute and potentially ray tracing shaders
-				0, 0, NULL, 0, NULL, 1, &image_barrier);
-
+		R_VkImageUploadEnd(&tex->vk.image);
 	}
 
 	// TODO how should we approach this:
@@ -950,7 +873,6 @@ static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
 	// FIXME has_alpha
 	// FIXME no supercompressionScheme
 
-	// 1. Create image
 	{
 		const r_vk_image_create_t create = {
 			.debug_name = tex->name,
@@ -967,98 +889,22 @@ static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
 		tex->vk.image = R_VkImageCreate(&create);
 	}
 
-	// 2. Prep cmdbuf, barrier, etc
 	{
-		VkImageMemoryBarrier image_barrier = {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = tex->vk.image.image,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = header->levelCount,
-				.baseArrayLayer = 0,
-				.layerCount = 1, // TODO cubemap
-			}
-		};
+		R_VkImageUploadBegin(&tex->vk.image);
 
-		{
-			// cmdbuf may become invalidated in locks in the loops below
-			const VkCommandBuffer cmdbuf = R_VkStagingGetCommandBuffer();
-			vkCmdPipelineBarrier(cmdbuf,
-					VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-					VK_PIPELINE_STAGE_TRANSFER_BIT,
-					0, 0, NULL, 0, NULL, 1, &image_barrier);
-		}
-
-	// 3. For levels
-	// 3.1 upload
+		// TODO layers
 		for (int mip = 0; mip < header->levelCount; ++mip) {
 			const ktx2_level_t* const level = levels + mip;
-			const uint32_t width = Q_max(1, header->pixelWidth >> mip);
-			const uint32_t height = Q_max(1, header->pixelHeight >> mip);
 			const size_t mip_size = level->byteLength;
-			const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(header->vkFormat);
 			const void* const image_data = data + level->byteOffset;
-			const vk_staging_image_args_t staging_args = {
-				.image = tex->vk.image.image,
-				.region = (VkBufferImageCopy) {
-					.bufferOffset = 0,
-					.bufferRowLength = 0,
-					.bufferImageHeight = 0,
-					.imageSubresource = (VkImageSubresourceLayers){
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.mipLevel = mip,
-						.baseArrayLayer = 0, // TODO cubemap
-						.layerCount = 1,
-					},
-					.imageExtent = (VkExtent3D){
-						.width = width,
-						.height = height,
-						.depth = 1,
-					},
-				},
-				.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				.size = mip_size,
-				.alignment = texel_block_size,
-			};
+			// FIXME validate wrt file size
 
-			{
-				const vk_staging_region_t staging = R_VkStagingLockForImage(staging_args);
-				ASSERT(staging.ptr);
-				memcpy(staging.ptr, image_data, mip_size);
-				tex->total_size += mip_size;
-				R_VkStagingUnlock(staging.handle);
-			}
-		} // for levels
+			const int layer = 0;
+			R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, image_data);
+			tex->total_size += mip_size;
+		} // for mip levels
 
-		{
-			// TODO Don't change layout here. Alternatively:
-			// I. Attach layout metadata to the image, and request its change next time it is used.
-			// II. Build-in layout transfer to staging commit and do it there on commit.
-			const VkCommandBuffer cmdbuf = R_VkStagingCommit()->cmdbuf;
-
-			// 	5.2 image:layout:DST -> image:layout:SAMPLED
-			// 		5.2.1 transitionToLayout(DST -> SHADER_READ_ONLY)
-			image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			image_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			image_barrier.subresourceRange = (VkImageSubresourceRange){
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = header->levelCount,
-				.baseArrayLayer = 0,
-				.layerCount = 1, // TODO cubemap
-			};
-			vkCmdPipelineBarrier(cmdbuf,
-					VK_PIPELINE_STAGE_TRANSFER_BIT,
-					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // FIXME incorrect, we also use them in compute and potentially ray tracing shaders
-					0, 0, NULL, 0, NULL, 1, &image_barrier);
-		}
+		R_VkImageUploadEnd(&tex->vk.image);
 	}
 
 	// KTX2 textures are inaccessible from trad renderer (for now)
