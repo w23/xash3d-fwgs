@@ -639,105 +639,7 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	return tglob.default_sampler_fixme;
 }
 
-static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic );
-
-static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
-
-	if (num_layers == 1 && layers[0]->type == PF_KTX2_RAW)
-		return loadKtx2Raw(tex, layers[0]);
-
-	const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
-	int mipCount = 0;
-
-	tex->total_size = 0;
-
-	// TODO non-rbga textures
-
-	for (int i = 0; i < num_layers; ++i) {
-		// FIXME create empty black texture if there's no buffer
-		if (!layers[i]->buffer) {
-			ERR("Texture %s layer %d missing buffer", tex->name, i);
-			return false;
-		}
-
-		if (i == 0)
-			continue;
-
-		if (layers[0]->type != layers[i]->type) {
-			ERR("Texture %s layer %d has type %d inconsistent with layer 0 type %d", tex->name, i, layers[i]->type, layers[0]->type);
-			return false;
-		}
-
-		if (layers[0]->width != layers[i]->width || layers[0]->height != layers[i]->height) {
-			ERR("Texture %s layer %d has resolution %dx%d inconsistent with layer 0 resolution %dx%d",
-				tex->name, i, layers[i]->width, layers[i]->height, layers[0]->width, layers[0]->height);
-			return false;
-		}
-
-		if ((layers[0]->flags ^ layers[i]->flags) & IMAGE_HAS_ALPHA) {
-			ERR("Texture %s layer %d has_alpha=%d inconsistent with layer 0 has_alpha=%d",
-				tex->name, i,
-				!!(layers[i]->flags & IMAGE_HAS_ALPHA),
-				!!(layers[0]->flags & IMAGE_HAS_ALPHA));
-		}
-	}
-
-	tex->width = layers[0]->width;
-	tex->height = layers[0]->height;
-	mipCount = CalcMipmapCount( tex, true);
-
-	DEBUG("Uploading texture[%d] %s, mips=%d, layers=%d", (int)(tex-vk_textures), tex->name, mipCount, num_layers);
-
-	// TODO this vvv
-	// // NOTE: only single uncompressed textures can be resamples, no mips, no layers, no sides
-	// if(( tex->depth == 1 ) && (( layers->width != tex->width ) || ( layers->height != tex->height )))
-	// 	data = GL_ResampleTexture( buf, layers->width, layers->height, tex->width, tex->height, normalMap );
-	// else data = buf;
-
-	// if( !ImageDXT( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
-	// 	data = GL_ApplyFilter( data, tex->width, tex->height );
-
-	{
-		const r_vk_image_create_t create = {
-			.debug_name = tex->name,
-			.width = tex->width,
-			.height = tex->height,
-			.mips = mipCount,
-			.layers = num_layers,
-			.format = format,
-			.tiling = VK_IMAGE_TILING_OPTIMAL,
-			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.flags = 0
-				| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? kVkImageFlagHasAlpha : 0)
-				| (cubemap ? kVkImageFlagIsCubemap : 0)
-				| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
-		};
-		tex->vk.image = R_VkImageCreate(&create);
-	}
-
-	{
-		R_VkImageUploadBegin(&tex->vk.image);
-
-		for (int layer = 0; layer < num_layers; ++layer) {
-			for (int mip = 0; mip < mipCount; ++mip) {
-				const rgbdata_t *const pic = layers[layer];
-				const int width = Q_max( 1, ( pic->width >> mip ));
-				const int height = Q_max( 1, ( pic->height >> mip ));
-				const size_t mip_size = CalcImageSize( pic->type, width, height, 1 );
-				byte *const buf = pic->buffer;
-
-				R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, buf);
-				tex->total_size += mip_size;
-
-				// Build mip in place for the next mip level
-				if ( mip < mipCount - 1 )
-					BuildMipMap( buf, width, height, 1, tex->flags );
-			}
-		}
-
-		R_VkImageUploadEnd(&tex->vk.image);
-	}
-
+static void prepDestriptorSets(vk_texture_t* const tex, colorspace_hint_e colorspace_hint) {
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
@@ -779,8 +681,8 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		}};
 		vkUpdateDescriptorSets(vk_core.device, ds_unorm != VK_NULL_HANDLE ? 2 : 1 , wds, 0, NULL);
 
-		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
-		if (num_layers == 1) {
+		// FIXME detect skybox some other way
+		if (tex->vk.image.layers == 1) {
 			tglob.dii_all_textures[index] = dii;
 		}
 
@@ -790,6 +692,111 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 	{
 		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 	}
+}
+
+static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic );
+
+static qboolean validatePicLayers(const vk_texture_t* const tex, rgbdata_t *const *const layers, int num_layers) {
+	for (int i = 0; i < num_layers; ++i) {
+		// FIXME create empty black texture if there's no buffer
+		if (!layers[i]->buffer) {
+			ERR("Texture %s layer %d missing buffer", tex->name, i);
+			return false;
+		}
+
+		if (i == 0)
+			continue;
+
+		if (layers[0]->type != layers[i]->type) {
+			ERR("Texture %s layer %d has type %d inconsistent with layer 0 type %d", tex->name, i, layers[i]->type, layers[0]->type);
+			return false;
+		}
+
+		if (layers[0]->width != layers[i]->width || layers[0]->height != layers[i]->height) {
+			ERR("Texture %s layer %d has resolution %dx%d inconsistent with layer 0 resolution %dx%d",
+				tex->name, i, layers[i]->width, layers[i]->height, layers[0]->width, layers[0]->height);
+			return false;
+		}
+
+		if ((layers[0]->flags ^ layers[i]->flags) & IMAGE_HAS_ALPHA) {
+			ERR("Texture %s layer %d has_alpha=%d inconsistent with layer 0 has_alpha=%d",
+				tex->name, i,
+				!!(layers[i]->flags & IMAGE_HAS_ALPHA),
+				!!(layers[0]->flags & IMAGE_HAS_ALPHA));
+		}
+	}
+
+	return true;
+}
+
+static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+	tex->total_size = 0;
+
+	if (num_layers == 1 && layers[0]->type == PF_KTX2_RAW) {
+		if (!uploadRawKtx2(tex, layers[0]))
+			return false;
+	} else {
+		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
+		int mipCount = 0;
+
+		// TODO non-rbga textures
+
+		if (!validatePicLayers(tex, layers, num_layers))
+			return false;
+
+		tex->width = layers[0]->width;
+		tex->height = layers[0]->height;
+		mipCount = CalcMipmapCount( tex, true);
+
+		DEBUG("Uploading texture[%d] %s, mips=%d, layers=%d", (int)(tex-vk_textures), tex->name, mipCount, num_layers);
+
+		// TODO (not sure why, but GL does this)
+		// if( !ImageDXT( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
+		// 	data = GL_ApplyFilter( data, tex->width, tex->height );
+
+		{
+			const r_vk_image_create_t create = {
+				.debug_name = tex->name,
+				.width = tex->width,
+				.height = tex->height,
+				.mips = mipCount,
+				.layers = num_layers,
+				.format = format,
+				.tiling = VK_IMAGE_TILING_OPTIMAL,
+				.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+				.flags = 0
+					| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? kVkImageFlagHasAlpha : 0)
+					| (cubemap ? kVkImageFlagIsCubemap : 0)
+					| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
+			};
+			tex->vk.image = R_VkImageCreate(&create);
+		}
+
+		{
+			R_VkImageUploadBegin(&tex->vk.image);
+
+			for (int layer = 0; layer < num_layers; ++layer) {
+				for (int mip = 0; mip < mipCount; ++mip) {
+					const rgbdata_t *const pic = layers[layer];
+					const int width = Q_max( 1, ( pic->width >> mip ));
+					const int height = Q_max( 1, ( pic->height >> mip ));
+					const size_t mip_size = CalcImageSize( pic->type, width, height, 1 );
+					byte *const buf = pic->buffer;
+
+					R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, buf);
+					tex->total_size += mip_size;
+
+					// Build mip in place for the next mip level
+					if ( mip < mipCount - 1 )
+						BuildMipMap( buf, width, height, 1, tex->flags );
+				}
+			}
+
+			R_VkImageUploadEnd(&tex->vk.image);
+		}
+	}
+
+	prepDestriptorSets(tex, colorspace_hint);
 
 	g_textures.stats.size_total += tex->total_size;
 	g_textures.stats.count++;
@@ -826,7 +833,9 @@ const byte*	VK_TextureData( unsigned int texnum )
 	return NULL;
 }
 
-static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
+static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic ) {
+	DEBUG("Uploading raw KTX2 texture[%d] %s", (int)(tex-vk_textures), tex->name);
+
 	const byte *const data = pic->buffer;
 	const int size = pic->size;
 
