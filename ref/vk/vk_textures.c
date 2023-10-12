@@ -15,6 +15,7 @@
 #include "crclib.h"
 #include "com_strings.h"
 #include "eiface.h"
+#include "ktx2.h"
 
 #define PCG_IMPLEMENT
 #include "pcg.h"
@@ -638,7 +639,13 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	return tglob.default_sampler_fixme;
 }
 
+static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic );
+
 static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+
+	if (num_layers == 1 && layers[0]->type == PF_KTX2_RAW)
+		return loadKtx2Raw(tex, layers[0]);
+
 	const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
 	int mipCount = 0;
 
@@ -896,68 +903,18 @@ const byte*	VK_TextureData( unsigned int texnum )
 	return NULL;
 }
 
-
-#define KTX_IDENTIFIER_SIZE 12
-static const char k_ktx2_identifier[KTX_IDENTIFIER_SIZE] = {
-  '\xAB', 'K', 'T', 'X', ' ', '2', '0', '\xBB', '\r', '\n', '\x1A', '\n'
-};
-
-typedef struct {
-	uint32_t vkFormat;
-	uint32_t typeSize;
-	uint32_t pixelWidth;
-	uint32_t pixelHeight;
-	uint32_t pixelDepth;
-	uint32_t layerCount;
-	uint32_t faceCount;
-	uint32_t levelCount;
-	uint32_t supercompressionScheme;
-} ktx_header_t;
-
-typedef struct {
-	uint32_t dfdByteOffset;
-	uint32_t dfdByteLength;
-	uint32_t kvdByteOffset;
-	uint32_t kvdByteLength;
-	uint64_t sgdByteOffset;
-	uint64_t sgdByteLength;
-} ktx_index_t;
-
-typedef struct {
-	uint64_t byteOffset;
-	uint64_t byteLength;
-	uint64_t uncompressedByteLength;
-} ktx_level_t;
-
-static int loadKtx2( const char *name ) {
-	fs_offset_t size = 0;
-	byte *data = gEngine.fsapi->LoadFile( name, &size, false );
-
-	DEBUG("Loading KTX2 file \"%s\", exists=%d", name, data != 0);
-
-	if ( !data )
-		return 0;
+static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
+	const byte *const data = pic->buffer;
+	const int size = pic->size;
 
 	const ktx_header_t* header;
 	const ktx_index_t* index;
 	const ktx_level_t* levels;
-	vk_texture_t* tex = NULL;
 
-	if (size < (sizeof k_ktx2_identifier + sizeof(ktx_header_t) + sizeof(ktx_index_t) + sizeof(ktx_level_t))) {
-		ERR("KTX2 file \"%s\" seems truncated", name);
-		goto fail;
-	}
+	header = (const ktx_header_t*)(data + KTX_IDENTIFIER_SIZE);
+	index = (const ktx_index_t*)(data + KTX_IDENTIFIER_SIZE + sizeof(ktx_header_t));
+	levels = (const ktx_level_t*)(data + KTX_IDENTIFIER_SIZE + sizeof(ktx_header_t) + sizeof(ktx_index_t));
 
-	if (memcmp(data, k_ktx2_identifier, sizeof k_ktx2_identifier) != 0) {
-		ERR("KTX2 file \"%s\" identifier is invalid", name);
-		goto fail;
-	}
-
-	header = (const ktx_header_t*)(data + sizeof k_ktx2_identifier);
-	index = (const ktx_index_t*)(data + sizeof k_ktx2_identifier + sizeof(ktx_header_t));
-	levels = (const ktx_level_t*)(data + sizeof k_ktx2_identifier + sizeof(ktx_header_t) + sizeof(ktx_index_t));
-
-	DEBUG("KTX2 file \"%s\"", name);
 	DEBUG(" header:");
 #define X(field) DEBUG("  " # field "=%d", header->field);
 	DEBUG("  vkFormat = %s(%d)", R_VkFormatName(header->vkFormat), header->vkFormat);
@@ -986,13 +943,6 @@ static int loadKtx2( const char *name ) {
 		DEBUG("  byteOffset=%llu", (unsigned long long)level->byteOffset);
 		DEBUG("  byteLength=%llu", (unsigned long long)level->byteLength);
 		DEBUG("  uncompressedByteLength=%llu", (unsigned long long)level->uncompressedByteLength);
-	}
-
-	{
-		const uint32_t flags = 0;
-		tex = Common_AllocTexture( name, flags );
-		if (!tex)
-			goto fail;
 	}
 
 	// FIXME check that format is supported
@@ -1147,18 +1097,20 @@ static int loadKtx2( const char *name ) {
 	tex->width = header->pixelWidth;
 	tex->height = header->pixelHeight;
 
-	goto finalize;
-
-fail:
-	if (tex)
-		memset( tex, 0, sizeof( vk_texture_t ));
-
-finalize:
-	Mem_Free( data );
-	return (tex - vk_textures);
+	return true;
 }
 
-static int loadTextureUsingEngine( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
+	if( !Common_CheckTexName( name ))
+		return 0;
+
+	// see if already loaded
+	{
+		const vk_texture_t *const tex = Common_TextureForName( name );
+		if( tex )
+			return (tex - vk_textures);
+	}
+
 	uint picFlags = 0;
 
 	if( FBitSet( flags, TF_NOFLIP_TGA ))
@@ -1193,25 +1145,6 @@ static int loadTextureUsingEngine( const char *name, const byte *buf, size_t siz
 
 	// NOTE: always return texnum as index in array or engine will stop work !!!
 	return tex - vk_textures;
-}
-
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
-	if( !Common_CheckTexName( name ))
-		return 0;
-
-	// see if already loaded
-	vk_texture_t *tex = Common_TextureForName( name );
-	if( tex )
-		return (tex - vk_textures);
-
-	{
-		const char *ext = Q_strrchr(name, '.');
-		if (Q_strcmp(ext, ".ktx2") == 0) {
-			return loadKtx2(name);
-		}
-	}
-
-	return loadTextureUsingEngine(name, buf, size, flags, colorspace_hint);
 }
 
 int VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags ) {

@@ -9,7 +9,7 @@ NOTE: number at end of pixelformat name it's a total bitscount e.g. PF_RGB_24 ==
 ========================================================================
 */
 #define ImageRAW( type )	(type == PF_RGBA_32 || type == PF_BGRA_32 || type == PF_RGB_24 || type == PF_BGR_24 || type == PF_LUMINANCE)
-#define ImageDXT( type )	(type == PF_DXT1 || type == PF_DXT3 || type == PF_DXT5 || type == PF_ATI2 || type == PF_BC6H_SIGNED || type == PF_BC6H_UNSIGNED || type == PF_BC7)
+#define ImageDXT( type )	(type == PF_DXT1 || type == PF_DXT3 || type == PF_DXT5 || type == PF_ATI2 || type == PF_BC6H_SIGNED || type == PF_BC6H_UNSIGNED || type == PF_BC7 || type == PF_KTX2_RAW)
 
 typedef enum
 {
@@ -28,6 +28,7 @@ typedef enum
 	PF_BC6H_SIGNED,	// bptc BC6H signed FP16 format
 	PF_BC6H_UNSIGNED, // bptc BC6H unsigned FP16 format
 	PF_BC7,			// bptc BC7 format
+	PF_KTX2_RAW, // Raw KTX2 data, used for yet unsupported KTX2 subformats
 	PF_TOTALCOUNT,	// must be last
 } pixformat_t;
 
