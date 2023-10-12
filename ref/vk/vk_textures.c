@@ -907,13 +907,13 @@ static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
 	const byte *const data = pic->buffer;
 	const int size = pic->size;
 
-	const ktx_header_t* header;
-	const ktx_index_t* index;
-	const ktx_level_t* levels;
+	const ktx2_header_t* header;
+	const ktx2_index_t* index;
+	const ktx2_level_t* levels;
 
-	header = (const ktx_header_t*)(data + KTX_IDENTIFIER_SIZE);
-	index = (const ktx_index_t*)(data + KTX_IDENTIFIER_SIZE + sizeof(ktx_header_t));
-	levels = (const ktx_level_t*)(data + KTX_IDENTIFIER_SIZE + sizeof(ktx_header_t) + sizeof(ktx_index_t));
+	header = (const ktx2_header_t*)(data + KTX2_IDENTIFIER_SIZE);
+	index = (const ktx2_index_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t));
+	levels = (const ktx2_level_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t));
 
 	DEBUG(" header:");
 #define X(field) DEBUG("  " # field "=%d", header->field);
@@ -938,7 +938,7 @@ static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
 #undef X
 
 	for (int mip = 0; mip < header->levelCount; ++mip) {
-		const ktx_level_t* const level = levels + mip;
+		const ktx2_level_t* const level = levels + mip;
 		DEBUG(" level[%d]:", mip);
 		DEBUG("  byteOffset=%llu", (unsigned long long)level->byteOffset);
 		DEBUG("  byteLength=%llu", (unsigned long long)level->byteLength);
@@ -997,7 +997,7 @@ static qboolean loadKtx2Raw( vk_texture_t *tex, const rgbdata_t* pic ) {
 	// 3. For levels
 	// 3.1 upload
 		for (int mip = 0; mip < header->levelCount; ++mip) {
-			const ktx_level_t* const level = levels + mip;
+			const ktx2_level_t* const level = levels + mip;
 			const uint32_t width = Q_max(1, header->pixelWidth >> mip);
 			const uint32_t height = Q_max(1, header->pixelHeight >> mip);
 			const size_t mip_size = level->byteLength;

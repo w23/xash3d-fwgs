@@ -18,20 +18,20 @@ GNU General Public License for more details.
 #include "ktx2.h"
 
 qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t filesize ) {
-	ktx_header_t header;
+	ktx2_header_t header;
 
-	if( filesize < KTX_MINIMAL_HEADER_SIZE )
+	if( filesize < KTX2_MINIMAL_HEADER_SIZE )
 		return false;
 
-	if ( memcmp(buffer, KTX_IDENTIFIER, KTX_IDENTIFIER_SIZE) != 0 ) {
+	if ( memcmp(buffer, KTX2_IDENTIFIER, KTX2_IDENTIFIER_SIZE) != 0 ) {
 		Con_DPrintf( S_ERROR "%s: (%s) has invalid identifier\n", __FUNCTION__, name );
 		return false;
 	}
 
-	memcpy(&header, buffer + KTX_IDENTIFIER_SIZE, sizeof header);
+	memcpy(&header, buffer + KTX2_IDENTIFIER_SIZE, sizeof header);
 
-	/* ktx_index_t index; */
-	/* memcpy(&header, buffer + KTX_IDENTIFIER_SIZE + sizeof header, sizeof index); */
+	/* ktx2_index_t index; */
+	/* memcpy(&header, buffer + KTX2_IDENTIFIER_SIZE + sizeof header, sizeof index); */
 
 	image.width = header.pixelWidth;
 	image.height = header.pixelHeight;
