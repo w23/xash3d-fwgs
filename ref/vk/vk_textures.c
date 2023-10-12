@@ -51,6 +51,9 @@ void initTextures( void ) {
 	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
 	vk_numTextures = 0;
 
+	// TODO really check device caps for this
+	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE );
+
 	tglob.default_sampler_fixme = pickSamplerForFlags(0);
 	ASSERT(tglob.default_sampler_fixme != VK_NULL_HANDLE);
 
@@ -447,6 +450,10 @@ static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hi
 			return (colorspace_hint == kColorspaceLinear)
 				? VK_FORMAT_R8G8B8A8_UNORM
 				: VK_FORMAT_R8G8B8A8_SRGB;
+		case PF_BC7:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_BC7_UNORM_BLOCK
+				: VK_FORMAT_BC7_SRGB_BLOCK;
 		default:
 			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
@@ -477,11 +484,14 @@ static size_t CalcImageSize( pixformat_t format, int width, int height, int dept
 		break;
 	case PF_DXT3:
 	case PF_DXT5:
+	case PF_BC6H_SIGNED:
+	case PF_BC6H_UNSIGNED:
+	case PF_BC7:
 	case PF_ATI2:
 		size = (((width + 3) >> 2) * ((height + 3) >> 2) * 16) * depth;
 		break;
 	default:
-		ERR("unsupported pixformat_t %d", format);
+		ERR("%s: unsupported pixformat_t %d", __FUNCTION__, format);
 		ASSERT(!"Unsupported format encountered");
 	}
 
@@ -740,13 +750,17 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		int mipCount = 0;
 
 		// TODO non-rbga textures
+		if (format == VK_FORMAT_UNDEFINED) {
+			ERR("Unsupported PF format %d", layers[0]->type);
+			return false;
+		}
 
 		if (!validatePicLayers(tex, layers, num_layers))
 			return false;
 
 		tex->width = layers[0]->width;
 		tex->height = layers[0]->height;
-		mipCount = CalcMipmapCount( tex, true);
+		mipCount = CalcMipmapCount( tex, true );
 
 		DEBUG("Uploading texture[%d] %s, mips=%d, layers=%d", (int)(tex-vk_textures), tex->name, mipCount, num_layers);
 
