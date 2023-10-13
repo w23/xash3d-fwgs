@@ -116,13 +116,22 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 			case DXGI_FORMAT_BC7_TYPELESS:
 				image.type = PF_BC7;
 				break;
+			case DXGI_FORMAT_BC5_TYPELESS:
+				image.type = PF_ATI2;
+				break;
+			case DXGI_FORMAT_BC5_UNORM:
+				image.type = PF_BC5_UNSIGNED;
+				break;
+			case DXGI_FORMAT_BC5_SNORM:
+				image.type = PF_BC5_SIGNED;
+				break;
 			default:
 				image.type = PF_UNKNOWN;
 				break;
 			}
 		}
 		else
-		{ 
+		{
 			switch( hdr->dsPixelFormat.dwFourCC )
 			{
 			case TYPE_DXT1:
@@ -198,6 +207,8 @@ size_t Image_DXTGetLinearSize( int type, int width, int height, int depth )
 	case PF_BC6H_SIGNED:
 	case PF_BC6H_UNSIGNED:
 	case PF_BC7:
+	case PF_BC5_UNSIGNED:
+	case PF_BC5_SIGNED:
 	case PF_ATI2: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
 	case PF_LUMINANCE: return (width * height * depth);
 	case PF_BGR_24:

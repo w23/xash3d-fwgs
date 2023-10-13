@@ -25,6 +25,8 @@ typedef enum
 	PF_DXT3,		// s3tc DXT3/BC2 format
 	PF_DXT5,		// s3tc DXT5/BC3 format
 	PF_ATI2,		// latc ATI2N/BC5 format
+	PF_BC5_SIGNED,
+	PF_BC5_UNSIGNED,
 	PF_BC6H_SIGNED,	// bptc BC6H signed FP16 format
 	PF_BC6H_UNSIGNED, // bptc BC6H unsigned FP16 format
 	PF_BC7,			// bptc BC7 format

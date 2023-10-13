@@ -450,7 +450,51 @@ static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hi
 			return (colorspace_hint == kColorspaceLinear)
 				? VK_FORMAT_R8G8B8A8_UNORM
 				: VK_FORMAT_R8G8B8A8_SRGB;
+		case PF_BGRA_32:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_B8G8R8A8_UNORM
+				: VK_FORMAT_B8G8R8A8_SRGB;
+		case PF_RGB_24:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_R8G8B8_UNORM
+				: VK_FORMAT_R8G8B8_SRGB;
+		case PF_BGR_24:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_B8G8R8_UNORM
+				: VK_FORMAT_B8G8R8_SRGB;
+		case PF_LUMINANCE:
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_R8_UNORM
+				: VK_FORMAT_R8_SRGB;
+		case PF_DXT1:
+			// TODO UNORM vs SRGB encoded in the format itself
+			// ref_gl mentions that alpha is never used
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_BC1_RGB_UNORM_BLOCK
+				: VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+		case PF_DXT3:
+			// TODO UNORM vs SRGB encoded in the format itself
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_BC2_UNORM_BLOCK
+				: VK_FORMAT_BC2_SRGB_BLOCK;
+		case PF_DXT5:
+			// TODO UNORM vs SRGB encoded in the format itself
+			return (colorspace_hint == kColorspaceLinear)
+				? VK_FORMAT_BC3_UNORM_BLOCK
+				: VK_FORMAT_BC3_SRGB_BLOCK;
+		case PF_ATI2:
+			// TODO UNORM vs SNORM?
+			return VK_FORMAT_BC5_UNORM_BLOCK;
+		case PF_BC5_UNSIGNED:
+			return VK_FORMAT_BC5_UNORM_BLOCK;
+		case PF_BC5_SIGNED:
+			return VK_FORMAT_BC5_SNORM_BLOCK;
+		case PF_BC6H_SIGNED:
+			return VK_FORMAT_BC6H_SFLOAT_BLOCK;
+		case PF_BC6H_UNSIGNED:
+			return VK_FORMAT_BC6H_UFLOAT_BLOCK;
 		case PF_BC7:
+			// TODO UNORM vs SRGB encoded in the format itself
 			return (colorspace_hint == kColorspaceLinear)
 				? VK_FORMAT_BC7_UNORM_BLOCK
 				: VK_FORMAT_BC7_SRGB_BLOCK;
@@ -488,6 +532,8 @@ static size_t CalcImageSize( pixformat_t format, int width, int height, int dept
 	case PF_BC6H_UNSIGNED:
 	case PF_BC7:
 	case PF_ATI2:
+	case PF_BC5_UNSIGNED:
+	case PF_BC5_SIGNED:
 		size = (((width + 3) >> 2) * ((height + 3) >> 2) * 16) * depth;
 		break;
 	default:
