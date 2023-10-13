@@ -38,4 +38,16 @@ typedef struct {
 	uint64_t uncompressedByteLength;
 } ktx2_level_t;
 
-#define KTX2_MINIMAL_HEADER_SIZE (KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t) + sizeof(ktx2_level_t))
+#define KTX2_LEVELS_OFFSET (KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t))
+
+#define KTX2_MINIMAL_HEADER_SIZE (KTX2_LEVELS_OFFSET + sizeof(ktx2_level_t))
+
+// These have the same values as VkFormat in vulkan_core.h
+typedef enum {
+    KTX2_FORMAT_BC5_UNORM_BLOCK = 141,
+    KTX2_FORMAT_BC5_SNORM_BLOCK = 142,
+    KTX2_FORMAT_BC6H_UFLOAT_BLOCK = 143,
+    KTX2_FORMAT_BC6H_SFLOAT_BLOCK = 144,
+    KTX2_FORMAT_BC7_UNORM_BLOCK = 145,
+    KTX2_FORMAT_BC7_SRGB_BLOCK = 146,
+} ktx2_format_t;
