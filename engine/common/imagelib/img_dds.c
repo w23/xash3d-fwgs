@@ -112,9 +112,11 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 				image.type = PF_BC6H_UNSIGNED;
 				break;
 			case DXGI_FORMAT_BC7_UNORM:
-			case DXGI_FORMAT_BC7_UNORM_SRGB:
 			case DXGI_FORMAT_BC7_TYPELESS:
-				image.type = PF_BC7;
+				image.type = PF_BC7_UNORM;
+				break;
+			case DXGI_FORMAT_BC7_UNORM_SRGB:
+				image.type = PF_BC7_SRGB;
 				break;
 			case DXGI_FORMAT_BC5_TYPELESS:
 				image.type = PF_ATI2;
@@ -206,7 +208,8 @@ size_t Image_DXTGetLinearSize( int type, int width, int height, int depth )
 	case PF_DXT5:
 	case PF_BC6H_SIGNED:
 	case PF_BC6H_UNSIGNED:
-	case PF_BC7:
+	case PF_BC7_UNORM:
+	case PF_BC7_SRGB:
 	case PF_BC5_UNSIGNED:
 	case PF_BC5_SIGNED:
 	case PF_ATI2: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
@@ -334,7 +337,7 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 	Image_DXTGetPixelFormat( &header, &header2 ); // and image type too :)
 	Image_DXTAdjustVolume( &header );
 
-	if( !Image_CheckFlag( IL_DDS_HARDWARE ) && ImageDXT( image.type ))
+	if( !Image_CheckFlag( IL_DDS_HARDWARE ) && ImageCompressed( image.type ))
 		return false; // silently rejected
 
 	if( image.type == PF_UNKNOWN )
@@ -367,7 +370,7 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 			SetBits( image.flags, IMAGE_HAS_ALPHA );
 		else if( image.type == PF_DXT5 && Image_CheckDXT5Alpha( &header, fin ))
 			SetBits( image.flags, IMAGE_HAS_ALPHA );
-		else if ( image.type == PF_BC7 )
+		else if ( image.type == PF_BC7_UNORM || image.type == PF_BC7_SRGB )
 			SetBits(image.flags, IMAGE_HAS_ALPHA);
 		if( !FBitSet( header.dsPixelFormat.dwFlags, DDS_LUMINANCE ))
 			SetBits( image.flags, IMAGE_HAS_COLOR );

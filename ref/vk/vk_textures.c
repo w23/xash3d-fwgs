@@ -234,7 +234,7 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 
 	//FIXME provod: ??? tex->encode = pic->encode; // share encode method
 
-	if( ImageDXT( pic->type ))
+	if( ImageCompressed( pic->type ))
 	{
 		if( !pic->numMips )
 			tex->flags |= TF_NOMIPMAP; // disable mipmapping by user request
@@ -493,11 +493,10 @@ static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hi
 			return VK_FORMAT_BC6H_SFLOAT_BLOCK;
 		case PF_BC6H_UNSIGNED:
 			return VK_FORMAT_BC6H_UFLOAT_BLOCK;
-		case PF_BC7:
-			// TODO UNORM vs SRGB encoded in the format itself
-			return (colorspace_hint == kColorspaceLinear)
-				? VK_FORMAT_BC7_UNORM_BLOCK
-				: VK_FORMAT_BC7_SRGB_BLOCK;
+		case PF_BC7_UNORM:
+			return VK_FORMAT_BC7_UNORM_BLOCK;
+		case PF_BC7_SRGB:
+			return VK_FORMAT_BC7_SRGB_BLOCK;
 		default:
 			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
@@ -530,7 +529,8 @@ static size_t CalcImageSize( pixformat_t format, int width, int height, int dept
 	case PF_DXT5:
 	case PF_BC6H_SIGNED:
 	case PF_BC6H_UNSIGNED:
-	case PF_BC7:
+	case PF_BC7_UNORM:
+	case PF_BC7_SRGB:
 	case PF_ATI2:
 	case PF_BC5_UNSIGNED:
 	case PF_BC5_SIGNED:
@@ -937,7 +937,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", (int)(tex-vk_textures), tex->name, mipCount, compute_mips, num_layers);
 
 		// TODO (not sure why, but GL does this)
-		// if( !ImageDXT( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
+		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
 		// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
 		{

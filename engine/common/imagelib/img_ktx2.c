@@ -23,8 +23,8 @@ static pixformat_t Image_KTX2Format( uint32_t ktx2_format ) {
 		case KTX2_FORMAT_BC5_SNORM_BLOCK: return PF_BC5_SIGNED;
 		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK: return PF_BC6H_UNSIGNED;
 		case KTX2_FORMAT_BC6H_SFLOAT_BLOCK: return PF_BC6H_SIGNED;
-		//case KTX2_FORMAT_BC7_UNORM_BLOCK: return PF_BC7_UNSIGNED;
-		//case KTX2_FORMAT_BC7_SRGB_BLOCK: return PF_BC7_SRGB;
+		case KTX2_FORMAT_BC7_UNORM_BLOCK: return PF_BC7_UNORM;
+		case KTX2_FORMAT_BC7_SRGB_BLOCK: return PF_BC7_SRGB;
 		default: return PF_UNKNOWN;
 	}
 }
@@ -40,15 +40,17 @@ static size_t ImageSizeForType( int type, int width, int height, int depth )
 {
 	switch( type )
 	{
-	case PF_DXT1: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
+	case PF_DXT1:
+		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
 	case PF_DXT3:
 	case PF_DXT5:
-	case PF_BC6H_SIGNED:
-	case PF_BC6H_UNSIGNED:
-	case PF_BC7:
+	case PF_ATI2:
 	case PF_BC5_UNSIGNED:
 	case PF_BC5_SIGNED:
-	case PF_ATI2: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
+	case PF_BC6H_SIGNED:
+	case PF_BC6H_UNSIGNED:
+	case PF_BC7_UNORM:
+	case PF_BC7_SRGB: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
 	case PF_LUMINANCE: return (width * height * depth);
 	case PF_BGR_24:
 	case PF_RGB_24: return (width * height * depth * 3);
@@ -125,6 +127,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	image.num_mips = header->levelCount;
 
 	// FIXME format-dependent
+	// BC7 can have alpha in blocks, so
 	image.flags = IMAGE_HAS_COLOR; // | IMAGE_HAS_ALPHA
 
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
@@ -134,6 +137,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		ktx2_level_t level;
 		memcpy(&level, levels_begin + mip * sizeof level, sizeof level);
 		memcpy(image.rgba + cursor, buffer + level.byteOffset, level.byteLength);
+		cursor += level.byteLength;
 	}
 
 	return true;
