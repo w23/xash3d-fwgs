@@ -32,6 +32,8 @@ typedef struct vk_texture_s
 
 typedef struct vk_textures_global_s
 {
+	poolhandle_t mempool;
+	
 	int defaultTexture;   	// use for bad textures
 	int particleTexture;
 	int whiteTexture;
@@ -46,7 +48,7 @@ typedef struct vk_textures_global_s
 // Hardcoded expected blue noise texture slot
 // TODO consider moving it into a separate resource bindable by request
 // TODO make it a 3D texture. Currently it's just a sequence of BLUE_NOISE_SIZE textures, loaded into consecutive slots.
-#define BLUE_NOISE_TEXTURE_ID 6
+#define BLUE_NOISE_TEXTURE_ID 7
 
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64

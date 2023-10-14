@@ -8,7 +8,7 @@
 // TODO:
 // - make bluenoise texture a separate binding, not part of textures[] array
 // - make it a 3D texture
-#define BLUE_NOISE_TEXTURE_BEGIN 6
+#define BLUE_NOISE_TEXTURE_BEGIN 7
 
 // Also see vk_textures.h, keep in sync, etc etc
 #define BLUE_NOISE_SIZE 64

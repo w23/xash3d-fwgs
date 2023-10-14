@@ -45,6 +45,8 @@ static VkSampler pickSamplerForFlags( texFlags_t flags );
 void initTextures( void ) {
 	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
 	R_SPEEDS_METRIC(g_textures.stats.size_total, "size_total", kSpeedsMetricBytes);
+	
+	tglob.mempool = Mem_AllocPool( "vktextures" );
 
 	memset( vk_textures, 0, sizeof( vk_textures ));
 	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
@@ -190,26 +192,27 @@ static vk_texture_t *Common_TextureForName( const char *name )
 
 static rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags )
 {
-	static byte	data2D[1024]; // 16x16x4
-	static rgbdata_t	r_image;
+	// TODO: Fix texture and it's buffer leaking.
+	rgbdata_t *r_image = Mem_Malloc( tglob.mempool, sizeof( rgbdata_t ) );
 
 	// also use this for bad textures, but without alpha
-	r_image.width = Q_max( 1, width );
-	r_image.height = Q_max( 1, height );
-	r_image.depth = Q_max( 1, depth );
-	r_image.flags = flags;
-	r_image.type = PF_RGBA_32;
-	r_image.size = r_image.width * r_image.height * r_image.depth * 4;
-	r_image.buffer = (r_image.size > sizeof( data2D )) ? NULL : data2D;
-	r_image.palette = NULL;
-	r_image.numMips = 1;
-	r_image.encode = 0;
+	r_image->width  = Q_max( 1, width );
+	r_image->height = Q_max( 1, height );
+	r_image->depth  = Q_max( 1, depth );
+	r_image->flags  = flags;
+	r_image->type   = PF_RGBA_32;
+	
+	r_image->size = r_image->width * r_image->height * r_image->depth * 4;
+	if( FBitSet( r_image->flags, IMAGE_CUBEMAP )) r_image->size *= 6;
 
-	if( FBitSet( r_image.flags, IMAGE_CUBEMAP ))
-		r_image.size *= 6;
-	memset( data2D, 0xFF, sizeof( data2D ));
+	r_image->buffer  = Mem_Malloc( tglob.mempool, r_image->size);
+	r_image->palette = NULL;
+	r_image->numMips = 1;
+	r_image->encode  = 0;
 
-	return &r_image;
+	memset( r_image->buffer, 0xFF, r_image->size );
+
+	return r_image;
 }
 
 /*
