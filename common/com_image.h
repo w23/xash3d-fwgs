@@ -14,13 +14,15 @@ NOTE: number at end of pixelformat name it's a total bitscount e.g. PF_RGB_24 ==
 	|| type == PF_DXT3 \
 	|| type == PF_DXT5 \
 	|| type == PF_ATI2 \
+	|| type == PF_BC4_SIGNED \
+	|| type == PF_BC4_UNSIGNED \
 	|| type == PF_BC5_SIGNED \
 	|| type == PF_BC5_UNSIGNED \
 	|| type == PF_BC6H_SIGNED \
 	|| type == PF_BC6H_UNSIGNED \
 	|| type == PF_BC7_UNORM \
 	|| type == PF_BC7_SRGB \
-	|| type == PF_KTX2_RAW)
+	|| type == PF_KTX2_RAW )
 
 typedef enum
 {
@@ -36,6 +38,8 @@ typedef enum
 	PF_DXT3,		// s3tc DXT3/BC2 format
 	PF_DXT5,		// s3tc DXT5/BC3 format
 	PF_ATI2,		// latc ATI2N/BC5 format
+	PF_BC4_SIGNED,
+	PF_BC4_UNSIGNED,
 	PF_BC5_SIGNED,
 	PF_BC5_UNSIGNED,
 	PF_BC6H_SIGNED,	// bptc BC6H signed FP16 format

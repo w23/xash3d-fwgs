@@ -44,6 +44,8 @@ typedef struct {
 
 // These have the same values as VkFormat in vulkan_core.h
 typedef enum {
+    KTX2_FORMAT_BC4_UNORM_BLOCK = 139,
+    KTX2_FORMAT_BC4_SNORM_BLOCK = 140,
     KTX2_FORMAT_BC5_UNORM_BLOCK = 141,
     KTX2_FORMAT_BC5_SNORM_BLOCK = 142,
     KTX2_FORMAT_BC6H_UFLOAT_BLOCK = 143,

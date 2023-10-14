@@ -485,18 +485,14 @@ static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hi
 		case PF_ATI2:
 			// TODO UNORM vs SNORM?
 			return VK_FORMAT_BC5_UNORM_BLOCK;
-		case PF_BC5_UNSIGNED:
-			return VK_FORMAT_BC5_UNORM_BLOCK;
-		case PF_BC5_SIGNED:
-			return VK_FORMAT_BC5_SNORM_BLOCK;
-		case PF_BC6H_SIGNED:
-			return VK_FORMAT_BC6H_SFLOAT_BLOCK;
-		case PF_BC6H_UNSIGNED:
-			return VK_FORMAT_BC6H_UFLOAT_BLOCK;
-		case PF_BC7_UNORM:
-			return VK_FORMAT_BC7_UNORM_BLOCK;
-		case PF_BC7_SRGB:
-			return VK_FORMAT_BC7_SRGB_BLOCK;
+		case PF_BC4_UNSIGNED: return VK_FORMAT_BC4_UNORM_BLOCK;
+		case PF_BC4_SIGNED:   return VK_FORMAT_BC4_SNORM_BLOCK;
+		case PF_BC5_UNSIGNED: return VK_FORMAT_BC5_UNORM_BLOCK;
+		case PF_BC5_SIGNED:   return VK_FORMAT_BC5_SNORM_BLOCK;
+		case PF_BC6H_UNSIGNED: return VK_FORMAT_BC6H_UFLOAT_BLOCK;
+		case PF_BC6H_SIGNED:   return VK_FORMAT_BC6H_SFLOAT_BLOCK;
+		case PF_BC7_UNORM: return VK_FORMAT_BC7_UNORM_BLOCK;
+		case PF_BC7_SRGB:  return VK_FORMAT_BC7_SRGB_BLOCK;
 		default:
 			WARN("FIXME unsupported pixformat_t %d", format);
 			return VK_FORMAT_UNDEFINED;
@@ -523,12 +519,14 @@ static size_t CalcImageSize( pixformat_t format, int width, int height, int dept
 		size = width * height * depth * 4;
 		break;
 	case PF_DXT1:
+	case PF_BC4_UNSIGNED:
+	case PF_BC4_SIGNED:
 		size = (((width + 3) >> 2) * ((height + 3) >> 2) * 8) * depth;
 		break;
 	case PF_DXT3:
 	case PF_DXT5:
-	case PF_BC6H_SIGNED:
 	case PF_BC6H_UNSIGNED:
+	case PF_BC6H_SIGNED:
 	case PF_BC7_UNORM:
 	case PF_BC7_SRGB:
 	case PF_ATI2:

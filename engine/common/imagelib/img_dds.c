@@ -104,6 +104,13 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 		{
 			switch( headerExt->dxgiFormat )
 			{
+			case DXGI_FORMAT_BC4_TYPELESS:
+			case DXGI_FORMAT_BC4_UNORM:
+				image.type = PF_BC4_UNSIGNED;
+				break;
+			case DXGI_FORMAT_BC4_SNORM:
+				image.type = PF_BC4_SIGNED;
+				break;
 			case DXGI_FORMAT_BC6H_SF16:
 				image.type = PF_BC6H_SIGNED;
 				break;
@@ -203,7 +210,10 @@ size_t Image_DXTGetLinearSize( int type, int width, int height, int depth )
 {
 	switch( type )
 	{
-	case PF_DXT1: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
+	case PF_DXT1:
+	case PF_BC4_SIGNED:
+	case PF_BC4_UNSIGNED:
+		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
 	case PF_DXT3:
 	case PF_DXT5:
 	case PF_BC6H_SIGNED:

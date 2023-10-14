@@ -19,6 +19,8 @@ GNU General Public License for more details.
 
 static pixformat_t Image_KTX2Format( uint32_t ktx2_format ) {
 	switch (ktx2_format) {
+		case KTX2_FORMAT_BC4_UNORM_BLOCK: return PF_BC4_UNSIGNED;
+		case KTX2_FORMAT_BC4_SNORM_BLOCK: return PF_BC4_SIGNED;
 		case KTX2_FORMAT_BC5_UNORM_BLOCK: return PF_BC5_UNSIGNED;
 		case KTX2_FORMAT_BC5_SNORM_BLOCK: return PF_BC5_SIGNED;
 		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK: return PF_BC6H_UNSIGNED;
@@ -41,6 +43,8 @@ static size_t ImageSizeForType( int type, int width, int height, int depth )
 	switch( type )
 	{
 	case PF_DXT1:
+	case PF_BC4_SIGNED:
+	case PF_BC4_UNSIGNED:
 		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
 	case PF_DXT3:
 	case PF_DXT5:
@@ -162,6 +166,9 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 	image.num_mips = 1;
 
 	if (!Image_KTX2Parse(&header, buffer, filesize)) {
+		// If KTX2 to imagelib conversion failed, try passing the file as raw data.
+		// This is useful for ref_vk which can directly support hundreds of formats which we don't convert to pixformat_t here
+
 		// TODO something like Image_CheckFlag( IL_SUPPORTS_KTX2_RAW )?
 		Con_DPrintf( S_WARN "%s: (%s) could not be converted to supported imagelib format, passing as raw KTX2 data\n", __FUNCTION__, name );
 		// This is a catch-all for ref_vk, which can do this format directly and natively
