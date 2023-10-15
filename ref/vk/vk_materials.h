@@ -26,9 +26,6 @@ typedef struct r_vk_material_s {
 	float roughness;
 	float metalness;
 	float normal_scale;
-
-	// TODO this should be internal
-	qboolean set;
 } r_vk_material_t;
 
 typedef struct { int index; } r_vk_material_ref_t;
@@ -44,6 +41,13 @@ r_vk_material_ref_t R_VkMaterialGetForName( const char *name );
 r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref );
 
 r_vk_material_t R_VkMaterialGetForTexture( int tex_id );
-r_vk_material_t R_VkMaterialGetForTextureChrome( int tex_id );
+
+enum {
+	kVkMaterialFlagNone = 0,
+	// Studio model STUDIO_NF_CHROME
+	kVkMaterialFlagChrome = (1<<0),
+};
+
+r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_id, uint32_t flags );
 
 qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_material );
