@@ -1770,7 +1770,7 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 	ASSERT(vertex_offset == num_vertices);
 
 	*args.out_geometry = (vk_render_geometry_t){
-		.material = R_VkMaterialGetForTexture(args.texture),
+		.material = R_VkMaterialGetForTextureWithFlags(args.texture, FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kVkMaterialFlagChrome : kVkMaterialFlagNone),
 		.ye_olde_texture = args.texture,
 
 		.vertex_offset = args.vertices_offset,
@@ -1781,11 +1781,6 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 
 		.emissive = {0, 0, 0},
 	};
-
-	if (!args.out_geometry->material.set && FBitSet( args.face_flags, STUDIO_NF_CHROME )) {
-		// TODO configurable
-		args.out_geometry->material.roughness = tglob.grayTexture;
-	}
 
 	*args.out_vertices_count += num_vertices;
 	*args.out_indices_count += num_indices;

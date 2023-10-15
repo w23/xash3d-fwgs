@@ -23,8 +23,6 @@ static r_vk_material_t k_default_material = {
 	.roughness = 1.f,
 	.normal_scale = 1.f,
 	.base_color = { 1.f, 1.f, 1.f, 1.f },
-
-	.set = false,
 };
 
 /* TODO
@@ -462,6 +460,10 @@ void R_VkMaterialsLoadForModel( const struct model_s* mod ) {
 }
 
 r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {
+	return R_VkMaterialGetForTextureWithFlags( tex_index, kVkMaterialFlagNone );
+}
+
+r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flags ) {
 	//DEBUG("Getting material for tex_id=%d", tex_index);
 	ASSERT(tex_index >= 0);
 	ASSERT(tex_index < MAX_TEXTURES);
@@ -488,6 +490,10 @@ r_vk_material_t R_VkMaterialGetForTexture( int tex_index ) {
 
 	r_vk_material_t ret = k_default_material;
 	ret.tex_base_color = tex_index;
+
+	if ( flags & kVkMaterialFlagChrome )
+		ret.roughness = tglob.grayTexture;
+
 	//DEBUG("Returning default material with tex_base_color=%d", tex_index);
 	return ret;
 }
