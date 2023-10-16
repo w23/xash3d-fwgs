@@ -114,6 +114,11 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		return false;
 	}
 
+	if( !Image_CheckFlag( IL_DDS_HARDWARE ) && ImageCompressed( image.type )) {
+		Con_DPrintf(S_WARN "%s: has compressed format, but support is not advertized\n", __FUNCTION__);
+		return false;
+	}
+
 	if (header->pixelDepth > 1) {
 		Con_DPrintf(S_ERROR "%s: unsupported KTX2 pixelDepth %d\n", __FUNCTION__, header->pixelDepth);
 		return false;
@@ -197,6 +202,9 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 	image.num_mips = 1;
 
 	if (!Image_KTX2Parse(&header, buffer, filesize)) {
+		if (!Image_CheckFlag( IL_KTX2_RAW ))
+			return false;
+
 		// If KTX2 to imagelib conversion failed, try passing the file as raw data.
 		// This is useful for ref_vk which can directly support hundreds of formats which we don't convert to pixformat_t here
 

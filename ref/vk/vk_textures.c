@@ -52,7 +52,7 @@ void initTextures( void ) {
 	vk_numTextures = 0;
 
 	// TODO really check device caps for this
-	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE );
+	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
 
 	tglob.default_sampler_fixme = pickSamplerForFlags(0);
 	ASSERT(tglob.default_sampler_fixme != VK_NULL_HANDLE);
