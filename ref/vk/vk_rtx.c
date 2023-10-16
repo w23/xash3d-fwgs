@@ -436,7 +436,7 @@ static void reloadMainpipe(void) {
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
 					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-					.flags = kVkImageFlagHasAlpha,
+					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
 				Q_strncpy(res->name, mr->name, sizeof(res->name));

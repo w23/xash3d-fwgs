@@ -949,7 +949,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 				.tiling = VK_IMAGE_TILING_OPTIMAL,
 				.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 				.flags = 0
-					| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? kVkImageFlagHasAlpha : 0)
+					| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? 0 : kVkImageFlagIgnoreAlpha)
 					| (cubemap ? kVkImageFlagIsCubemap : 0)
 					| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
 			};

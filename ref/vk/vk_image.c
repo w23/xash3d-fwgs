@@ -68,7 +68,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	XVK_CHECK(vkBindImageMemory(vk_core.device, image.image, image.devmem.device_memory, image.devmem.offset));
 
 	if (create->usage & usage_bits_implying_views) {
-		const qboolean has_alpha = !!(create->flags & kVkImageFlagHasAlpha);
+		const qboolean ignore_alpha = !!(create->flags & kVkImageFlagIgnoreAlpha) && !is_depth;
 
 		VkImageViewCreateInfo ivci = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -80,8 +80,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 			.subresourceRange.levelCount = ici.mipLevels,
 			.subresourceRange.baseArrayLayer = 0,
 			.subresourceRange.layerCount = ici.arrayLayers,
-			// TODO component swizzling based on format, e.g. R8 -> RRRR
-			.components = (VkComponentMapping){0, 0, 0, (is_depth || has_alpha) ? 0 : VK_COMPONENT_SWIZZLE_ONE},
+			.components = componentMappingForFormat(ici.format, ignore_alpha),
 		};
 		XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view));
 

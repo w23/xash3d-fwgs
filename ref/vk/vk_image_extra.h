@@ -438,3 +438,33 @@ static VkFormat unormFormatFor(VkFormat fmt) {
 	}
 }
 
+static VkComponentMapping componentMappingForFormat( VkFormat format, qboolean ignore_alpha ) {
+	VkComponentMapping map = {
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY,
+	};
+
+	switch ( format ) {
+		case VK_FORMAT_BC4_UNORM_BLOCK:
+			map.g = map.b = map.a = VK_COMPONENT_SWIZZLE_R;
+			break;
+		case VK_FORMAT_BC4_SNORM_BLOCK:
+			map.g = map.b = map.a = VK_COMPONENT_SWIZZLE_R;
+			break;
+		case VK_FORMAT_BC5_UNORM_BLOCK:
+			map.b = VK_COMPONENT_SWIZZLE_R;
+			map.a = VK_COMPONENT_SWIZZLE_G;
+			break;
+		case VK_FORMAT_BC5_SNORM_BLOCK:
+			map.b = VK_COMPONENT_SWIZZLE_R;
+			map.a = VK_COMPONENT_SWIZZLE_G;
+			break;
+	}
+
+	if (ignore_alpha)
+		map.a = VK_COMPONENT_SWIZZLE_ONE;
+
+	return map;
+}
