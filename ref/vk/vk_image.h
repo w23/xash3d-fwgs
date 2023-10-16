@@ -12,12 +12,12 @@ typedef struct r_vk_image_s {
 	VkImageView view_unorm;
 
 	uint32_t width, height;
-	int mips;
+	int mips, layers;
 	VkFormat format;
 } r_vk_image_t;
 
 enum {
-	kVkImageFlagHasAlpha = (1<<0),
+	kVkImageFlagIgnoreAlpha = (1<<0),
 	kVkImageFlagIsCubemap = (1<<1),
 	kVkImageFlagCreateUnormView = (1<<2),
 };
@@ -51,3 +51,7 @@ typedef struct {
 void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args );
 
 uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
+
+void R_VkImageUploadBegin( r_vk_image_t *img );
+void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
+void R_VkImageUploadEnd( r_vk_image_t *img );
