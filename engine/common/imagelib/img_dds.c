@@ -161,6 +161,15 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 			case TYPE_ATI2:
 				image.type = PF_ATI2;
 				break;
+			case TYPE_BC5S:
+				image.type = PF_BC5_SIGNED;
+				break;
+			case TYPE_BC4S:
+				image.type = PF_BC4_SIGNED;
+				break;
+			case TYPE_BC4U:
+				image.type = PF_BC4_UNSIGNED;
+				break;
 			default:
 				image.type = PF_UNKNOWN; // assume error
 				break;
