@@ -17,17 +17,51 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "ktx2.h"
 
-static pixformat_t Image_KTX2Format( uint32_t ktx2_format ) {
+static void Image_KTX2Format( uint32_t ktx2_format ) {
 	switch (ktx2_format) {
-		case KTX2_FORMAT_BC4_UNORM_BLOCK: return PF_BC4_UNSIGNED;
-		case KTX2_FORMAT_BC4_SNORM_BLOCK: return PF_BC4_SIGNED;
-		case KTX2_FORMAT_BC5_UNORM_BLOCK: return PF_BC5_UNSIGNED;
-		case KTX2_FORMAT_BC5_SNORM_BLOCK: return PF_BC5_SIGNED;
-		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK: return PF_BC6H_UNSIGNED;
-		case KTX2_FORMAT_BC6H_SFLOAT_BLOCK: return PF_BC6H_SIGNED;
-		case KTX2_FORMAT_BC7_UNORM_BLOCK: return PF_BC7_UNORM;
-		case KTX2_FORMAT_BC7_SRGB_BLOCK: return PF_BC7_SRGB;
-		default: return PF_UNKNOWN;
+		case KTX2_FORMAT_BC4_UNORM_BLOCK:
+			// 1 component for ref_gl
+			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			image.type = PF_BC4_UNSIGNED;
+			break;
+		case KTX2_FORMAT_BC4_SNORM_BLOCK:
+			// 1 component for ref_gl
+			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			image.type = PF_BC4_SIGNED;
+			break;
+		case KTX2_FORMAT_BC5_UNORM_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
+			image.type = PF_BC5_UNSIGNED;
+			break;
+		case KTX2_FORMAT_BC5_SNORM_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
+			image.type = PF_BC5_SIGNED;
+			break;
+		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_COLOR;
+			image.type = PF_BC6H_UNSIGNED;
+			break;
+		case KTX2_FORMAT_BC6H_SFLOAT_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_COLOR;
+			image.type = PF_BC6H_SIGNED;
+			break;
+		case KTX2_FORMAT_BC7_UNORM_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
+			image.type = PF_BC7_UNORM;
+			break;
+		case KTX2_FORMAT_BC7_SRGB_BLOCK:
+			ClearBits(image.flags, IMAGE_HAS_LUMA);
+			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
+			image.type = PF_BC7_SRGB;
+			break;
+		default:
+			image.type = PF_UNKNOWN;
+			break;
 	}
 }
 
@@ -66,14 +100,16 @@ static size_t ImageSizeForType( int type, int width, int height, int depth )
 }
 
 static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer, fs_offset_t filesize ) {
-	const pixformat_t format = Image_KTX2Format(header->vkFormat);
 	ktx2_index_t index;
 	size_t total_size = 0;
 	size_t max_offset = 0;
 	const byte *const levels_begin = buffer + KTX2_LEVELS_OFFSET;
 
+	// Sets image.type and image.flags
+	Image_KTX2Format(header->vkFormat);
+
 	// TODO add logs for these
-	if (format == PF_UNKNOWN) {
+	if (image.type == PF_UNKNOWN) {
 		Con_DPrintf(S_ERROR "%s: unsupported KTX2 format %d\n", __FUNCTION__, header->vkFormat);
 		return false;
 	}
@@ -108,7 +144,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	for (int mip = 0; mip < header->levelCount; ++mip) {
 		const uint32_t width = Q_max( 1, ( header->pixelWidth >> mip ));
 		const uint32_t height = Q_max( 1, ( header->pixelHeight >> mip ));
-		const uint32_t mip_size = ImageSizeForType( format, width, height, image.depth );
+		const uint32_t mip_size = ImageSizeForType( image.type, width, height, image.depth );
 
 		ktx2_level_t level;
 		memcpy(&level, levels_begin + mip * sizeof level, sizeof level);
@@ -126,13 +162,8 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	if (max_offset > filesize)
 		return false;
 
-	image.type = format;
 	image.size = total_size;
 	image.num_mips = header->levelCount;
-
-	// FIXME format-dependent
-	// BC7 can have alpha in blocks, so
-	image.flags = IMAGE_HAS_COLOR; // | IMAGE_HAS_ALPHA
 
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	memcpy(image.rgba, buffer, image.size);
@@ -177,8 +208,8 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 		image.size = filesize;
 		//image.encode = TODO custom encode type?
 
-		// FIXME format-dependent
-		image.flags = IMAGE_HAS_COLOR; // | IMAGE_HAS_ALPHA
+		// Unknown format, no idea what's inside
+		ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
 
 		image.rgba = Mem_Malloc( host.imagepool, image.size );
 		memcpy(image.rgba, buffer, image.size);
