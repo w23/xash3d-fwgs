@@ -142,6 +142,7 @@ void Image_CopyPalette32bit( void );
 void Image_SetPixelFormat( void );
 void Image_GetPaletteQ1( void );
 void Image_GetPaletteHL( void );
+size_t Image_ComputeSize( int type, int width, int height, int depth );
 
 //
 // formats load

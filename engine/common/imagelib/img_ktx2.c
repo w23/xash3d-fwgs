@@ -67,40 +67,6 @@ static void Image_KTX2Format( uint32_t ktx2_format )
 	}
 }
 
-// FIXME this codebase has too many copies of this function:
-// - ref_gl has one
-// - ref_vk has one
-// - ref_soft has one
-// - img_dds has one
-// - many more places probably have one too
-// - and now img_ktx2 also has one!
-static size_t ImageSizeForType( int type, int width, int height, int depth )
-{
-	switch( type )
-	{
-	case PF_DXT1:
-	case PF_BC4_SIGNED:
-	case PF_BC4_UNSIGNED:
-		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
-	case PF_DXT3:
-	case PF_DXT5:
-	case PF_ATI2:
-	case PF_BC5_UNSIGNED:
-	case PF_BC5_SIGNED:
-	case PF_BC6H_SIGNED:
-	case PF_BC6H_UNSIGNED:
-	case PF_BC7_UNORM:
-	case PF_BC7_SRGB: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
-	case PF_LUMINANCE: return ( width * height * depth );
-	case PF_BGR_24:
-	case PF_RGB_24: return ( width * height * depth * 3 );
-	case PF_BGRA_32:
-	case PF_RGBA_32: return ( width * height * depth * 4 );
-	}
-
-	return 0;
-}
-
 static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer, fs_offset_t filesize )
 {
 	ktx2_index_t index;
@@ -160,7 +126,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	{
 		const uint32_t width = Q_max( 1, ( header->pixelWidth >> mip ));
 		const uint32_t height = Q_max( 1, ( header->pixelHeight >> mip ));
-		const uint32_t mip_size = ImageSizeForType( image.type, width, height, image.depth );
+		const uint32_t mip_size = Image_ComputeSize( image.type, width, height, image.depth );
 
 		ktx2_level_t level;
 		memcpy( &level, levels_begin + mip * sizeof level, sizeof level );

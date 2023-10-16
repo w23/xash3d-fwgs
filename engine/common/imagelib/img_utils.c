@@ -1447,3 +1447,36 @@ qboolean Image_Process(rgbdata_t **pix, int width, int height, uint flags, float
 
 	return result;
 }
+
+// This codebase has too many copies of this function:
+// - ref_gl has one
+// - ref_vk has one
+// - ref_soft has one
+// - many more places probably have one too
+// TODO figure out how to make it available for ref_*
+size_t Image_ComputeSize( int type, int width, int height, int depth )
+{
+	switch( type )
+	{
+	case PF_DXT1:
+	case PF_BC4_SIGNED:
+	case PF_BC4_UNSIGNED:
+		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
+	case PF_DXT3:
+	case PF_DXT5:
+	case PF_ATI2:
+	case PF_BC5_UNSIGNED:
+	case PF_BC5_SIGNED:
+	case PF_BC6H_SIGNED:
+	case PF_BC6H_UNSIGNED:
+	case PF_BC7_UNORM:
+	case PF_BC7_SRGB: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
+	case PF_LUMINANCE: return ( width * height * depth );
+	case PF_BGR_24:
+	case PF_RGB_24: return ( width * height * depth * 3 );
+	case PF_BGRA_32:
+	case PF_RGBA_32: return ( width * height * depth * 4 );
+	}
+
+	return 0;
+}

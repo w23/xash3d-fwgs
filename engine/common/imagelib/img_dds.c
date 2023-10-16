@@ -215,33 +215,6 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 		image.num_mips = hdr->dwMipMapCount; // get actual mip count
 }
 
-size_t Image_DXTGetLinearSize( int type, int width, int height, int depth )
-{
-	switch( type )
-	{
-	case PF_DXT1:
-	case PF_BC4_SIGNED:
-	case PF_BC4_UNSIGNED:
-		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 8 );
-	case PF_DXT3:
-	case PF_DXT5:
-	case PF_BC6H_SIGNED:
-	case PF_BC6H_UNSIGNED:
-	case PF_BC7_UNORM:
-	case PF_BC7_SRGB:
-	case PF_BC5_UNSIGNED:
-	case PF_BC5_SIGNED:
-	case PF_ATI2: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
-	case PF_LUMINANCE: return (width * height * depth);
-	case PF_BGR_24:
-	case PF_RGB_24: return (width * height * depth * 3);
-	case PF_BGRA_32:
-	case PF_RGBA_32: return (width * height * depth * 4);
-	}
-
-	return 0;
-}
-
 size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 {
 	size_t	buffsize = 0;
@@ -252,7 +225,7 @@ size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 	{
 		width = Q_max( 1, ( hdr->dwWidth >> i ));
 		height = Q_max( 1, ( hdr->dwHeight >> i ));
-		buffsize += Image_DXTGetLinearSize( image.type, width, height, image.depth );
+		buffsize += Image_ComputeSize( image.type, width, height, image.depth );
 	}
 
 	return buffsize;
@@ -301,7 +274,7 @@ void Image_DXTAdjustVolume( dds_t *hdr )
 	if( hdr->dwDepth <= 1 )
 		return;
 
-	hdr->dwLinearSize = Image_DXTGetLinearSize( image.type, hdr->dwWidth, hdr->dwHeight, hdr->dwDepth );
+	hdr->dwLinearSize = Image_ComputeSize( image.type, hdr->dwWidth, hdr->dwHeight, hdr->dwDepth );
 	hdr->dwFlags |= DDS_LINEARSIZE;
 }
 
