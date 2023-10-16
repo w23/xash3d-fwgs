@@ -17,45 +17,47 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "ktx2.h"
 
-static void Image_KTX2Format( uint32_t ktx2_format ) {
-	switch (ktx2_format) {
+static void Image_KTX2Format( uint32_t ktx2_format )
+{
+	switch ( ktx2_format )
+	{
 		case KTX2_FORMAT_BC4_UNORM_BLOCK:
 			// 1 component for ref_gl
-			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.type = PF_BC4_UNSIGNED;
 			break;
 		case KTX2_FORMAT_BC4_SNORM_BLOCK:
 			// 1 component for ref_gl
-			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.type = PF_BC4_SIGNED;
 			break;
 		case KTX2_FORMAT_BC5_UNORM_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
 			image.type = PF_BC5_UNSIGNED;
 			break;
 		case KTX2_FORMAT_BC5_SNORM_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
 			image.type = PF_BC5_SIGNED;
 			break;
 		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_COLOR;
 			image.type = PF_BC6H_UNSIGNED;
 			break;
 		case KTX2_FORMAT_BC6H_SFLOAT_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_COLOR;
 			image.type = PF_BC6H_SIGNED;
 			break;
 		case KTX2_FORMAT_BC7_UNORM_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
 			image.type = PF_BC7_UNORM;
 			break;
 		case KTX2_FORMAT_BC7_SRGB_BLOCK:
-			ClearBits(image.flags, IMAGE_HAS_LUMA);
+			ClearBits( image.flags, IMAGE_HAS_LUMA );
 			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
 			image.type = PF_BC7_SRGB;
 			break;
@@ -89,120 +91,134 @@ static size_t ImageSizeForType( int type, int width, int height, int depth )
 	case PF_BC6H_UNSIGNED:
 	case PF_BC7_UNORM:
 	case PF_BC7_SRGB: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
-	case PF_LUMINANCE: return (width * height * depth);
+	case PF_LUMINANCE: return ( width * height * depth );
 	case PF_BGR_24:
-	case PF_RGB_24: return (width * height * depth * 3);
+	case PF_RGB_24: return ( width * height * depth * 3 );
 	case PF_BGRA_32:
-	case PF_RGBA_32: return (width * height * depth * 4);
+	case PF_RGBA_32: return ( width * height * depth * 4 );
 	}
 
 	return 0;
 }
 
-static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer, fs_offset_t filesize ) {
+static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer, fs_offset_t filesize )
+{
 	ktx2_index_t index;
 	size_t total_size = 0;
 	size_t max_offset = 0;
 	const byte *const levels_begin = buffer + KTX2_LEVELS_OFFSET;
 
 	// Sets image.type and image.flags
-	Image_KTX2Format(header->vkFormat);
+	Image_KTX2Format( header->vkFormat );
 
 	// TODO add logs for these
-	if (image.type == PF_UNKNOWN) {
-		Con_DPrintf(S_ERROR "%s: unsupported KTX2 format %d\n", __FUNCTION__, header->vkFormat);
+	if( image.type == PF_UNKNOWN )
+	{
+		Con_DPrintf( S_ERROR "%s: unsupported KTX2 format %d\n", __FUNCTION__, header->vkFormat );
 		return false;
 	}
 
-	if( !Image_CheckFlag( IL_DDS_HARDWARE ) && ImageCompressed( image.type )) {
-		Con_DPrintf(S_WARN "%s: has compressed format, but support is not advertized\n", __FUNCTION__);
+	if( !Image_CheckFlag( IL_DDS_HARDWARE ) && ImageCompressed( image.type ))
+	{
+		Con_DPrintf( S_WARN "%s: has compressed format, but support is not advertized\n", __FUNCTION__ );
 		return false;
 	}
 
-	if (header->pixelDepth > 1) {
-		Con_DPrintf(S_ERROR "%s: unsupported KTX2 pixelDepth %d\n", __FUNCTION__, header->pixelDepth);
+	if( header->pixelDepth > 1 )
+	{
+		Con_DPrintf( S_ERROR "%s: unsupported KTX2 pixelDepth %d\n", __FUNCTION__, header->pixelDepth );
 		return false;
 	}
 
-	if (header->faceCount > 1) {
-		Con_DPrintf(S_ERROR "%s: unsupported KTX2 faceCount %d\n", __FUNCTION__, header->faceCount);
+	if( header->faceCount > 1 )
+	{
+		Con_DPrintf( S_ERROR "%s: unsupported KTX2 faceCount %d\n", __FUNCTION__, header->faceCount );
 		return false;
 	}
 
-	if (header->layerCount > 1) {
-		Con_DPrintf(S_ERROR "%s: unsupported KTX2 layerCount %d\n", __FUNCTION__, header->layerCount);
+	if( header->layerCount > 1 )
+	{
+		Con_DPrintf( S_ERROR "%s: unsupported KTX2 layerCount %d\n", __FUNCTION__, header->layerCount );
 		return false;
 	}
 
-	if (header->supercompressionScheme != 0) {
-		Con_DPrintf(S_ERROR "%s: unsupported KTX2 supercompressionScheme %d\n", __FUNCTION__, header->supercompressionScheme);
+	if( header->supercompressionScheme != 0 )
+	{
+		Con_DPrintf( S_ERROR "%s: unsupported KTX2 supercompressionScheme %d\n", __FUNCTION__, header->supercompressionScheme );
 		return false;
 	}
 
-	if (header->levelCount * sizeof(ktx2_level_t) + KTX2_LEVELS_OFFSET > filesize) {
-		Con_DPrintf(S_ERROR "%s: file abruptly ends\n", __FUNCTION__);
+	if( header->levelCount * sizeof( ktx2_level_t ) + KTX2_LEVELS_OFFSET > filesize )
+	{
+		Con_DPrintf( S_ERROR "%s: file abruptly ends\n", __FUNCTION__ );
 		return false;
 	}
 
-	memcpy(&index, buffer + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t), sizeof index);
+	memcpy( &index, buffer + KTX2_IDENTIFIER_SIZE + sizeof( ktx2_header_t ), sizeof index );
 
-	for (int mip = 0; mip < header->levelCount; ++mip) {
+	for( int mip = 0; mip < header->levelCount; ++mip )
+	{
 		const uint32_t width = Q_max( 1, ( header->pixelWidth >> mip ));
 		const uint32_t height = Q_max( 1, ( header->pixelHeight >> mip ));
 		const uint32_t mip_size = ImageSizeForType( image.type, width, height, image.depth );
 
 		ktx2_level_t level;
-		memcpy(&level, levels_begin + mip * sizeof level, sizeof level);
+		memcpy( &level, levels_begin + mip * sizeof level, sizeof level );
 
-		if (mip_size != level.byteLength) {
-			Con_DPrintf(S_ERROR "%s: mip=%d size mismatch read=%d, but computed=%d\n",
-				__FUNCTION__, mip, (int)level.byteLength, mip_size);
+		if( mip_size != level.byteLength )
+		{
+			Con_DPrintf( S_ERROR "%s: mip=%d size mismatch read=%d, but computed=%d\n",
+				__FUNCTION__, mip, (int)level.byteLength, mip_size );
 			return false;
 		}
 
 		total_size += level.byteLength;
-		max_offset = Q_max(max_offset, level.byteLength + level.byteOffset);
+		max_offset = Q_max( max_offset, level.byteLength + level.byteOffset );
 	}
 
-	if (max_offset > filesize)
+	if( max_offset > filesize )
 		return false;
 
 	image.size = total_size;
 	image.num_mips = header->levelCount;
 
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
-	memcpy(image.rgba, buffer, image.size);
+	memcpy( image.rgba, buffer, image.size );
 
-	for (int mip = 0, cursor = 0; mip < header->levelCount; ++mip) {
+	for( int mip = 0, cursor = 0; mip < header->levelCount; ++mip )
+	{
 		ktx2_level_t level;
-		memcpy(&level, levels_begin + mip * sizeof level, sizeof level);
-		memcpy(image.rgba + cursor, buffer + level.byteOffset, level.byteLength);
+		memcpy( &level, levels_begin + mip * sizeof level, sizeof level );
+		memcpy( image.rgba + cursor, buffer + level.byteOffset, level.byteLength );
 		cursor += level.byteLength;
 	}
 
 	return true;
 }
 
-qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t filesize ) {
+qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t filesize )
+{
 	ktx2_header_t header;
 
 	if( filesize < KTX2_MINIMAL_HEADER_SIZE )
 		return false;
 
-	if ( memcmp(buffer, KTX2_IDENTIFIER, KTX2_IDENTIFIER_SIZE) != 0 ) {
+	if( memcmp( buffer, KTX2_IDENTIFIER, KTX2_IDENTIFIER_SIZE ) != 0 )
+	{
 		Con_DPrintf( S_ERROR "%s: (%s) has invalid identifier\n", __FUNCTION__, name );
 		return false;
 	}
 
-	memcpy(&header, buffer + KTX2_IDENTIFIER_SIZE, sizeof header);
+	memcpy( &header, buffer + KTX2_IDENTIFIER_SIZE, sizeof header );
 
 	image.width = header.pixelWidth;
 	image.height = header.pixelHeight;
-	image.depth = Q_max(1, header.pixelDepth);
+	image.depth = Q_max( 1, header.pixelDepth );
 	image.num_mips = 1;
 
-	if (!Image_KTX2Parse(&header, buffer, filesize)) {
-		if (!Image_CheckFlag( IL_KTX2_RAW ))
+	if( !Image_KTX2Parse( &header, buffer, filesize ))
+	{
+		if( !Image_CheckFlag( IL_KTX2_RAW ))
 			return false;
 
 		// If KTX2 to imagelib conversion failed, try passing the file as raw data.
@@ -217,10 +233,10 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 		//image.encode = TODO custom encode type?
 
 		// Unknown format, no idea what's inside
-		ClearBits(image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA);
+		ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 
 		image.rgba = Mem_Malloc( host.imagepool, image.size );
-		memcpy(image.rgba, buffer, image.size);
+		memcpy( image.rgba, buffer, image.size );
 	}
 
 	return true;
