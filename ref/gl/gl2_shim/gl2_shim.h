@@ -1,6 +1,6 @@
 /*
-qc.h - Quake C script writer
-Copyright (C) 2020 Andrey Akhmichin
+vgl_shim.h - vitaGL custom immediate mode shim
+Copyright (C) 2023 fgsfds
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -12,15 +12,13 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
+
 #pragma once
-#ifndef QC_H
-#define QC_H
 
-#define DEFAULT_SEQGROUPSIZE	64
-#define ACTIVITIES_FILE	"activities.txt"
+// max verts in a single frame
+#define GL2_MAX_VERTS 32768
 
-qboolean	LoadActivityList( const char *appname );
-void		WriteQCScript( void );
-
-#endif // QC_H
-
+int GL2_ShimInit( void );
+void GL2_ShimInstall( void );
+void GL2_ShimShutdown( void );
+void GL2_ShimEndFrame( void );

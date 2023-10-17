@@ -555,21 +555,17 @@ static void SetWidthAndHeightFromCommandLine( void )
 		return;
 	}
 
-	R_SaveVideoMode( width, height, width, height );
+	R_SaveVideoMode( width, height, width, height, false );
 }
 
 static void SetFullscreenModeFromCommandLine( void )
 {
-#if !XASH_MOBILE_PLATFORM
-	if( Sys_CheckParm( "-fullscreen" ))
-	{
+	if( Sys_CheckParm( "-borderless" ))
+		Cvar_DirectSet( &vid_fullscreen, "2" );
+	else if( Sys_CheckParm( "-fullscreen" ))
 		Cvar_DirectSet( &vid_fullscreen, "1" );
-	}
 	else if( Sys_CheckParm( "-windowed" ))
-	{
 		Cvar_DirectSet( &vid_fullscreen, "0" );
-	}
-#endif
 }
 
 static void R_CollectRendererNames( void )
