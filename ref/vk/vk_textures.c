@@ -697,59 +697,52 @@ static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	return tglob.default_sampler_fixme;
 }
 
-static void prepDestriptorSets(vk_texture_t* const tex, colorspace_hint_e colorspace_hint) {
+static void setDescriptorSet(vk_texture_t* const tex, colorspace_hint_e colorspace_hint) {
+	// FIXME detect skybox some other way
+	if (tex->vk.image.layers > 1)
+		return;
+
+	const int index = tex - vk_textures;
+	ASSERT(index >= 0);
+	ASSERT(index < MAX_TEXTURES);
+
+	const VkImageView view = tex->vk.image.view != VK_NULL_HANDLE ? tex->vk.image.view : vk_textures[tglob.defaultTexture].vk.image.view;
+
+	if (view == VK_NULL_HANDLE)
+		return;
+
+	VkDescriptorImageInfo dii = {
+		.imageView = view,
+		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		.sampler = pickSamplerForFlags( tex->flags ),
+	};
+
+	// Set descriptor for bindless/ray tracing
+	tglob.dii_all_textures[index] = dii;
+
+	// Continue with setting unorm descriptor for traditional renderer
+
 	// TODO how should we approach this:
 	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
 	// - update descriptor sets in batch?
-	if (vk_desc.next_free < MAX_TEXTURES-2) {
-		const int index = tex - vk_textures;
-		const VkDescriptorSet ds = vk_desc.sets[vk_desc.next_free++];
-		const VkDescriptorSet ds_unorm =
-			(colorspace_hint == kColorspaceGamma && tex->vk.image.view_unorm != VK_NULL_HANDLE)
-			? vk_desc.sets[vk_desc.next_free++] : VK_NULL_HANDLE;
 
-		const VkDescriptorImageInfo dii = {
-			.imageView = tex->vk.image.view,
-			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.sampler = pickSamplerForFlags( tex->flags ),
-		};
+	if (colorspace_hint == kColorspaceGamma && tex->vk.image.view_unorm != VK_NULL_HANDLE)
+		dii.imageView = tex->vk.image.view_unorm;
 
-		const VkDescriptorImageInfo dii_unorm = {
-			.imageView = tex->vk.image.view_unorm,
-			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.sampler = dii.sampler,
-		};
+	const VkDescriptorSet ds = vk_desc_fixme.texture_sets[index];
+	VkWriteDescriptorSet wds[1] = { {
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstBinding = 0,
+		.dstArrayElement = 0,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.pImageInfo = &dii,
+		.dstSet = ds,
+	}};
 
-		VkWriteDescriptorSet wds[2] = { {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.pImageInfo = &dii,
-			.dstSet = ds,
-		}, {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.pImageInfo = &dii_unorm,
-			.dstSet = ds_unorm,
-		}};
-		vkUpdateDescriptorSets(vk_core.device, ds_unorm != VK_NULL_HANDLE ? 2 : 1 , wds, 0, NULL);
+	vkUpdateDescriptorSets(vk_core.device, COUNTOF(wds), wds, 0, NULL);
 
-		// FIXME detect skybox some other way
-		if (tex->vk.image.layers == 1) {
-			tglob.dii_all_textures[index] = dii;
-		}
-
-		tex->vk.descriptor_unorm = ds_unorm != VK_NULL_HANDLE ? ds_unorm : ds;
-	}
-	else
-	{
-		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
-	}
+	tex->vk.descriptor_unorm = ds;
 }
 
 static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic ) {
@@ -835,34 +828,17 @@ static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic ) {
 		R_VkImageUploadEnd(&tex->vk.image);
 	}
 
-	// KTX2 textures are inaccessible from trad renderer (for now)
-	tex->vk.descriptor_unorm = VK_NULL_HANDLE;
+	{
+		// KTX2 textures are inaccessible from trad renderer (for now)
+		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 
-	// TODO how should we approach this:
-	// - per-texture desc sets can be inconvenient if texture is used in different incompatible contexts
-	// - update descriptor sets in batch?
-
-	if (vk_desc.next_free != MAX_TEXTURES) {
-		const int num_layers = 1; // TODO cubemap
 		const int index = tex - vk_textures;
-		VkDescriptorImageInfo dii_tmp;
-		// FIXME handle cubemaps properly w/o this garbage. they should be the same as regular textures.
-		VkDescriptorImageInfo *const dii_tex = (num_layers == 1) ? tglob.dii_all_textures + index : &dii_tmp;
-		*dii_tex = (VkDescriptorImageInfo){
+		const VkDescriptorImageInfo dii = {
 			.imageView = tex->vk.image.view,
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.sampler = pickSamplerForFlags( tex->flags ),
 		};
-		const VkWriteDescriptorSet wds[] = { {
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstBinding = 0,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.pImageInfo = dii_tex,
-			.dstSet = vk_desc.sets[vk_desc.next_free++],
-		}};
-		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+		tglob.dii_all_textures[index] = dii;
 	}
 
 	g_textures.stats.size_total += tex->total_size;
@@ -989,7 +965,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		}
 	}
 
-	prepDestriptorSets(tex, colorspace_hint);
+	setDescriptorSet(tex, colorspace_hint);
 
 	g_textures.stats.size_total += tex->total_size;
 	g_textures.stats.count++;
@@ -1143,11 +1119,8 @@ void R_FreeTexture( unsigned int texnum ) {
 	g_textures.stats.count--;
 	memset(tex, 0, sizeof(*tex));
 
-	tglob.dii_all_textures[texnum] = (VkDescriptorImageInfo){
-		.imageView = vk_textures[tglob.defaultTexture].vk.image.view,
-		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		.sampler = tglob.default_sampler_fixme,
-	};
+	// Reset descriptor sets to default texture
+	setDescriptorSet(tex, kColorspaceNative);
 
 end:
 	APROF_SCOPE_END(free);

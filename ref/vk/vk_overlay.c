@@ -145,7 +145,7 @@ static qboolean createPipelines( void )
 		/* }; */
 
 		VkDescriptorSetLayout descriptor_layouts[] = {
-			vk_desc.one_texture_layout,
+			vk_desc_fixme.one_texture_layout,
 		};
 
 		VkPipelineLayoutCreateInfo plci = {
