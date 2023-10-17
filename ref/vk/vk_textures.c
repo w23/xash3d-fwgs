@@ -46,7 +46,7 @@ static VkSampler pickSamplerForFlags( texFlags_t flags );
 void initTextures( void ) {
 	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
 	R_SPEEDS_METRIC(g_textures.stats.size_total, "size_total", kSpeedsMetricBytes);
-	
+
 	tglob.mempool = Mem_AllocPool( "vktextures" );
 
 	memset( vk_textures, 0, sizeof( vk_textures ));
@@ -100,7 +100,7 @@ static void unloadSkybox( void );
 void destroyTextures( void )
 {
 	for( unsigned int i = 0; i < vk_numTextures; i++ )
-		VK_FreeTexture( i );
+		R_FreeTexture( i );
 
 	unloadSkybox();
 
@@ -205,7 +205,7 @@ static rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags 
 	r_image->depth  = Q_max( 1, depth );
 	r_image->flags  = flags;
 	r_image->type   = PF_RGBA_32;
-	
+
 	r_image->size = r_image->width * r_image->height * r_image->depth * 4;
 	if( FBitSet( r_image->flags, IMAGE_CUBEMAP )) r_image->size *= 6;
 
@@ -998,7 +998,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 ///////////// Render API funcs /////////////
 
 // Texture tools
-int	VK_FindTexture( const char *name )
+int R_FindTexture( const char *name )
 {
 	vk_texture_t *tex;
 
@@ -1011,18 +1011,10 @@ int	VK_FindTexture( const char *name )
 
 	return 0;
 }
-const char*	VK_TextureName( unsigned int texnum )
+const char* R_TextureName( unsigned int texnum )
 {
 	ASSERT( texnum >= 0 && texnum < MAX_TEXTURES );
 	return vk_textures[texnum].name;
-}
-
-const byte*	VK_TextureData( unsigned int texnum )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%d", texnum);
-	// We don't store original texture data
-	// TODO do we need to?
-	return NULL;
 }
 
 static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
@@ -1072,7 +1064,7 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	return tex - vk_textures;
 }
 
-int VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags ) {
+int R_LoadTexture( const char *name, const byte *buf, size_t size, int flags ) {
 	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma);
 }
 
@@ -1085,32 +1077,14 @@ int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolea
 		// free if already loaded
 		// TODO consider leaving intact if loading failed
 		if(( tex = Common_TextureForName( filename ))) {
-			VK_FreeTexture( tex - vk_textures );
+			R_FreeTexture( tex - vk_textures );
 		}
 	}
 
 	return loadTextureInternal( filename, NULL, 0, 0, colorspace );
 }
 
-int	VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
-	return 0;
-}
-
-int	VK_LoadTextureArray( const char **names, int flags )
-{
-	PRINT_NOT_IMPLEMENTED();
-	return 0;
-}
-
-int	VK_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
-	return 0;
-}
-
-void VK_FreeTexture( unsigned int texnum ) {
+void R_FreeTexture( unsigned int texnum ) {
 	vk_texture_t *tex;
 	vk_texture_t **prev;
 	vk_texture_t *cur;
@@ -1126,7 +1100,7 @@ void VK_FreeTexture( unsigned int texnum ) {
 	// debug
 	if( !tex->name[0] )
 	{
-		ERR("VK_FreeTexture: trying to free unnamed texture with index %u", texnum );
+		ERR("R_FreeTexture: trying to free unnamed texture with index %u", texnum );
 		return;
 	}
 
@@ -1186,7 +1160,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	if( update )
 	{
 		if( tex == NULL )
-			gEngine.Host_Error( "VK_LoadTextureFromBuffer: couldn't find texture %s for update\n", name );
+			gEngine.Host_Error( "loadTextureFromBuffer: couldn't find texture %s for update\n", name );
 		SetBits( tex->flags, flags );
 	}
 	else
@@ -1207,7 +1181,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	return (tex - vk_textures);
 }
 
-int VK_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update ) {
+int R_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update ) {
 	return loadTextureFromBuffers(name, &pic, 1, flags, update);
 }
 
@@ -1219,7 +1193,7 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 	vsnprintf( buffer, sizeof buffer, fmt, argptr );
 	va_end( argptr );
 
-	tex_id = VK_FindTexture(buffer);
+	tex_id = R_FindTexture(buffer);
 	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
@@ -1345,7 +1319,7 @@ cleanup:
 static const char *skybox_default = "desert";
 static const char *skybox_prefixes[] = { "pbr/env/%s", "gfx/env/%s" };
 
-void XVK_SetupSky( const char *skyboxname ) {
+void R_SetupSky( const char *skyboxname ) {
 	if( !COM_CheckString( skyboxname ))
 	{
 		unloadSkybox();
@@ -1372,7 +1346,8 @@ void XVK_SetupSky( const char *skyboxname ) {
 
 	if (Q_stricmp(skyboxname, skybox_default) != 0) {
 		WARN("missed or incomplete skybox '%s'", skyboxname);
-		XVK_SetupSky( "desert" ); // force to default
+		// FIXME infinite recursion
+		R_SetupSky( "desert" ); // force to default
 	}
 }
 

@@ -227,7 +227,7 @@ void VK_UploadLightmap( void )
 void VK_ClearLightmap( void )
 {
 	for (int i = 0; i < gl_lms.current_lightmap_texture; ++i)
-		VK_FreeTexture(tglob.lightmapTextures[i]);
+		R_FreeTexture(tglob.lightmapTextures[i]);
 	gl_lms.current_lightmap_texture = 0;
 
 	LM_InitBlock();

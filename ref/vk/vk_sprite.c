@@ -242,12 +242,12 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	if( FBitSet( mod->flags, MODEL_CLIENT )) // it's a HUD sprite
 	{
 		Q_snprintf( texname, sizeof( texname ), "#HUD/%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTextureExternal( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 	else
 	{
 		Q_snprintf( texname, sizeof( texname ), "#%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTextureExternal( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 
 	// setup frame description

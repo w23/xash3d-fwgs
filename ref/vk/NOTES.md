@@ -635,3 +635,24 @@ For multiple replacements:
         - mat_id
 - name_to_material[] -- string "name" to mat_id
     - hash table of some sorts
+
+# 2023-10-16 E313
+## Pre-next:
+- validation crash
+## Next:
+- KTX2 PR against upstream
+- texture leaks
+	- better texture storage
+		- hash map
+	- texture lifetimes/refcounts
+	- texture deletion
+		- mass (for single device wait idle)
+
+# 2023-10-17 E314
+- [x] imagelib/ktx2 PR to upstream
+	1. [x] Make a vulkan branch with the latest upstream merged in
+	2. [x] Make another branch `upstream-ktx2` from upstream/master with imagelib changes hand-picked
+	3. [x] Make a PR against upstream with ktx2
+	4. [x] Make a PR against vulkan with recentmost upstream
+
+- [ ] Contemplate texture storage

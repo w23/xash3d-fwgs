@@ -3332,7 +3332,7 @@ static void R_StudioLoadTexture( model_t *mod, studiohdr_t *phdr, mstudiotexture
 
 	// build the texname
 	Q_snprintf( texname, sizeof( texname ), "#%s/%s.mdl", mdlname, name );
-	ptexture->index = VK_LoadTextureExternal( texname, (byte *)ptexture, size, flags );
+	ptexture->index = R_LoadTexture( texname, (byte *)ptexture, size, flags );
 
 	if( !ptexture->index )
 	{
@@ -3378,7 +3378,7 @@ void Mod_StudioUnloadTextures( void *data )
 	{
 		if( ptexture[i].index == tglob.defaultTexture )
 			continue;
-		VK_FreeTexture( ptexture[i].index );
+		R_FreeTexture( ptexture[i].index );
 	}
 }
 

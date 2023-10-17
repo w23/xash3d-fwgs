@@ -33,7 +33,7 @@ typedef struct vk_texture_s
 typedef struct vk_textures_global_s
 {
 	poolhandle_t mempool;
-	
+
 	int defaultTexture;   	// use for bad textures
 	int particleTexture;
 	int whiteTexture;
@@ -84,24 +84,20 @@ typedef enum {
 	kColorspaceGamma,
 } colorspace_hint_e;
 
-// Public API functions
-int		VK_FindTexture( const char *name );
-const char*	VK_TextureName( unsigned int texnum );
-const byte*	VK_TextureData( unsigned int texnum );
-int		VK_LoadTextureExternal( const char *name, const byte *buf, size_t size, int flags );
-int		VK_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags );
-int		VK_LoadTextureArray( const char **names, int flags );
-int		VK_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
-void		VK_FreeTexture( unsigned int texnum );
-int VK_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
+// Ref interface functions
+int R_FindTexture( const char *name );
+const char* R_TextureName( unsigned int texnum );
+int R_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
+void R_FreeTexture( unsigned int texnum );
+int R_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
+
 
 int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload);
-
 int XVK_TextureLookupF( const char *fmt, ...);
 
-#define VK_LoadTextureInternal( name, pic, flags ) VK_LoadTextureFromBuffer( name, pic, flags, false )
+#define VK_LoadTextureInternal( name, pic, flags ) R_LoadTextureFromBuffer( name, pic, flags, false )
 
-void XVK_SetupSky( const char *skyboxname );
+void R_SetupSky( const char *skyboxname );
 
 // Tries to find a texture by its short name
 // Full names depend on map name, wad name, etc. This function tries them all.

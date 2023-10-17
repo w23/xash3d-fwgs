@@ -500,7 +500,7 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 
 r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
 	// FIXME proper hash table here, don't depend on textures
-	const int dummy_tex_id_fixme = VK_FindTexture(name);
+	const int dummy_tex_id_fixme = R_FindTexture(name);
 	if (dummy_tex_id_fixme == 0) {
 		ERR("Material with name \"%s\" not found", name);
 		return (r_vk_material_ref_t){.index = -1,};

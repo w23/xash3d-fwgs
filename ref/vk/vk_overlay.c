@@ -120,7 +120,7 @@ static void drawFill( float x, float y, float w, float h, int r, int g, int b, i
 	const int prev_blending = vk_renderstate.blending_mode;
 	vk_renderstate.blending_mode = blending_mode;
 	vk_renderstate.tri_color = (color_rgba8_t){r, g, b, a};
-	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, VK_FindTexture(REF_WHITE_TEXTURE));
+	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, R_FindTexture(REF_WHITE_TEXTURE));
 	vk_renderstate.tri_color = prev_color;
 	vk_renderstate.blending_mode = prev_blending;
 }
