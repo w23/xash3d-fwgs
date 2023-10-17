@@ -1555,3 +1555,18 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 	}
 }
+
+void VK_BrushUnloadTextures( model_t *mod )
+{
+	int i;
+
+	for( i = 0; i < mod->numtextures; i++ )
+	{
+		texture_t *tx = mod->textures[i];
+		if( !tx || tx->gl_texturenum == tglob.defaultTexture )
+			continue; // free slot
+
+		R_FreeTexture( tx->gl_texturenum );    // main texture
+		R_FreeTexture( tx->fb_texturenum );    // luma texture
+	}
+}

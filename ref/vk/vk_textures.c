@@ -9,6 +9,7 @@
 #include "vk_combuf.h"
 #include "vk_logs.h"
 #include "r_speeds.h"
+#include "profiler.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
@@ -1088,21 +1089,26 @@ void R_FreeTexture( unsigned int texnum ) {
 	vk_texture_t *tex;
 	vk_texture_t **prev;
 	vk_texture_t *cur;
-	if( texnum <= 0 ) return;
+
+	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
+
+	if( texnum <= 0 )
+		goto end;
 
 	tex = vk_textures + texnum;
 
-	ASSERT( tex != NULL );
-
 	// already freed?
-	if( !tex->vk.image.image ) return;
+	if( !tex->vk.image.image )
+		goto end;
 
 	// debug
 	if( !tex->name[0] )
 	{
 		ERR("R_FreeTexture: trying to free unnamed texture with index %u", texnum );
-		return;
+		goto end;
 	}
+
+	DEBUG("Freeing texture=%d(%s)", texnum, tex->name);
 
 	// remove from hash table
 	prev = &vk_texturesHashTable[tex->hashValue];
@@ -1142,6 +1148,9 @@ void R_FreeTexture( unsigned int texnum ) {
 		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		.sampler = tglob.default_sampler_fixme,
 	};
+
+end:
+	APROF_SCOPE_END(free);
 }
 
 static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update ) {

@@ -14,3 +14,5 @@ void R_SpriteShutdown(void);
 
 // FIXME needed to recreate the sprite quad model, otherwise its memory will be freed, reused and corrupted
 void R_SpriteNewMapFIXME(void);
+
+void Mod_SpriteUnloadTextures( void *data );

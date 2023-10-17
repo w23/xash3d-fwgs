@@ -114,6 +114,30 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 
 extern void GL_SubdivideSurface( msurface_t *fa );
 
+static void Mod_UnloadTextures( model_t *mod )
+{
+	ASSERT( mod != NULL );
+
+	switch( mod->type )
+	{
+	case mod_studio:
+		Mod_StudioUnloadTextures( mod->cache.data );
+		break;
+	case mod_alias:
+		// FIXME Mod_AliasUnloadTextures( mod->cache.data );
+		break;
+	case mod_brush:
+		VK_BrushUnloadTextures( mod );
+		break;
+	case mod_sprite:
+		Mod_SpriteUnloadTextures( mod->cache.data );
+		break;
+	default:
+		ASSERT( 0 );
+		break;
+	}
+}
+
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
 {
 	qboolean loaded = true;
@@ -151,6 +175,7 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		gEngine.drawFuncs->Mod_ProcessUserData( mod, create, buffer );
 
 	if( !create ) {
+		Mod_UnloadTextures( mod );
 		switch( mod->type ) {
 			case mod_brush:
 				// Empirically, this function only attempts to destroy the worldmodel before loading the next map.

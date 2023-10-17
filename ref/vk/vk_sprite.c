@@ -1074,3 +1074,36 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 	}
 	*/
 }
+
+void Mod_SpriteUnloadTextures( void *data )
+{
+	msprite_t		*psprite;
+	mspritegroup_t	*pspritegroup;
+	mspriteframe_t	*pspriteframe;
+	int		i, j;
+
+	psprite = data;
+
+	if( psprite )
+	{
+		// release all textures
+		for( i = 0; i < psprite->numframes; i++ )
+		{
+			if( psprite->frames[i].type == SPR_SINGLE )
+			{
+				pspriteframe = psprite->frames[i].frameptr;
+				R_FreeTexture( pspriteframe->gl_texturenum );
+			}
+			else
+			{
+				pspritegroup = (mspritegroup_t *)psprite->frames[i].frameptr;
+
+				for( j = 0; j < pspritegroup->numframes; j++ )
+				{
+					pspriteframe = pspritegroup->frames[i];
+					R_FreeTexture( pspriteframe->gl_texturenum );
+				}
+			}
+		}
+	}
+}
