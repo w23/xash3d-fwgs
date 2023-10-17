@@ -520,6 +520,9 @@ static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_comb
 static void printMetrics( void ) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
 		const r_speeds_metric_t *const metric = g_speeds.metrics + i;
+		if (Q_strncmp(metric->name, "speeds", 6) != 0)
+			continue;
+
 		char buf[32];
 		metricTypeSnprintf(buf, sizeof(buf), (*metric->p_value), metric->type);
 		speedsPrintf("%s: %s\n", metric->name, buf);
