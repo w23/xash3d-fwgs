@@ -40,6 +40,9 @@ int VGL_ShimInit( void );
 void VGL_ShimShutdown( void );
 void VGL_ShimEndFrame( void );
 #endif
+#if !defined(XASH_GL_STATIC)
+#include "gl2_shim/gl2_shim.h"
+#endif
 
 #ifndef offsetof
 #ifdef __GNUC__
@@ -561,7 +564,7 @@ void GL_CheckForErrors_( const char *filename, const int fileline );
 const char *GL_ErrorString( int err );
 qboolean GL_Support( int r_ext );
 int GL_MaxTextureUnits( void );
-qboolean GL_CheckExtension( const char *name, const dllfunc_t *funcs, const char *cvarname, int r_ext );
+qboolean GL_CheckExtension( const char *name, const dllfunc_t *funcs, const char *cvarname, int r_ext, float minver );
 void GL_SetExtension( int r_ext, int enable );
 
 //
@@ -617,6 +620,11 @@ enum
 	GL_DRAW_RANGEELEMENTS_EXT,
 	GL_TEXTURE_MULTISAMPLE,
 	GL_ARB_TEXTURE_COMPRESSION_BPTC,
+	GL_SHADER_OBJECTS_EXT,
+	GL_ARB_VERTEX_ARRAY_OBJECT_EXT,
+	GL_BUFFER_STORAGE_EXT,
+	GL_MAP_BUFFER_RANGE_EXT,
+	GL_DRAW_RANGE_ELEMENTS_BASE_VERTEX_EXT,
 	GL_EXTCOUNT,		// must be last
 };
 
@@ -662,6 +670,8 @@ typedef struct
 	int		depth_bits;
 	int		stencil_bits;
 	int		msaasamples;
+	int		version_major;
+	int		version_minor;
 
 	gl_context_type_t	context;
 	gles_wrapper_t	wrapper;
@@ -738,7 +748,8 @@ extern convar_t	r_lockfrustum;
 extern convar_t	r_traceglow;
 extern convar_t	r_vbo;
 extern convar_t	r_vbo_dlightmode;
-
+extern convar_t r_studio_sort_textures;
+extern convar_t r_studio_drawelements;
 
 //
 // engine shared convars

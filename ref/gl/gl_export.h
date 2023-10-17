@@ -27,6 +27,8 @@ GNU General Public License for more details.
 #define XASH_GLES
 #define XASH_GL_STATIC
 #define REF_GL_KEEP_MANGLED_FUNCTIONS
+#elif defined XASH_GLES3COMPAT
+#define XASH_GLES
 #endif
 
 typedef uint GLenum;
@@ -811,6 +813,19 @@ typedef float GLmatrix[16];
 #define GL_DEBUG_SEVERITY_MEDIUM_ARB		0x9147
 #define GL_DEBUG_SEVERITY_LOW_ARB		0x9148
 
+// GL Core additions
+#define GL_NUM_EXTENSIONS                 0x821D
+#define GL_MAP_WRITE_BIT 0x0002
+#define GL_MAP_COHERENT_BIT 0x0080
+#define GL_MAP_PERSISTENT_BIT 0x0040
+#define GL_MAP_UNSYNCHRONIZED_BIT 0x0020
+#define GL_MAP_INVALIDATE_BUFFER_BIT 0x0008
+#define GL_MAP_INVALIDATE_RANGE_BIT 0x0004
+#define GL_MAP_FLUSH_EXPLICIT_BIT 0x0010
+
+#define GL_MAJOR_VERSION 0x821B
+#define GL_MINOR_VERSION 0x821C
+
 #define WGL_CONTEXT_MAJOR_VERSION_ARB		0x2091
 #define WGL_CONTEXT_MINOR_VERSION_ARB		0x2092
 #define WGL_CONTEXT_LAYER_PLANE_ARB		0x2093
@@ -888,6 +903,7 @@ typedef float GLmatrix[16];
 // helper opengl functions
 APIENTRY_LINKAGE GLenum GL_FUNCTION( glGetError )(void);
 APIENTRY_LINKAGE const GLubyte * GL_FUNCTION( glGetString )(GLenum name);
+APIENTRY_LINKAGE const GLubyte * GL_FUNCTION( glGetStringi )(GLenum name, GLint i);
 
 // base gl functions
 APIENTRY_LINKAGE void GL_FUNCTION( glAccum )(GLenum op, GLfloat value);
@@ -1358,7 +1374,18 @@ APIENTRY_LINKAGE void GL_FUNCTION( glGenVertexArrays )( GLsizei n, const GLuint 
 APIENTRY_LINKAGE GLboolean GL_FUNCTION( glIsVertexArray )( GLuint array );
 APIENTRY_LINKAGE void GL_FUNCTION( glSwapInterval ) ( int interval );
 
-#if !defined( XASH_GLES ) && !defined( XASH_GL4ES )
+// arb shaders change in core
+APIENTRY_LINKAGE void GL_FUNCTION( glDeleteProgram )(GLuint program);
+APIENTRY_LINKAGE void GL_FUNCTION( glGetProgramiv )(GLuint program, GLenum e, GLuint *v);
+APIENTRY_LINKAGE void GL_FUNCTION( glGetProgramInfoLog )(GLhandleARB obj, GLsizei maxLength, GLsizei *length, GLcharARB *infoLog);
+
+// gl2shim deps
+APIENTRY_LINKAGE void GL_FUNCTION( glBufferStorage )( GLenum target,  GLsizei size, const GLvoid * data, GLbitfield flags);
+APIENTRY_LINKAGE void GL_FUNCTION( glFlushMappedBufferRange )(GLenum target, GLsizei offset, GLsizei length);
+APIENTRY_LINKAGE void *GL_FUNCTION( glMapBufferRange )(GLenum target, GLsizei offset, GLsizei length, GLbitfield access);
+APIENTRY_LINKAGE void GL_FUNCTION( glDrawRangeElementsBaseVertex )( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices, GLuint vertex );
+
+#if !defined( XASH_GL_STATIC ) || (!defined( XASH_GLES ) && !defined( XASH_GL4ES ))
 APIENTRY_LINKAGE void GL_FUNCTION( glTexImage2DMultisample )(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
 #endif /* !XASH_GLES && !XASH_GL4ES */
 
