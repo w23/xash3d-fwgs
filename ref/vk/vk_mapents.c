@@ -426,7 +426,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		}
 
 		if (have_fields & Field__xvk_texture) {
-			const int tex_id = XVK_FindTextureNamedLike( props->_xvk_texture );
+			const int tex_id = R_TextureFindByNameLike( props->_xvk_texture );
 			DEBUG("Patch for surface %d with texture \"%s\" -> %d", index, props->_xvk_texture, tex_id);
 			psurf->tex_id = tex_id;
 
@@ -533,7 +533,7 @@ static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_field
 			Q_strncpy(from_tex, from_begin, Q_min(sizeof from_tex, from_len + 1));
 			Q_strncpy(to_mat, to_begin, Q_min(sizeof to_mat, to_len + 1));
 
-			const int from_tex_index = XVK_FindTextureNamedLike(from_tex);
+			const int from_tex_index = R_TextureFindByNameLike(from_tex);
 			const r_vk_material_ref_t to_mat_ref = R_VkMaterialGetForName(to_mat);
 
 			DEBUG("Adding mapping from tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d",

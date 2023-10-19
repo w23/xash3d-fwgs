@@ -11,29 +11,35 @@
 typedef struct vk_texture_s
 {
 	char name[256];
+
 	int width, height;
 	texFlags_t flags;
-	uint texnum;
+	int total_size;
 
 	struct {
 		r_vk_image_t image;
 		VkDescriptorSet descriptor_unorm;
 	} vk;
 
+	// Internals for hash table
+	uint texnum;
 	uint hashValue;
 	struct vk_texture_s	*nextHash;
 
-	int total_size;
+	int refcount;
+
+	// TODO "cache" eviction
+	// int used_maps_ago;
 } vk_texture_t;
 
-#define MAX_LIGHTMAPS	256
-
+#define MAX_LIGHTMAPS 256
 #define MAX_SAMPLERS 8 // TF_NEAREST x 2 * TF_BORDER x 2 * TF_CLAMP x 2
 
 typedef struct vk_textures_global_s
 {
 	poolhandle_t mempool;
 
+	// TODO Fix these at compile time statically, akin to BLUE_NOISE_TEXTURE_ID
 	int defaultTexture;   	// use for bad textures
 	int particleTexture;
 	int whiteTexture;
@@ -73,10 +79,21 @@ typedef struct vk_textures_global_s
 // TODO rename this consistently
 extern vk_textures_global_t tglob;
 
-// Helper functions
-void initTextures( void );
-void destroyTextures( void );
-vk_texture_t *findTexture(int index);
+void R_TexturesInit( void );
+void R_TexturesShutdown( void );
+
+vk_texture_t *R_TextureGetByIndex(int index);
+
+// Ref interface functions, exported
+int R_TextureFindByName( const char *name );
+const char* R_TextureGetNameByIndex( unsigned int texnum );
+int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags );
+void R_TextureRelease( unsigned int texnum );
+int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only );
+void R_TextureSetupSky( const char *skyboxname );
+
+// Functions only used in this renderer
+#define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
 
 typedef enum {
 	kColorspaceNative,
@@ -84,24 +101,13 @@ typedef enum {
 	kColorspaceGamma,
 } colorspace_hint_e;
 
-// Ref interface functions
-int R_FindTexture( const char *name );
-const char* R_TextureName( unsigned int texnum );
-int R_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
-void R_FreeTexture( unsigned int texnum );
-int R_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
-
-
-int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload);
-int XVK_TextureLookupF( const char *fmt, ...);
-
-#define VK_LoadTextureInternal( name, pic, flags ) R_LoadTextureFromBuffer( name, pic, flags, false )
-
-void R_SetupSky( const char *skyboxname );
+int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload );
+int R_TextureFindByNameF( const char *fmt, ...);
 
 // Tries to find a texture by its short name
 // Full names depend on map name, wad name, etc. This function tries them all.
 // Returns -1 if not found
-int XVK_FindTextureNamedLike( const char *texture_name );
+int R_TextureFindByNameLike( const char *texture_name );
 
-int XVK_CreateDummyTexture( const char *name );
+// Used by materials to piggy-back onto texture name-to-index hash table
+int R_TextureCreateDummy_FIXME( const char *name );

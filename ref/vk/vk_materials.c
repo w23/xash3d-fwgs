@@ -83,7 +83,7 @@ static struct {
 
 static int loadTexture( const char *filename, qboolean force_reload, colorspace_hint_e colorspace ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
-	const int tex_id = R_VkLoadTexture( filename, colorspace, force_reload);
+	const int tex_id = R_TextureUploadFromFileEx( filename, colorspace, force_reload);
 	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
@@ -130,7 +130,7 @@ static int addMaterial(const char *name, const r_vk_material_t* mat) {
 }
 
 static void assignMaterialForTexture(const char *name, int for_tex_id, int mat_id) {
-	const char* const tex_name = findTexture(for_tex_id)->name;
+	const char* const tex_name = R_TextureGetNameByIndex(for_tex_id);
 	DEBUG("Assigning material \"%s\" for_tex_id=\"%s\"(%d)", name, tex_name, for_tex_id);
 
 	ASSERT(mat_id >= 0);
@@ -243,7 +243,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			const int mat_id = addMaterial(name, &current_material);
 
 			if (mat_id < 0) {
-				ERR("Cannot add material \"%s\" for_tex_id=\"%s\"(%d)", name, for_tex_id >= 0 ? findTexture(for_tex_id)->name : "N/A", for_tex_id);
+				ERR("Cannot add material \"%s\" for_tex_id=\"%s\"(%d)", name, for_tex_id >= 0 ? R_TextureGetNameByIndex(for_tex_id) : "N/A", for_tex_id);
 				continue;
 			}
 
@@ -256,7 +256,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			if (for_tex_id >= 0) {
 				// Assign rendermode-specific materials
 				if (rendermode > 0) {
-					const char* const tex_name = findTexture(for_tex_id)->name;
+					const char* const tex_name = R_TextureGetNameByIndex(for_tex_id);
 					DEBUG("Adding material \"%s\" for_tex_id=\"%s\"(%d) for rendermode %d", name, tex_name, for_tex_id, rendermode);
 
 					r_vk_material_per_mode_t* const rm = g_materials.for_rendermode + rendermode;
@@ -285,7 +285,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				WARN("Material already has \"new\" or \"for_texture\" old=\"%s\" new=\"%s\"", name, value);
 
 			const uint64_t lookup_begin_ns = aprof_time_now_ns();
-			for_tex_id = XVK_FindTextureNamedLike(value);
+			for_tex_id = R_TextureFindByNameLike(value);
 			g_stats.texture_lookup_duration_ns += aprof_time_now_ns() - lookup_begin_ns;
 			g_stats.texture_lookups++;
 			Q_strncpy(name, value, sizeof name);
@@ -294,7 +294,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				WARN("Material already has \"new\" or \"for_texture\" old=\"%s\" new=\"%s\"", name, value);
 
 			// TODO hash map here, don't depend on textures
-			dummy_named_texture_fixme = XVK_CreateDummyTexture(value);
+			dummy_named_texture_fixme = R_TextureCreateDummy_FIXME(value);
 			Q_strncpy(name, value, sizeof name);
 			create = true;
 		} else if (Q_stricmp(key, "force_reload") == 0) {
@@ -481,7 +481,7 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 		// TODO check for replacement textures named in a predictable way
 		// If there are, create a new material and assign it here
 
-		const char* texname = findTexture(tex_index)->name;
+		const char* texname = R_TextureGetNameByIndex(tex_index);
 		DEBUG("Would try to load texture files by default names of \"%s\"", texname);
 
 		// If no PBR textures found, continue using legacy+default ones
@@ -500,7 +500,7 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 
 r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
 	// FIXME proper hash table here, don't depend on textures
-	const int dummy_tex_id_fixme = R_FindTexture(name);
+	const int dummy_tex_id_fixme = R_TextureFindByName(name);
 	if (dummy_tex_id_fixme == 0) {
 		ERR("Material with name \"%s\" not found", name);
 		return (r_vk_material_ref_t){.index = -1,};

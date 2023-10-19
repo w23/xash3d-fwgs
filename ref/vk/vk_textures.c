@@ -44,7 +44,7 @@ static struct {
 static void VK_CreateInternalTextures(void);
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 
-void initTextures( void ) {
+void R_TexturesInit( void ) {
 	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
 	R_SPEEDS_METRIC(g_textures.stats.size_total, "size_total", kSpeedsMetricBytes);
 
@@ -98,10 +98,10 @@ void initTextures( void ) {
 
 static void unloadSkybox( void );
 
-void destroyTextures( void )
+void R_TexturesShutdown( void )
 {
 	for( unsigned int i = 0; i < vk_numTextures; i++ )
-		R_FreeTexture( i );
+		R_TextureRelease( i );
 
 	unloadSkybox();
 
@@ -121,7 +121,7 @@ void destroyTextures( void )
 	vk_numTextures = 0;
 }
 
-vk_texture_t *findTexture(int index)
+vk_texture_t *R_TextureGetByIndex(int index)
 {
 	ASSERT(index >= 0);
 	ASSERT(index < MAX_TEXTURES);
@@ -329,7 +329,7 @@ static qboolean generateFallbackNoiseTextures(void) {
 
 		char name[256];
 		snprintf(name, sizeof(name), BLUE_NOISE_NAME_F, i);
-		const int texid = VK_LoadTextureInternal(name, &pic, TF_NOMIPMAP);
+		const int texid = R_TextureUploadFromBufferNew(name, &pic, TF_NOMIPMAP);
 		ASSERT(texid > 0);
 
 		if (blueNoiseTexturesBegin == -1) {
@@ -386,7 +386,7 @@ static void VK_CreateInternalTextures( void )
 		}
 	}
 
-	tglob.defaultTexture = VK_LoadTextureInternal( REF_DEFAULT_TEXTURE, pic, TF_COLORMAP );
+	tglob.defaultTexture = R_TextureUploadFromBufferNew( REF_DEFAULT_TEXTURE, pic, TF_COLORMAP );
 
 	// particle texture from quake1
 	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA );
@@ -404,29 +404,29 @@ static void VK_CreateInternalTextures( void )
 		}
 	}
 
-	tglob.particleTexture = VK_LoadTextureInternal( REF_PARTICLE_TEXTURE, pic, TF_CLAMP );
+	tglob.particleTexture = R_TextureUploadFromBufferNew( REF_PARTICLE_TEXTURE, pic, TF_CLAMP );
 
 	// white texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
 		((uint *)pic->buffer)[x] = 0xFFFFFFFF;
-	tglob.whiteTexture = VK_LoadTextureInternal( REF_WHITE_TEXTURE, pic, TF_COLORMAP );
+	tglob.whiteTexture = R_TextureUploadFromBufferNew( REF_WHITE_TEXTURE, pic, TF_COLORMAP );
 
 	// gray texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
 		((uint *)pic->buffer)[x] = 0xFF7F7F7F;
-	tglob.grayTexture = VK_LoadTextureInternal( REF_GRAY_TEXTURE, pic, TF_COLORMAP );
+	tglob.grayTexture = R_TextureUploadFromBufferNew( REF_GRAY_TEXTURE, pic, TF_COLORMAP );
 
 	// black texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
 		((uint *)pic->buffer)[x] = 0xFF000000;
-	tglob.blackTexture = VK_LoadTextureInternal( REF_BLACK_TEXTURE, pic, TF_COLORMAP );
+	tglob.blackTexture = R_TextureUploadFromBufferNew( REF_BLACK_TEXTURE, pic, TF_COLORMAP );
 
 	// cinematic dummy
 	pic = Common_FakeImage( 640, 100, 1, IMAGE_HAS_COLOR );
-	tglob.cinTexture = VK_LoadTextureInternal( "*cintexture", pic, TF_NOMIPMAP|TF_CLAMP );
+	tglob.cinTexture = R_TextureUploadFromBufferNew( "*cintexture", pic, TF_NOMIPMAP|TF_CLAMP );
 
 	{
 		rgbdata_t *sides[6];
@@ -973,9 +973,7 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 }
 
 ///////////// Render API funcs /////////////
-
-// Texture tools
-int R_FindTexture( const char *name )
+int R_TextureFindByName( const char *name )
 {
 	vk_texture_t *tex;
 
@@ -988,7 +986,8 @@ int R_FindTexture( const char *name )
 
 	return 0;
 }
-const char* R_TextureName( unsigned int texnum )
+
+const char* R_TextureGetNameByIndex( unsigned int texnum )
 {
 	ASSERT( texnum >= 0 && texnum < MAX_TEXTURES );
 	return vk_textures[texnum].name;
@@ -1041,11 +1040,11 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	return tex - vk_textures;
 }
 
-int R_LoadTexture( const char *name, const byte *buf, size_t size, int flags ) {
+int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
 	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma);
 }
 
-int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
+int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
 	vk_texture_t	*tex;
 	if( !Common_CheckTexName( filename ))
 		return 0;
@@ -1054,14 +1053,14 @@ int R_VkLoadTexture( const char *filename, colorspace_hint_e colorspace, qboolea
 		// free if already loaded
 		// TODO consider leaving intact if loading failed
 		if(( tex = Common_TextureForName( filename ))) {
-			R_FreeTexture( tex - vk_textures );
+			R_TextureRelease( tex - vk_textures );
 		}
 	}
 
 	return loadTextureInternal( filename, NULL, 0, 0, colorspace );
 }
 
-void R_FreeTexture( unsigned int texnum ) {
+void R_TextureRelease( unsigned int texnum ) {
 	vk_texture_t *tex;
 	vk_texture_t **prev;
 	vk_texture_t *cur;
@@ -1080,7 +1079,7 @@ void R_FreeTexture( unsigned int texnum ) {
 	// debug
 	if( !tex->name[0] )
 	{
-		ERR("R_FreeTexture: trying to free unnamed texture with index %u", texnum );
+		ERR("R_TextureRelease: trying to free unnamed texture with index %u", texnum );
 		goto end;
 	}
 
@@ -1126,20 +1125,20 @@ end:
 	APROF_SCOPE_END(free);
 }
 
-static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update ) {
+static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update_only ) {
 	vk_texture_t	*tex;
 
 	if( !Common_CheckTexName( name ))
 		return 0;
 
 	// see if already loaded
-	if(( tex = Common_TextureForName( name )) && !update )
+	if(( tex = Common_TextureForName( name )) && !update_only )
 		return (tex - vk_textures);
 
 	// couldn't loading image
 	if( !pic ) return 0;
 
-	if( update )
+	if( update_only )
 	{
 		if( tex == NULL )
 			gEngine.Host_Error( "loadTextureFromBuffer: couldn't find texture %s for update\n", name );
@@ -1163,11 +1162,11 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	return (tex - vk_textures);
 }
 
-int R_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update ) {
-	return loadTextureFromBuffers(name, &pic, 1, flags, update);
+int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
+	return loadTextureFromBuffers(name, &pic, 1, flags, update_only);
 }
 
-int XVK_TextureLookupF( const char *fmt, ...) {
+int R_TextureFindByNameF( const char *fmt, ...) {
 	int tex_id = 0;
 	char buffer[1024];
 	va_list argptr;
@@ -1175,7 +1174,7 @@ int XVK_TextureLookupF( const char *fmt, ...) {
 	vsnprintf( buffer, sizeof buffer, fmt, argptr );
 	va_end( argptr );
 
-	tex_id = R_FindTexture(buffer);
+	tex_id = R_TextureFindByName(buffer);
 	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
@@ -1301,7 +1300,7 @@ cleanup:
 static const char *skybox_default = "desert";
 static const char *skybox_prefixes[] = { "pbr/env/%s", "gfx/env/%s" };
 
-void R_SetupSky( const char *skyboxname ) {
+void R_TextureSetupSky( const char *skyboxname ) {
 	if( !COM_CheckString( skyboxname ))
 	{
 		unloadSkybox();
@@ -1329,26 +1328,26 @@ void R_SetupSky( const char *skyboxname ) {
 	if (Q_stricmp(skyboxname, skybox_default) != 0) {
 		WARN("missed or incomplete skybox '%s'", skyboxname);
 		// FIXME infinite recursion
-		R_SetupSky( "desert" ); // force to default
+		R_TextureSetupSky( "desert" ); // force to default
 	}
 }
 
-int XVK_FindTextureNamedLike( const char *texture_name ) {
+int R_TextureFindByNameLike( const char *texture_name ) {
 	const model_t *map = gEngine.pfnGetModelByIndex( 1 );
 	string texname;
 
 	// Try texture name as-is first
-	int tex_id = XVK_TextureLookupF("%s", texture_name);
+	int tex_id = R_TextureFindByNameF("%s", texture_name);
 
 	// Try bsp name
 	if (!tex_id)
-		tex_id = XVK_TextureLookupF("#%s:%s.mip", map->name, texture_name);
+		tex_id = R_TextureFindByNameF("#%s:%s.mip", map->name, texture_name);
 
 	if (!tex_id) {
 		const char *wad = g_map_entities.wadlist;
 		for (; *wad;) {
 			const char *const wad_end = Q_strchr(wad, ';');
-			tex_id = XVK_TextureLookupF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
+			tex_id = R_TextureFindByNameF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
 			if (tex_id)
 				break;
 			wad = wad_end + 1;
@@ -1358,7 +1357,7 @@ int XVK_FindTextureNamedLike( const char *texture_name ) {
 	return tex_id ? tex_id : -1;
 }
 
-int XVK_CreateDummyTexture( const char *name ) {
+int R_TextureCreateDummy_FIXME( const char *name ) {
 	// emo-texture from quake1
 	rgbdata_t *pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR );
 
@@ -1372,5 +1371,5 @@ int XVK_CreateDummyTexture( const char *name ) {
 		}
 	}
 
-	return VK_LoadTextureInternal(name, pic, TF_NOMIPMAP);
+	return R_TextureUploadFromBufferNew(name, pic, TF_NOMIPMAP);
 }

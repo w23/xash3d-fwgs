@@ -589,14 +589,14 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 
 		if (lightmap != draw->draw.lightmap) {
 			lightmap = draw->draw.lightmap;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &findTexture(lightmap)->vk.descriptor_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &R_TextureGetByIndex(lightmap)->vk.descriptor_unorm, 0, NULL);
 		}
 
 		if (texture != draw->draw.texture)
 		{
 			texture = draw->draw.texture;
 			// TODO names/enums for binding points
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &findTexture(texture)->vk.descriptor_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &R_TextureGetByIndex(texture)->vk.descriptor_unorm, 0, NULL);
 		}
 
 		// Only indexed mode is supported

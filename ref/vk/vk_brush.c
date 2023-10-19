@@ -587,7 +587,7 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 	float sy, cy;
 	float flConveyorSpeed = 0.0f;
 	float flRate, flAngle;
-	vk_texture_t *texture = findTexture( tex_index );
+	vk_texture_t *texture = R_TextureGetByIndex( tex_index );
 	//gl_texture_t	*texture;
 
 	// FIXME
@@ -644,7 +644,7 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 		int	speed;
 
 		// Quake1 textures uses 10 frames per second
-		if( FBitSet( findTexture( base->gl_texturenum )->flags, TF_QUAKEPAL ))
+		if( FBitSet( R_TextureGetByIndex( base->gl_texturenum )->flags, TF_QUAKEPAL ))
 			speed = 10;
 		else speed = 20;
 
@@ -1566,7 +1566,7 @@ void VK_BrushUnloadTextures( model_t *mod )
 		if( !tx || tx->gl_texturenum == tglob.defaultTexture )
 			continue; // free slot
 
-		R_FreeTexture( tx->gl_texturenum );    // main texture
-		R_FreeTexture( tx->fb_texturenum );    // luma texture
+		R_TextureRelease( tx->gl_texturenum );    // main texture
+		R_TextureRelease( tx->fb_texturenum );    // luma texture
 	}
 }

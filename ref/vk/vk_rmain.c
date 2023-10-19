@@ -250,14 +250,14 @@ static int VK_RefGetParm( int parm, int arg )
 	switch(parm){
 	case PARM_TEX_WIDTH:
 	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
-		tex = findTexture(arg);
+		tex = R_TextureGetByIndex(arg);
 		return tex->width;
 	case PARM_TEX_HEIGHT:
 	case PARM_TEX_SRC_HEIGHT:
-		tex = findTexture(arg);
+		tex = R_TextureGetByIndex(arg);
 		return tex->height;
 	case PARM_TEX_FLAGS:
-		tex = findTexture(arg);
+		tex = R_TextureGetByIndex(arg);
 		return tex->flags;
 	case PARM_MODERNFLASHLIGHT:
 		if (CVAR_TO_BOOL( vk_rtx )) {
@@ -543,9 +543,9 @@ static const ref_interface_t gReffuncs =
 
 	// texture management
 	.R_GetTextureOriginalBuffer = R_GetTextureOriginalBuffer_UNUSED,
-	.GL_LoadTextureFromBuffer = R_LoadTextureFromBuffer,
+	.GL_LoadTextureFromBuffer = R_TextureUploadFromBuffer,
 	.GL_ProcessTexture = GL_ProcessTexture_UNUSED,
-	.R_SetupSky = R_SetupSky,
+	.R_SetupSky = R_TextureSetupSky,
 
 	// 2D
 	R_Set2DMode,
@@ -598,14 +598,14 @@ static const ref_interface_t gReffuncs =
 	R_SetCurrentModel,
 
 	// Texture tools
-	.GL_FindTexture = R_FindTexture,
-	.GL_TextureName = R_TextureName,
+	.GL_FindTexture = R_TextureFindByName,
+	.GL_TextureName = R_TextureGetNameByIndex,
 	.GL_TextureData = R_TextureData_UNUSED,
-	.GL_LoadTexture = R_LoadTexture,
+	.GL_LoadTexture = R_TextureUploadFromFile,
 	.GL_CreateTexture = R_CreateTexture_UNUSED,
 	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
 	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
-	.GL_FreeTexture = R_FreeTexture,
+	.GL_FreeTexture = R_TextureRelease,
 
 	// Decals manipulating (draw & remove)
 	DrawSingleDecal,

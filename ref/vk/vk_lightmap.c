@@ -115,7 +115,7 @@ static void LM_UploadBlock( qboolean dynamic )
 		r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
 		r_lightmap.flags = IMAGE_HAS_COLOR;
 		r_lightmap.buffer = gl_lms.lightmap_buffer;
-		tglob.lightmapTextures[i] = VK_LoadTextureInternal( lmName, &r_lightmap, TF_FONT|TF_ATLAS_PAGE|TF_NOMIPMAP );
+		tglob.lightmapTextures[i] = R_TextureUploadFromBuffer( lmName, &r_lightmap, TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP, false );
 
 		if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 			gEngine.Host_Error( "AllocBlock: full\n" );
@@ -227,7 +227,7 @@ void VK_UploadLightmap( void )
 void VK_ClearLightmap( void )
 {
 	for (int i = 0; i < gl_lms.current_lightmap_texture; ++i)
-		R_FreeTexture(tglob.lightmapTextures[i]);
+		R_TextureRelease(tglob.lightmapTextures[i]);
 	gl_lms.current_lightmap_texture = 0;
 
 	LM_InitBlock();

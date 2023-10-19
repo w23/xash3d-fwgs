@@ -786,7 +786,7 @@ qboolean R_VkInit( void )
 
 	VK_SceneInit();
 
-	initTextures();
+	R_TexturesInit();
 
 	// All below need render_pass
 
@@ -833,7 +833,7 @@ void R_VkShutdown( void ) {
 
 	VK_FrameCtlShutdown();
 
-	destroyTextures();
+	R_TexturesShutdown();
 
 	VK_PipelineShutdown();
 
