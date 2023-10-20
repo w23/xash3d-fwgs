@@ -3,19 +3,12 @@
 #include "vk_image.h"
 #include "vk_const.h"
 
-#include "const.h" // required for ref_api.h
-#include "cvardef.h"
-#include "com_model.h"
-#include "ref_api.h" // needed for render_api.h
-#include "render_api.h"
-#include "com_image.h"
-
 typedef struct vk_texture_s
 {
 	char name[256];
 
 	int width, height;
-	texFlags_t flags;
+	uint32_t flags;
 	int total_size;
 
 	struct {
@@ -61,21 +54,14 @@ typedef struct vk_textures_global_s
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
 
-	qboolean fCustomSkybox; // TODO do we need this for anything?
+	// TODO wire it up for ref_interface_t return
+	qboolean fCustomSkybox;
 
+	// TODO move to vk_textures/g_textures
 	vk_texture_t skybox_cube;
-	vk_texture_t cubemap_placeholder;
 
 	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
-
-	// FIXME this should not exist, all textures should have their own samplers based on flags
-	VkSampler default_sampler_fixme;
-
-	struct {
-		texFlags_t flags;
-		VkSampler sampler;
-	} samplers[MAX_SAMPLERS];
 } vk_textures_global_t;
 
 // TODO rename this consistently
@@ -110,3 +96,5 @@ int R_TextureFindByNameLike( const char *texture_name );
 
 // Used by materials to piggy-back onto texture name-to-index hash table
 int R_TextureCreateDummy_FIXME( const char *name );
+
+VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void );

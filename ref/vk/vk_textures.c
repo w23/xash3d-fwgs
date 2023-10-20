@@ -18,7 +18,6 @@
 
 #include "ktx2.h"
 
-
 #include <math.h> // sqrt
 
 vk_textures_global_t tglob = {0};
@@ -31,6 +30,15 @@ static struct {
 		int count;
 		int size_total;
 	} stats;
+
+	struct {
+		uint32_t flags;
+		VkSampler sampler;
+	} samplers[MAX_SAMPLERS];
+
+	VkSampler default_sampler;
+
+	vk_texture_t cubemap_placeholder;
 
 	//vk_texture_t textures[MAX_TEXTURES];
 	//alo_int_pool_t textures_free;
@@ -65,8 +73,8 @@ qboolean R_VkTexturesInit( void ) {
 	// TODO really check device caps for this
 	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
 
-	tglob.default_sampler_fixme = pickSamplerForFlags(0);
-	ASSERT(tglob.default_sampler_fixme != VK_NULL_HANDLE);
+	g_textures.default_sampler = pickSamplerForFlags(0);
+	ASSERT(g_textures.default_sampler != VK_NULL_HANDLE);
 
 	/* FIXME
 	// validate cvars
@@ -91,7 +99,7 @@ qboolean R_VkTexturesInit( void ) {
 			tglob.dii_all_textures[i] = (VkDescriptorImageInfo){
 				.imageView =  default_view,
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.sampler = tglob.default_sampler_fixme,
+				.sampler = g_textures.default_sampler,
 			};
 		}
 	}
@@ -107,14 +115,14 @@ void R_VkTexturesShutdown( void ) {
 
 	unloadSkybox();
 
-	R_VkImageDestroy(&tglob.cubemap_placeholder.vk.image);
-	g_textures.stats.size_total -= tglob.cubemap_placeholder.total_size;
+	R_VkImageDestroy(&g_textures.cubemap_placeholder.vk.image);
+	g_textures.stats.size_total -= g_textures.cubemap_placeholder.total_size;
 	g_textures.stats.count--;
-	memset(&tglob.cubemap_placeholder, 0, sizeof(tglob.cubemap_placeholder));
+	memset(&g_textures.cubemap_placeholder, 0, sizeof(g_textures.cubemap_placeholder));
 
-	for (int i = 0; i < COUNTOF(tglob.samplers); ++i) {
-		if (tglob.samplers[i].sampler != VK_NULL_HANDLE)
-			vkDestroySampler(vk_core.device, tglob.samplers[i].sampler, NULL);
+	for (int i = 0; i < COUNTOF(g_textures.samplers); ++i) {
+		if (g_textures.samplers[i].sampler != VK_NULL_HANDLE)
+			vkDestroySampler(vk_core.device, g_textures.samplers[i].sampler, NULL);
 	}
 }
 
@@ -279,7 +287,7 @@ static void VK_CreateInternalTextures( void )
 		sides[4] = pic;
 		sides[5] = pic;
 
-		uploadTexture( &tglob.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
+		uploadTexture( &g_textures.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
 	}
 
 	loadBlueNoiseTextures();
@@ -369,18 +377,18 @@ static VkSampler createSamplerForFlags( texFlags_t flags ) {
 static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	flags &= (TF_BORDER | TF_CLAMP | TF_NEAREST);
 
-	for (int i = 0; i < COUNTOF(tglob.samplers); ++i) {
-		if (tglob.samplers[i].sampler == VK_NULL_HANDLE) {
-			tglob.samplers[i].flags = flags;
-			return tglob.samplers[i].sampler = createSamplerForFlags(flags);
+	for (int i = 0; i < COUNTOF(g_textures.samplers); ++i) {
+		if (g_textures.samplers[i].sampler == VK_NULL_HANDLE) {
+			g_textures.samplers[i].flags = flags;
+			return g_textures.samplers[i].sampler = createSamplerForFlags(flags);
 		}
 
-		if (tglob.samplers[i].flags == flags)
-			return tglob.samplers[i].sampler;
+		if (g_textures.samplers[i].flags == flags)
+			return g_textures.samplers[i].sampler;
 	}
 
 	ERR("Couldn't find/allocate sampler for flags %x", flags);
-	return tglob.default_sampler_fixme;
+	return g_textures.default_sampler;
 }
 
 static void setDescriptorSet(vk_texture_t* const tex, colorspace_hint_e colorspace_hint) {
@@ -725,4 +733,14 @@ void R_TextureAcquire( unsigned int texnum ) {
 	++tex->refcount;
 
 	DEBUG("Acquiring existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
+}
+
+VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void ) {
+	return (VkDescriptorImageInfo){
+		.sampler = g_textures.default_sampler,
+		.imageView = tglob.skybox_cube.vk.image.view
+			? tglob.skybox_cube.vk.image.view
+			: g_textures.cubemap_placeholder.vk.image.view,
+		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	};
 }

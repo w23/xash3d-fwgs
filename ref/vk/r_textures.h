@@ -1,12 +1,9 @@
 #pragma once
 
-#include "xash3d_types.h"
-#include "const.h" // required for ref_api.h
-#include "cvardef.h"
-#include "com_model.h"
-#include "ref_api.h" // needed for render_api.h
-#include "render_api.h" // texFlags_t
-#include "com_image.h"
+#include "const.h" // required for com_model.h, ref_api.h
+#include "cvardef.h" // required for ref_api.h
+#include "com_model.h" // required for ref_api.h
+#include "ref_api.h" // texFlags_t
 
 qboolean R_TexturesInit( void );
 void R_TexturesShutdown( void );
