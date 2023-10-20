@@ -82,17 +82,23 @@ extern vk_textures_global_t tglob;
 void R_TexturesInit( void );
 void R_TexturesShutdown( void );
 
-vk_texture_t *R_TextureGetByIndex(int index);
-
 // Ref interface functions, exported
 int R_TextureFindByName( const char *name );
 const char* R_TextureGetNameByIndex( unsigned int texnum );
-int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags );
-void R_TextureRelease( unsigned int texnum );
-int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only );
+
 void R_TextureSetupSky( const char *skyboxname );
 
+int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags );
+int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only );
+
+void R_TextureFree( unsigned int texnum );
+
 // Functions only used in this renderer
+vk_texture_t *R_TextureGetByIndex(int index);
+
+void R_TextureAcquire( unsigned int texnum );
+void R_TextureRelease( unsigned int texnum );
+
 #define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
 
 typedef enum {

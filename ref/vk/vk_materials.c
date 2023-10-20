@@ -83,7 +83,7 @@ static struct {
 
 static int loadTexture( const char *filename, qboolean force_reload, colorspace_hint_e colorspace ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
-	const int tex_id = R_TextureUploadFromFileEx( filename, colorspace, force_reload);
+	const int tex_id = R_TextureUploadFromFileEx( filename, colorspace, force_reload );
 	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
@@ -115,6 +115,24 @@ static void printMaterial(int index) {
 		);
 }
 
+static void acquireTexturesForMaterial( int index ) {
+	const r_vk_material_t *mat = &g_materials.table[index].material;
+	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+	R_TextureAcquire(mat->tex_base_color);
+	R_TextureAcquire(mat->tex_metalness);
+	R_TextureAcquire(mat->tex_roughness);
+	R_TextureAcquire(mat->tex_normalmap);
+}
+
+static void releaseTexturesForMaterial( int index ) {
+	const r_vk_material_t *mat = &g_materials.table[index].material;
+	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+	R_TextureRelease(mat->tex_base_color);
+	R_TextureRelease(mat->tex_metalness);
+	R_TextureRelease(mat->tex_roughness);
+	R_TextureRelease(mat->tex_normalmap);
+}
+
 static int addMaterial(const char *name, const r_vk_material_t* mat) {
 	if (g_materials.count == MAX_MATERIALS) {
 		ERR("Max count of materials %d reached", MAX_MATERIALS);
@@ -123,6 +141,7 @@ static int addMaterial(const char *name, const r_vk_material_t* mat) {
 
 	Q_strncpy(g_materials.table[g_materials.count].name, name, sizeof g_materials.table[g_materials.count].name);
 	g_materials.table[g_materials.count].material = *mat;
+	acquireTexturesForMaterial(g_materials.count);
 
 	printMaterial(g_materials.count);
 
@@ -382,9 +401,16 @@ static int findFilenameExtension(const char *s, int len) {
 	return len;
 }
 
+static void materialsReleaseTextures( void ) {
+	for (int i = 1; i < g_materials.count; ++i)
+		releaseTexturesForMaterial(i);
+}
+
 void R_VkMaterialsReload( void ) {
 	const uint64_t begin_time_ns = aprof_time_now_ns();
 	memset(&g_stats, 0, sizeof(g_stats));
+
+	materialsReleaseTextures();
 
 	g_materials.count = 1;
 

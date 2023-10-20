@@ -655,4 +655,28 @@ For multiple replacements:
 	3. [x] Make a PR against upstream with ktx2
 	4. [x] Make a PR against vulkan with recentmost upstream
 
-- [ ] Contemplate texture storage
+- [x] Contemplate texture storage
+
+# 2023-10-19 E315
+Tried refcounts. They only break things, many textures get released prematurely.
+Hunch: need to split external/refapi refcount-unaware functionality and hash map into two things:
+- old name->gl_texturenum table that is refcount-unaware
+- new name->vk.image refcount-aware table and api
+
+# 2023-10-20 E316
+## Texture mgmt refcount impedance mismatch: losing textures on changelevel
+1. ref_interface_t api is refcount-oblivious: it creates and destroys textures directly. Can't really update refcounts in these calls because they are not balanced at all. Can potentially call Load on the same texture twice, and then delete it only once. (Can it delete the same texture multiple times? Probably not -- need index, which *SHOULD* be inaccessible after the first delte by the API logic -- this is broken now with refcounts)
+2. Sequence of events:
+    1. Changlevel initiated
+    2. Textures for the old map are deleted using ref_interface api
+        - mostly us in ref_vk (so we can adjust), but there are a few possible calls from the engine and game.dll
+        - brings refcount down to "1" (many textures are still referenced from materials)
+    3. Texture for the new map are created using ref_interface api
+        - There are common textures that weren't deleted due to being referenced by materials, so they are considered being uploaded already.
+        - ref_interface_t is refcount-oblivious, so refcounts are not updated, i.e. remaining =1.
+    4. ref_vk finally notices the changelevel, and starts reloading materials.
+        - goes through the list of all old materials and releases all the textures
+        - old textures (but which should've been loaded for the new map too) with refcount=1 are deleted
+        - ;_;
+
+

@@ -605,7 +605,7 @@ static const ref_interface_t gReffuncs =
 	.GL_CreateTexture = R_CreateTexture_UNUSED,
 	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
 	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
-	.GL_FreeTexture = R_TextureRelease,
+	.GL_FreeTexture = R_TextureFree,
 
 	// Decals manipulating (draw & remove)
 	DrawSingleDecal,

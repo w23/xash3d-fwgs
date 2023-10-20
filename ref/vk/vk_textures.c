@@ -43,6 +43,8 @@ static struct {
 
 static void VK_CreateInternalTextures(void);
 static VkSampler pickSamplerForFlags( texFlags_t flags );
+static void textureDestroyVkImage( vk_texture_t *tex );
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update );
 
 void R_TexturesInit( void ) {
 	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
@@ -156,6 +158,8 @@ static vk_texture_t *Common_AllocTexture( const char *name, texFlags_t flags )
 	tex->nextHash = vk_texturesHashTable[tex->hashValue];
 	vk_texturesHashTable[tex->hashValue] = tex;
 
+	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
+	tex->refcount = 1;
 	return tex;
 }
 
@@ -287,9 +291,7 @@ static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 
 static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint );
-
-static int VK_LoadTextureF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
+static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
 	int tex_id = 0;
 	char buffer[1024];
 	va_list argptr;
@@ -297,7 +299,8 @@ static int VK_LoadTextureF(int flags, colorspace_hint_e colorspace, const char *
 	vsnprintf( buffer, sizeof buffer, fmt, argptr );
 	va_end( argptr );
 
-	return loadTextureInternal(buffer, NULL, 0, flags, colorspace);
+	const qboolean force_update = false;
+	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update);
 }
 
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
@@ -346,7 +349,7 @@ static qboolean generateFallbackNoiseTextures(void) {
 static qboolean loadBlueNoiseTextures(void) {
 	int blueNoiseTexturesBegin = -1;
 	for (int i = 0; i < 64; ++i) {
-		const int texid = VK_LoadTextureF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
+		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
 
 		if (blueNoiseTexturesBegin == -1) {
 			if (texid <= 0) {
@@ -918,6 +921,9 @@ static qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers,
 		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
 		// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
+		if (tex->vk.image.image != VK_NULL_HANDLE)
+			textureDestroyVkImage( tex );
+
 		{
 			const r_vk_image_create_t create = {
 				.debug_name = tex->name,
@@ -993,15 +999,15 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	return vk_textures[texnum].name;
 }
 
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint ) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update ) {
 	if( !Common_CheckTexName( name ))
 		return 0;
 
 	// see if already loaded
-	{
-		const vk_texture_t *const tex = Common_TextureForName( name );
-		if( tex )
-			return (tex - vk_textures);
+	vk_texture_t * tex = Common_TextureForName( name );
+	if( tex && !force_update ) {
+		DEBUG("Found existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
+		return (tex - vk_textures);
 	}
 
 	uint picFlags = 0;
@@ -1018,14 +1024,18 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	rgbdata_t *const pic = gEngine.FS_LoadImage( name, buf, size );
 	if( !pic ) return 0; // couldn't loading image
 
-	// allocate the new one
-	vk_texture_t* const tex = Common_AllocTexture( name, flags );
+	// allocate the new one if needed
+	if (!tex)
+		tex = Common_AllocTexture( name, flags );
+	else
+		tex->flags = flags;
 
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
 	if( !uploadTexture( tex, &pic, 1, false, colorspace_hint ))
 	{
+		// FIXME remove from hash table
 		memset( tex, 0, sizeof( vk_texture_t ));
 		gEngine.FS_FreeImage( pic ); // release source texture
 		return 0;
@@ -1041,7 +1051,8 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 }
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
-	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma);
+	const qboolean force_update = false;
+	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update);
 }
 
 int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
@@ -1049,15 +1060,26 @@ int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspac
 	if( !Common_CheckTexName( filename ))
 		return 0;
 
-	if (force_reload) {
-		// free if already loaded
-		// TODO consider leaving intact if loading failed
-		if(( tex = Common_TextureForName( filename ))) {
-			R_TextureRelease( tex - vk_textures );
-		}
-	}
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload );
+}
 
-	return loadTextureInternal( filename, NULL, 0, 0, colorspace );
+static void textureDestroyVkImage( vk_texture_t *tex ) {
+	// Need to make sure that there are no references to this texture anywhere.
+	// It might have been added to staging and then immediately deleted, leaving references to its vkimage
+	// in the staging command buffer. See https://github.com/w23/xash3d-fwgs/issues/464
+	R_VkStagingFlushSync();
+	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+
+	R_VkImageDestroy(&tex->vk.image);
+	g_textures.stats.size_total -= tex->total_size;
+	g_textures.stats.count--;
+
+	tex->total_size = 0;
+}
+
+void R_TextureFree( unsigned int texnum ) {
+	// FIXME this is incorrect and leads to missing textures
+	R_TextureRelease( texnum );
 }
 
 void R_TextureRelease( unsigned int texnum ) {
@@ -1083,6 +1105,13 @@ void R_TextureRelease( unsigned int texnum ) {
 		goto end;
 	}
 
+	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, tex->name, tex->refcount);
+	ASSERT(tex->refcount > 0);
+	--tex->refcount;
+
+	if (tex->refcount > 0)
+		goto end;
+
 	DEBUG("Freeing texture=%d(%s)", texnum, tex->name);
 
 	// remove from hash table
@@ -1107,15 +1136,8 @@ void R_TextureRelease( unsigned int texnum ) {
 		gEngine.FS_FreeImage( tex->original );
 	*/
 
-	// Need to make sure that there are no references to this texture anywhere.
-	// It might have been added to staging and then immediately deleted, leaving references to its vkimage
-	// in the staging command buffer. See https://github.com/w23/xash3d-fwgs/issues/464
-	R_VkStagingFlushSync();
-	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+	textureDestroyVkImage( tex );
 
-	R_VkImageDestroy(&tex->vk.image);
-	g_textures.stats.size_total -= tex->total_size;
-	g_textures.stats.count--;
 	memset(tex, 0, sizeof(*tex));
 
 	// Reset descriptor sets to default texture
@@ -1147,6 +1169,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	else
 	{
 		// allocate the new one
+		ASSERT(!tex);
 		tex = Common_AllocTexture( name, flags );
 	}
 
@@ -1372,4 +1395,12 @@ int R_TextureCreateDummy_FIXME( const char *name ) {
 	}
 
 	return R_TextureUploadFromBufferNew(name, pic, TF_NOMIPMAP);
+}
+
+void R_TextureAcquire( unsigned int texnum ) {
+	ASSERT(texnum < vk_numTextures);
+	vk_texture_t *const tex = vk_textures + texnum;
+	++tex->refcount;
+
+	DEBUG("Acquiring existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
 }

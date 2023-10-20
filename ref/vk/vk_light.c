@@ -233,6 +233,7 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 				}
 
 				// FIXME replace this with findTexturesNamedLike from vk_materials.c
+				// It has slightly different logic, though, and is a bit scary to change
 
 				// Try bsp texture first
 				tex_id = R_TextureFindByNameF("#%s:%s.mip", map->name, texture_name);
