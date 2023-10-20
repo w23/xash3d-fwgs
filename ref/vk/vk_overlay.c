@@ -3,7 +3,7 @@
 #include "vk_buffer.h"
 #include "vk_core.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_framectl.h"
 #include "vk_renderstate.h"
 #include "vk_pipeline.h"

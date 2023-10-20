@@ -4,8 +4,6 @@
 #include "vk_sprite.h" // R_GetSpriteTexture
 #include "vk_logs.h"
 
-#include "vk_textures.h" // FIXME temp
-
 #include "xash3d_mathlib.h"
 
 #define MAX_TRIAPI_VERTICES 1024

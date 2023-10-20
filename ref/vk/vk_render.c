@@ -7,7 +7,7 @@
 #include "vk_const.h"
 #include "vk_common.h"
 #include "vk_pipeline.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_math.h"
 #include "vk_rtx.h"
 #include "vk_descriptor.h"

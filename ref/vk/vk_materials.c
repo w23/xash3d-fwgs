@@ -1,5 +1,5 @@
 #include "vk_materials.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_mapents.h"
 #include "vk_const.h"
 #include "profiler.h"

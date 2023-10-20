@@ -1,7 +1,7 @@
 #include "vk_common.h"
 #include "vk_mapents.h"
 #include "vk_core.h" // TODO we need only pool from there, not the entire vulkan garbage
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_logs.h"
 
 #include "eiface.h" // ARRAYSIZE

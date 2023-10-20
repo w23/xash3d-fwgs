@@ -1,5 +1,5 @@
 #include "vk_sprite.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "camera.h"
 #include "vk_render.h"
 #include "vk_geometry.h"

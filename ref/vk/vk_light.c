@@ -1,7 +1,7 @@
 #include "vk_light.h"
 #include "vk_buffer.h"
 #include "vk_mapents.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_lightmap.h"
 #include "vk_cvar.h"
 #include "vk_common.h"

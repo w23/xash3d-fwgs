@@ -1,7 +1,7 @@
 #include "vk_studio.h"
 #include "com_model.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_renderstate.h"

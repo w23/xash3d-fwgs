@@ -6,7 +6,7 @@
 #include "vk_pipeline.h"
 #include "vk_framectl.h"
 #include "vk_math.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_lightmap.h"
 #include "vk_scene.h"
 #include "vk_render.h"
