@@ -3378,7 +3378,7 @@ void Mod_StudioUnloadTextures( void *data )
 	{
 		if( ptexture[i].index == tglob.defaultTexture )
 			continue;
-		R_TextureRelease( ptexture[i].index );
+		R_TextureFree( ptexture[i].index );
 	}
 }
 

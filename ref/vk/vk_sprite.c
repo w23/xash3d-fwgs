@@ -1091,7 +1091,7 @@ void Mod_SpriteUnloadTextures( void *data )
 			if( psprite->frames[i].type == SPR_SINGLE )
 			{
 				pspriteframe = psprite->frames[i].frameptr;
-				R_TextureRelease( pspriteframe->gl_texturenum );
+				R_TextureFree( pspriteframe->gl_texturenum );
 			}
 			else
 			{
@@ -1100,7 +1100,7 @@ void Mod_SpriteUnloadTextures( void *data )
 				for( j = 0; j < pspritegroup->numframes; j++ )
 				{
 					pspriteframe = pspritegroup->frames[i];
-					R_TextureRelease( pspriteframe->gl_texturenum );
+					R_TextureFree( pspriteframe->gl_texturenum );
 				}
 			}
 		}
