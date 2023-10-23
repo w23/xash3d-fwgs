@@ -153,12 +153,28 @@ def build(bld):
 	#bld.install_files(bld.env.LIBDIR + '/valve', things)
 
 	bld.install_files(bld.env.LIBDIR,
-					  bld.path.ant_glob('data/**'),
-					  cwd=bld.path.find_dir('data/'),
-					  relative_trick=True)
+					bld.path.ant_glob('data/**'),
+					cwd=bld.path.find_dir('data/'),
+					relative_trick=True)
 
-	#bld.program(features='test', defines=['ALOLCATOR_TEST'],source='alolcator.c', target='alolcator')
-	bld.add_post_fun(printTestSummary)
+	if bld.env.TESTS:
+		bld.program(
+			features='test',
+			defines=['ALOLCATOR_TEST'],
+			source='alolcator.c',
+			target='test_alolcator',
+			subsystem = bld.env.CONSOLE_SUBSYSTEM,
+			install_path = None)
 
-	#from waflib.Tools import waf_unit_test
-	#bld.add_post_fun(waf_unit_test.summary)
+		tests = {
+			'unordered_roadmap': 'tests/unordered_roadmap.c',
+		}
+
+		for i in tests:
+			bld.program(features = 'test',
+				source = tests[i],
+				target = 'test_%s' % i,
+				subsystem = bld.env.CONSOLE_SUBSYSTEM,
+				install_path = None)
+
+		#bld.add_post_fun(printTestSummary)
