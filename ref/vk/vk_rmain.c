@@ -245,20 +245,26 @@ static const char *getParmName(int parm)
 
 static int VK_RefGetParm( int parm, int arg )
 {
-	vk_texture_t *tex = NULL;
-
+	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
 	case PARM_TEX_WIDTH:
-	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
-		tex = R_TextureGetByIndex(arg);
-		return tex->width;
 	case PARM_TEX_HEIGHT:
+	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
 	case PARM_TEX_SRC_HEIGHT:
-		tex = R_TextureGetByIndex(arg);
-		return tex->height;
 	case PARM_TEX_FLAGS:
-		tex = R_TextureGetByIndex(arg);
-		return tex->flags;
+	/* TODO
+	case PARM_TEX_SKYBOX:
+	case PARM_TEX_SKYTEXNUM:
+	case PARM_TEX_LIGHTMAP:
+	case PARM_TEX_TARGET:
+	case PARM_TEX_TEXNUM:
+	case PARM_TEX_DEPTH:
+	case PARM_TEX_GLFORMAT:
+	case PARM_TEX_ENCODE:
+	case PARM_TEX_MIPCOUNT:
+	case PARM_TEX_MEMORY:
+	*/
+		return R_TexturesGetParm( parm, arg );
 	case PARM_MODERNFLASHLIGHT:
 		if (CVAR_TO_BOOL( vk_rtx )) {
 			return true;

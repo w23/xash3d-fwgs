@@ -582,7 +582,8 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 	APROF_SCOPE_END(brush_draw_water);
 }
 
-// FIXME use this
+#if 0
+// TODO use this
 static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_t speed) {
 	float sy, cy;
 	float flConveyorSpeed = 0.0f;
@@ -610,6 +611,7 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 	speed[0] = cy * flRate;
 	speed[1] = sy * flRate;
 }
+#endif
 
 /*
 ===============
@@ -644,9 +646,10 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 		int	speed;
 
 		// Quake1 textures uses 10 frames per second
+		/* TODO
 		if( FBitSet( R_TextureGetByIndex( base->gl_texturenum )->flags, TF_QUAKEPAL ))
 			speed = 10;
-		else speed = 20;
+		else */ speed = 20;
 
 		reletive = (int)(gpGlobals->time * speed) % base->anim_total;
 	}
@@ -1566,7 +1569,7 @@ void VK_BrushUnloadTextures( model_t *mod )
 		if( !tx || tx->gl_texturenum == tglob.defaultTexture )
 			continue; // free slot
 
-		R_TextureRelease( tx->gl_texturenum );    // main texture
-		R_TextureRelease( tx->fb_texturenum );    // luma texture
+		R_TextureFree( tx->gl_texturenum );    // main texture
+		R_TextureFree( tx->fb_texturenum );    // luma texture
 	}
 }

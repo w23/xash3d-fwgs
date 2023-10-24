@@ -3,7 +3,7 @@
 #include "vk_buffer.h"
 #include "vk_core.h"
 #include "vk_common.h"
-#include "r_textures.h"
+#include "vk_textures.h"
 #include "vk_framectl.h"
 #include "vk_renderstate.h"
 #include "vk_pipeline.h"
@@ -264,12 +264,12 @@ static void drawOverlay( VkCommandBuffer cmdbuf ) {
 
 	for (int i = 0; i < g2d.batch_count && g2d.batch[i].vertex_count > 0; ++i)
 	{
-		vk_texture_t *texture = R_TextureGetByIndex(g2d.batch[i].texture);
+		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm( g2d.batch[i].texture );
 		const VkPipeline pipeline = g2d.pipelines[g2d.batch[i].blending_mode];
-		if (texture->vk.descriptor_unorm)
+		if (tex_unorm)
 		{
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &texture->vk.descriptor_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &tex_unorm, 0, NULL);
 			vkCmdDraw(cmdbuf, g2d.batch[i].vertex_count, 1, g2d.batch[i].vertex_offset, 0);
 		} // FIXME else what?
 	}

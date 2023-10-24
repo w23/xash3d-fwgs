@@ -14,7 +14,7 @@
 #include "vk_pipeline.h"
 #include "vk_ray_internal.h"
 #include "vk_staging.h"
-#include "r_textures.h"
+#include "vk_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
 
@@ -610,7 +610,7 @@ qboolean VK_RayInit( void )
 	g_rtx.res[ExternalResource_textures].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
-			.image_array = tglob.dii_all_textures,
+			.image_array = R_VkTexturesGetAllDescriptorsArray(),
 		}
 	};
 	g_rtx.res[ExternalResource_textures].refcount = 1;

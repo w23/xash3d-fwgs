@@ -1,3 +1,27 @@
+# 2023-10-24 E318
+- [ ] use new hashmap for textures
+    - [ ] use vk_texure array directly as open addressing hash table
+        - [ ] Completely hide `struct vk_texture`
+        - [ ] just try
+        - [ ] texture indexes are no longer consecutive
+        - [ ] blue noise texture breaks => make it a separate (3d) thing
+        - [ ] index=0 is now valid
+            - I. mark 0 as occupied to avoid allocating it
+            - II. Increase all returned indexes by 1. Then dec it back wherever it is passed back
+        - (SAD): cannot make builtin textures have stable indexes anymore
+
+# E313
+## Pre-next:
+- validation crash
+## Next:
+- KTX2 PR against upstream
+- texture leaks
+	- better texture storage
+		- hash map
+	- texture lifetimes/refcounts
+	- texture deletion
+		- mass (for single device wait idle)
+
 # Programmable render
 - [ ] what if new meatpipe has different image format for a creatable image?
 - [ ] implicit dependency tracking. pass defines:

@@ -10,20 +10,16 @@
 #include "alolcator.h"
 #include "profiler.h"
 
-
 #include "xash3d_mathlib.h" // bound
-
-#define PCG_IMPLEMENT
-#include "pcg.h"
 
 #include "ktx2.h"
 
 #include <math.h> // sqrt
 
-vk_textures_global_t tglob = {0};
-
 #define LOG_MODULE LogModule_Textures
 #define MODULE_NAME "textures"
+
+#define MAX_SAMPLERS 8 // TF_NEAREST x 2 * TF_BORDER x 2 * TF_CLAMP x 2
 
 static struct {
 	struct {
@@ -38,11 +34,15 @@ static struct {
 
 	VkSampler default_sampler;
 
-	vk_texture_t cubemap_placeholder;
-
 	//vk_texture_t textures[MAX_TEXTURES];
 	//alo_int_pool_t textures_free;
-} g_textures;
+
+	// All textures descriptors in their native formats used for RT
+	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
+
+	vk_texture_t skybox_cube;
+	vk_texture_t cubemap_placeholder;
+} g_vktextures;
 
 #define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
 
@@ -55,33 +55,27 @@ int CalcMipmapCount( vk_texture_t *tex, qboolean haveBuffer );
 qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layers, int num_layers);
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
 
-static void VK_CreateInternalTextures(void);
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 static void textureDestroyVkImage( vk_texture_t *tex );
 
 // FIXME should be static
 void unloadSkybox( void );
-qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
-/* FIXME static */ int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update );
-/* FIXME static */ rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags );
-/* FIXME static */ qboolean Common_CheckTexName( const char *name );
+qboolean R_VkTextureUpload(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
 qboolean R_VkTexturesInit( void ) {
-	R_SPEEDS_METRIC(g_textures.stats.count, "count", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_textures.stats.size_total, "size_total", kSpeedsMetricBytes);
+	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_vktextures.stats.size_total, "size_total", kSpeedsMetricBytes);
 
 	// TODO really check device caps for this
 	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
 
-	g_textures.default_sampler = pickSamplerForFlags(0);
-	ASSERT(g_textures.default_sampler != VK_NULL_HANDLE);
+	g_vktextures.default_sampler = pickSamplerForFlags(0);
+	ASSERT(g_vktextures.default_sampler != VK_NULL_HANDLE);
 
 	/* FIXME
 	// validate cvars
 	R_SetTextureParameters();
 	*/
-
-	VK_CreateInternalTextures();
 
 	/* FIXME
 	gEngine.Cmd_AddCommand( "texturelist", R_TextureList_f, "display loaded textures list" );
@@ -96,10 +90,10 @@ qboolean R_VkTexturesInit( void ) {
 			if (tex->vk.image.view)
 				continue;
 
-			tglob.dii_all_textures[i] = (VkDescriptorImageInfo){
+			g_vktextures.dii_all_textures[i] = (VkDescriptorImageInfo){
 				.imageView =  default_view,
 				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.sampler = g_textures.default_sampler,
+				.sampler = g_vktextures.default_sampler,
 			};
 		}
 	}
@@ -107,190 +101,25 @@ qboolean R_VkTexturesInit( void ) {
 	return true;
 }
 
-static void textureDestroy( int index );
+static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
-	/* for( unsigned int i = 0; i < COUNTOF(g_textures.textures); i++ ) */
+	/* for( unsigned int i = 0; i < COUNTOF(g_vktextures.textures); i++ ) */
 	/* 	textureDestroy( i ); */
 
 	unloadSkybox();
 
-	R_VkImageDestroy(&g_textures.cubemap_placeholder.vk.image);
-	g_textures.stats.size_total -= g_textures.cubemap_placeholder.total_size;
-	g_textures.stats.count--;
-	memset(&g_textures.cubemap_placeholder, 0, sizeof(g_textures.cubemap_placeholder));
+	textureDestroyVkImage(&g_vktextures.cubemap_placeholder);
 
-	for (int i = 0; i < COUNTOF(g_textures.samplers); ++i) {
-		if (g_textures.samplers[i].sampler != VK_NULL_HANDLE)
-			vkDestroySampler(vk_core.device, g_textures.samplers[i].sampler, NULL);
+	// FIXME g_vktextures.stats.size_total -= g_vktextures.cubemap_placeholder.total_size;
+
+	g_vktextures.stats.count--;
+
+
+	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
+		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
+			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
 	}
-}
-
-vk_texture_t *R_TextureGetByIndex(int index)
-{
-	ASSERT(index >= 0);
-	ASSERT(index < MAX_TEXTURES);
-	//return g_textures.textures + index;
-	return vk_textures + index;
-}
-
-static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
-	int tex_id = 0;
-	char buffer[1024];
-	va_list argptr;
-	va_start( argptr, fmt );
-	vsnprintf( buffer, sizeof buffer, fmt, argptr );
-	va_end( argptr );
-
-	const qboolean force_update = false;
-	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update);
-}
-
-#define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
-
-static qboolean generateFallbackNoiseTextures(void) {
-	pcg32_random_t pcg_state = {
-		BLUE_NOISE_SIZE * BLUE_NOISE_SIZE - 1,
-		17,
-	};
-	uint32_t scratch[BLUE_NOISE_SIZE * BLUE_NOISE_SIZE];
-	rgbdata_t pic = {
-		.width = BLUE_NOISE_SIZE,
-		.height = BLUE_NOISE_SIZE,
-		.depth = 1,
-		.flags = 0,
-		.type = PF_RGBA_32,
-		.size = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * 4,
-		.buffer = (byte*)&scratch,
-		.palette = NULL,
-		.numMips = 1,
-		.encode = 0,
-	};
-
-	int blueNoiseTexturesBegin = -1;
-	for (int i = 0; i < BLUE_NOISE_SIZE; ++i) {
-		for (int j = 0; j < COUNTOF(scratch); ++j) {
-			scratch[j] = pcg32_random_r(&pcg_state);
-		}
-
-		char name[256];
-		snprintf(name, sizeof(name), BLUE_NOISE_NAME_F, i);
-		const int texid = R_TextureUploadFromBufferNew(name, &pic, TF_NOMIPMAP);
-		ASSERT(texid > 0);
-
-		if (blueNoiseTexturesBegin == -1) {
-			ASSERT(texid == BLUE_NOISE_TEXTURE_ID);
-			blueNoiseTexturesBegin = texid;
-		} else {
-			ASSERT(blueNoiseTexturesBegin + i == texid);
-		}
-	}
-
-	return true;
-}
-
-static qboolean loadBlueNoiseTextures(void) {
-	int blueNoiseTexturesBegin = -1;
-	for (int i = 0; i < 64; ++i) {
-		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
-
-		if (blueNoiseTexturesBegin == -1) {
-			if (texid <= 0) {
-				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
-				return generateFallbackNoiseTextures();
-			}
-
-			blueNoiseTexturesBegin = texid;
-		} else {
-			ASSERT(texid > 0);
-			ASSERT(blueNoiseTexturesBegin + i == texid);
-		}
-	}
-
-	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
-	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
-
-	return true;
-}
-
-static void VK_CreateInternalTextures( void )
-{
-	int	dx2, dy, d;
-	int	x, y;
-	rgbdata_t	*pic;
-
-	// emo-texture from quake1
-	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR );
-
-	for( y = 0; y < 16; y++ )
-	{
-		for( x = 0; x < 16; x++ )
-		{
-			if(( y < 8 ) ^ ( x < 8 ))
-				((uint *)pic->buffer)[y*16+x] = 0xFFFF00FF;
-			else ((uint *)pic->buffer)[y*16+x] = 0xFF000000;
-		}
-	}
-
-	tglob.defaultTexture = R_TextureUploadFromBufferNew( REF_DEFAULT_TEXTURE, pic, TF_COLORMAP );
-
-	// particle texture from quake1
-	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA );
-
-	for( x = 0; x < 16; x++ )
-	{
-		dx2 = x - 8;
-		dx2 = dx2 * dx2;
-
-		for( y = 0; y < 16; y++ )
-		{
-			dy = y - 8;
-			d = 255 - 35 * sqrt( dx2 + dy * dy );
-			pic->buffer[( y * 16 + x ) * 4 + 3] = bound( 0, d, 255 );
-		}
-	}
-
-	tglob.particleTexture = R_TextureUploadFromBufferNew( REF_PARTICLE_TEXTURE, pic, TF_CLAMP );
-
-	// white texture
-	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
-	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFFFFFFFF;
-	tglob.whiteTexture = R_TextureUploadFromBufferNew( REF_WHITE_TEXTURE, pic, TF_COLORMAP );
-
-	// gray texture
-	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
-	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFF7F7F7F;
-	tglob.grayTexture = R_TextureUploadFromBufferNew( REF_GRAY_TEXTURE, pic, TF_COLORMAP );
-
-	// black texture
-	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
-	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFF000000;
-	tglob.blackTexture = R_TextureUploadFromBufferNew( REF_BLACK_TEXTURE, pic, TF_COLORMAP );
-
-	// cinematic dummy
-	pic = Common_FakeImage( 640, 100, 1, IMAGE_HAS_COLOR );
-	tglob.cinTexture = R_TextureUploadFromBufferNew( "*cintexture", pic, TF_NOMIPMAP|TF_CLAMP );
-
-	{
-		rgbdata_t *sides[6];
-		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
-		for( x = 0; x < 16; x++ )
-			((uint *)pic->buffer)[x] = 0xFFFFFFFF;
-
-		sides[0] = pic;
-		sides[1] = pic;
-		sides[2] = pic;
-		sides[3] = pic;
-		sides[4] = pic;
-		sides[5] = pic;
-
-		uploadTexture( &g_textures.cubemap_placeholder, sides, 6, true, kColorspaceGamma );
-	}
-
-	loadBlueNoiseTextures();
 }
 
 static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hint ) {
@@ -377,18 +206,18 @@ static VkSampler createSamplerForFlags( texFlags_t flags ) {
 static VkSampler pickSamplerForFlags( texFlags_t flags ) {
 	flags &= (TF_BORDER | TF_CLAMP | TF_NEAREST);
 
-	for (int i = 0; i < COUNTOF(g_textures.samplers); ++i) {
-		if (g_textures.samplers[i].sampler == VK_NULL_HANDLE) {
-			g_textures.samplers[i].flags = flags;
-			return g_textures.samplers[i].sampler = createSamplerForFlags(flags);
+	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
+		if (g_vktextures.samplers[i].sampler == VK_NULL_HANDLE) {
+			g_vktextures.samplers[i].flags = flags;
+			return g_vktextures.samplers[i].sampler = createSamplerForFlags(flags);
 		}
 
-		if (g_textures.samplers[i].flags == flags)
-			return g_textures.samplers[i].sampler;
+		if (g_vktextures.samplers[i].flags == flags)
+			return g_vktextures.samplers[i].sampler;
 	}
 
 	ERR("Couldn't find/allocate sampler for flags %x", flags);
-	return g_textures.default_sampler;
+	return g_vktextures.default_sampler;
 }
 
 static void setDescriptorSet(vk_texture_t* const tex, colorspace_hint_e colorspace_hint) {
@@ -412,7 +241,7 @@ static void setDescriptorSet(vk_texture_t* const tex, colorspace_hint_e colorspa
 	};
 
 	// Set descriptor for bindless/ray tracing
-	tglob.dii_all_textures[index] = dii;
+	g_vktextures.dii_all_textures[index] = dii;
 
 	// Continue with setting unorm descriptor for traditional renderer
 
@@ -532,11 +361,11 @@ static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic ) {
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			.sampler = pickSamplerForFlags( tex->flags ),
 		};
-		tglob.dii_all_textures[index] = dii;
+		g_vktextures.dii_all_textures[index] = dii;
 	}
 
-	g_textures.stats.size_total += tex->total_size;
-	g_textures.stats.count++;
+	g_vktextures.stats.size_total += tex->total_size;
+	g_vktextures.stats.count++;
 
 	tex->width = header->pixelWidth;
 	tex->height = header->pixelHeight;
@@ -544,7 +373,7 @@ static qboolean uploadRawKtx2( vk_texture_t *tex, const rgbdata_t* pic ) {
 	return true;
 }
 
-qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+qboolean R_VkTextureUpload(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
 	tex->total_size = 0;
 
 	if (num_layers == 1 && layers[0]->type == PF_KTX2_RAW) {
@@ -624,17 +453,9 @@ qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int nu
 
 	setDescriptorSet(tex, colorspace_hint);
 
-	g_textures.stats.size_total += tex->total_size;
-	g_textures.stats.count++;
+	g_vktextures.stats.size_total += tex->total_size;
+	g_vktextures.stats.count++;
 	return true;
-}
-
-int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
-	vk_texture_t	*tex;
-	if( !Common_CheckTexName( filename ))
-		return 0;
-
-	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload );
 }
 
 static void textureDestroyVkImage( vk_texture_t *tex ) {
@@ -645,8 +466,8 @@ static void textureDestroyVkImage( vk_texture_t *tex ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
 	R_VkImageDestroy(&tex->vk.image);
-	g_textures.stats.size_total -= tex->total_size;
-	g_textures.stats.count--;
+	g_vktextures.stats.size_total -= tex->total_size;
+	g_vktextures.stats.count--;
 
 	tex->total_size = 0;
 }
@@ -717,11 +538,9 @@ end:
 }
 
 void unloadSkybox( void ) {
-	if (tglob.skybox_cube.vk.image.image) {
-		R_VkImageDestroy(&tglob.skybox_cube.vk.image);
-		g_textures.stats.size_total -= tglob.skybox_cube.total_size;
-		g_textures.stats.count--;
-		memset(&tglob.skybox_cube, 0, sizeof(tglob.skybox_cube));
+	if (g_vktextures.skybox_cube.vk.image.image) {
+		textureDestroyVkImage( &g_vktextures.skybox_cube );
+		memset(&g_vktextures.skybox_cube, 0, sizeof(g_vktextures.skybox_cube));
 	}
 
 	tglob.fCustomSkybox = false;
@@ -737,10 +556,25 @@ void R_TextureAcquire( unsigned int texnum ) {
 
 VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void ) {
 	return (VkDescriptorImageInfo){
-		.sampler = g_textures.default_sampler,
-		.imageView = tglob.skybox_cube.vk.image.view
-			? tglob.skybox_cube.vk.image.view
-			: g_textures.cubemap_placeholder.vk.image.view,
+		.sampler = g_vktextures.default_sampler,
+		.imageView = g_vktextures.skybox_cube.vk.image.view
+			? g_vktextures.skybox_cube.vk.image.view
+			: g_vktextures.cubemap_placeholder.vk.image.view,
 		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 	};
+}
+
+qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder) {
+	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
+	Q_strncpy( dest->name, name, sizeof( dest->name ));
+	return R_VkTextureUpload(dest, sides, 6, true, colorspace_hint);
+}
+
+VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
+	ASSERT( index < MAX_TEXTURES );
+	return vk_textures[index].vk.descriptor_unorm;
+}
+
+const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void ) {
+	return g_vktextures.dii_all_textures;
 }

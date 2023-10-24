@@ -80,6 +80,7 @@ int urmomInsert(const urmom_desc_t* desc, const char *key) {
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
 			if (hdr->hash == hash && strcmp(key, hdr->key) == 0)
+				// Return existing item
 				return index;
 		} else
 			// Reached the end of occupied chain, return the available slot

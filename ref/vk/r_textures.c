@@ -7,6 +7,9 @@
 #include "vk_logs.h"
 #include "r_speeds.h"
 
+#define PCG_IMPLEMENT
+#include "pcg.h"
+
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
 #include "crclib.h" // COM_HashKey
@@ -25,12 +28,24 @@ vk_texture_t vk_textures[MAX_TEXTURES];
 vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
 uint vk_numTextures;
 
+vk_textures_global_t tglob = {0};
+
+extern vk_texture_t vk_textures[MAX_TEXTURES];
+extern vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
+extern uint vk_numTextures;
+
+static struct {
+	poolhandle_t mempool;
+} g_textures;
+
 // FIXME imported from vk_textures.h
-qboolean uploadTexture(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 void unloadSkybox( void );
 
+static void createDefaultTextures( void );
+static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...);
+
 qboolean R_TexturesInit( void ) {
-	tglob.mempool = Mem_AllocPool( "vktextures" );
+	g_textures.mempool = Mem_AllocPool( "vktextures" );
 
 	memset( vk_textures, 0, sizeof( vk_textures ));
 	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
@@ -43,7 +58,12 @@ qboolean R_TexturesInit( void ) {
 	vk_texturesHashTable[vk_textures->hashValue] = vk_textures;
 	vk_numTextures = 1;
 
-	return R_VkTexturesInit();
+	createDefaultTextures();
+
+	if (!R_VkTexturesInit())
+		return false;
+
+	return true;
 }
 
 void R_TexturesShutdown( void )
@@ -125,10 +145,10 @@ static vk_texture_t *Common_TextureForName( const char *name )
 	return NULL;
 }
 
-/* FIXME static*/ rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags )
+static rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags )
 {
 	// TODO: Fix texture and it's buffer leaking.
-	rgbdata_t *r_image = Mem_Malloc( tglob.mempool, sizeof( rgbdata_t ) );
+	rgbdata_t *r_image = Mem_Malloc( g_textures.mempool, sizeof( rgbdata_t ) );
 
 	// also use this for bad textures, but without alpha
 	r_image->width  = Q_max( 1, width );
@@ -140,7 +160,7 @@ static vk_texture_t *Common_TextureForName( const char *name )
 	r_image->size = r_image->width * r_image->height * r_image->depth * 4;
 	if( FBitSet( r_image->flags, IMAGE_CUBEMAP )) r_image->size *= 6;
 
-	r_image->buffer  = Mem_Malloc( tglob.mempool, r_image->size);
+	r_image->buffer  = Mem_Malloc( g_textures.mempool, r_image->size);
 	r_image->palette = NULL;
 	r_image->numMips = 1;
 	r_image->encode  = 0;
@@ -149,6 +169,151 @@ static vk_texture_t *Common_TextureForName( const char *name )
 
 	return r_image;
 }
+
+#define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
+
+static void generateFallbackNoiseTextures(void) {
+	pcg32_random_t pcg_state = {
+		BLUE_NOISE_SIZE * BLUE_NOISE_SIZE - 1,
+		17,
+	};
+	uint32_t scratch[BLUE_NOISE_SIZE * BLUE_NOISE_SIZE];
+	rgbdata_t pic = {
+		.width = BLUE_NOISE_SIZE,
+		.height = BLUE_NOISE_SIZE,
+		.depth = 1,
+		.flags = 0,
+		.type = PF_RGBA_32,
+		.size = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * 4,
+		.buffer = (byte*)&scratch,
+		.palette = NULL,
+		.numMips = 1,
+		.encode = 0,
+	};
+
+	int blueNoiseTexturesBegin = -1;
+	for (int i = 0; i < BLUE_NOISE_SIZE; ++i) {
+		for (int j = 0; j < COUNTOF(scratch); ++j) {
+			scratch[j] = pcg32_random_r(&pcg_state);
+		}
+
+		char name[256];
+		snprintf(name, sizeof(name), BLUE_NOISE_NAME_F, i);
+		const int texid = R_TextureUploadFromBufferNew(name, &pic, TF_NOMIPMAP);
+		ASSERT(texid > 0);
+
+		if (blueNoiseTexturesBegin == -1) {
+			ASSERT(texid == BLUE_NOISE_TEXTURE_ID);
+			blueNoiseTexturesBegin = texid;
+		} else {
+			ASSERT(blueNoiseTexturesBegin + i == texid);
+		}
+	}
+}
+
+static void loadBlueNoiseTextures(void) {
+	int blueNoiseTexturesBegin = -1;
+	for (int i = 0; i < 64; ++i) {
+		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
+
+		if (blueNoiseTexturesBegin == -1) {
+			if (texid <= 0) {
+				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
+				generateFallbackNoiseTextures();
+				return;
+			}
+
+			blueNoiseTexturesBegin = texid;
+		} else {
+			ASSERT(texid > 0);
+			ASSERT(blueNoiseTexturesBegin + i == texid);
+		}
+	}
+
+	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
+	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
+}
+
+static void createDefaultTextures( void )
+{
+	int	dx2, dy, d;
+	int	x, y;
+	rgbdata_t	*pic;
+
+	// emo-texture from quake1
+	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR );
+
+	for( y = 0; y < 16; y++ )
+	{
+		for( x = 0; x < 16; x++ )
+		{
+			if(( y < 8 ) ^ ( x < 8 ))
+				((uint *)pic->buffer)[y*16+x] = 0xFFFF00FF;
+			else ((uint *)pic->buffer)[y*16+x] = 0xFF000000;
+		}
+	}
+
+	tglob.defaultTexture = R_TextureUploadFromBufferNew( REF_DEFAULT_TEXTURE, pic, TF_COLORMAP );
+
+	// particle texture from quake1
+	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA );
+
+	for( x = 0; x < 16; x++ )
+	{
+		dx2 = x - 8;
+		dx2 = dx2 * dx2;
+
+		for( y = 0; y < 16; y++ )
+		{
+			dy = y - 8;
+			d = 255 - 35 * sqrt( dx2 + dy * dy );
+			pic->buffer[( y * 16 + x ) * 4 + 3] = bound( 0, d, 255 );
+		}
+	}
+
+	tglob.particleTexture = R_TextureUploadFromBufferNew( REF_PARTICLE_TEXTURE, pic, TF_CLAMP );
+
+	// white texture
+	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
+	for( x = 0; x < 16; x++ )
+		((uint *)pic->buffer)[x] = 0xFFFFFFFF;
+	tglob.whiteTexture = R_TextureUploadFromBufferNew( REF_WHITE_TEXTURE, pic, TF_COLORMAP );
+
+	// gray texture
+	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
+	for( x = 0; x < 16; x++ )
+		((uint *)pic->buffer)[x] = 0xFF7F7F7F;
+	tglob.grayTexture = R_TextureUploadFromBufferNew( REF_GRAY_TEXTURE, pic, TF_COLORMAP );
+
+	// black texture
+	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
+	for( x = 0; x < 16; x++ )
+		((uint *)pic->buffer)[x] = 0xFF000000;
+	tglob.blackTexture = R_TextureUploadFromBufferNew( REF_BLACK_TEXTURE, pic, TF_COLORMAP );
+
+	// cinematic dummy
+	pic = Common_FakeImage( 640, 100, 1, IMAGE_HAS_COLOR );
+	tglob.cinTexture = R_TextureUploadFromBufferNew( "*cintexture", pic, TF_NOMIPMAP|TF_CLAMP );
+
+	{
+		rgbdata_t *sides[6];
+		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
+		for( x = 0; x < 16; x++ )
+			((uint *)pic->buffer)[x] = 0xFFFFFFFF;
+
+		sides[0] = pic;
+		sides[1] = pic;
+		sides[2] = pic;
+		sides[3] = pic;
+		sides[4] = pic;
+		sides[5] = pic;
+
+		R_VkTexturesSkyboxUpload( "skybox_placeholder", sides, kColorspaceGamma, true );
+	}
+
+	loadBlueNoiseTextures();
+}
+
 
 /*
 ===============
@@ -428,7 +593,7 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	return vk_textures[texnum].name;
 }
 
-/* FIXME static */ int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update ) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update ) {
 	if( !Common_CheckTexName( name ))
 		return 0;
 
@@ -462,7 +627,7 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
-	if( !uploadTexture( tex, &pic, 1, false, colorspace_hint ))
+	if( !R_VkTextureUpload( tex, &pic, 1, false, colorspace_hint ))
 	{
 		// FIXME remove from hash table
 		memset( tex, 0, sizeof( vk_texture_t ));
@@ -482,6 +647,22 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
 	const qboolean force_update = false;
 	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update);
+}
+
+int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload );
+}
+
+static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
+	int tex_id = 0;
+	char buffer[1024];
+	va_list argptr;
+	va_start( argptr, fmt );
+	vsnprintf( buffer, sizeof buffer, fmt, argptr );
+	va_end( argptr );
+
+	const qboolean force_update = false;
+	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update);
 }
 
 void R_TextureFree( unsigned int texnum ) {
@@ -518,7 +699,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	for (int i = 0; i < pic_count; ++i)
 		VK_ProcessImage( tex, pic[i] );
 
-	if( !uploadTexture( tex, pic, pic_count, false, kColorspaceGamma ))
+	if( !R_VkTextureUpload( tex, pic, pic_count, false, kColorspaceGamma ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		return 0;
@@ -619,8 +800,8 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 	if( !Common_CheckTexName( prefix ))
 		goto cleanup;
 
-	Q_strncpy( tglob.skybox_cube.name, prefix, sizeof( tglob.skybox_cube.name ));
-	success = uploadTexture(&tglob.skybox_cube, sides, 6, true, kColorspaceGamma);
+
+	R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, false );
 
 cleanup:
 	for (int j = 0; j < i; ++j)
@@ -630,7 +811,6 @@ cleanup:
 		tglob.fCustomSkybox = true;
 		DEBUG( "Skybox done" );
 	} else {
-		tglob.skybox_cube.name[0] = '\0';
 		ERR( "Skybox failed" );
 		unloadSkybox();
 	}
@@ -649,7 +829,7 @@ void R_TextureSetupSky( const char *skyboxname ) {
 	}
 
 	for (int i = 0; i < ARRAYSIZE(skybox_prefixes); ++i) {
-		char	loadname[MAX_STRING];
+		char loadname[MAX_STRING];
 		int style, len;
 
 		Q_snprintf( loadname, sizeof( loadname ), skybox_prefixes[i], skyboxname );
@@ -666,10 +846,10 @@ void R_TextureSetupSky( const char *skyboxname ) {
 			return;
 	}
 
+	// Try default skybox if failed
 	if (Q_stricmp(skyboxname, skybox_default) != 0) {
-		WARN("missed or incomplete skybox '%s'", skyboxname);
-		// FIXME infinite recursion
-		R_TextureSetupSky( "desert" ); // force to default
+		WARN("missed or incomplete skybox '%s', trying default '%s'", skyboxname, skybox_default);
+		R_TextureSetupSky( skybox_default );
 	}
 }
 
@@ -728,4 +908,41 @@ int R_TextureCreateDummy_FIXME( const char *name ) {
 	}
 
 	return R_TextureUploadFromBufferNew(name, pic, TF_NOMIPMAP);
+}
+
+vk_texture_t *R_TextureGetByIndex(int index)
+{
+	ASSERT(index >= 0);
+	ASSERT(index < MAX_TEXTURES);
+	//return g_vktextures.textures + index;
+	return vk_textures + index;
+}
+
+int R_TexturesGetParm( int parm, int arg ) {
+	const vk_texture_t *const tex = R_TextureGetByIndex( arg );
+
+	switch(parm){
+	case PARM_TEX_WIDTH:
+	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
+		return tex->width;
+	case PARM_TEX_HEIGHT:
+	case PARM_TEX_SRC_HEIGHT:
+		return tex->height;
+	case PARM_TEX_FLAGS:
+		return tex->flags;
+	// TODO
+	case PARM_TEX_SKYBOX:
+	case PARM_TEX_SKYTEXNUM:
+	case PARM_TEX_LIGHTMAP:
+	case PARM_TEX_TARGET:
+	case PARM_TEX_TEXNUM:
+	case PARM_TEX_DEPTH:
+	case PARM_TEX_GLFORMAT:
+	case PARM_TEX_ENCODE:
+	case PARM_TEX_MIPCOUNT:
+	case PARM_TEX_MEMORY:
+		return 0;
+	default:
+		return 0;
+	}
 }
