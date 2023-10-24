@@ -6,6 +6,7 @@
 #include "vk_mapents.h" // wadlist
 #include "vk_logs.h"
 #include "r_speeds.h"
+#include "profiler.h"
 
 #define PCG_IMPLEMENT
 #include "pcg.h"
@@ -29,10 +30,6 @@ vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
 uint vk_numTextures;
 
 vk_textures_global_t tglob = {0};
-
-extern vk_texture_t vk_textures[MAX_TEXTURES];
-extern vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
-extern uint vk_numTextures;
 
 static struct {
 	poolhandle_t mempool;
@@ -68,6 +65,9 @@ qboolean R_TexturesInit( void ) {
 
 void R_TexturesShutdown( void )
 {
+	for( unsigned int i = 0; i < vk_numTextures; i++ )
+		R_TextureFree( i );
+
 	R_VkTexturesShutdown();
 
 	//memset( tglob.lightmapTextures, 0, sizeof( tglob.lightmapTextures ));
@@ -627,7 +627,8 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
-	if( !R_VkTextureUpload( tex, &pic, 1, false, colorspace_hint ))
+	const int index = (tex - vk_textures);
+	if( !R_VkTextureUpload( index, tex, &pic, 1, colorspace_hint ))
 	{
 		// FIXME remove from hash table
 		memset( tex, 0, sizeof( vk_texture_t ));
@@ -641,7 +642,7 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	gEngine.FS_FreeImage( pic ); // release source texture
 
 	// NOTE: always return texnum as index in array or engine will stop work !!!
-	return tex - vk_textures;
+	return index;
 }
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
@@ -699,7 +700,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	for (int i = 0; i < pic_count; ++i)
 		VK_ProcessImage( tex, pic[i] );
 
-	if( !R_VkTextureUpload( tex, pic, pic_count, false, kColorspaceGamma ))
+	if( !R_VkTextureUpload( (int)(tex - vk_textures), tex, pic, pic_count, kColorspaceGamma ))
 	{
 		memset( tex, 0, sizeof( vk_texture_t ));
 		return 0;
@@ -910,7 +911,7 @@ int R_TextureCreateDummy_FIXME( const char *name ) {
 	return R_TextureUploadFromBufferNew(name, pic, TF_NOMIPMAP);
 }
 
-vk_texture_t *R_TextureGetByIndex(int index)
+struct vk_texture_s *R_TextureGetByIndex( uint index)
 {
 	ASSERT(index >= 0);
 	ASSERT(index < MAX_TEXTURES);
@@ -945,4 +946,73 @@ int R_TexturesGetParm( int parm, int arg ) {
 	default:
 		return 0;
 	}
+}
+
+void R_TextureAcquire( unsigned int texnum ) {
+	ASSERT(texnum < vk_numTextures);
+	vk_texture_t *const tex = vk_textures + texnum;
+	++tex->refcount;
+
+	DEBUG("Acquiring existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
+}
+
+void R_TextureRelease( unsigned int texnum ) {
+	vk_texture_t *tex;
+	vk_texture_t **prev;
+	vk_texture_t *cur;
+
+	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
+
+	if( texnum <= 0 )
+		goto end;
+
+	tex = vk_textures + texnum;
+
+	// already freed?
+	if( !tex->vk.image.image )
+		goto end;
+
+	// debug
+	if( !tex->name[0] )
+	{
+		ERR("R_TextureRelease: trying to free unnamed texture with index %u", texnum );
+		goto end;
+	}
+
+	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, tex->name, tex->refcount);
+	ASSERT(tex->refcount > 0);
+	--tex->refcount;
+
+	if (tex->refcount > 0)
+		goto end;
+
+	DEBUG("Freeing texture=%d(%s)", texnum, tex->name);
+
+	// remove from hash table
+	prev = &vk_texturesHashTable[tex->hashValue];
+
+	while( 1 )
+	{
+		cur = *prev;
+		if( !cur ) break;
+
+		if( cur == tex )
+		{
+			*prev = cur->nextHash;
+			break;
+		}
+		prev = &cur->nextHash;
+	}
+
+	/*
+	// release source
+	if( tex->original )
+		gEngine.FS_FreeImage( tex->original );
+	*/
+
+	R_VkTextureDestroy( texnum, tex );
+	memset(tex, 0, sizeof(*tex));
+
+end:
+	APROF_SCOPE_END(free);
 }

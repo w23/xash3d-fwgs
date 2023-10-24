@@ -34,6 +34,8 @@ typedef struct { int index; } r_vk_material_ref_t;
 // TODO: track "version" in high bits?
 void R_VkMaterialsReload( void );
 
+void R_VkMaterialsShutdown( void );
+
 struct model_s;
 void R_VkMaterialsLoadForModel( const struct model_s* mod );
 

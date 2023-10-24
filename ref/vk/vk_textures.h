@@ -41,7 +41,8 @@ void R_VkTexturesShutdown( void );
 
 qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder);
 
-qboolean R_VkTextureUpload(vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
+qboolean R_VkTextureUpload(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, colorspace_hint_e colorspace_hint);
+void R_VkTextureDestroy(int index, vk_texture_t *tex);
 
 // FIXME s/R_/R_Vk/
 void R_TextureAcquire( unsigned int texnum );

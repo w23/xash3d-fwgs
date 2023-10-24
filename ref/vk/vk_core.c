@@ -833,6 +833,8 @@ void R_VkShutdown( void ) {
 
 	VK_FrameCtlShutdown();
 
+	R_VkMaterialsShutdown();
+
 	R_TexturesShutdown();
 
 	VK_PipelineShutdown();

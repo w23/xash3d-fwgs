@@ -573,3 +573,8 @@ qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_mat
 
 	return false;
 }
+
+void R_VkMaterialsShutdown( void ) {
+	materialsReleaseTextures();
+}
+

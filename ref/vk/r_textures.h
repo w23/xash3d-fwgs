@@ -65,3 +65,6 @@ int R_TextureFindByNameF( const char *fmt, ...);
 // Full names depend on map name, wad name, etc. This function tries them all.
 // Returns -1 if not found
 int R_TextureFindByNameLike( const char *texture_name );
+
+struct vk_texture_s;
+struct vk_texture_s *R_TextureGetByIndex( uint index );
