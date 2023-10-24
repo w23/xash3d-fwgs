@@ -1,14 +1,17 @@
 #pragma once
 
 #include "r_textures.h"
-
 #include "vk_core.h"
 #include "vk_image.h"
 #include "vk_const.h"
 
+#include "unordered_roadmap.h"
+
 typedef struct vk_texture_s
 {
-	char name[256];
+	urmom_header_t hdr_;
+
+	//char name[256];
 
 	int width, height;
 	uint32_t flags;
@@ -19,16 +22,13 @@ typedef struct vk_texture_s
 		VkDescriptorSet descriptor_unorm;
 	} vk;
 
-	// Internals for hash table
-	uint texnum;
-	uint hashValue;
-	struct vk_texture_s	*nextHash;
-
 	int refcount;
 
 	// TODO "cache" eviction
 	// int used_maps_ago;
 } vk_texture_t;
+
+#define TEX_NAME(tex) ((tex)->hdr_.key)
 
 typedef enum {
 	kColorspaceNative,

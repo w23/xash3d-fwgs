@@ -253,7 +253,7 @@ static void setDescriptorSet(int index, vk_texture_t* const tex, colorspace_hint
 }
 
 static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t* pic ) {
-	DEBUG("Uploading raw KTX2 texture[%d] %s", tex_index, tex->name);
+	DEBUG("Uploading raw KTX2 texture[%d] %s", tex_index, TEX_NAME(tex));
 
 	const byte *const data = pic->buffer;
 	const int size = pic->size;
@@ -303,7 +303,7 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 
 	{
 		const r_vk_image_create_t create = {
-			.debug_name = tex->name,
+			.debug_name = TEX_NAME(tex),
 			.width = header->pixelWidth,
 			.height = header->pixelHeight,
 			.mips = header->levelCount,
@@ -373,13 +373,13 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 			return false;
 		}
 
-		if (!validatePicLayers(tex->name, layers, num_layers))
+		if (!validatePicLayers(TEX_NAME(tex), layers, num_layers))
 			return false;
 
 		tex->width = layers[0]->width;
 		tex->height = layers[0]->height;
 
-		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", index, tex->name, mipCount, compute_mips, num_layers);
+		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", index, TEX_NAME(tex), mipCount, compute_mips, num_layers);
 
 		// TODO (not sure why, but GL does this)
 		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
@@ -391,7 +391,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 
 		{
 			const r_vk_image_create_t create = {
-				.debug_name = tex->name,
+				.debug_name = TEX_NAME(tex),
 				.width = tex->width,
 				.height = tex->height,
 				.mips = mipCount,
@@ -462,6 +462,7 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 	setDescriptorSet(index, tex, kColorspaceNative);
 
 	tex->total_size = 0;
+	tex->width = tex->height = 0;
 
 	// TODO: currently cannot do this because vk_render depends on all textures having some descriptor regardless of their alive-ness
 	// TODO tex->vk.descriptor_unorm = VK_NULL_HANDLE;
@@ -488,7 +489,7 @@ VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void ) {
 
 qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder) {
 	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
-	Q_strncpy( dest->name, name, sizeof( dest->name ));
+	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
 	return uploadTexture(-1, dest, sides, 6, true, colorspace_hint);
 }
 

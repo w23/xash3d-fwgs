@@ -7,6 +7,7 @@
 #include "vk_logs.h"
 #include "r_speeds.h"
 #include "profiler.h"
+#include "unordered_roadmap.h"
 
 #define PCG_IMPLEMENT
 #include "pcg.h"
@@ -23,16 +24,13 @@
 #define LOG_MODULE LogModule_Textures
 #define MODULE_NAME "textures"
 
-#define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
-
-vk_texture_t vk_textures[MAX_TEXTURES];
-vk_texture_t* vk_texturesHashTable[TEXTURES_HASH_SIZE];
-uint vk_numTextures;
-
 vk_textures_global_t tglob = {0};
 
 static struct {
 	poolhandle_t mempool;
+
+	vk_texture_t all[MAX_TEXTURES];
+	urmom_desc_t all_desc;
 } g_textures;
 
 // FIXME imported from vk_textures.h
@@ -44,16 +42,18 @@ static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const c
 qboolean R_TexturesInit( void ) {
 	g_textures.mempool = Mem_AllocPool( "vktextures" );
 
-	memset( vk_textures, 0, sizeof( vk_textures ));
-	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
-	vk_numTextures = 0;
+	g_textures.all_desc = (urmom_desc_t){
+		.array = g_textures.all,
+		.count = COUNTOF(g_textures.all),
+		.item_size = sizeof(g_textures.all[0]),
+	};
 
-	// create unused 0-entry
-	Q_strncpy( vk_textures->name, "*unused*", sizeof( vk_textures->name ));
-	vk_textures->hashValue = COM_HashKey( vk_textures->name, TEXTURES_HASH_SIZE );
-	vk_textures->nextHash = vk_texturesHashTable[vk_textures->hashValue];
-	vk_texturesHashTable[vk_textures->hashValue] = vk_textures;
-	vk_numTextures = 1;
+	urmomInit(&g_textures.all_desc);
+
+	// Mark index 0 as occupied to have a special "no texture" value
+	g_textures.all[0].hdr_.hash = 0x7fffffff;
+	g_textures.all[0].hdr_.state = 1;
+	Q_strncpy( g_textures.all[0].hdr_.key, "*unused*", sizeof(g_textures.all[0].hdr_.key));
 
 	createDefaultTextures();
 
@@ -65,17 +65,13 @@ qboolean R_TexturesInit( void ) {
 
 void R_TexturesShutdown( void )
 {
-	for( unsigned int i = 0; i < vk_numTextures; i++ )
+	for( int i = 0; i < COUNTOF(g_textures.all); i++ )
 		R_TextureFree( i );
 
 	R_VkTexturesShutdown();
-
-	//memset( tglob.lightmapTextures, 0, sizeof( tglob.lightmapTextures ));
-	memset( vk_texturesHashTable, 0, sizeof( vk_texturesHashTable ));
-	memset( vk_textures, 0, sizeof( vk_textures ));
-	vk_numTextures = 0;
 }
 
+/* OBSOLETE
 static vk_texture_t *Common_AllocTexture( const char *name, texFlags_t flags )
 {
 	vk_texture_t	*tex;
@@ -109,25 +105,6 @@ static vk_texture_t *Common_AllocTexture( const char *name, texFlags_t flags )
 	return tex;
 }
 
-/* FIXME static */ qboolean Common_CheckTexName( const char *name )
-{
-	int len;
-
-	if( !COM_CheckString( name ))
-		return false;
-
-	len = Q_strlen( name );
-
-	// because multi-layered textures can exceed name string
-	if( len >= sizeof( vk_textures->name ))
-	{
-		ERR("LoadTexture: too long name %s (%d)", name, len );
-		return false;
-	}
-
-	return true;
-}
-
 static vk_texture_t *Common_TextureForName( const char *name )
 {
 	vk_texture_t	*tex;
@@ -143,6 +120,26 @@ static vk_texture_t *Common_TextureForName( const char *name )
 	}
 
 	return NULL;
+}
+*/
+
+static qboolean checkTextureName( const char *name )
+{
+	int len;
+
+	if( !COM_CheckString( name ))
+		return false;
+
+	len = Q_strlen( name );
+
+	// because multi-layered textures can exceed name string
+	if( len >= sizeof( g_textures.all[0].hdr_.key ))
+	{
+		ERR("LoadTexture: too long name %s (%d)", name, len );
+		return false;
+	}
+
+	return true;
 }
 
 static rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags )
@@ -311,7 +308,7 @@ static void createDefaultTextures( void )
 		R_VkTexturesSkyboxUpload( "skybox_placeholder", sides, kColorspaceGamma, true );
 	}
 
-	loadBlueNoiseTextures();
+	// FIXME convert to 3d texture loadBlueNoiseTextures();
 }
 
 
@@ -577,31 +574,35 @@ int R_TextureFindByName( const char *name )
 {
 	vk_texture_t *tex;
 
-	if( !Common_CheckTexName( name ))
+	if( !checkTextureName( name ))
 		return 0;
 
-	// see if already loaded
-	if(( tex = Common_TextureForName( name )))
-		return (tex - vk_textures);
-
-	return 0;
+	const int index = urmomFind(&g_textures.all_desc, name);
+	return index ? index > 0 : 0;
 }
 
 const char* R_TextureGetNameByIndex( unsigned int texnum )
 {
 	ASSERT( texnum >= 0 && texnum < MAX_TEXTURES );
-	return vk_textures[texnum].name;
+	return g_textures.all[texnum].hdr_.key;
 }
 
 static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update ) {
-	if( !Common_CheckTexName( name ))
+	if( !checkTextureName( name ))
 		return 0;
 
+	const urmom_insert_t insert = urmomInsert(&g_textures.all_desc, name);
+	if (insert.index < 0)
+		ERR("Cannot allocate texture slot for \"%s\"", name);
+	ASSERT(insert.index < COUNTOF(g_textures.all));
+
+	vk_texture_t *const tex = g_textures.all + insert.index;
+
 	// see if already loaded
-	vk_texture_t * tex = Common_TextureForName( name );
-	if( tex && !force_update ) {
-		DEBUG("Found existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
-		return (tex - vk_textures);
+	if (!insert.created && !force_update) {
+		DEBUG("Found existing texture %s(%d) refcount=%d",
+			TEX_NAME(tex), insert.index, tex->refcount);
+		return insert.index;
 	}
 
 	uint picFlags = 0;
@@ -616,33 +617,37 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	gEngine.Image_SetForceFlags( picFlags );
 
 	rgbdata_t *const pic = gEngine.FS_LoadImage( name, buf, size );
-	if( !pic ) return 0; // couldn't loading image
+	if( !pic ) {
+		if (insert.created)
+			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
+		return 0; // couldn't loading image
+	}
 
-	// allocate the new one if needed
-	if (!tex)
-		tex = Common_AllocTexture( name, flags );
-	else
-		tex->flags = flags;
+	tex->flags = flags;
 
 	// upload texture
 	VK_ProcessImage( tex, pic );
 
-	const int index = (tex - vk_textures);
-	if( !R_VkTextureUpload( index, tex, &pic, 1, colorspace_hint ))
+	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, colorspace_hint ))
 	{
-		// FIXME remove from hash table
-		memset( tex, 0, sizeof( vk_texture_t ));
+		if (insert.created)
+			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
+
 		gEngine.FS_FreeImage( pic ); // release source texture
 		return 0;
 	}
 
+	gEngine.FS_FreeImage( pic ); // release source texture
+
+	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
+	// TODO where did we come from?
+	if (insert.created)
+		tex->refcount = 1;
+
 	tex->width = pic->width;
 	tex->height = pic->height;
 
-	gEngine.FS_FreeImage( pic ); // release source texture
-
-	// NOTE: always return texnum as index in array or engine will stop work !!!
-	return index;
+	return insert.index;
 }
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
@@ -672,43 +677,55 @@ void R_TextureFree( unsigned int texnum ) {
 }
 
 static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update_only ) {
-	vk_texture_t	*tex;
-
-	if( !Common_CheckTexName( name ))
+	// couldn't loading image
+	if( !pic )
 		return 0;
 
-	// see if already loaded
-	if(( tex = Common_TextureForName( name )) && !update_only )
-		return (tex - vk_textures);
+	if( !checkTextureName( name ))
+		return 0;
 
-	// couldn't loading image
-	if( !pic ) return 0;
+	urmom_insert_t insert = {0};
+	if (update_only)
+		insert.index = urmomFind(&g_textures.all_desc, name);
+	else
+		insert = urmomInsert(&g_textures.all_desc, name);
+
+	if (insert.index < 0) {
+		if (update_only) {
+			gEngine.Host_Error( "%s: couldn't find texture %s for update\n", __FUNCTION__, name );
+		} else {
+			ERR("Cannot allocate texture slot for \"%s\"", name);
+		}
+		return 0;
+	}
+
+	ASSERT(insert.index < COUNTOF(g_textures.all));
+
+	vk_texture_t *const tex = g_textures.all + insert.index;
+	// see if already loaded
+	if (!insert.created && !update_only)
+		return insert.index;
 
 	if( update_only )
-	{
-		if( tex == NULL )
-			gEngine.Host_Error( "loadTextureFromBuffer: couldn't find texture %s for update\n", name );
 		SetBits( tex->flags, flags );
-	}
-	else
-	{
-		// allocate the new one
-		ASSERT(!tex);
-		tex = Common_AllocTexture( name, flags );
-	}
 
 	for (int i = 0; i < pic_count; ++i)
 		VK_ProcessImage( tex, pic[i] );
 
-	if( !R_VkTextureUpload( (int)(tex - vk_textures), tex, pic, pic_count, kColorspaceGamma ))
+	if( !R_VkTextureUpload( insert.index, tex, pic, pic_count, kColorspaceGamma ))
 	{
-		memset( tex, 0, sizeof( vk_texture_t ));
+		if (!update_only)
+			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
 		return 0;
 	}
 
-	return (tex - vk_textures);
-}
+	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
+	// TODO where did we come from?
+	if (insert.created)
+		tex->refcount = 1;
 
+	return insert.index;
+}
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
 	return loadTextureFromBuffers(name, &pic, 1, flags, update_only);
 }
@@ -798,7 +815,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 	if( i != 6 )
 		goto cleanup;
 
-	if( !Common_CheckTexName( prefix ))
+	if( !checkTextureName( prefix ))
 		goto cleanup;
 
 
@@ -911,12 +928,16 @@ int R_TextureCreateDummy_FIXME( const char *name ) {
 	return R_TextureUploadFromBufferNew(name, pic, TF_NOMIPMAP);
 }
 
-struct vk_texture_s *R_TextureGetByIndex( uint index)
+struct vk_texture_s *R_TextureGetByIndex( uint index )
 {
 	ASSERT(index >= 0);
 	ASSERT(index < MAX_TEXTURES);
 	//return g_vktextures.textures + index;
-	return vk_textures + index;
+
+	vk_texture_t *const tex = g_textures.all + index;
+	if (!URMOM_IS_OCCUPIED(tex->hdr_))
+		WARN("Accessing empty texture %d", index);
+	return tex;
 }
 
 int R_TexturesGetParm( int parm, int arg ) {
@@ -949,11 +970,10 @@ int R_TexturesGetParm( int parm, int arg ) {
 }
 
 void R_TextureAcquire( unsigned int texnum ) {
-	ASSERT(texnum < vk_numTextures);
-	vk_texture_t *const tex = vk_textures + texnum;
+	vk_texture_t *const tex = R_TextureGetByIndex(texnum);
 	++tex->refcount;
 
-	DEBUG("Acquiring existing texture %s(%d) refcount=%d", tex->name, (int)(tex-vk_textures), tex->refcount);
+	DEBUG("Acquiring existing texture %s(%d) refcount=%d", TEX_NAME(tex), texnum, tex->refcount);
 }
 
 void R_TextureRelease( unsigned int texnum ) {
@@ -966,43 +986,34 @@ void R_TextureRelease( unsigned int texnum ) {
 	if( texnum <= 0 )
 		goto end;
 
-	tex = vk_textures + texnum;
+	ASSERT(texnum < COUNTOF(g_textures.all));
+
+	tex = g_textures.all + texnum;
 
 	// already freed?
 	if( !tex->vk.image.image )
 		goto end;
 
 	// debug
-	if( !tex->name[0] )
+	if( !TEX_NAME(tex)[0] )
 	{
 		ERR("R_TextureRelease: trying to free unnamed texture with index %u", texnum );
 		goto end;
 	}
 
-	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, tex->name, tex->refcount);
+	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, TEX_NAME(tex), tex->refcount);
 	ASSERT(tex->refcount > 0);
 	--tex->refcount;
 
 	if (tex->refcount > 0)
 		goto end;
 
-	DEBUG("Freeing texture=%d(%s)", texnum, tex->name);
+	DEBUG("Freeing texture=%d(%s)", texnum, TEX_NAME(tex));
+
+	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
 
 	// remove from hash table
-	prev = &vk_texturesHashTable[tex->hashValue];
-
-	while( 1 )
-	{
-		cur = *prev;
-		if( !cur ) break;
-
-		if( cur == tex )
-		{
-			*prev = cur->nextHash;
-			break;
-		}
-		prev = &cur->nextHash;
-	}
+	urmomRemoveByIndex(&g_textures.all_desc, texnum);
 
 	/*
 	// release source
@@ -1011,7 +1022,6 @@ void R_TextureRelease( unsigned int texnum ) {
 	*/
 
 	R_VkTextureDestroy( texnum, tex );
-	memset(tex, 0, sizeof(*tex));
 
 end:
 	APROF_SCOPE_END(free);

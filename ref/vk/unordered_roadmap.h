@@ -40,9 +40,13 @@ void urmomInit(const urmom_desc_t* desc);
 int urmomFind(const urmom_desc_t* desc, const char* key);
 
 // Returns index of the element either found or empty slot where this could be inserted. If full, -1.
-int urmomInsert(const urmom_desc_t* desc, const char *key);
-
-void urmomDeleteByIndex(const urmom_desc_t* desc, int index);
+typedef struct urmom_insert_s {
+	int index;
+	int created;
+} urmom_insert_t;
+urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key);
 
 // Return the index of item deleted (if found), -1 otherwise
 int urmomRemove(const urmom_desc_t* desc, const char *key);
+
+void urmomRemoveByIndex(const urmom_desc_t* desc, int index);

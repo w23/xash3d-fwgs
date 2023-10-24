@@ -68,50 +68,61 @@ int urmomFind(const urmom_desc_t* desc, const char* key) {
 }
 
 // Returns index of the element either found or empty slot where this could be inserted. If full, -1.
-int urmomInsert(const urmom_desc_t* desc, const char *key) {
+urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key) {
 	char *ptr = desc->array;
 	const uint32_t hash = hash32FNV1aStr(key) & 0x7fffffffu;
 	const uint32_t mask = (desc->count - 1);
 	const int start_index = hash & mask;
 
 	int index = start_index;
+	int first_available = -1;
 	for (;;) {
 		const urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
 			if (hdr->hash == hash && strcmp(key, hdr->key) == 0)
 				// Return existing item
-				return index;
-		} else
+				return (urmom_insert_t){.index = index, .created = 0};
+		} else {
+			// Remember the very first item that wasn't occupied
+			if (first_available < 0)
+				first_available = index;
+
 			// Reached the end of occupied chain, return the available slot
-			break;
+			if (URMOM_IS_EMPTY(*hdr))
+				break;
+		}
 
 		index = (index + 1) & mask;
 
 		// Searched through the entire thing
 		if (index == start_index)
-			return -1;
+			break;
 	}
 
-	urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
+	// If no slots were encountered, exit with error
+	if (first_available < 0)
+		return (urmom_insert_t){.index = -1, .created = 0};
+
+	urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * first_available);
 	hdr->hash = hash;
 	hdr->state = 1;
 
 	// TODO check for key length
 	strncpy(hdr->key, key, sizeof(hdr->key));
 
-	return index;
+	return (urmom_insert_t){.index = first_available, .created = 1};
 }
 
 // Return the index of item deleted (if found), -1 otherwise
 int urmomRemove(const urmom_desc_t* desc, const char *key) {
 	const int index = urmomFind(desc, key);
 	if (index >= 0)
-		urmomDeleteByIndex(desc, index);
+		urmomRemoveByIndex(desc, index);
 	return index;
 }
 
-void urmomDeleteByIndex(const urmom_desc_t* desc, int index) {
+void urmomRemoveByIndex(const urmom_desc_t* desc, int index) {
 	char *ptr = desc->array;
 	urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
 
