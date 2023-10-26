@@ -588,7 +588,7 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	return g_textures.all[texnum].hdr_.key;
 }
 
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update ) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean acquire ) {
 	if( !checkTextureName( name ))
 		return 0;
 
@@ -603,6 +603,8 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	if (!insert.created && !force_update) {
 		DEBUG("Found existing texture %s(%d) refcount=%d",
 			TEX_NAME(tex), insert.index, tex->refcount);
+		if (acquire)
+			tex->refcount++;
 		return insert.index;
 	}
 
@@ -650,11 +652,13 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
 	const qboolean force_update = false;
-	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update);
+	const qboolean acquire = false;
+	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update, acquire);
 }
 
 int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
-	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload );
+	const qboolean acquire = true;
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload, acquire );
 }
 
 static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
@@ -666,11 +670,13 @@ static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const c
 	va_end( argptr );
 
 	const qboolean force_update = false;
-	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update);
+	const qboolean acquire = false;
+	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update, acquire);
 }
 
 void R_TextureFree( unsigned int texnum ) {
 	// FIXME this is incorrect and leads to missing textures
+	// Mark this texture as deleted for ref_api
 	R_TextureRelease( texnum );
 }
 

@@ -124,13 +124,17 @@ static void acquireTexturesForMaterial( int index ) {
 	R_TextureAcquire(mat->tex_normalmap);
 }
 
-static void releaseTexturesForMaterial( int index ) {
-	const r_vk_material_t *mat = &g_materials.table[index].material;
-	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+static void releaseTexturesForMaterialPtr( const r_vk_material_t *mat ) {
 	R_TextureRelease(mat->tex_base_color);
 	R_TextureRelease(mat->tex_metalness);
 	R_TextureRelease(mat->tex_roughness);
 	R_TextureRelease(mat->tex_normalmap);
+}
+
+static void releaseTexturesForMaterial( int index ) {
+	const r_vk_material_t *mat = &g_materials.table[index].material;
+	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+	releaseTexturesForMaterialPtr( mat );
 }
 
 static int addMaterial(const char *name, const r_vk_material_t* mat) {
@@ -222,37 +226,41 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		}
 
 		if (key[0] == '}') {
-			if (for_tex_id < 0 && !create) {
+			if (for_tex_id <= 0 && !create) {
 				// Skip this material, as its texture hasn't been loaded
 				// NOTE: might want to check whether it makes sense wrt late-loading stuff
 				continue;
 			}
 
-			if (!name[0]) {
+			if (name[0] == '\0') {
 				WARN("Unreferenceable (no \"for_texture\", no \"new\") material found in %s", filename);
 				continue;
 			}
 
-#define LOAD_TEXTURE_FOR(name, field, colorspace) do { \
-			if (name[0] != '\0') { \
-				char texture_path[256]; \
-				MAKE_PATH(texture_path, name); \
-				const int tex_id = loadTexture(texture_path, force_reload, colorspace); \
-				if (tex_id < 0) { \
-					ERR("Failed to load texture \"%s\" for "#name"", name); \
+			// Start with *default texture for base color, it will be acquired if no replacement is specified or could be loaded.
+			current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
+
+#define LOAD_TEXTURE_FOR(name, field, colorspace) \
+			do { \
+				if (name[0] != '\0') { \
+					char texture_path[256]; \
+					MAKE_PATH(texture_path, name); \
+					const int tex_id = loadTexture(texture_path, force_reload, colorspace); \
+					if (tex_id < 0) { \
+						ERR("Failed to load texture \"%s\" for "#name"", name); \
+						R_TextureAcquire(current_material.field); \
+					} else { \
+						current_material.field = tex_id; \
+					} \
 				} else { \
-					current_material.field = tex_id; \
+					R_TextureAcquire(current_material.field); \
 				} \
-			}} while(0)
+			} while(0)
 
 			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color, kColorspaceNative);
 			LOAD_TEXTURE_FOR(normal_map, tex_normalmap, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(metal_map, tex_metalness, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(roughness_map, tex_roughness, kColorspaceLinear);
-
-			// If there's no explicit basecolor_map value, use the "for" target texture
-			if (current_material.tex_base_color == -1)
-				current_material.tex_base_color = for_tex_id > 0 ? for_tex_id : 0;
 
 			if (!metalness_set && current_material.tex_metalness != tglob.whiteTexture) {
 				// If metalness factor wasn't set explicitly, but texture was specified, set it to match the texture value.
@@ -260,6 +268,8 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			}
 
 			const int mat_id = addMaterial(name, &current_material);
+
+			releaseTexturesForMaterialPtr(&current_material);
 
 			if (mat_id < 0) {
 				ERR("Cannot add material \"%s\" for_tex_id=\"%s\"(%d)", name, for_tex_id >= 0 ? R_TextureGetNameByIndex(for_tex_id) : "N/A", for_tex_id);

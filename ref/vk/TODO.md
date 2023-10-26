@@ -2,6 +2,7 @@
 - [x] fix pbr materials disappearing
 - [x] fix surface lights
 - [ ] pbr/material refcount leaks
+    - [ ] track texture visibility for ref_api
 - [x] handle existing image on texture upload
     - [x] sanely recreate
     - [x] reuse if possible
