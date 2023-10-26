@@ -1,14 +1,22 @@
+# 2023-10-26 E319
+- [x] fix pbr materials disappearing
+- [x] fix surface lights
+- [ ] pbr/material refcount leaks
+- [ ] handle existing image on texture upload
+    - [ ] sanely recreate
+    - [ ] reuse if possible
+
 # 2023-10-24 E318
 - [ ] use new hashmap for textures
-    - [ ] use vk_texure array directly as open addressing hash table
-        - [ ] Completely hide `struct vk_texture`
-        - [ ] just try
-        - [ ] texture indexes are no longer consecutive
-        - [ ] blue noise texture breaks => make it a separate (3d) thing
-        - [ ] index=0 is now valid
-            - I. mark 0 as occupied to avoid allocating it
-            - II. Increase all returned indexes by 1. Then dec it back wherever it is passed back
-        - (SAD): cannot make builtin textures have stable indexes anymore
+    - [x] use vk_texure array directly as open addressing hash table
+        - [x] Completely hide `struct vk_texture`
+        - [x] just try
+        - [x] texture indexes are no longer consecutive
+    - [ ] blue noise texture breaks => make it a separate (3d) thing
+    - [ ] index=0 is now valid
+        - [x] I. mark 0 as occupied to avoid allocating it
+        - [ ] II. Increase all returned indexes by 1. Then dec it back wherever it is passed back
+    - (SAD): cannot make builtin textures have stable indexes anymore
 
 # E313
 ## Pre-next:
