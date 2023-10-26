@@ -252,7 +252,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 			// If there's no explicit basecolor_map value, use the "for" target texture
 			if (current_material.tex_base_color == -1)
-				current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
+				current_material.tex_base_color = for_tex_id > 0 ? for_tex_id : 0;
 
 			if (!metalness_set && current_material.tex_metalness != tglob.whiteTexture) {
 				// If metalness factor wasn't set explicitly, but texture was specified, set it to match the texture value.
@@ -299,12 +299,17 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		if (!pos)
 			break;
 
+		//DEBUG("key=\"%s\", value=\"%s\"", key, value);
+
 		if (Q_stricmp(key, "for") == 0) {
 			if (name[0] != '\0')
 				WARN("Material already has \"new\" or \"for_texture\" old=\"%s\" new=\"%s\"", name, value);
 
 			const uint64_t lookup_begin_ns = aprof_time_now_ns();
 			for_tex_id = R_TextureFindByNameLike(value);
+			DEBUG("R_TextureFindByNameLike(%s)=%d", value, for_tex_id);
+			if (for_tex_id >= 0)
+				ASSERT(strstr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
 			g_stats.texture_lookup_duration_ns += aprof_time_now_ns() - lookup_begin_ns;
 			g_stats.texture_lookups++;
 			Q_strncpy(name, value, sizeof name);

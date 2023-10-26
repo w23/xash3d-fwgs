@@ -578,7 +578,7 @@ int R_TextureFindByName( const char *name )
 		return 0;
 
 	const int index = urmomFind(&g_textures.all_desc, name);
-	return index ? index > 0 : 0;
+	return index > 0 ? index : 0;
 }
 
 const char* R_TextureGetNameByIndex( unsigned int texnum )
@@ -882,7 +882,7 @@ int R_TextureFindByNameF( const char *fmt, ...) {
 	va_end( argptr );
 
 	tex_id = R_TextureFindByName(buffer);
-	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
+	DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
 
