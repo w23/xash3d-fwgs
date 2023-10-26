@@ -57,3 +57,24 @@
 "_xvk_surface_id" "3558 3540 3546 3552" // +0~DRKMTLS2      80  60  30   1000
 "_light" "80 60 30 80000"
 }
+
+
+// smoothing
+{
+//"_xvk_smoothing_threshold" "0"
+}
+{
+"_xvk_smoothing_group" "2044 2044 2041 753 2045 757 2053 763 765" //756 // TODO: fix bad geometry
+}
+{
+//"_xvk_smoothing_group" "754 758 764 766"
+}
+{
+"_xvk_smoothing_group" "668 765 762" // 763 (bad) // TODO: fix bad geometry
+}
+{
+"_xvk_smoothing_group" "2029 2028 2052 768 760 761 663"
+}
+{
+"_xvk_smoothing_excluded_pairs" "883 884 886 887 903 1156" // FIXME: bad autosmooth 
+}
