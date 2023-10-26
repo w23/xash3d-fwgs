@@ -39,17 +39,18 @@ typedef struct {
 	float f;
 } item_t;
 
-#define PREAMBLE(N) \
+#define PREAMBLE(N, type_) \
 	item_t items[N]; \
 	const urmom_desc_t desc = { \
 		.array = items, \
 		.count = COUNTOF(items), \
 		.item_size = sizeof(item_t), \
+		.type = type_, \
 	}; \
 	urmomInit(&desc)
 
 static int test_insert_find_remove( void ) {
-	PREAMBLE(4);
+	PREAMBLE(4, kUrmomString);
 
 	const urmom_insert_t i = urmomInsert(&desc, "bidonchik");
 	CHECK_NOT_EQUAL_I(i.index, -1);
@@ -75,7 +76,7 @@ static int test_insert_find_remove( void ) {
 }
 
 static int test_find_nonexistent( void ) {
-	PREAMBLE(4);
+	PREAMBLE(4, kUrmomString);
 
 	const int found = urmomFind(&desc, "kishochki");
 	CHECK_EQUAL_I(found, -1);
@@ -83,7 +84,7 @@ static int test_find_nonexistent( void ) {
 }
 
 static int test_insert_find_many( void ) {
-	PREAMBLE(4);
+	PREAMBLE(4, kUrmomString);
 
 	const urmom_insert_t a = urmomInsert(&desc, "smetanka");
 	CHECK_NOT_EQUAL_I(a.index, -1);
@@ -106,7 +107,7 @@ static int test_insert_find_many( void ) {
 }
 
 static int test_overflow( void ) {
-	PREAMBLE(4);
+	PREAMBLE(4, kUrmomString);
 
 	const urmom_insert_t a = urmomInsert(&desc, "smetanka");
 	CHECK_NOT_EQUAL_I(a.index, -1);
@@ -160,7 +161,7 @@ static int test_overflow( void ) {
 
 // Assumes FNV-1a
 static int test_hash_collision( void ) {
-	PREAMBLE(4);
+	PREAMBLE(4, kUrmomString);
 
 	const urmom_insert_t a = urmomInsert(&desc, "costarring");
 	CHECK_NOT_EQUAL_I(a.index, -1);
@@ -182,6 +183,32 @@ static int test_hash_collision( void ) {
 	return 1;
 }
 
+static int test_insert_find_remove_insensitive( void ) {
+	PREAMBLE(4, kUrmomStringInsensitive);
+
+	const urmom_insert_t i = urmomInsert(&desc, "bidonchik");
+	CHECK_NOT_EQUAL_I(i.index, -1);
+	CHECK_EQUAL_I(i.created, 1);
+	CHECK_EQUAL_S(items[i.index].hdr_.key, "bidonchik");
+
+	const int found = urmomFind(&desc, "BIDONCHIk");
+	CHECK_EQUAL_I(found, i.index);
+
+	const urmom_insert_t i2 = urmomInsert(&desc, "biDONChik");
+	CHECK_EQUAL_I(i2.index, i.index);
+	CHECK_EQUAL_I(i2.created, 0);
+	CHECK_EQUAL_S(items[i.index].hdr_.key, "bidonchik");
+
+	const int removed = urmomRemove(&desc, "bidonCHIK");
+	CHECK_EQUAL_I(removed, i.index);
+	CHECK_EQUAL_I(items[i.index].hdr_.key[0], '\0');
+
+	const int not_found = urmomFind(&desc, "bidonchik");
+	CHECK_EQUAL_I(not_found, -1);
+
+	return 1;
+}
+
 static int test_fail( void ) {
 	//CHECK_EQUAL_S("sapogi", "tapki");
 	return 1;
@@ -192,6 +219,7 @@ static int test_fail( void ) {
 	X(test_find_nonexistent) \
 	X(test_insert_find_many) \
 	X(test_hash_collision) \
+	X(test_insert_find_remove_insensitive) \
 	X(test_fail) \
 
 int main( void ) {

@@ -46,6 +46,7 @@ qboolean R_TexturesInit( void ) {
 		.array = g_textures.all,
 		.count = COUNTOF(g_textures.all),
 		.item_size = sizeof(g_textures.all[0]),
+		.type = kUrmomStringInsensitive,
 	};
 
 	urmomInit(&g_textures.all_desc);

@@ -5,6 +5,7 @@
 - [x] handle existing image on texture upload
     - [x] sanely recreate
     - [x] reuse if possible
+- [x] case insensitive hash table
 
 # 2023-10-24 E318
 - [ ] use new hashmap for textures

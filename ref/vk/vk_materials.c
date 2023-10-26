@@ -17,7 +17,7 @@ static r_vk_material_t k_default_material = {
 	.tex_base_color = -1,
 	.tex_metalness = 0,
 	.tex_roughness = 0,
-	.tex_normalmap = 0,
+	.tex_normalmap = 0, // 0 means no normal map, checked in shaders
 
 	.metalness = 0.f,
 	.roughness = 1.f,
@@ -309,7 +309,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			for_tex_id = R_TextureFindByNameLike(value);
 			DEBUG("R_TextureFindByNameLike(%s)=%d", value, for_tex_id);
 			if (for_tex_id >= 0)
-				ASSERT(strstr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
+				ASSERT(strcasestr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
 			g_stats.texture_lookup_duration_ns += aprof_time_now_ns() - lookup_begin_ns;
 			g_stats.texture_lookups++;
 			Q_strncpy(name, value, sizeof name);

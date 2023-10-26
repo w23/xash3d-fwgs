@@ -24,6 +24,18 @@ static uint32_t hash32FNV1aStr(const char *str) {
 	}
 	return hash;
 }
+static uint32_t hash32FNV1aStrI(const char *str) {
+	static const uint32_t fnv_offset_basis = 0x811c9dc5u;
+	static const uint32_t fnv_prime = 0x01000193u;
+
+	uint32_t hash = fnv_offset_basis;
+	while (*str) {
+		hash ^= (*str & 0xdf);
+		hash *= fnv_prime;
+		++str;
+	}
+	return hash;
+}
 
 // Sets all items to empty
 void urmomInit(const urmom_desc_t* desc) {
@@ -39,10 +51,39 @@ void urmomInit(const urmom_desc_t* desc) {
 	}
 }
 
+static uint32_t hashKey(urmom_type_t type, const char *key) {
+	uint32_t hash;
+	switch (type) {
+		case kUrmomString:
+			hash = hash32FNV1aStr(key);
+			break;
+		case kUrmomStringInsensitive:
+			hash = hash32FNV1aStrI(key);
+			break;
+		default:
+			ASSERT(!"Invalid hash table key type");
+	}
+
+	return hash & 0x7fffffffu;
+}
+
+static int sameKey(urmom_type_t type, const char *key1, const char *key2) {
+	switch (type) {
+		case kUrmomString:
+			return strcmp(key1, key2) == 0;
+		case kUrmomStringInsensitive:
+			return strcasecmp(key1, key2) == 0;
+		default:
+			ASSERT(!"Invalid hash table key type");
+	}
+
+	return 0;
+}
+
 // Returns index of the element with the key if found, -1 otherwise
 int urmomFind(const urmom_desc_t* desc, const char* key) {
 	const char *ptr = desc->array;
-	const uint32_t hash = hash32FNV1aStr(key) & 0x7fffffffu;
+	const uint32_t hash = hashKey(desc->type, key);
 	const uint32_t mask = (desc->count - 1);
 	const int start_index = hash & mask;
 
@@ -50,7 +91,7 @@ int urmomFind(const urmom_desc_t* desc, const char* key) {
 		const urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
-			if (hdr->hash == hash && strcmp(key, hdr->key) == 0)
+			if (hdr->hash == hash && sameKey(desc->type, key, hdr->key))
 				return index;
 		} else if (URMOM_IS_EMPTY(*hdr))
 			// Reached the end of non-empty chain, not found
@@ -70,7 +111,7 @@ int urmomFind(const urmom_desc_t* desc, const char* key) {
 // Returns index of the element either found or empty slot where this could be inserted. If full, -1.
 urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key) {
 	char *ptr = desc->array;
-	const uint32_t hash = hash32FNV1aStr(key) & 0x7fffffffu;
+	const uint32_t hash = hashKey(desc->type, key);
 	const uint32_t mask = (desc->count - 1);
 	const int start_index = hash & mask;
 
@@ -80,7 +121,7 @@ urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key) {
 		const urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
-			if (hdr->hash == hash && strcmp(key, hdr->key) == 0)
+			if (hdr->hash == hash && sameKey(desc->type, key, hdr->key))
 				// Return existing item
 				return (urmom_insert_t){.index = index, .created = 0};
 		} else {

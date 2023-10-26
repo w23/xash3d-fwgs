@@ -21,6 +21,15 @@ typedef struct urmom_header_s {
 #define URMOM_IS_EMPTY(hdr) ((hdr).state == 0 && (hdr).hash == 0)
 #define URMOM_IS_DELETED(hdr) ((hdr).state == 0 && (hdr).hash != 0)
 
+// TODO:
+// - rename this to key type
+// - allow passing key not as const char*, but as string_view
+// - (or even just void*+size, which would almost make it universal)
+typedef enum {
+	kUrmomString,
+	kUrmomStringInsensitive,
+} urmom_type_t;
+
 typedef struct urmom_desc_s {
 	// Pointer to the beginning of the array of items.
 	// Each item is a struct that has urmom_header_t as its first field
@@ -31,6 +40,8 @@ typedef struct urmom_desc_s {
 
 	// Maximum number of items in the array
 	uint32_t count;
+
+	urmom_type_t type;
 } urmom_desc_t;
 
 // Sets all items to empty

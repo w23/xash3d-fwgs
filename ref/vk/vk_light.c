@@ -216,11 +216,6 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 			DEBUG("rad entry (%d): %s %f %f %f (%f)", num, name, r, g, b, scale);
 
 			{
-				for (char* p = name; *p; ++p)
-					*p = Q_tolower(*p);
-			}
-
-			{
 				const char *wad_name = NULL;
 				char *texture_name = Q_strchr(name, '/');
 				string texname;
