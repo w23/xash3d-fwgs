@@ -69,6 +69,23 @@
 }
 
 {
-	_xvk_ent_id "321 322 323 324"
-	_xvk_smooth_entire_model "1"
+_xvk_ent_id "329 321 322 323 324"
+_xvk_smooth_entire_model "1"
+}
+//{ // FOR TESTING
+//"_xvk_smoothing_group" "5577 5575 5579 5581 5576 5586 5583 5585 5584 5582 5580 5578 " // 5569 5572 5571 5570 5573 + //5567 5565 5568 5566
+//}
+
+
+{
+//"_xvk_smoothing_excluded_pairs" "2790 2791 2792 2793 3187 2850 2874 2871 2872 2853 2900 2901 3182 3181" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_excluded_pairs" "2792 2790 2793 2791 2871 2850 2872 3187" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_excluded_pairs" "2788 2786 2787 3191 2786 2787 2870 2849 2868" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_threshold" "44" //workaround
 }
