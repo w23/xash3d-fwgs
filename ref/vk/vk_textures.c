@@ -356,6 +356,22 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	return true;
 }
 
+static qboolean needToCreateImage( int index, vk_texture_t *tex, const r_vk_image_create_t *create ) {
+	if (tex->vk.image.image == VK_NULL_HANDLE)
+		return true;
+
+	if (tex->vk.image.width == create->width
+		&& tex->vk.image.height == create->height
+		&& tex->vk.image.format == create->format
+		&& tex->vk.image.mips == create->mips
+		&& tex->vk.image.layers == create->layers
+		&& tex->vk.image.flags == create->flags)
+		return false;
+
+	WARN("Re-creating texture '%s' image", create->debug_name);
+	R_VkTextureDestroy( index, tex );
+	return true;
+}
 
 static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
 	tex->total_size = 0;
@@ -367,6 +383,8 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
 		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
 		const int mipCount = compute_mips ? CalcMipmapCount( tex, true ) : layers[0]->numMips;
+		const int width = layers[0]->width;
+		const int height = layers[0]->height;
 
 		if (format == VK_FORMAT_UNDEFINED) {
 			ERR("Unsupported PF format %d", layers[0]->type);
@@ -376,24 +394,17 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 		if (!validatePicLayers(TEX_NAME(tex), layers, num_layers))
 			return false;
 
-		tex->width = layers[0]->width;
-		tex->height = layers[0]->height;
-
 		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", index, TEX_NAME(tex), mipCount, compute_mips, num_layers);
 
 		// TODO (not sure why, but GL does this)
 		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
 		// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
-		// TODO optimize: do not destroy if size+format+mips+... haven't changed
-		if (tex->vk.image.image != VK_NULL_HANDLE)
-			R_VkTextureDestroy( index, tex );
-
 		{
 			const r_vk_image_create_t create = {
 				.debug_name = TEX_NAME(tex),
-				.width = tex->width,
-				.height = tex->height,
+				.width = width,
+				.height = height,
 				.mips = mipCount,
 				.layers = num_layers,
 				.format = format,
@@ -404,8 +415,13 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 					| (cubemap ? kVkImageFlagIsCubemap : 0)
 					| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
 			};
-			tex->vk.image = R_VkImageCreate(&create);
+
+			if (needToCreateImage(index, tex, &create))
+				tex->vk.image = R_VkImageCreate(&create);
 		}
+
+		tex->width = width;
+		tex->height = height;
 
 		{
 			R_VkImageUploadBegin(&tex->vk.image);

@@ -100,6 +100,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	image.height = create->height;
 	image.mips = create->mips;
 	image.layers = create->layers;
+	image.flags = create->flags;
 
 	return image;
 }

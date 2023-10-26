@@ -644,9 +644,6 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	if (insert.created)
 		tex->refcount = 1;
 
-	tex->width = pic->width;
-	tex->height = pic->height;
-
 	return insert.index;
 }
 

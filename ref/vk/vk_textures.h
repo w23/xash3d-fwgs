@@ -11,8 +11,6 @@ typedef struct vk_texture_s
 {
 	urmom_header_t hdr_;
 
-	//char name[256];
-
 	int width, height;
 	uint32_t flags;
 	int total_size;

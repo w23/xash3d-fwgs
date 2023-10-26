@@ -2,9 +2,9 @@
 - [x] fix pbr materials disappearing
 - [x] fix surface lights
 - [ ] pbr/material refcount leaks
-- [ ] handle existing image on texture upload
-    - [ ] sanely recreate
-    - [ ] reuse if possible
+- [x] handle existing image on texture upload
+    - [x] sanely recreate
+    - [x] reuse if possible
 
 # 2023-10-24 E318
 - [ ] use new hashmap for textures
