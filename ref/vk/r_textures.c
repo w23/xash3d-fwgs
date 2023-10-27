@@ -68,8 +68,49 @@ qboolean R_TexturesInit( void ) {
 
 void R_TexturesShutdown( void )
 {
-	for( int i = 0; i < COUNTOF(g_textures.all); i++ )
-		R_TextureFree( i );
+	for( int i = 0; i < COUNTOF(g_textures.all); i++ ) {
+		const vk_texture_t *const tex = g_textures.all + i;
+		if (URMOM_IS_OCCUPIED(tex->hdr_))
+			R_TextureFree( i );
+	}
+
+	int is_deleted_count = 0;
+	int clusters[16] = {0};
+	int current_cluster_begin = -1;
+	for( int i = 0; i < COUNTOF(g_textures.all); i++ ) {
+		const vk_texture_t *const tex = g_textures.all + i;
+
+		if (URMOM_IS_EMPTY(tex->hdr_)) {
+			if (current_cluster_begin >= 0) {
+				const int cluster_length = i - current_cluster_begin;
+				clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
+			}
+			current_cluster_begin = -1;
+		} else {
+			if (current_cluster_begin < 0)
+				current_cluster_begin = i;
+		}
+
+		if (URMOM_IS_DELETED(tex->hdr_))
+			++is_deleted_count;
+
+		if (!URMOM_IS_OCCUPIED(tex->hdr_))
+			continue;
+
+		DEBUG("stale texture[%d] '%s' refcount=%d", i, TEX_NAME(tex), tex->refcount);
+	}
+
+	// TODO handle wraparound clusters
+	if (current_cluster_begin >= 0) {
+		const int cluster_length = COUNTOF(g_textures.all) - current_cluster_begin;
+		clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
+	}
+
+	DEBUG("Deleted slots in texture hash table: %d", is_deleted_count);
+	for (int i = 1; i < COUNTOF(clusters); ++i)
+		DEBUG("Texture hash table cluster[%d] = %d", i, clusters[i]);
+
+	DEBUG("Clusters longer than %d: %d", (int)COUNTOF(clusters)-1, clusters[0]);
 
 	R_VkTexturesShutdown();
 }
@@ -793,8 +834,12 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 
 	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
 	// TODO where did we come from?
-	if (insert.created)
+	if (insert.created) {
 		tex->refcount = 1;
+
+		// Loading from buffer is ref_interface only
+		tex->ref_interface_visible = true;
+	}
 
 	return insert.index;
 }

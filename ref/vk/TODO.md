@@ -1,6 +1,13 @@
 # 2023-10-27 E320
 - [x] fix windows build
 - [x] track texture visibility for ref_api via flag and refcounts
+- [ ] devmem assert, not all textures are destroyed in wagonchik
+    - [ ] new material names+fixme => move to material hash table
+    - [x] preallocated default textures
+- [ ] check mips
+- [x] check urmom stats after a few different changelevels
+    - [x] COUNT(IS_DELETED)
+    - [x] clusters size histogram
 - [ ] massage texture code
     - [ ] single return/goto cleanup
     - [ ] pass args via structs?
