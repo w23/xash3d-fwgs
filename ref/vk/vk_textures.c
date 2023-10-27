@@ -47,7 +47,7 @@ static struct {
 #define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
 
 size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
-int CalcMipmapCount( vk_texture_t *tex, qboolean haveBuffer );
+int CalcMipmapCount( int width, int height, uint32_t flags, qboolean haveBuffer );
 qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layers, int num_layers);
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
 
@@ -380,11 +380,11 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 		if (!uploadRawKtx2(index, tex, layers[0]))
 			return false;
 	} else {
-		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
-		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
-		const int mipCount = compute_mips ? CalcMipmapCount( tex, true ) : layers[0]->numMips;
 		const int width = layers[0]->width;
 		const int height = layers[0]->height;
+		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
+		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
+		const int mipCount = compute_mips ? CalcMipmapCount( width, height, tex->flags, true ) : layers[0]->numMips;
 
 		if (format == VK_FORMAT_UNDEFINED) {
 			ERR("Unsupported PF format %d", layers[0]->type);

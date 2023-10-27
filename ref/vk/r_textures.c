@@ -464,26 +464,23 @@ size_t CalcImageSize( pixformat_t format, int width, int height, int depth ) {
 	return size;
 }
 
-int CalcMipmapCount( vk_texture_t *tex, qboolean haveBuffer )
+int CalcMipmapCount( int width, int height, uint32_t flags, qboolean haveBuffer )
 {
-	int	width, height;
 	int	mipcount;
-
-	ASSERT( tex != NULL );
 
 	if( !haveBuffer )// || tex->target == GL_TEXTURE_3D )
 		return 1;
 
 	// generate mip-levels by user request
-	if( FBitSet( tex->flags, TF_NOMIPMAP ))
+	if( FBitSet( flags, TF_NOMIPMAP ))
 		return 1;
 
 	// mip-maps can't exceeds 16
 	for( mipcount = 0; mipcount < 16; mipcount++ )
 	{
-		width = Q_max( 1, ( tex->width >> mipcount ));
-		height = Q_max( 1, ( tex->height >> mipcount ));
-		if( width == 1 && height == 1 )
+		const int mip_width = Q_max( 1, ( width >> mipcount ));
+		const int mip_height = Q_max( 1, ( height >> mipcount ));
+		if( mip_width == 1 && mip_height == 1 )
 			break;
 	}
 
