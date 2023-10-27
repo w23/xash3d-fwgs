@@ -1,3 +1,11 @@
+# 2023-10-27 E320
+- [x] fix windows build
+- [x] track texture visibility for ref_api via flag and refcounts
+- [ ] massage texture code
+    - [ ] single return/goto cleanup
+    - [ ] pass args via structs?
+    - [ ] collapse texture uploading into a single function
+
 # 2023-10-26 E319
 - [x] fix pbr materials disappearing
 - [x] fix surface lights

@@ -61,3 +61,8 @@ urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key);
 int urmomRemove(const urmom_desc_t* desc, const char *key);
 
 void urmomRemoveByIndex(const urmom_desc_t* desc, int index);
+
+// TODO erase IS_DELETED tails
+// void urmomCleanup()
+
+// TODO optimize storage: collapse non-tail IS_DELETED sequences. Items will have new placement, so all indexes will be stale

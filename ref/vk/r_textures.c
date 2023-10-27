@@ -39,6 +39,8 @@ void unloadSkybox( void );
 static void createDefaultTextures( void );
 static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...);
 
+#define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
+
 qboolean R_TexturesInit( void ) {
 	g_textures.mempool = Mem_AllocPool( "vktextures" );
 
@@ -588,7 +590,7 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	return g_textures.all[texnum].hdr_.key;
 }
 
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean acquire ) {
+static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean ref_interface ) {
 	if( !checkTextureName( name ))
 		return 0;
 
@@ -603,8 +605,12 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	if (!insert.created && !force_update) {
 		DEBUG("Found existing texture %s(%d) refcount=%d",
 			TEX_NAME(tex), insert.index, tex->refcount);
-		if (acquire)
+		if (!ref_interface) {
 			tex->refcount++;
+		} else if (!tex->ref_interface_visible) {
+			tex->ref_interface_visible = true;
+			tex->refcount++;
+		}
 		return insert.index;
 	}
 
@@ -644,21 +650,25 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 
 	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
 	// TODO where did we come from?
-	if (insert.created)
+	if (insert.created) {
 		tex->refcount = 1;
+		if (ref_interface)
+			tex->ref_interface_visible = true;
+	}
+
 
 	return insert.index;
 }
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
 	const qboolean force_update = false;
-	const qboolean acquire = false;
-	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update, acquire);
+	const qboolean ref_interface = true;
+	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update, ref_interface);
 }
 
-int R_TextureUploadFromFileEx( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
-	const qboolean acquire = true;
-	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload, acquire );
+int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
+	const qboolean ref_interface = false;
+	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload, ref_interface );
 }
 
 static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
@@ -670,14 +680,72 @@ static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const c
 	va_end( argptr );
 
 	const qboolean force_update = false;
-	const qboolean acquire = false;
-	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update, acquire);
+	const qboolean ref_interface = true;
+	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update, ref_interface);
+}
+
+static void releaseTexture( unsigned int texnum, qboolean ref_interface ) {
+	vk_texture_t *tex;
+	vk_texture_t **prev;
+	vk_texture_t *cur;
+
+	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
+
+	if( texnum <= 0 )
+		goto end;
+
+	ASSERT(texnum < COUNTOF(g_textures.all));
+
+	tex = g_textures.all + texnum;
+
+	// already freed?
+	if( !tex->vk.image.image )
+		goto end;
+
+	// debug
+	if( !TEX_NAME(tex)[0] )
+	{
+		ERR("%s: trying to free unnamed texture with index %u", __FUNCTION__, texnum );
+		goto end;
+	}
+
+	// Textures coming from legacy ref_interface_t api are not refcount-friendly
+	// Track them separately with a flags (and a single refcount ++/--)
+	if (ref_interface) {
+		if (!tex->ref_interface_visible)
+			return;
+		tex->ref_interface_visible = false;
+	}
+
+	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, TEX_NAME(tex), tex->refcount);
+	ASSERT(tex->refcount > 0);
+	--tex->refcount;
+
+	if (tex->refcount > 0)
+		goto end;
+
+	DEBUG("Freeing texture=%d(%s)", texnum, TEX_NAME(tex));
+
+	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
+
+	// remove from hash table
+	urmomRemoveByIndex(&g_textures.all_desc, texnum);
+
+	/*
+	// release source
+	if( tex->original )
+		gEngine.FS_FreeImage( tex->original );
+	*/
+
+	R_VkTextureDestroy( texnum, tex );
+
+end:
+	APROF_SCOPE_END(free);
 }
 
 void R_TextureFree( unsigned int texnum ) {
-	// FIXME this is incorrect and leads to missing textures
-	// Mark this texture as deleted for ref_api
-	R_TextureRelease( texnum );
+	const qboolean ref_interface = true;
+	releaseTexture( texnum, ref_interface );
 }
 
 static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update_only ) {
@@ -981,52 +1049,6 @@ void R_TextureAcquire( unsigned int texnum ) {
 }
 
 void R_TextureRelease( unsigned int texnum ) {
-	vk_texture_t *tex;
-	vk_texture_t **prev;
-	vk_texture_t *cur;
-
-	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
-
-	if( texnum <= 0 )
-		goto end;
-
-	ASSERT(texnum < COUNTOF(g_textures.all));
-
-	tex = g_textures.all + texnum;
-
-	// already freed?
-	if( !tex->vk.image.image )
-		goto end;
-
-	// debug
-	if( !TEX_NAME(tex)[0] )
-	{
-		ERR("R_TextureRelease: trying to free unnamed texture with index %u", texnum );
-		goto end;
-	}
-
-	DEBUG("Releasing texture=%d(%s) refcount=%d", texnum, TEX_NAME(tex), tex->refcount);
-	ASSERT(tex->refcount > 0);
-	--tex->refcount;
-
-	if (tex->refcount > 0)
-		goto end;
-
-	DEBUG("Freeing texture=%d(%s)", texnum, TEX_NAME(tex));
-
-	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
-
-	// remove from hash table
-	urmomRemoveByIndex(&g_textures.all_desc, texnum);
-
-	/*
-	// release source
-	if( tex->original )
-		gEngine.FS_FreeImage( tex->original );
-	*/
-
-	R_VkTextureDestroy( texnum, tex );
-
-end:
-	APROF_SCOPE_END(free);
+	const qboolean ref_interface = false;
+	releaseTexture( texnum, ref_interface );
 }

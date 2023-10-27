@@ -83,7 +83,7 @@ static struct {
 
 static int loadTexture( const char *filename, qboolean force_reload, colorspace_hint_e colorspace ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
-	const int tex_id = R_TextureUploadFromFileEx( filename, colorspace, force_reload );
+	const int tex_id = R_TextureUploadFromFileExAcquire( filename, colorspace, force_reload );
 	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;

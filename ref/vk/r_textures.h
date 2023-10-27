@@ -44,6 +44,7 @@ extern vk_textures_global_t tglob;
 qboolean R_TexturesInit( void );
 void R_TexturesShutdown( void );
 
+////////////////////////////////////////////////////////////
 // Ref interface functions, exported
 // TODO mark names somehow, ie. R_TextureApi... ?
 int R_TextureFindByName( const char *name );
@@ -57,9 +58,24 @@ void R_TextureFree( unsigned int texnum );
 
 int R_TexturesGetParm( int parm, int arg );
 
+////////////////////////////////////////////////////////////
 // Extra functions used in ref_vk
+void R_TextureAcquire( unsigned int texnum );
+void R_TextureRelease( unsigned int texnum );
+
+typedef enum {
+	kColorspaceNative,
+	kColorspaceLinear,
+	kColorspaceGamma,
+} colorspace_hint_e;
+
+int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e colorspace, qboolean force_reload );
 
 int R_TextureFindByNameF( const char *fmt, ...);
+
+// Used by materials to piggy-back onto texture name-to-index hash table
+// FIXME remove
+int R_TextureCreateDummy_FIXME( const char *name );
 
 // Tries to find a texture by its short name
 // Full names depend on map name, wad name, etc. This function tries them all.
