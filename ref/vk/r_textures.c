@@ -1049,16 +1049,16 @@ struct vk_texture_s *R_TextureGetByIndex( uint index )
 {
 	ASSERT(index >= 0);
 	ASSERT(index < MAX_TEXTURES);
-	//return g_vktextures.textures + index;
-
-	vk_texture_t *const tex = g_textures.all + index;
-	if (!URMOM_IS_OCCUPIED(tex->hdr_))
-		WARN("Accessing empty texture %d", index);
-	return tex;
+	return g_textures.all + index;
 }
 
 int R_TexturesGetParm( int parm, int arg ) {
 	const vk_texture_t *const tex = R_TextureGetByIndex( arg );
+	if (!URMOM_IS_OCCUPIED(tex->hdr_))
+		WARN("%s: accessing empty texture %d", __FUNCTION__, arg);
+
+	if (!tex->ref_interface_visible)
+		return 0;
 
 	switch(parm){
 	case PARM_TEX_WIDTH:
@@ -1088,6 +1088,7 @@ int R_TexturesGetParm( int parm, int arg ) {
 
 void R_TextureAcquire( unsigned int texnum ) {
 	vk_texture_t *const tex = R_TextureGetByIndex(texnum);
+	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
 	++tex->refcount;
 
 	DEBUG("Acquiring existing texture %s(%d) refcount=%d", TEX_NAME(tex), texnum, tex->refcount);

@@ -512,7 +512,9 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], 
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
 	ASSERT( index < MAX_TEXTURES );
 	// TODO make an array of unorm descriptors
-	return R_TextureGetByIndex(index)->vk.descriptor_unorm;
+	const vk_texture_t *const tex = R_TextureGetByIndex(index);
+	ASSERT(tex->vk.descriptor_unorm != VK_NULL_HANDLE);
+	return tex->vk.descriptor_unorm;
 }
 
 const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void ) {

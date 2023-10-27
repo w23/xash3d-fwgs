@@ -4,14 +4,19 @@
 - [ ] devmem assert, not all textures are destroyed in wagonchik
     - [ ] new material names+fixme => move to material hash table
     - [x] preallocated default textures
-- [ ] check mips
 - [x] check urmom stats after a few different changelevels
     - [x] COUNT(IS_DELETED)
     - [x] clusters size histogram
+- [ ] silence logs
+    - [x] "accessing empty texture"
+    - [x] "found existing texture"
+    - [ ] ..
+- [ ] check mips
 - [ ] massage texture code
     - [ ] single return/goto cleanup
     - [ ] pass args via structs?
     - [ ] collapse texture uploading into a single function
+- [ ] why are there references to \*unused
 
 # 2023-10-26 E319
 - [x] fix pbr materials disappearing
