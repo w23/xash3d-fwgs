@@ -12,6 +12,10 @@
 #define COUNTOF(a) (sizeof(a)/sizeof(a[0]))
 #endif
 
+#if defined(_WIN32) && !defined(strcasecmp)
+#define strcasecmp _stricmp
+#endif
+
 static uint32_t hash32FNV1aStr(const char *str) {
 	static const uint32_t fnv_offset_basis = 0x811c9dc5u;
 	static const uint32_t fnv_prime = 0x01000193u;
