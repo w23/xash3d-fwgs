@@ -319,7 +319,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			for_tex_id = R_TextureFindByNameLike(value);
 			DEBUG("R_TextureFindByNameLike(%s)=%d", value, for_tex_id);
 			if (for_tex_id >= 0)
-				ASSERT(strcasestr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
+				ASSERT(Q_stristr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
 			g_stats.texture_lookup_duration_ns += aprof_time_now_ns() - lookup_begin_ns;
 			g_stats.texture_lookups++;
 			Q_strncpy(name, value, sizeof name);
