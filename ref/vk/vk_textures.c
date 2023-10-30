@@ -171,6 +171,7 @@ static void textureDestroy( unsigned int index );
 void R_VkTexturesShutdown( void ) {
 	unloadSkybox();
 	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
+	R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
 
 	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
 		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
@@ -377,7 +378,7 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 			.debug_name = TEX_NAME(tex),
 			.width = header->pixelWidth,
 			.height = header->pixelHeight,
-			.depth = header->pixelDepth,
+			.depth = Q_max(1, header->pixelDepth),
 			.mips = header->levelCount,
 			.layers = 1, // TODO or 6 for cubemap; header->faceCount
 			.format = header->vkFormat,
@@ -454,7 +455,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 	} else {
 		const int width = layers[0]->width;
 		const int height = layers[0]->height;
-		const int depth = layers[0]->depth;
+		const int depth = Q_max(1, layers[0]->depth);
 		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
 		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
 		const int mipCount = compute_mips ? CalcMipmapCount( width, height, depth, tex->flags, true ) : layers[0]->numMips;

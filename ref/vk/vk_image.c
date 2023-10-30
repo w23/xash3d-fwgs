@@ -32,6 +32,8 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	const qboolean is_cubemap = !!(create->flags & kVkImageFlagIsCubemap);
 	const qboolean is_3d = create->depth > 1;
 
+	ASSERT(create->depth > 0);
+
 	ASSERT(is_cubemap + is_3d != 2);
 
 	const VkFormat unorm_format = unormFormatFor(create->format);

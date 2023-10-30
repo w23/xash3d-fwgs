@@ -2,11 +2,12 @@
 - [x] missing skybox
 - [x] explicitly free default textures; and complain about any leftovers
 - [x] use the new hash table in materials too, remove dummy textures
+- [x] why are there references to \*unused
 - [ ] restore blue noise
     - [x] vk_texture_t blue_noise; 3d texture
 	- [x] separate binding similar to skybox in vk_rtx.c and shaders
 	- [x] patch shader function
-- [x] why are there references to \*unused
+	- [ ] load 64xpngs into a single big pic
 - [ ] massage texture code
     - [ ] single return/goto cleanup
     - [ ] pass args via structs?

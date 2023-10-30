@@ -8,8 +8,7 @@
 
 vec4 blueNoise(ivec3 v) {
 	ivec3 size = textureSize(blue_noise_texture, 0);
-	v %= size.z;
-	return texelFetch(blue_noise_texture, v.xy % size.xy, 0);
+	return texelFetch(blue_noise_texture, v % size, 0);
 }
 
 #endif // ifndef BLUENOISE_H_INCLUDED
