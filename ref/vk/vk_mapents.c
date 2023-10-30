@@ -397,7 +397,7 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
-	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_texture && props->_xvk_texture[0] == '\0');
+	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_material && props->_xvk_material[0] == '\0');
 
 	for (int i = 0; i < props->_xvk_surface_id.num; ++i) {
 		const int index = props->_xvk_surface_id.values[i];
@@ -412,8 +412,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			g_patch.surfaces_count = num_surfaces;
 			for (int i = 0; i < num_surfaces; ++i) {
 				g_patch.surfaces[i].flags = Patch_Surface_NoPatch;
-				g_patch.surfaces[i].tex_id = -1;
-				g_patch.surfaces[i].tex = NULL;
+				g_patch.surfaces[i].material_ref.index = -1;
 			}
 		}
 
@@ -425,22 +424,15 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			continue;
 		}
 
-		if (have_fields & Field__xvk_texture) {
-			const int tex_id = R_TextureFindByNameLike( props->_xvk_texture );
-			DEBUG("Patch for surface %d with texture \"%s\" -> %d", index, props->_xvk_texture, tex_id);
-			psurf->tex_id = tex_id;
-
-			// Find texture_t for this index
-			for (int i = 0; i < map->numtextures; ++i) {
-				const texture_t* const tex = map->textures[i];
-				if (tex->gl_texturenum == tex_id) {
-					psurf->tex = tex;
-					psurf->tex_id = -1;
-					break;
-				}
+		if (have_fields & Field__xvk_material) {
+			const r_vk_material_ref_t mat = R_VkMaterialGetForName( props->_xvk_material );
+			if (mat.index >= 0) {
+				DEBUG("Patch for surface %d with material \"%s\" -> %d", index, props->_xvk_material, mat.index);
+				psurf->material_ref = mat;
+				psurf->flags |= Patch_Surface_Material;
+			} else {
+				ERR("Cannot patch surface %d with material \"%s\": material not found", index, props->_xvk_material);
 			}
-
-			psurf->flags |= Patch_Surface_Texture;
 		}
 
 		if (have_fields & Field__light) {

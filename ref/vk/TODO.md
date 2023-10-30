@@ -1,9 +1,9 @@
 # 2023-10-30 E321
 - [x] missing skybox
 - [x] explicitly free default textures; and complain about any leftovers
-- [ ] use the new hash table in materials too, remove dummy textures
+- [x] use the new hash table in materials too, remove dummy textures
 - [ ] restore blue noise
-- [ ] why are there references to \*unused
+- [x] why are there references to \*unused
 - [ ] massage texture code
     - [ ] single return/goto cleanup
     - [ ] pass args via structs?

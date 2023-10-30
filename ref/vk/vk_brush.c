@@ -404,8 +404,8 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 
 static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
 
-static qboolean isSurfaceAnimated( const msurface_t *s, const struct texture_s *base_override ) {
-	const texture_t	*base = base_override ? base_override : s->texinfo->texture;
+static qboolean isSurfaceAnimated( const msurface_t *s ) {
+	const texture_t *base = s->texinfo->texture;
 
 	/* FIXME don't have ent here, need to check both explicitly
 	if( ent && ent->curstate.frame ) {
@@ -483,8 +483,8 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
 		return BrushSurface_Hidden;
 	}
 
-	const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
-	if (isSurfaceAnimated(surf, texture_override)) {
+	const qboolean patched_material = patch_surface && !!(patch_surface->flags & Patch_Surface_Material);
+	if (!patched_material && isSurfaceAnimated(surf)) {
 		return BrushSurface_Animated;
 	}
 
@@ -620,9 +620,9 @@ R_TextureAnimation
 Returns the proper texture for a given time and surface
 ===============
 */
-const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s, const struct texture_s *base_override )
+const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s )
 {
-	const texture_t	*base = base_override ? base_override : s->texinfo->texture;
+	const texture_t *base = s->texinfo->texture;
 	int	count, reletive;
 
 	if( ent && ent->curstate.frame )
@@ -745,8 +745,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
 			// Optionally patch by texture_s pointer and run animations
-			const struct texture_s *texture_override = patch_surface ? patch_surface->tex : NULL;
-			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate, texture_override);
+			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate);
 			const int new_tex_id = t->gl_texturenum;
 
 			if (new_tex_id >= 0 && new_tex_id != geom->ye_olde_texture) {
@@ -843,14 +842,9 @@ static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
 		VectorCopy( surf->plane->normal, out_normal );
 
 	// TODO scale normal by area -- bigger surfaces should have bigger impact
+	// NOTE scaling normal by area might be totally incorrect in many circumstances
+	// The more corect logic there is way more difficult
 	//VectorScale(normal, surf->plane.
-}
-
-static int getSurfaceTexture(const msurface_t *surf, int surface_index) {
-	const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-	if (psurf && psurf->tex_id >= 0)
-		return psurf->tex_id;
-	return surf->texinfo->texture->gl_texturenum;
 }
 
 static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_entire_model, int surf1, int surf2) {
@@ -887,10 +881,13 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_ent
 	}
 
 	// Do not join surfaces with different textures. Assume they belong to different objects.
-	const int t1 = getSurfaceTexture(mod->surfaces + surf1, surf1);
-	const int t2 = getSurfaceTexture(mod->surfaces + surf2, surf2);
-	if (t1 != t2)
-		return false;
+	{
+		// Should we also check texture/material patches too to filter out pairs which originally had
+		// same textures, but with patches do not?
+		if (mod->surfaces[surf1].texinfo->texture->gl_texturenum
+			!= mod->surfaces[surf2].texinfo->texture->gl_texturenum)
+			return false;
+	}
 
 	vec3_t n1, n2;
 	getSurfaceNormal(mod->surfaces + surf1, n1);
@@ -1094,8 +1091,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			// TODO this patching should probably override entity patching below
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-			if (psurf && psurf->tex_id >= 0)
-				tex_id = psurf->tex_id;
 
 			const brush_surface_type_e type = getSurfaceType(surf, surface_index);
 			switch (type) {
@@ -1122,9 +1117,14 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			}
 
 			model_geometry->ye_olde_texture = orig_tex_id;
-
 			qboolean material_assigned = false;
-			if (entity_patch) {
+
+			if (psurf && (psurf->flags & Patch_Surface_Material)) {
+				model_geometry->material = R_VkMaterialGetForRef(psurf->material_ref);
+				material_assigned = true;
+			}
+
+			if (!material_assigned && entity_patch) {
 				for (int i = 0; i < entity_patch->matmap_count; ++i) {
 					if (entity_patch->matmap[i].from_tex == orig_tex_id) {
 						model_geometry->material = R_VkMaterialGetForTexture(entity_patch->matmap[i].to_mat.index);

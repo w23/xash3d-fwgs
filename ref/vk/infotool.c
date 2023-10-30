@@ -65,7 +65,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 
 	if (surf && ent && ent->model && ent->model->surfaces) {
 		const int surface_index = surf - ent->model->surfaces;
-		const texture_t *current_tex = R_TextureAnimation(ent, surf, NULL);
+		const texture_t *current_tex = R_TextureAnimation(ent, surf);
 		const int tex_id = current_tex->gl_texturenum;
 		const char *const tex_name = R_TextureGetNameByIndex( tex_id );
 		const texture_t *tex = surf->texinfo->texture;

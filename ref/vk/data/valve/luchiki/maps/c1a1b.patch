@@ -5,7 +5,7 @@
 { // TODO: animate texture
 "_xvk_surface_id" "3391 3407" // +0~FIFTS_LGHT4   160 170 220  4000
 "_light" "160 170 220  5000"
-//"_xvk_texture" "WHITE1_ANIMATE"
+//"_xvk_material" "WHITE1_ANIMATE"
 }
 
 // section 1

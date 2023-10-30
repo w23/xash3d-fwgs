@@ -48,7 +48,7 @@
 
 {
 "_xvk_surface_id" "4592 4593 4594 4591 4589" // remove additive "god rays" fade2
-"_xvk_texture" ""
+"_xvk_material" ""
 }
 
 // section 4
@@ -103,47 +103,47 @@
 // fix wrong textures with texture coordinates
 {
 "_xvk_surface_id" "2363 2352 2351 2386 2389 2562 1002 1003 1013 1014"
-"_xvk_texture" "crete4_flr03"
+"_xvk_material" "crete4_flr03"
 "_xvk_tex_offset" "20 -15.5"
 "_xvk_tex_scale" "0.5 1"
 }
 
 { // i tak soydet
 "_xvk_surface_id" "2362"
-"_xvk_texture" "crete4_flr03"
+"_xvk_material" "crete4_flr03"
 "_xvk_tex_offset" "10 16"
 "_xvk_tex_scale" "0.5 1"
 }
 { // i tak soydet
 "_xvk_surface_id" "2563"
-"_xvk_texture" "crete4_flr03"
+"_xvk_material" "crete4_flr03"
 "_xvk_tex_offset" "10 -15.5"
 "_xvk_tex_scale" "0.5 1"
 }
 {
 "_xvk_surface_id" "999" // LITEPANEL1
-"_xvk_texture" "+ALAB1_W6"
+"_xvk_material" "+ALAB1_W6"
 "_light" "0 0 0 0"
 "_xvk_tex_offset" "24 1"
 "_xvk_tex_scale" "2.5 0.3" // TODO: rotate at 90
 }
 {
 "_xvk_surface_id" "1010" // LITEPANEL1
-"_xvk_texture" "+0LAB1_W6"
+"_xvk_material" "+0LAB1_W6"
 "_light" "255 255 255 4000"
 "_xvk_tex_offset" "24 7"
 "_xvk_tex_scale" "2.5 0.3" // TODO: rotate at 90
 }
 {
 "_xvk_surface_id" "975 2354" // +0~FIFTS_LGHT01
-"_xvk_texture" "+0~FIFTIES_LGT2"
+"_xvk_material" "+0~FIFTIES_LGT2"
 "_light" "255 255 255 3000"
 "_xvk_tex_offset" "42 20"
 "_xvk_tex_scale" "2 1.2"
 }
 {
 "_xvk_surface_id" "974 2357" // +0~FIFTS_LGHT01
-"_xvk_texture" "+0~FIFTIES_LGT2"
+"_xvk_material" "+0~FIFTIES_LGT2"
 "_light" "255 255 255 3000"
 "_xvk_tex_offset" "42 -18"
 "_xvk_tex_scale" "2 1.2"
@@ -157,12 +157,12 @@
 }
 {
 "_xvk_surface_id" "796 795 807 800 809 808 805 801 796 780"
-"_xvk_texture" "generic_metal1" // TODO: texture -> material
+"_xvk_material" "generic_metal1" // TODO: texture -> material
 }
 {
 "_xvk_smoothing_group" "766 765 772 773 777 776 768 769"
 }
 {
 "_xvk_surface_id" "766 765 772 773 777 776 768 769"
-"_xvk_texture" "generic_metal1" // TODO: texture -> material
+"_xvk_material" "generic_metal1" // TODO: texture -> material
 }

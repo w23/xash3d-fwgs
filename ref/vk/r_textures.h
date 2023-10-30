@@ -73,10 +73,6 @@ int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e co
 
 int R_TextureFindByNameF( const char *fmt, ...);
 
-// Used by materials to piggy-back onto texture name-to-index hash table
-// FIXME remove
-int R_TextureCreateDummy_FIXME( const char *name );
-
 // Tries to find a texture by its short name
 // Full names depend on map name, wad name, etc. This function tries them all.
 // Returns -1 if not found

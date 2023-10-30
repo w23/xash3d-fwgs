@@ -83,11 +83,11 @@
 }
 {
 "_xvk_surface_id" "3728 3740 3771 3783" // ~SPOTRED
-"_xvk_texture" "+A~GENERIC86B" // red->green
+"_xvk_material" "+A~GENERIC86B" // red->green
 }
 {
 "_xvk_surface_id" "3722 3734 3765 3777" // +A~GENERIC86B
-"_xvk_texture" "~SPOTRED" // green->red
+"_xvk_material" "~SPOTRED" // green->red
 }
 
 
