@@ -37,6 +37,9 @@ static struct {
 void unloadSkybox( void );
 
 static void createDefaultTextures( void );
+static void destroyDefaultTextures( void );
+static void destroyTexture( uint texnum );
+
 static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...);
 
 #define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
@@ -68,16 +71,32 @@ qboolean R_TexturesInit( void ) {
 
 void R_TexturesShutdown( void )
 {
-	for( int i = 0; i < COUNTOF(g_textures.all); i++ ) {
+	destroyDefaultTextures();
+
+	// By this point ideally all texture should have been destroyed.
+	// However, there are two possible ways some texture could have been left over:
+	// 1. Our coding mistakes, not releasing textures when done
+	// 2. Engine and other external things not cleaning up (e.g. mainui is known to leave textures)
+	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
 		const vk_texture_t *const tex = g_textures.all + i;
-		if (URMOM_IS_OCCUPIED(tex->hdr_))
-			R_TextureFree( i );
+		if (!URMOM_IS_OCCUPIED(tex->hdr_))
+			continue;
+
+		// Try to free external textures
+		R_TextureFree( i );
+
+		// If it is still not deleted, complain loudly
+		if (URMOM_IS_OCCUPIED(tex->hdr_)) {
+			// TODO consider ASSERT, as this is a coding mistake
+			ERR("stale texture[%d] '%s' refcount=%d", i, TEX_NAME(tex), tex->refcount);
+			destroyTexture( i );
+		}
 	}
 
 	int is_deleted_count = 0;
 	int clusters[16] = {0};
 	int current_cluster_begin = -1;
-	for( int i = 0; i < COUNTOF(g_textures.all); i++ ) {
+	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
 		const vk_texture_t *const tex = g_textures.all + i;
 
 		if (URMOM_IS_EMPTY(tex->hdr_)) {
@@ -94,10 +113,7 @@ void R_TexturesShutdown( void )
 		if (URMOM_IS_DELETED(tex->hdr_))
 			++is_deleted_count;
 
-		if (!URMOM_IS_OCCUPIED(tex->hdr_))
-			continue;
-
-		DEBUG("stale texture[%d] '%s' refcount=%d", i, TEX_NAME(tex), tex->refcount);
+		ASSERT(!URMOM_IS_OCCUPIED(tex->hdr_));
 	}
 
 	// TODO handle wraparound clusters
@@ -353,6 +369,26 @@ static void createDefaultTextures( void )
 	}
 
 	// FIXME convert to 3d texture loadBlueNoiseTextures();
+}
+
+static void destroyDefaultTextures( void ) {
+	if (tglob.cinTexture > 0)
+		R_TextureFree( tglob.cinTexture );
+
+	if (tglob.blackTexture > 0)
+		R_TextureFree( tglob.blackTexture );
+
+	if (tglob.grayTexture > 0)
+		R_TextureFree( tglob.grayTexture );
+
+	if (tglob.whiteTexture > 0)
+		R_TextureFree( tglob.whiteTexture );
+
+	if (tglob.particleTexture > 0)
+		R_TextureFree( tglob.particleTexture );
+
+	if (tglob.defaultTexture > 0)
+		R_TextureFree( tglob.defaultTexture );
 }
 
 
@@ -722,6 +758,35 @@ static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const c
 	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update, ref_interface);
 }
 
+// Unconditionally destroy the texture
+static void destroyTexture( uint texnum ) {
+	ASSERT(texnum > 0); // 0 is *unused, cannot be destroyed
+	ASSERT(texnum < COUNTOF(g_textures.all));
+	vk_texture_t *const tex = g_textures.all + texnum;
+
+	DEBUG("Destroying texture=%d(%s)", texnum, TEX_NAME(tex));
+
+	if (tex->refcount > 0)
+		WARN("Texture '%s'(%d) has refcount=%d", TEX_NAME(tex), texnum, tex->refcount);
+
+	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
+
+	// remove from hash table
+	urmomRemoveByIndex(&g_textures.all_desc, texnum);
+
+	/*
+	// release source
+	if( tex->original )
+		gEngine.FS_FreeImage( tex->original );
+	*/
+
+	R_VkTextureDestroy( texnum, tex );
+	tex->refcount = 0;
+	tex->ref_interface_visible = false;
+	tex->flags = 0;
+}
+
+// Decrement refcount and destroy the texture if refcount has reached zero
 static void releaseTexture( unsigned int texnum, qboolean ref_interface ) {
 	vk_texture_t *tex;
 	vk_texture_t **prev;
@@ -762,20 +827,7 @@ static void releaseTexture( unsigned int texnum, qboolean ref_interface ) {
 	if (tex->refcount > 0)
 		goto end;
 
-	DEBUG("Freeing texture=%d(%s)", texnum, TEX_NAME(tex));
-
-	ASSERT(URMOM_IS_OCCUPIED(tex->hdr_));
-
-	// remove from hash table
-	urmomRemoveByIndex(&g_textures.all_desc, texnum);
-
-	/*
-	// release source
-	if( tex->original )
-		gEngine.FS_FreeImage( tex->original );
-	*/
-
-	R_VkTextureDestroy( texnum, tex );
+	destroyTexture(texnum);
 
 end:
 	APROF_SCOPE_END(free);
@@ -829,8 +881,6 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 		return 0;
 	}
 
-	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
-	// TODO where did we come from?
 	if (insert.created) {
 		tex->refcount = 1;
 
