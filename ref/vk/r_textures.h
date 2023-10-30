@@ -21,21 +21,8 @@ typedef struct vk_textures_global_s
 	int dlightTexture;	// custom dlight texture
 	int cinTexture;      	// cinematic texture
 
-// Hardcoded expected blue noise texture slot
-// TODO consider moving it into a separate resource bindable by request
-// TODO make it a 3D texture. Currently it's just a sequence of BLUE_NOISE_SIZE textures, loaded into consecutive slots.
-#define BLUE_NOISE_TEXTURE_ID 7
-
-// Hardcode blue noise texture size to 64x64x64
-#define BLUE_NOISE_SIZE 64
-
 	// TODO wire it up for ref_interface_t return
 	qboolean fCustomSkybox;
-
-	// TODO:
-	//1. vk_texture_t blue_noise; 3d texture
-	//2. separate binding similar to skybox in vk_rtx.c and shaders
-	//3. patch shader function
 } vk_textures_global_t;
 
 // TODO rename this consistently

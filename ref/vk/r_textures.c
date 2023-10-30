@@ -9,9 +9,6 @@
 #include "profiler.h"
 #include "unordered_roadmap.h"
 
-#define PCG_IMPLEMENT
-#include "pcg.h"
-
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
 #include "crclib.h" // COM_HashKey
@@ -227,70 +224,6 @@ static rgbdata_t *Common_FakeImage( int width, int height, int depth, int flags 
 	return r_image;
 }
 
-#define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
-
-static void generateFallbackNoiseTextures(void) {
-	pcg32_random_t pcg_state = {
-		BLUE_NOISE_SIZE * BLUE_NOISE_SIZE - 1,
-		17,
-	};
-	uint32_t scratch[BLUE_NOISE_SIZE * BLUE_NOISE_SIZE];
-	rgbdata_t pic = {
-		.width = BLUE_NOISE_SIZE,
-		.height = BLUE_NOISE_SIZE,
-		.depth = 1,
-		.flags = 0,
-		.type = PF_RGBA_32,
-		.size = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * 4,
-		.buffer = (byte*)&scratch,
-		.palette = NULL,
-		.numMips = 1,
-		.encode = 0,
-	};
-
-	int blueNoiseTexturesBegin = -1;
-	for (int i = 0; i < BLUE_NOISE_SIZE; ++i) {
-		for (int j = 0; j < COUNTOF(scratch); ++j) {
-			scratch[j] = pcg32_random_r(&pcg_state);
-		}
-
-		char name[256];
-		snprintf(name, sizeof(name), BLUE_NOISE_NAME_F, i);
-		const int texid = R_TextureUploadFromBufferNew(name, &pic, TF_NOMIPMAP);
-		ASSERT(texid > 0);
-
-		if (blueNoiseTexturesBegin == -1) {
-			ASSERT(texid == BLUE_NOISE_TEXTURE_ID);
-			blueNoiseTexturesBegin = texid;
-		} else {
-			ASSERT(blueNoiseTexturesBegin + i == texid);
-		}
-	}
-}
-
-static void loadBlueNoiseTextures(void) {
-	int blueNoiseTexturesBegin = -1;
-	for (int i = 0; i < 64; ++i) {
-		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
-
-		if (blueNoiseTexturesBegin == -1) {
-			if (texid <= 0) {
-				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
-				generateFallbackNoiseTextures();
-				return;
-			}
-
-			blueNoiseTexturesBegin = texid;
-		} else {
-			ASSERT(texid > 0);
-			ASSERT(blueNoiseTexturesBegin + i == texid);
-		}
-	}
-
-	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
-	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
-}
-
 static void createDefaultTextures( void )
 {
 	int	dx2, dy, d;
@@ -367,8 +300,6 @@ static void createDefaultTextures( void )
 
 		R_VkTexturesSkyboxUpload( "skybox_placeholder", sides, kColorspaceGamma, true );
 	}
-
-	// FIXME convert to 3d texture loadBlueNoiseTextures();
 }
 
 static void destroyDefaultTextures( void ) {
@@ -500,7 +431,7 @@ size_t CalcImageSize( pixformat_t format, int width, int height, int depth ) {
 	return size;
 }
 
-int CalcMipmapCount( int width, int height, uint32_t flags, qboolean haveBuffer )
+int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer )
 {
 	int	mipcount;
 
@@ -516,7 +447,8 @@ int CalcMipmapCount( int width, int height, uint32_t flags, qboolean haveBuffer 
 	{
 		const int mip_width = Q_max( 1, ( width >> mipcount ));
 		const int mip_height = Q_max( 1, ( height >> mipcount ));
-		if( mip_width == 1 && mip_height == 1 )
+		const int mip_depth = Q_max( 1, ( depth >> mipcount ));
+		if( mip_width == 1 && mip_height == 1 && mip_depth == 1 )
 			break;
 	}
 
@@ -622,9 +554,13 @@ qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layer
 			return false;
 		}
 
-		if (layers[0]->width != layers[i]->width || layers[0]->height != layers[i]->height) {
-			ERR("Texture %s layer %d has resolution %dx%d inconsistent with layer 0 resolution %dx%d",
-				name, i, layers[i]->width, layers[i]->height, layers[0]->width, layers[0]->height);
+		if (layers[0]->width != layers[i]->width
+			|| layers[0]->height != layers[i]->height
+			|| layers[0]->depth != layers[i]->depth) {
+			ERR("Texture %s layer %d has resolution %dx%d%d inconsistent with layer 0 resolution %dx%dx%d",
+				name, i,
+				layers[i]->width, layers[i]->height, layers[i]->depth,
+				layers[0]->width, layers[0]->height, layers[0]->depth);
 			return false;
 		}
 

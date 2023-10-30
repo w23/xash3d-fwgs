@@ -11,12 +11,14 @@ typedef struct vk_texture_s
 {
 	urmom_header_t hdr_;
 
-	int width, height;
+	int width, height, depth;
 	uint32_t flags;
 	int total_size;
 
 	struct {
 		r_vk_image_t image;
+
+		// TODO external table
 		VkDescriptorSet descriptor_unorm;
 	} vk;
 
@@ -37,6 +39,8 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], 
 qboolean R_VkTextureUpload(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, colorspace_hint_e colorspace_hint);
 void R_VkTextureDestroy(int index, vk_texture_t *tex);
 
-VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void );
+VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void );
 const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void );
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index );
+
+VkDescriptorImageInfo R_VkTexturesGetBlueNoiseImageInfo( void );

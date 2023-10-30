@@ -41,6 +41,7 @@ static void createDepthImage(int w, int h, VkFormat depth_format) {
 		.layers = 1,
 		.width = w,
 		.height = h,
+		.depth = 1,
 		.tiling = VK_IMAGE_TILING_OPTIMAL,
 		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
 	};

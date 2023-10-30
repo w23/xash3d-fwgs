@@ -14,6 +14,9 @@
 
 #include "ktx2.h"
 
+#define PCG_IMPLEMENT
+#include "pcg.h"
+
 #include <math.h> // sqrt
 
 #define LOG_MODULE LogModule_Textures
@@ -42,19 +45,85 @@ static struct {
 
 	vk_texture_t skybox_cube;
 	vk_texture_t cubemap_placeholder;
+
+	vk_texture_t blue_noise;
 } g_vktextures;
 
-#define TEXTURES_HASH_SIZE	(MAX_TEXTURES >> 2)
-
+// Exported from r_textures.h
 size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
-int CalcMipmapCount( int width, int height, uint32_t flags, qboolean haveBuffer );
+int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
 qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layers, int num_layers);
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
 
 static VkSampler pickSamplerForFlags( texFlags_t flags );
+static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
 // FIXME should be static
 void unloadSkybox( void );
+
+// Hardcode blue noise texture size to 64x64x64
+#define BLUE_NOISE_SIZE 64
+#define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
+
+static void generateFallbackNoiseTextures(void) {
+	const size_t blue_noise_count = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * BLUE_NOISE_SIZE;
+	const size_t blue_noise_size = blue_noise_count * sizeof(uint32_t);
+	uint32_t *const scratch = Mem_Malloc(vk_core.pool /* TODO textures pool */, blue_noise_size);
+	rgbdata_t pic = {
+		.width = BLUE_NOISE_SIZE,
+		.height = BLUE_NOISE_SIZE,
+		.depth = BLUE_NOISE_SIZE,
+		.flags = TF_NOMIPMAP,
+		.type = PF_RGBA_32,
+		.size = blue_noise_size,
+		.buffer = (byte*)scratch,
+		.palette = NULL,
+		.numMips = 1,
+		.encode = 0,
+	};
+
+	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
+
+	// Fill with random data
+	{
+		pcg32_random_t pcg_state = { blue_noise_count - 1, 17 };
+		for (int j = 0; j < blue_noise_count; ++j)
+			scratch[j] = pcg32_random_r(&pcg_state);
+	}
+
+	static const char *const name = "bluenoise/pcg_placeholder_fixme";
+	const qboolean is_cubemap = false;
+	rgbdata_t *pica[1] = {&pic};
+	ASSERT(uploadTexture(-1, &g_vktextures.blue_noise, pica, 1, is_cubemap, kColorspaceLinear));
+	Mem_Free(scratch);
+}
+
+static void loadBlueNoiseTextures(void) {
+	generateFallbackNoiseTextures();
+
+#if 0 // TODO
+	int blueNoiseTexturesBegin = -1;
+	for (int i = 0; i < 64; ++i) {
+		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
+
+		if (blueNoiseTexturesBegin == -1) {
+			if (texid <= 0) {
+				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
+				generateFallbackNoiseTextures();
+				return;
+			}
+
+			blueNoiseTexturesBegin = texid;
+		} else {
+			ASSERT(texid > 0);
+			ASSERT(blueNoiseTexturesBegin + i == texid);
+		}
+	}
+
+	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
+	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
+#endif
+}
 
 qboolean R_VkTexturesInit( void ) {
 	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
@@ -91,6 +160,8 @@ qboolean R_VkTexturesInit( void ) {
 			};
 		}
 	}
+
+	loadBlueNoiseTextures();
 
 	return true;
 }
@@ -306,6 +377,7 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 			.debug_name = TEX_NAME(tex),
 			.width = header->pixelWidth,
 			.height = header->pixelHeight,
+			.depth = header->pixelDepth,
 			.mips = header->levelCount,
 			.layers = 1, // TODO or 6 for cubemap; header->faceCount
 			.format = header->vkFormat,
@@ -382,9 +454,10 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 	} else {
 		const int width = layers[0]->width;
 		const int height = layers[0]->height;
+		const int depth = layers[0]->depth;
 		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
 		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
-		const int mipCount = compute_mips ? CalcMipmapCount( width, height, tex->flags, true ) : layers[0]->numMips;
+		const int mipCount = compute_mips ? CalcMipmapCount( width, height, depth, tex->flags, true ) : layers[0]->numMips;
 
 		if (format == VK_FORMAT_UNDEFINED) {
 			ERR("Unsupported PF format %d", layers[0]->type);
@@ -405,6 +478,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 				.debug_name = TEX_NAME(tex),
 				.width = width,
 				.height = height,
+				.depth = depth,
 				.mips = mipCount,
 				.layers = num_layers,
 				.format = format,
@@ -422,6 +496,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 
 		tex->width = width;
 		tex->height = height;
+		tex->depth = depth;
 
 		{
 			R_VkImageUploadBegin(&tex->vk.image);
@@ -433,7 +508,8 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 				for (int mip = 0; mip < mipCount; ++mip) {
 					const int width = Q_max( 1, ( pic->width >> mip ));
 					const int height = Q_max( 1, ( pic->height >> mip ));
-					const size_t mip_size = CalcImageSize( pic->type, width, height, 1 );
+					const int depth = Q_max( 1, ( pic->depth >> mip ));
+					const size_t mip_size = CalcImageSize( pic->type, width, height, depth );
 
 					R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, buf);
 					tex->total_size += mip_size;
@@ -441,7 +517,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 					// Build mip in place for the next mip level
 					if (compute_mips) {
 						if ( mip < mipCount - 1 )
-							BuildMipMap( buf, width, height, 1, tex->flags );
+							BuildMipMap( buf, width, height, depth, tex->flags );
 					} else {
 						buf += mip_size;
 					}
@@ -493,7 +569,7 @@ void unloadSkybox( void ) {
 	tglob.fCustomSkybox = false;
 }
 
-VkDescriptorImageInfo R_VkTextureGetSkyboxDescriptorImageInfo( void ) {
+VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
 	return (VkDescriptorImageInfo){
 		.sampler = g_vktextures.default_sampler,
 		.imageView = g_vktextures.skybox_cube.vk.image.view
@@ -519,4 +595,12 @@ VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
 
 const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void ) {
 	return g_vktextures.dii_all_textures;
+}
+
+VkDescriptorImageInfo R_VkTexturesGetBlueNoiseImageInfo( void ) {
+	return (VkDescriptorImageInfo) {
+		.sampler = g_vktextures.default_sampler,
+		.imageView = g_vktextures.blue_noise.vk.image.view,
+		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+	};
 }
