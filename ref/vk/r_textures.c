@@ -932,8 +932,7 @@ static qboolean loadSkybox( const char *prefix, int style ) {
 	if( !checkTextureName( prefix ))
 		goto cleanup;
 
-
-	R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, false );
+	success = R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, false );
 
 cleanup:
 	for (int j = 0; j < i; ++j)
