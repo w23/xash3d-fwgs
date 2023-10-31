@@ -37,7 +37,8 @@ static void createDefaultTextures( void );
 static void destroyDefaultTextures( void );
 static void destroyTexture( uint texnum );
 
-#define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
+#define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, /*update_only=*/false)
+
 qboolean R_TexturesInit( void ) {
 	g_textures.mempool = Mem_AllocPool( "vktextures" );
 
@@ -319,15 +320,7 @@ static void destroyDefaultTextures( void ) {
 		R_TextureFree( tglob.defaultTexture );
 }
 
-
-/*
-===============
-GL_ProcessImage
-
-do specified actions on pixels
-===============
-*/
-static void VK_ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
+static void ProcessImage( vk_texture_t *tex, rgbdata_t *pic )
 {
 	float	emboss_scale = 0.0f;
 	uint	img_flags = 0;
@@ -644,7 +637,7 @@ static int loadTextureInternalFromFile( const char *name, const byte *buf, size_
 
 	// Process flags, convert to rgba, etc
 	tex->flags = flags;
-	VK_ProcessImage( tex, pic );
+	ProcessImage( tex, pic );
 
 	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, colorspace_hint ))
 		goto cleanup;
@@ -760,7 +753,8 @@ void R_TextureFree( unsigned int texnum ) {
 	releaseTexture( texnum, ref_interface );
 }
 
-static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic, int pic_count, texFlags_t flags, qboolean update_only ) {
+
+int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
 	// couldn't loading image
 	if( !pic )
 		return 0;
@@ -792,11 +786,12 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 
 	if( update_only )
 		SetBits( tex->flags, flags );
+	else
+		tex->flags = flags;
 
-	for (int i = 0; i < pic_count; ++i)
-		VK_ProcessImage( tex, pic[i] );
+	ProcessImage( tex, pic );
 
-	if( !R_VkTextureUpload( insert.index, tex, pic, pic_count, kColorspaceGamma ))
+	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, kColorspaceGamma ))
 	{
 		if ( !update_only && insert.created )
 			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
@@ -811,10 +806,6 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 	}
 
 	return insert.index;
-}
-
-int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
-	return loadTextureFromBuffers(name, &pic, 1, flags, update_only);
 }
 
 static struct {

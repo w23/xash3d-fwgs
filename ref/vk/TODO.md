@@ -1,10 +1,10 @@
 # 2023-10-31 E322
 - [x] load png blue noise files
-- [ ] translucent animated thing
-- [ ] massage texture code
-    - [ ] single return/goto cleanup
-    - [ ] pass args via structs?
-    - [ ] collapse texture uploading into a single function
+- [-] translucent animated thing -> needs shader rework
+- [x] massage texture code
+    - [x] single return/goto cleanup
+    - [-] pass args via structs? -> not necessary
+    - [-] collapse texture uploading into a single function -> not necessary, they are different enough
 - [ ] merge materials PR
 
 # 2023-10-30 E321
