@@ -2229,6 +2229,33 @@ static r_studio_submodel_info_t *studioModelFindSubmodelInfo(void) {
 	return NULL;
 }
 
+static material_mode_e studioMaterialModeForRenderType(vk_render_type_e render_type) {
+	switch (render_type) {
+		case kVkRenderTypeSolid:
+			return kMaterialMode_Opaque;
+			break;
+		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
+		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
+			return kMaterialMode_Translucent;
+			break;
+		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only
+			return kMaterialMode_BlendGlow;
+			break;
+		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
+		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
+			return kMaterialMode_BlendAdd;
+			break;
+		case kVkRenderType_AT: // no blend, depth RW, alpha test
+			return kMaterialMode_AlphaTest;
+			break;
+
+		default:
+			gEngine.Host_Error("Unexpected render type %d\n", render_type);
+	}
+
+	return kMaterialMode_Opaque;
+}
+
 // Draws current studio model submodel
 // Can be called externally, i.e. from game dll.
 // Expects m_pStudioHeader, m_pSubModel, RI.currententity, etc to be already set up
@@ -2300,7 +2327,7 @@ static void R_StudioDrawPoints( void ) {
 
 	// TODO r_model_draw_t.transform should be matrix3x4
 	const vk_render_type_e render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode);
-	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
+	const material_mode_e material_mode = studioMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,

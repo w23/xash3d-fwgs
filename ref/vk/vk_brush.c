@@ -534,7 +534,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 	return true;
 }
 
-material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_type) {
+static material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_type) {
 	switch (render_type) {
 		case kVkRenderTypeSolid:
 			return kMaterialMode_Opaque;
