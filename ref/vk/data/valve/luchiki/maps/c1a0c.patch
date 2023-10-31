@@ -54,3 +54,26 @@
 {
 "_xvk_ent_id" "162" // remove hack lights entity
 }
+
+
+
+// smoothing
+{
+//"_xvk_smoothing_threshold" "44" // FIXME, 44 workaround // bad autosmooth (for metallic room wall)
+}
+{
+//"_xvk_smoothing_excluded_pairs" "189 188 183 182 184"
+}
+{
+//"_xvk_smoothing_group" 
+//"_xvk_smoothing_excluded_pairs" "182 183 184 97 74 187 188 2714 76 185" // FIXME
+}
+{
+"_xvk_smoothing_excluded_pairs" "1067 1042" // FIXME: bad autosmooth
+}
+{
+//"_xvk_smoothing_excluded_pairs" "747 748 750 751" // FIXME: bad autosmooth
+}
+{
+"_xvk_smoothing_excluded_pairs" "747 748" // FIXME: bad autosmooth
+}

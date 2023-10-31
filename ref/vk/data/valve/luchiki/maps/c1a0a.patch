@@ -65,3 +65,13 @@
 {
 "_xvk_smoothing_group" "2394 2392 2390 2388 2389 2391 2393 2395" //  2383 2384 2387
 }
+
+{
+"_xvk_smoothing_excluded_pairs" "1322 1324 1308" // FIXME
+}
+//{
+//"_xvk_smoothing_excluded_pairs" "1321 1322" // TODO: only this
+//}
+//{
+//"_xvk_smoothing_excluded_pairs" "1200 1220 1221 1199 1207 1217" // TODO: need investigate
+//}
