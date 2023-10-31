@@ -449,13 +449,13 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			Vector4Copy(props->_xvk_svec, psurf->s_vec);
 			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
 			psurf->flags |= Patch_Surface_STvecs;
-			DEBUG("Patch for surface %d: assign stvec", index);
+			DEBUG("Patch for surface %d: assign st_vec", index);
 		}
 
 		if (have_fields & Field__xvk_tex_scale) {
 			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
 			psurf->flags |= Patch_Surface_TexScale;
-			DEBUG("Patch for surface %d: assign tex scale %f %f",
+			DEBUG("Patch for surface %d: assign tex_scale %f %f",
 				index, psurf->tex_scale[0], psurf->tex_scale[1]
 			);
 		}
@@ -463,7 +463,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		if (have_fields & Field__xvk_tex_offset) {
 			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
 			psurf->flags |= Patch_Surface_TexOffset;
-			DEBUG("Patch for surface %d: assign tex offset %f %f",
+			DEBUG("Patch for surface %d: assign tex_offset %f %f",
 				index, psurf->tex_offset[0], psurf->tex_offset[1]
 			);
 		}

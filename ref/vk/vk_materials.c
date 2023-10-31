@@ -576,7 +576,7 @@ r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
 	DEBUG("Couldn't find material '%s', fallback to texture lookup", name);
 
 	// Find by texture name
-	const int tex_id = R_TextureFindByName(name);
+	const int tex_id = R_TextureFindByNameLike(name);
 	if (tex_id <= 0) {
 		ERR("Neither material nor texture with name \"%s\" was found", name);
 		return (r_vk_material_ref_t){.index = -1,};
