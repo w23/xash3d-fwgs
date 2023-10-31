@@ -1,3 +1,12 @@
+# 2023-10-31 E322
+- [x] load png blue noise files
+- [ ] translucent animated thing
+- [ ] massage texture code
+    - [ ] single return/goto cleanup
+    - [ ] pass args via structs?
+    - [ ] collapse texture uploading into a single function
+- [ ] merge materials PR
+
 # 2023-10-30 E321
 - [x] missing skybox
 - [x] explicitly free default textures; and complain about any leftovers
@@ -8,10 +17,6 @@
 	- [x] separate binding similar to skybox in vk_rtx.c and shaders
 	- [x] patch shader function
 	- [ ] load 64xpngs into a single big pic
-- [ ] massage texture code
-    - [ ] single return/goto cleanup
-    - [ ] pass args via structs?
-    - [ ] collapse texture uploading into a single function
 
 # 2023-10-27 E320
 - [x] fix windows build

@@ -65,7 +65,21 @@ void unloadSkybox( void );
 #define BLUE_NOISE_SIZE 64
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
 
-static void generateFallbackNoiseTextures(void) {
+static void generateFallbackNoiseTextures( rgbdata_t *pic ) {
+	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
+
+	const int blue_noise_count = pic->size / sizeof(uint32_t);
+	uint32_t *const scratch = (uint32_t*)pic->buffer;
+
+	// Fill with random data
+	{
+		pcg32_random_t pcg_state = { blue_noise_count - 1, 17 };
+		for (int j = 0; j < blue_noise_count; ++j)
+			scratch[j] = pcg32_random_r(&pcg_state);
+	}
+}
+
+static void loadBlueNoiseTextures(void) {
 	const size_t blue_noise_count = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * BLUE_NOISE_SIZE;
 	const size_t blue_noise_size = blue_noise_count * sizeof(uint32_t);
 	uint32_t *const scratch = Mem_Malloc(vk_core.pool /* TODO textures pool */, blue_noise_size);
@@ -82,47 +96,53 @@ static void generateFallbackNoiseTextures(void) {
 		.encode = 0,
 	};
 
-	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
+	int loaded = 0;
+	for (int i = 0, cursor = 0; i < BLUE_NOISE_SIZE; ++i, ++loaded) {
+		char filename[1024];
+		snprintf( filename, sizeof filename, BLUE_NOISE_NAME_F, i );
+		rgbdata_t *const filepic = gEngine.FS_LoadImage( filename, NULL, 0 );
 
-	// Fill with random data
-	{
-		pcg32_random_t pcg_state = { blue_noise_count - 1, 17 };
-		for (int j = 0; j < blue_noise_count; ++j)
-			scratch[j] = pcg32_random_r(&pcg_state);
+		if ( !filepic ) {
+			ERR("Couldn't load precomputed blue noise texture '%s'", filename);
+			break;
+		}
+
+		if ( filepic->type != PF_RGBA_32 ) {
+			ERR("Precomputed blue noise texture '%s' has unexpected format %d", filename, filepic->type);
+			gEngine.FS_FreeImage( filepic );
+			break;
+		}
+
+		if ( filepic->width != BLUE_NOISE_SIZE ) {
+			ERR("Precomputed blue noise texture '%s' has unexpected width %d, expected %d", filename, filepic->width, BLUE_NOISE_SIZE);
+			gEngine.FS_FreeImage( filepic );
+			break;
+		}
+
+		if ( filepic->height != BLUE_NOISE_SIZE ) {
+			ERR("Precomputed blue noise texture '%s' has unexpected height %d, expected %d", filename, filepic->height, BLUE_NOISE_SIZE);
+			gEngine.FS_FreeImage( filepic );
+			break;
+		}
+
+		ASSERT( filepic->size == BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * sizeof(uint32_t) );
+
+		memcpy(pic.buffer + cursor, filepic->buffer, filepic->size);
+		cursor += filepic->size;
+
+		gEngine.FS_FreeImage( filepic );
 	}
 
-	static const char *const name = "bluenoise/pcg_placeholder_fixme";
-	const qboolean is_cubemap = false;
+	const qboolean fail = loaded != BLUE_NOISE_SIZE;
+	if (fail)
+		generateFallbackNoiseTextures( &pic );
+
+	const char *const name = fail ? "*bluenoise/pcg_fallback" : "*bluenoise";
+	Q_strncpy(g_vktextures.blue_noise.hdr_.key, name, sizeof(g_vktextures.blue_noise.hdr_.key));
 	rgbdata_t *pica[1] = {&pic};
+	const qboolean is_cubemap = false;
 	ASSERT(uploadTexture(-1, &g_vktextures.blue_noise, pica, 1, is_cubemap, kColorspaceLinear));
 	Mem_Free(scratch);
-}
-
-static void loadBlueNoiseTextures(void) {
-	generateFallbackNoiseTextures();
-
-#if 0 // TODO
-	int blueNoiseTexturesBegin = -1;
-	for (int i = 0; i < 64; ++i) {
-		const int texid = textureLoadFromFileF(TF_NOMIPMAP, kColorspaceLinear, BLUE_NOISE_NAME_F, i);
-
-		if (blueNoiseTexturesBegin == -1) {
-			if (texid <= 0) {
-				ERR("Couldn't find precomputed blue noise textures. Generating bad quality regular noise textures as a fallback");
-				generateFallbackNoiseTextures();
-				return;
-			}
-
-			blueNoiseTexturesBegin = texid;
-		} else {
-			ASSERT(texid > 0);
-			ASSERT(blueNoiseTexturesBegin + i == texid);
-		}
-	}
-
-	INFO("Base blue noise texture is %d", blueNoiseTexturesBegin);
-	ASSERT(blueNoiseTexturesBegin == BLUE_NOISE_TEXTURE_ID);
-#endif
 }
 
 qboolean R_VkTexturesInit( void ) {

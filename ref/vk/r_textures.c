@@ -37,10 +37,7 @@ static void createDefaultTextures( void );
 static void destroyDefaultTextures( void );
 static void destroyTexture( uint texnum );
 
-static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...);
-
 #define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, false)
-
 qboolean R_TexturesInit( void ) {
 	g_textures.mempool = Mem_AllocPool( "vktextures" );
 
@@ -679,19 +676,6 @@ int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int
 int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
 	const qboolean ref_interface = false;
 	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload, ref_interface );
-}
-
-static int textureLoadFromFileF(int flags, colorspace_hint_e colorspace, const char *fmt, ...) {
-	int tex_id = 0;
-	char buffer[1024];
-	va_list argptr;
-	va_start( argptr, fmt );
-	vsnprintf( buffer, sizeof buffer, fmt, argptr );
-	va_end( argptr );
-
-	const qboolean force_update = false;
-	const qboolean ref_interface = true;
-	return loadTextureInternal(buffer, NULL, 0, flags, colorspace, force_update, ref_interface);
 }
 
 // Unconditionally destroy the texture
