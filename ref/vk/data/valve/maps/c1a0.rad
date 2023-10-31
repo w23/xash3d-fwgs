@@ -13,21 +13,16 @@
 ~LIGHT3C         198 215 74   14000
 ~SPOTYELLOW      189 231 253  20000
 ~SPOTBLUE        7   163 245  18000
-//LAB1_COMP3D      255 255 255  20
-LAB1_COMP3D      255 255 255  0 // TODO: emissive texture
-//~LAB1_COMP7      255 255 255  20
-~LAB1_COMP7      255 255 255  0 // TODO: emissive texture
+//LAB1_COMP3D      255 255 255  20 // TODO: emissive texture
+//~LAB1_COMP7      255 255 255  20 // TODO: emissive texture
 
 CRYS_2TOP        171 254 168  14000
 
 DRKMTL_SCRN3     1   111 220  200
 
-//+0~LAB1_CMP2     255 255 255  20
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
 //+1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 //+2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
-+0~LAB1_CMP2     255 255 255  0 // TODO: emissive texture
-+1~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
-+2~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
 
 +0~LAB_CRT8      50  50  255  200
 +1~LAB_CRT8      50  50  255  200 // hack, because no inheritance yet
@@ -36,7 +31,7 @@ DRKMTL_SCRN3     1   111 220  200
 +1DRKMTL_SCRN    60  80  255  200
 +2DRKMTL_SCRN    60  80  255  200
 
-FIFTIES_MON1B    100 100 180  0
+//FIFTIES_MON1B    100 100 180  30
 
 ~LAB_CRT9A       225 150 150  100
 ~LAB_CRT9B       100 100 255  100

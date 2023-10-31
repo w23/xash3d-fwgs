@@ -1,7 +1,7 @@
 //RED              255 0   0    10000
 RED              255 0   0    0 // no need
 +0~GENERIC86B    60  220 170  10000
-+0~LAB1_CMP2     255 255 255  20
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
 ~LIGHT3C         220 210 150  2500
 +A~FIFTIES_LGT2  160 170 220  4000
 +0~FIFTIES_LGT2  160 170 220  10000
@@ -15,6 +15,6 @@ XENO_18          0   50  255  10000
 CRYS_3TOP        255 152 79   10000
 +0~LIGHT1        40  60  150  10000
 +0LAB1_W6        150 160 210  8800
-LAB1_COMP3D      255 255 255  0 // no need (for optimization)
+//LAB1_COMP3D      255 255 255  20 // TODO: emissive texture
 +0~DRKMTLS2      150 120 20   30000
 
