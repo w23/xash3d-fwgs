@@ -558,7 +558,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	// Do not draw when we have no swapchain
 	if (args->dst.image_view == VK_NULL_HANDLE)
-		return;
+		goto tail;
 
 	if (g_ray_model_state.frame.instances_count == 0) {
 		const r_vkimage_blit_args blit_args = {
@@ -592,6 +592,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		performTracing( args->combuf, &trace_args );
 	}
 
+tail:
 	APROF_SCOPE_END(ray_frame_end);
 }
 

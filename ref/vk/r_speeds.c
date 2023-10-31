@@ -213,9 +213,23 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					ASSERT(depth > 0);
 					--depth;
 
-					ASSERT(stack[depth].scope_id == scope_id);
 					ASSERT(scope_id >= 0);
 					ASSERT(scope_id < APROF_MAX_SCOPES);
+
+					if (stack[depth].scope_id != scope_id) {
+						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
+							depth,
+							scope_id, g_aprof.scopes[scope_id].name,
+							stack[depth].scope_id, g_aprof.scopes[stack[depth].scope_id].name);
+
+						gEngine.Con_Printf(S_ERROR "Full stack:\n");
+						for (int i = depth; i >= 0; --i) {
+							gEngine.Con_Printf(S_ERROR "  %d: scope_id=%d(%s)\n", i,
+								stack[i].scope_id, g_aprof.scopes[stack[i].scope_id].name);
+						}
+
+						return;
+					}
 
 					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
@@ -482,7 +496,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 	}
 }
 
-static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
 	const int max_frames_to_draw = 2;
@@ -974,10 +988,11 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	handlePause( prev_frame_index );
 
+	if (speeds_bits != 0)
 	{
 		int y = 100;
 		const int draw_frame = speeds_bits & SPEEDS_BIT_FRAME;
-		y = drawFrames( draw_frame, prev_frame_index, y, gpurofl, gpurofl_count );
+		y = analyzeScopesAndDrawFrames( draw_frame, prev_frame_index, y, gpurofl, gpurofl_count );
 
 		const int draw_graphs = speeds_bits & SPEEDS_BIT_GRAPHS;
 		if (draw_graphs)
