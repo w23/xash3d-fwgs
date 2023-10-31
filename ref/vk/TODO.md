@@ -1,3 +1,71 @@
+# 2023-10-31 E322
+- [x] load png blue noise files
+- [-] translucent animated thing -> needs shader rework
+- [x] massage texture code
+    - [x] single return/goto cleanup
+    - [-] pass args via structs? -> not necessary
+    - [-] collapse texture uploading into a single function -> not necessary, they are different enough
+- [ ] merge materials PR
+
+# 2023-10-30 E321
+- [x] missing skybox
+- [x] explicitly free default textures; and complain about any leftovers
+- [x] use the new hash table in materials too, remove dummy textures
+- [x] why are there references to \*unused
+- [ ] restore blue noise
+    - [x] vk_texture_t blue_noise; 3d texture
+	- [x] separate binding similar to skybox in vk_rtx.c and shaders
+	- [x] patch shader function
+	- [ ] load 64xpngs into a single big pic
+
+# 2023-10-27 E320
+- [x] fix windows build
+- [x] track texture visibility for ref_api via flag and refcounts
+- [ ] devmem assert, not all textures are destroyed in wagonchik
+    - [ ] new material names+fixme => move to material hash table
+    - [x] preallocated default textures
+- [x] check urmom stats after a few different changelevels
+    - [x] COUNT(IS_DELETED)
+    - [x] clusters size histogram
+- [x] silence logs
+    - [x] "accessing empty texture"
+    - [x] "found existing texture"
+- [x] check mips
+
+# 2023-10-26 E319
+- [x] fix pbr materials disappearing
+- [x] fix surface lights
+- [ ] pbr/material refcount leaks
+    - [ ] track texture visibility for ref_api
+- [x] handle existing image on texture upload
+    - [x] sanely recreate
+    - [x] reuse if possible
+- [x] case insensitive hash table
+
+# 2023-10-24 E318
+- [ ] use new hashmap for textures
+    - [x] use vk_texure array directly as open addressing hash table
+        - [x] Completely hide `struct vk_texture`
+        - [x] just try
+        - [x] texture indexes are no longer consecutive
+    - [ ] blue noise texture breaks => make it a separate (3d) thing
+    - [ ] index=0 is now valid
+        - [x] I. mark 0 as occupied to avoid allocating it
+        - [ ] II. Increase all returned indexes by 1. Then dec it back wherever it is passed back
+    - (SAD): cannot make builtin textures have stable indexes anymore
+
+# E313
+## Pre-next:
+- validation crash
+## Next:
+- KTX2 PR against upstream
+- texture leaks
+	- better texture storage
+		- hash map
+	- texture lifetimes/refcounts
+	- texture deletion
+		- mass (for single device wait idle)
+
 # Programmable render
 - [ ] what if new meatpipe has different image format for a creatable image?
 - [ ] implicit dependency tracking. pass defines:

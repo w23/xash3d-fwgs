@@ -62,10 +62,10 @@ static qboolean createPipelines( void )
 	/* }; */
 
 	VkDescriptorSetLayout descriptor_layouts[] = {
-		vk_desc.one_uniform_buffer_layout,
-		vk_desc.one_texture_layout,
-		vk_desc.one_texture_layout,
-		vk_desc.one_uniform_buffer_layout,
+		vk_desc_fixme.one_uniform_buffer_layout,
+		vk_desc_fixme.one_texture_layout,
+		vk_desc_fixme.one_texture_layout,
+		vk_desc_fixme.one_uniform_buffer_layout,
 	};
 
 	VkPipelineLayoutCreateInfo plci = {
@@ -321,7 +321,7 @@ qboolean VK_RenderInit( void ) {
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 				.pBufferInfo = &dbi_uniform_data,
-				.dstSet = vk_desc.ubo_sets[0], // FIXME
+				.dstSet = vk_desc_fixme.ubo_sets[0], // FIXME
 			}, {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 				.dstBinding = 0,
@@ -329,7 +329,7 @@ qboolean VK_RenderInit( void ) {
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
 				.pBufferInfo = &dbi_uniform_lights,
-				.dstSet = vk_desc.ubo_sets[1], // FIXME
+				.dstSet = vk_desc_fixme.ubo_sets[1], // FIXME
 			}};
 		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
 	}
@@ -552,7 +552,7 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 		vkCmdBindIndexBuffer(cmdbuf, geom_buffer, 0, VK_INDEX_TYPE_UINT16);
 	}
 
-	vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc.ubo_sets + 1, 1, &dlights_ubo_offset);
+	vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
 
 	for (int i = 0; i < g_render_state.num_draw_commands; ++i) {
 		const draw_command_t *const draw = g_render_state.draw_commands + i;
@@ -579,7 +579,7 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 		if (ubo_offset != draw->draw.ubo_offset)
 		{
 			ubo_offset = draw->draw.ubo_offset;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc.ubo_sets, 1, &ubo_offset);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &ubo_offset);
 		}
 
 		if (pipeline != draw->draw.pipeline_index) {
@@ -589,14 +589,16 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 
 		if (lightmap != draw->draw.lightmap) {
 			lightmap = draw->draw.lightmap;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &findTexture(lightmap)->vk.descriptor_unorm, 0, NULL);
+			const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(lightmap);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
 		}
 
 		if (texture != draw->draw.texture)
 		{
 			texture = draw->draw.texture;
+			const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(texture);
 			// TODO names/enums for binding points
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &findTexture(texture)->vk.descriptor_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
 		}
 
 		// Only indexed mode is supported

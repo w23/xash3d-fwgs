@@ -61,7 +61,7 @@
 
 //{ // TODO: fix 2 side texture coordinates
 //"_xvk_surface_id" "7011 7010" // {gratestep2
-//"_xvk_texture" "" // remove broken texture
+//"_xvk_material" "" // remove broken texture
 //}
 
 { // fix 2 side texture coordinates

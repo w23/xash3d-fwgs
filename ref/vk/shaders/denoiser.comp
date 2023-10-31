@@ -36,9 +36,10 @@ layout(set = 0, binding = 15, rgba16f) uniform image2D prev_temporal_diffuse;
 layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_specular;
 layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_specular;
 
+//#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 18) uniform sampler2D textures[MAX_TEXTURES];
-include "bluenoise.glsl"
+layout(set = 0, binding = 18) uniform sampler3D blue_noise_texture;
+#include "bluenoise.glsl"
 #endif
 
 //layout(set = 0, binding = 19) uniform sampler2D textures[MAX_TEXTURES];

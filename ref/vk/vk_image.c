@@ -30,6 +30,11 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	VkMemoryRequirements memreq;
 
 	const qboolean is_cubemap = !!(create->flags & kVkImageFlagIsCubemap);
+	const qboolean is_3d = create->depth > 1;
+
+	ASSERT(create->depth > 0);
+
+	ASSERT(is_cubemap + is_3d != 2);
 
 	const VkFormat unorm_format = unormFormatFor(create->format);
 	const qboolean create_unorm =
@@ -39,10 +44,10 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 
 	VkImageCreateInfo ici = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.imageType = VK_IMAGE_TYPE_2D,
+		.imageType = is_3d ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
 		.extent.width = create->width,
 		.extent.height = create->height,
-		.extent.depth = 1,
+		.extent.depth = create->depth,
 		.mipLevels = create->mips,
 		.arrayLayers = create->layers,
 		.format = create->format,
@@ -72,7 +77,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 
 		VkImageViewCreateInfo ivci = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.viewType = is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
+			.viewType = is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : (is_3d ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D),
 			.format = ici.format,
 			.image = image.image,
 			.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
@@ -98,8 +103,10 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 
 	image.width = create->width;
 	image.height = create->height;
+	image.depth = create->depth;
 	image.mips = create->mips;
 	image.layers = create->layers;
+	image.flags = create->flags;
 
 	return image;
 }
@@ -251,6 +258,7 @@ void R_VkImageUploadBegin( r_vk_image_t *img ) {
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data ) {
 	const uint32_t width = Q_max(1, img->width >> mip);
 	const uint32_t height = Q_max(1, img->height >> mip);
+	const uint32_t depth = Q_max(1, img->depth >> mip);
 	const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(img->format);
 
 	const vk_staging_image_args_t staging_args = {
@@ -268,7 +276,7 @@ void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, cons
 			.imageExtent = (VkExtent3D){
 				.width = width,
 				.height = height,
-				.depth = 1,
+				.depth = depth,
 			},
 		},
 		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

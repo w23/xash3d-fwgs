@@ -1,7 +1,7 @@
 #include "vk_core.h"
 #include "vk_cvar.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_renderstate.h"
 #include "vk_overlay.h"
 #include "vk_scene.h"
@@ -38,14 +38,13 @@ static qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int x, int 
 	return true;
 }
 
-// only called for GL contexts
 static void GL_SetupAttributes( int safegl )
 {
-	PRINT_NOT_IMPLEMENTED();
+	// Nothing to do for Vulkan
 }
 static void GL_ClearExtensions( void )
 {
-	PRINT_NOT_IMPLEMENTED();
+	// Nothing to do for Vulkan
 }
 static void GL_BackendStartFrame_UNUSED( void )
 {
@@ -63,13 +62,13 @@ static void R_ShowTextures_UNUSED( void )
 }
 
 // texture management
-static const byte *R_GetTextureOriginalBuffer( unsigned int idx )
+static const byte *R_GetTextureOriginalBuffer_UNUSED( unsigned int idx )
 {
 	PRINT_NOT_IMPLEMENTED();
 	return NULL;
 }
 
-static void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor )
+static void GL_ProcessTexture_UNUSED( int texnum, float gamma, int topColor, int bottomColor )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
@@ -115,6 +114,30 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 
 extern void GL_SubdivideSurface( msurface_t *fa );
 
+static void Mod_UnloadTextures( model_t *mod )
+{
+	ASSERT( mod != NULL );
+
+	switch( mod->type )
+	{
+	case mod_studio:
+		Mod_StudioUnloadTextures( mod->cache.data );
+		break;
+	case mod_alias:
+		// FIXME Mod_AliasUnloadTextures( mod->cache.data );
+		break;
+	case mod_brush:
+		VK_BrushUnloadTextures( mod );
+		break;
+	case mod_sprite:
+		Mod_SpriteUnloadTextures( mod->cache.data );
+		break;
+	default:
+		ASSERT( 0 );
+		break;
+	}
+}
+
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
 {
 	qboolean loaded = true;
@@ -152,6 +175,7 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		gEngine.drawFuncs->Mod_ProcessUserData( mod, create, buffer );
 
 	if( !create ) {
+		Mod_UnloadTextures( mod );
 		switch( mod->type ) {
 			case mod_brush:
 				// Empirically, this function only attempts to destroy the worldmodel before loading the next map.
@@ -221,20 +245,26 @@ static const char *getParmName(int parm)
 
 static int VK_RefGetParm( int parm, int arg )
 {
-	vk_texture_t *tex = NULL;
-
+	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
 	case PARM_TEX_WIDTH:
-	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
-		tex = findTexture(arg);
-		return tex->width;
 	case PARM_TEX_HEIGHT:
+	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
 	case PARM_TEX_SRC_HEIGHT:
-		tex = findTexture(arg);
-		return tex->height;
 	case PARM_TEX_FLAGS:
-		tex = findTexture(arg);
-		return tex->flags;
+	/* TODO
+	case PARM_TEX_SKYBOX:
+	case PARM_TEX_SKYTEXNUM:
+	case PARM_TEX_LIGHTMAP:
+	case PARM_TEX_TARGET:
+	case PARM_TEX_TEXNUM:
+	case PARM_TEX_DEPTH:
+	case PARM_TEX_GLFORMAT:
+	case PARM_TEX_ENCODE:
+	case PARM_TEX_MIPCOUNT:
+	case PARM_TEX_MEMORY:
+	*/
+		return R_TexturesGetParm( parm, arg );
 	case PARM_MODERNFLASHLIGHT:
 		if (CVAR_TO_BOOL( vk_rtx )) {
 			return true;
@@ -452,6 +482,32 @@ static int		VGUI_GenerateTexture( void )
 	return 0;
 }
 
+static const byte* R_TextureData_UNUSED( unsigned int texnum )
+{
+	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%d", texnum);
+	// We don't store original texture data
+	// TODO do we need to?
+	return NULL;
+}
+
+int R_CreateTexture_UNUSED( const char *name, int width, int height, const void *buffer, texFlags_t flags )
+{
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
+	return 0;
+}
+
+static int R_LoadTextureArray_UNUSED( const char **names, int flags )
+{
+	PRINT_NOT_IMPLEMENTED();
+	return 0;
+}
+
+int R_CreateTextureArray_UNUSED( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
+{
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
+	return 0;
+}
+
 static const ref_device_t *pfnGetRenderDevice( unsigned int idx )
 {
 	if( idx >= vk_core.num_devices )
@@ -467,6 +523,7 @@ static const ref_interface_t gReffuncs =
 	R_GetConfigName,
 	R_SetDisplayTransform,
 
+	// only called for GL contexts
 	GL_SetupAttributes,
 	.GL_InitExtensions = NULL, // Unused in Vulkan renderer
 	GL_ClearExtensions,
@@ -487,13 +544,16 @@ static const ref_interface_t gReffuncs =
 	CL_AddCustomBeam,
 	R_ProcessEntData,
 
+	// debug
 	.R_ShowTextures = R_ShowTextures_UNUSED,
 
-	R_GetTextureOriginalBuffer,
-	VK_LoadTextureFromBuffer,
-	GL_ProcessTexture,
-	XVK_SetupSky,
+	// texture management
+	.R_GetTextureOriginalBuffer = R_GetTextureOriginalBuffer_UNUSED,
+	.GL_LoadTextureFromBuffer = R_TextureUploadFromBuffer,
+	.GL_ProcessTexture = GL_ProcessTexture_UNUSED,
+	.R_SetupSky = R_TextureSetupSky,
 
+	// 2D
 	R_Set2DMode,
 	R_DrawStretchRaw,
 	R_DrawStretchPic,
@@ -502,11 +562,14 @@ static const ref_interface_t gReffuncs =
 	CL_FillRGBABlend,
 	R_WorldToScreen,
 
+	// screenshot, cubemapshot
 	VID_ScreenShot,
 	VID_CubemapShot,
 
+	// light
 	R_LightPoint,
 
+	// decals
 	R_DecalShoot,
 	R_DecalRemoveAll,
 	R_CreateDecalList,
@@ -540,15 +603,17 @@ static const ref_interface_t gReffuncs =
 	R_SetCurrentEntity,
 	R_SetCurrentModel,
 
-	VK_FindTexture,
-	VK_TextureName,
-	VK_TextureData,
-	VK_LoadTextureExternal,
-	VK_CreateTexture,
-	VK_LoadTextureArray,
-	VK_CreateTextureArray,
-	VK_FreeTexture,
+	// Texture tools
+	.GL_FindTexture = R_TextureFindByName,
+	.GL_TextureName = R_TextureGetNameByIndex,
+	.GL_TextureData = R_TextureData_UNUSED,
+	.GL_LoadTexture = R_TextureUploadFromFile,
+	.GL_CreateTexture = R_CreateTexture_UNUSED,
+	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
+	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
+	.GL_FreeTexture = R_TextureFree,
 
+	// Decals manipulating (draw & remove)
 	DrawSingleDecal,
 	R_DecalSetupVerts,
 	R_EntityRemoveDecals,

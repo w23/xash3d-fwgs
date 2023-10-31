@@ -160,7 +160,10 @@ static int splitBlockAt(pool_t *blocks, int index, alo_size_t at) {
 alo_block_t aloPoolAllocate(struct alo_pool_s* pool, alo_size_t size, alo_size_t alignment) {
 	alo_block_t ret = {.offset = ALO_ALLOC_FAILED};
 	block_t *b;
+	ASSERT(size > 0);
+
 	alignment = alignment > pool->min_alignment ? alignment : pool->min_alignment;
+
 	for (int i = pool->first_block; i >= 0; i = b->next) {
 		b = poolGet(&pool->blocks, i);
 		if (b->flags != BlockFlag_Empty)

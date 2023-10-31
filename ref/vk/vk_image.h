@@ -11,9 +11,10 @@ typedef struct r_vk_image_s {
 	// Used for sRGB-γ-unaware traditional renderer
 	VkImageView view_unorm;
 
-	uint32_t width, height;
+	uint32_t width, height, depth;
 	int mips, layers;
 	VkFormat format;
+	uint32_t flags;
 } r_vk_image_t;
 
 enum {
@@ -24,7 +25,7 @@ enum {
 
 typedef struct {
 	const char *debug_name;
-	uint32_t width, height;
+	uint32_t width, height, depth;
 	int mips, layers;
 	VkFormat format;
 	VkImageTiling tiling;

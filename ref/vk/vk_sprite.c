@@ -1,5 +1,5 @@
 #include "vk_sprite.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "camera.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
@@ -242,12 +242,12 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	if( FBitSet( mod->flags, MODEL_CLIENT )) // it's a HUD sprite
 	{
 		Q_snprintf( texname, sizeof( texname ), "#HUD/%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTextureExternal( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 	else
 	{
 		Q_snprintf( texname, sizeof( texname ), "#%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTextureExternal( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 
 	// setup frame description
@@ -406,7 +406,6 @@ Loading a bitmap image as sprite with multiple frames
 as pieces of input image
 ====================
 */
-// IS NOT CALLED BY ANYTHING?!
 void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean *loaded )
 {
 	byte		*src, *dst;
@@ -509,7 +508,7 @@ void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean 
 		pspriteframe->left = -( w >> 1 );
 		pspriteframe->down = ( h >> 1 ) - h;
 		pspriteframe->right = w + -( w >> 1 );
-		pspriteframe->gl_texturenum = VK_LoadTextureInternal( texname, &temp, TF_IMAGE );
+		pspriteframe->gl_texturenum = R_TextureUploadFromBuffer( texname, &temp, TF_IMAGE, false );
 
 		xl += w;
 		if( xl >= pix->width )
@@ -1073,4 +1072,37 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 		pglDepthFunc( GL_LEQUAL );
 	}
 	*/
+}
+
+void Mod_SpriteUnloadTextures( void *data )
+{
+	msprite_t		*psprite;
+	mspritegroup_t	*pspritegroup;
+	mspriteframe_t	*pspriteframe;
+	int		i, j;
+
+	psprite = data;
+
+	if( psprite )
+	{
+		// release all textures
+		for( i = 0; i < psprite->numframes; i++ )
+		{
+			if( psprite->frames[i].type == SPR_SINGLE )
+			{
+				pspriteframe = psprite->frames[i].frameptr;
+				R_TextureFree( pspriteframe->gl_texturenum );
+			}
+			else
+			{
+				pspritegroup = (mspritegroup_t *)psprite->frames[i].frameptr;
+
+				for( j = 0; j < pspritegroup->numframes; j++ )
+				{
+					pspriteframe = pspritegroup->frames[i];
+					R_TextureFree( pspriteframe->gl_texturenum );
+				}
+			}
+		}
+	}
 }

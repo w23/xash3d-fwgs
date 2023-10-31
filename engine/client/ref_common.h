@@ -41,7 +41,7 @@ void R_GetTextureParms( int *w, int *h, int texnum );
 #define REF_GET_PARM( parm, arg ) ref.dllFuncs.RefGetParm( (parm), (arg) )
 #define GL_LoadTextureInternal( name, pic, flags ) ref.dllFuncs.GL_LoadTextureFromBuffer( (name), (pic), (flags), false )
 #define GL_UpdateTextureInternal( name, pic, flags ) ref.dllFuncs.GL_LoadTextureFromBuffer( (name), (pic), (flags), true )
-#define R_GetBuiltinTexture( name ) ref.dllFuncs.GL_LoadTexture( (name), 0, 0, 0 )
+#define R_GetBuiltinTexture( name ) ref.dllFuncs.GL_FindTexture( (name) )
 
 void GL_RenderFrame( const struct ref_viewpass_s *rvp );
 

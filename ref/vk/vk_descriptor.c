@@ -2,7 +2,7 @@
 
 #include "eiface.h" // ARRAYSIZE
 
-descriptor_pool_t vk_desc;
+descriptor_pool_t vk_desc_fixme;
 
 qboolean VK_DescriptorInit( void )
 {
@@ -14,7 +14,7 @@ qboolean VK_DescriptorInit( void )
 			.descriptorCount = MAX_TEXTURES,
 		}, {
 			.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-			.descriptorCount = ARRAYSIZE(vk_desc.ubo_sets),
+			.descriptorCount = ARRAYSIZE(vk_desc_fixme.ubo_sets),
 		/*
 		}, {
 			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -33,7 +33,7 @@ qboolean VK_DescriptorInit( void )
 
 	dpci.maxSets = max_desc_sets;
 
-	XVK_CHECK(vkCreateDescriptorPool(vk_core.device, &dpci, NULL, &vk_desc.pool));
+	XVK_CHECK(vkCreateDescriptorPool(vk_core.device, &dpci, NULL, &vk_desc_fixme.pool));
 
 	{
 		const int num_sets = MAX_TEXTURES;
@@ -53,21 +53,21 @@ qboolean VK_DescriptorInit( void )
 		VkDescriptorSetLayout* tmp_layouts = Mem_Malloc(vk_core.pool, sizeof(VkDescriptorSetLayout) * num_sets);
 		const VkDescriptorSetAllocateInfo dsai = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-			.descriptorPool = vk_desc.pool,
+			.descriptorPool = vk_desc_fixme.pool,
 			.descriptorSetCount = num_sets,
 			.pSetLayouts = tmp_layouts,
 		};
-		XVK_CHECK(vkCreateDescriptorSetLayout(vk_core.device, &dslci, NULL, &vk_desc.one_texture_layout));
+		XVK_CHECK(vkCreateDescriptorSetLayout(vk_core.device, &dslci, NULL, &vk_desc_fixme.one_texture_layout));
 		for (int i = 0; i < num_sets; ++i)
-			tmp_layouts[i] = vk_desc.one_texture_layout;
+			tmp_layouts[i] = vk_desc_fixme.one_texture_layout;
 
-		XVK_CHECK(vkAllocateDescriptorSets(vk_core.device, &dsai, vk_desc.sets));
+		XVK_CHECK(vkAllocateDescriptorSets(vk_core.device, &dsai, vk_desc_fixme.texture_sets));
 
 		Mem_Free(tmp_layouts);
 	}
 
 	{
-		const int num_sets = ARRAYSIZE(vk_desc.ubo_sets);
+		const int num_sets = ARRAYSIZE(vk_desc_fixme.ubo_sets);
 		// ... TODO find better place for this; this should be per-pipeline/shader
 		VkDescriptorSetLayoutBinding bindings[] = { {
 				.binding = 0,
@@ -84,15 +84,15 @@ qboolean VK_DescriptorInit( void )
 		VkDescriptorSetLayout* tmp_layouts = Mem_Malloc(vk_core.pool, sizeof(VkDescriptorSetLayout) * num_sets);
 		VkDescriptorSetAllocateInfo dsai = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-			.descriptorPool = vk_desc.pool,
+			.descriptorPool = vk_desc_fixme.pool,
 			.descriptorSetCount = num_sets,
 			.pSetLayouts = tmp_layouts,
 		};
-		XVK_CHECK(vkCreateDescriptorSetLayout(vk_core.device, &dslci, NULL, &vk_desc.one_uniform_buffer_layout));
+		XVK_CHECK(vkCreateDescriptorSetLayout(vk_core.device, &dslci, NULL, &vk_desc_fixme.one_uniform_buffer_layout));
 		for (int i = 0; i < num_sets; ++i)
-				tmp_layouts[i] = vk_desc.one_uniform_buffer_layout;
+				tmp_layouts[i] = vk_desc_fixme.one_uniform_buffer_layout;
 
-		XVK_CHECK(vkAllocateDescriptorSets(vk_core.device, &dsai, vk_desc.ubo_sets));
+		XVK_CHECK(vkAllocateDescriptorSets(vk_core.device, &dsai, vk_desc_fixme.ubo_sets));
 
 		Mem_Free(tmp_layouts);
 	}
@@ -102,9 +102,9 @@ qboolean VK_DescriptorInit( void )
 
 void VK_DescriptorShutdown( void )
 {
-	vkDestroyDescriptorPool(vk_core.device, vk_desc.pool, NULL);
-	vkDestroyDescriptorSetLayout(vk_core.device, vk_desc.one_texture_layout, NULL);
-	vkDestroyDescriptorSetLayout(vk_core.device, vk_desc.one_uniform_buffer_layout, NULL);
+	vkDestroyDescriptorPool(vk_core.device, vk_desc_fixme.pool, NULL);
+	vkDestroyDescriptorSetLayout(vk_core.device, vk_desc_fixme.one_texture_layout, NULL);
+	vkDestroyDescriptorSetLayout(vk_core.device, vk_desc_fixme.one_uniform_buffer_layout, NULL);
 }
 
 void VK_DescriptorsCreate(vk_descriptors_t *desc)

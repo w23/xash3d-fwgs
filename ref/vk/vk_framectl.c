@@ -534,6 +534,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 			.debug_name = "screenshot",
 			.width = vk_frame.width,
 			.height = vk_frame.height,
+			.depth = 1,
 			.mips = 1,
 			.layers = 1,
 			.format = dest_format,

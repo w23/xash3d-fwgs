@@ -1,7 +1,7 @@
 #include "vk_light.h"
 #include "vk_buffer.h"
 #include "vk_mapents.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_lightmap.h"
 #include "vk_cvar.h"
 #include "vk_common.h"
@@ -233,20 +233,21 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 				}
 
 				// FIXME replace this with findTexturesNamedLike from vk_materials.c
+				// It has slightly different logic, though, and is a bit scary to change
 
 				// Try bsp texture first
-				tex_id = XVK_TextureLookupF("#%s:%s.mip", map->name, texture_name);
+				tex_id = R_TextureFindByNameF("#%s:%s.mip", map->name, texture_name);
 
 				// Try wad texture if bsp is not there
 				if (!tex_id && wad_name) {
-					tex_id = XVK_TextureLookupF("%s.wad/%s.mip", wad_name, texture_name);
+					tex_id = R_TextureFindByNameF("%s.wad/%s.mip", wad_name, texture_name);
 				}
 
 				if (!tex_id) {
 					const char *wad = g_map_entities.wadlist;
 					for (; *wad;) {
 						const char *const wad_end = Q_strchr(wad, ';');
-						tex_id = XVK_TextureLookupF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
+						tex_id = R_TextureFindByNameF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
 						if (tex_id)
 							break;
 						wad = wad_end + 1;

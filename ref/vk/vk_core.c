@@ -1,7 +1,7 @@
 #include "vk_core.h"
 
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_overlay.h"
 #include "vk_renderstate.h"
 #include "vk_staging.h"
@@ -786,7 +786,7 @@ qboolean R_VkInit( void )
 
 	VK_SceneInit();
 
-	initTextures();
+	R_TexturesInit();
 
 	// All below need render_pass
 
@@ -833,7 +833,9 @@ void R_VkShutdown( void ) {
 
 	VK_FrameCtlShutdown();
 
-	destroyTextures();
+	R_VkMaterialsShutdown();
+
+	R_TexturesShutdown();
 
 	VK_PipelineShutdown();
 

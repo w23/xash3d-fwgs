@@ -16,6 +16,8 @@ void VK_BrushModelDestroyAll( void );
 
 void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 model );
 
-const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s, const struct texture_s *base_override );
+const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s );
 
 void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel );
+
+void VK_BrushUnloadTextures( model_t *mod );

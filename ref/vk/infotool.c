@@ -1,7 +1,7 @@
 #include "camera.h"
 #include "vk_math.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_brush.h"
 #include "vk_light.h"
 
@@ -65,14 +65,14 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 
 	if (surf && ent && ent->model && ent->model->surfaces) {
 		const int surface_index = surf - ent->model->surfaces;
-		const texture_t *current_tex = R_TextureAnimation(ent, surf, NULL);
+		const texture_t *current_tex = R_TextureAnimation(ent, surf);
 		const int tex_id = current_tex->gl_texturenum;
-		const vk_texture_t* const texture = findTexture( tex_id );
+		const char *const tex_name = R_TextureGetNameByIndex( tex_id );
 		const texture_t *tex = surf->texinfo->texture;
 
 		p += Q_snprintf(p, end - p,
 			"surface index: %d; texture: %s(%d)\n",
-			surface_index, texture ? texture->name : "NONE", tex_id
+			surface_index, tex_name ? tex_name : "NONE", tex_id
 		);
 
 		if (tex->anim_total > 0 && tex->anim_next) {
@@ -80,9 +80,9 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 			p += Q_snprintf(p, end - p,
 				"anim textures chain (%d):\n", tex->anim_total);
 			for (int i = 0; i < tex->anim_total && tex; ++i) {
-				const vk_texture_t *vkt = findTexture(tex->gl_texturenum);
+				const char* const texname = R_TextureGetNameByIndex(tex->gl_texturenum);
 				p += Q_snprintf(p, end - p,
-					"%d: %s(%d)%s\n", i, vkt ? vkt->name : "NONE", tex->gl_texturenum, tex == current_tex ? " <-" : "   ");
+					"%d: %s(%d)%s\n", i, texname ? texname : "NONE", tex->gl_texturenum, tex == current_tex ? " <-" : "   ");
 				tex = tex->anim_next;
 			}
 		}

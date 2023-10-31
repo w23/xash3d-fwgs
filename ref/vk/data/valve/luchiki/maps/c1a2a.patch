@@ -23,7 +23,7 @@
 
 {
 "_xvk_surface_id" "2412" // generic88a
-//"_xvk_texture" "black" // fix texture
+//"_xvk_material" "black" // fix texture
 "_light" "0 0 0 0"
 }
 

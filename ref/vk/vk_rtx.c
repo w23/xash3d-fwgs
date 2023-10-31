@@ -53,7 +53,8 @@
 		X(Buffer, lights) \
 		X(Buffer, light_grid) \
 		X(Texture, textures) \
-		X(Texture, skybox)
+		X(Texture, skybox) \
+		X(Texture, blue_noise_texture)
 
 enum {
 #define RES_ENUM(type, name) ExternalResource_##name,
@@ -123,11 +124,15 @@ void VK_RayNewMap( void ) {
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		// FIXME we should pick tglob.dii_all_textures here directly
 		.value = (vk_descriptor_value_t){
-			.image = {
-				.sampler = tglob.default_sampler_fixme,
-				.imageView = tglob.skybox_cube.vk.image.view ? tglob.skybox_cube.vk.image.view : tglob.cubemap_placeholder.vk.image.view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			},
+			.image = R_VkTexturesGetSkyboxDescriptorImageInfo(),
+		},
+	};
+
+	g_rtx.res[ExternalResource_blue_noise_texture].resource = (vk_resource_t){
+		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		// FIXME we should pick tglob.dii_all_textures here directly
+		.value = (vk_descriptor_value_t){
+			.image = R_VkTexturesGetBlueNoiseImageInfo(),
 		},
 	};
 }
@@ -429,6 +434,7 @@ static void reloadMainpipe(void) {
 					.debug_name = mr->name,
 					.width = FRAME_WIDTH,
 					.height = FRAME_HEIGHT,
+					.depth = 1,
 					.mips = 1,
 					.layers = 1,
 					.format = mr->image_format,
@@ -614,7 +620,7 @@ qboolean VK_RayInit( void )
 	g_rtx.res[ExternalResource_textures].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
-			.image_array = tglob.dii_all_textures,
+			.image_array = R_VkTexturesGetAllDescriptorsArray(),
 		}
 	};
 	g_rtx.res[ExternalResource_textures].refcount = 1;

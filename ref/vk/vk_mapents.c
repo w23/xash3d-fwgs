@@ -1,7 +1,7 @@
 #include "vk_common.h"
 #include "vk_mapents.h"
 #include "vk_core.h" // TODO we need only pool from there, not the entire vulkan garbage
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_logs.h"
 
 #include "eiface.h" // ARRAYSIZE
@@ -397,7 +397,7 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
-	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_texture && props->_xvk_texture[0] == '\0');
+	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_material && props->_xvk_material[0] == '\0');
 
 	for (int i = 0; i < props->_xvk_surface_id.num; ++i) {
 		const int index = props->_xvk_surface_id.values[i];
@@ -412,8 +412,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			g_patch.surfaces_count = num_surfaces;
 			for (int i = 0; i < num_surfaces; ++i) {
 				g_patch.surfaces[i].flags = Patch_Surface_NoPatch;
-				g_patch.surfaces[i].tex_id = -1;
-				g_patch.surfaces[i].tex = NULL;
+				g_patch.surfaces[i].material_ref.index = -1;
 			}
 		}
 
@@ -425,22 +424,15 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			continue;
 		}
 
-		if (have_fields & Field__xvk_texture) {
-			const int tex_id = XVK_FindTextureNamedLike( props->_xvk_texture );
-			DEBUG("Patch for surface %d with texture \"%s\" -> %d", index, props->_xvk_texture, tex_id);
-			psurf->tex_id = tex_id;
-
-			// Find texture_t for this index
-			for (int i = 0; i < map->numtextures; ++i) {
-				const texture_t* const tex = map->textures[i];
-				if (tex->gl_texturenum == tex_id) {
-					psurf->tex = tex;
-					psurf->tex_id = -1;
-					break;
-				}
+		if (have_fields & Field__xvk_material) {
+			const r_vk_material_ref_t mat = R_VkMaterialGetForName( props->_xvk_material );
+			if (mat.index >= 0) {
+				DEBUG("Patch for surface %d with material \"%s\" -> %d", index, props->_xvk_material, mat.index);
+				psurf->material_ref = mat;
+				psurf->flags |= Patch_Surface_Material;
+			} else {
+				ERR("Cannot patch surface %d with material \"%s\": material not found", index, props->_xvk_material);
 			}
-
-			psurf->flags |= Patch_Surface_Texture;
 		}
 
 		if (have_fields & Field__light) {
@@ -457,13 +449,13 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			Vector4Copy(props->_xvk_svec, psurf->s_vec);
 			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
 			psurf->flags |= Patch_Surface_STvecs;
-			DEBUG("Patch for surface %d: assign stvec", index);
+			DEBUG("Patch for surface %d: assign st_vec", index);
 		}
 
 		if (have_fields & Field__xvk_tex_scale) {
 			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
 			psurf->flags |= Patch_Surface_TexScale;
-			DEBUG("Patch for surface %d: assign tex scale %f %f",
+			DEBUG("Patch for surface %d: assign tex_scale %f %f",
 				index, psurf->tex_scale[0], psurf->tex_scale[1]
 			);
 		}
@@ -471,7 +463,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 		if (have_fields & Field__xvk_tex_offset) {
 			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
 			psurf->flags |= Patch_Surface_TexOffset;
-			DEBUG("Patch for surface %d: assign tex offset %f %f",
+			DEBUG("Patch for surface %d: assign tex_offset %f %f",
 				index, psurf->tex_offset[0], psurf->tex_offset[1]
 			);
 		}
@@ -533,7 +525,7 @@ static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_field
 			Q_strncpy(from_tex, from_begin, Q_min(sizeof from_tex, from_len + 1));
 			Q_strncpy(to_mat, to_begin, Q_min(sizeof to_mat, to_len + 1));
 
-			const int from_tex_index = XVK_FindTextureNamedLike(from_tex);
+			const int from_tex_index = R_TextureFindByNameLike(from_tex);
 			const r_vk_material_ref_t to_mat_ref = R_VkMaterialGetForName(to_mat);
 
 			DEBUG("Adding mapping from tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d",

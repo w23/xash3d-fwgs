@@ -4,6 +4,7 @@
 #include "vk_const.h"
 #include "profiler.h"
 #include "vk_logs.h"
+#include "unordered_roadmap.h"
 
 #include <stdio.h>
 
@@ -12,12 +13,13 @@
 #define MAX_INCLUDE_DEPTH 4
 
 #define MAX_MATERIALS 2048
+#define MAX_NEW_MATERIALS 128
 
 static r_vk_material_t k_default_material = {
 	.tex_base_color = -1,
 	.tex_metalness = 0,
 	.tex_roughness = 0,
-	.tex_normalmap = 0,
+	.tex_normalmap = 0, // 0 means no normal map, checked in shaders
 
 	.metalness = 0.f,
 	.roughness = 1.f,
@@ -60,6 +62,11 @@ typedef struct {
 	r_vk_material_t material;
 } material_entry_t;
 
+typedef struct {
+	urmom_header_t hdr_;
+	int mat_id; // into g_materials.table
+} material_name_map_t;
+
 static struct {
 	int count;
 	material_entry_t table[MAX_MATERIALS];
@@ -69,7 +76,8 @@ static struct {
 	// TODO embed into tex_to_mat
 	r_vk_material_per_mode_t for_rendermode[kRenderTransAdd+1];
 
-	// TODO for name
+	urmom_desc_t map_desc;
+	material_name_map_t map[MAX_NEW_MATERIALS];
 } g_materials;
 
 static struct {
@@ -83,7 +91,7 @@ static struct {
 
 static int loadTexture( const char *filename, qboolean force_reload, colorspace_hint_e colorspace ) {
 	const uint64_t load_begin_ns = aprof_time_now_ns();
-	const int tex_id = R_VkLoadTexture( filename, colorspace, force_reload);
+	const int tex_id = R_TextureUploadFromFileExAcquire( filename, colorspace, force_reload );
 	DEBUG("Loaded texture %s => %d", filename, tex_id);
 	g_stats.texture_loads++;
 	g_stats.texture_load_duration_ns += aprof_time_now_ns() - load_begin_ns;
@@ -115,6 +123,30 @@ static void printMaterial(int index) {
 		);
 }
 
+static void acquireTexturesForMaterial( int index ) {
+	const r_vk_material_t *mat = &g_materials.table[index].material;
+	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+	R_TextureAcquire(mat->tex_base_color);
+	R_TextureAcquire(mat->tex_metalness);
+	R_TextureAcquire(mat->tex_roughness);
+	if (mat->tex_normalmap > 0)
+		R_TextureAcquire(mat->tex_normalmap);
+}
+
+static void releaseTexturesForMaterialPtr( const r_vk_material_t *mat ) {
+	R_TextureRelease(mat->tex_base_color);
+	R_TextureRelease(mat->tex_metalness);
+	R_TextureRelease(mat->tex_roughness);
+	if (mat->tex_normalmap > 0)
+		R_TextureRelease(mat->tex_normalmap);
+}
+
+static void releaseTexturesForMaterial( int index ) {
+	const r_vk_material_t *mat = &g_materials.table[index].material;
+	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
+	releaseTexturesForMaterialPtr( mat );
+}
+
 static int addMaterial(const char *name, const r_vk_material_t* mat) {
 	if (g_materials.count == MAX_MATERIALS) {
 		ERR("Max count of materials %d reached", MAX_MATERIALS);
@@ -123,6 +155,7 @@ static int addMaterial(const char *name, const r_vk_material_t* mat) {
 
 	Q_strncpy(g_materials.table[g_materials.count].name, name, sizeof g_materials.table[g_materials.count].name);
 	g_materials.table[g_materials.count].material = *mat;
+	acquireTexturesForMaterial(g_materials.count);
 
 	printMaterial(g_materials.count);
 
@@ -130,7 +163,7 @@ static int addMaterial(const char *name, const r_vk_material_t* mat) {
 }
 
 static void assignMaterialForTexture(const char *name, int for_tex_id, int mat_id) {
-	const char* const tex_name = findTexture(for_tex_id)->name;
+	const char* const tex_name = R_TextureGetNameByIndex(for_tex_id);
 	DEBUG("Assigning material \"%s\" for_tex_id=\"%s\"(%d)", name, tex_name, for_tex_id);
 
 	ASSERT(mat_id >= 0);
@@ -155,7 +188,6 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 	r_vk_material_t current_material = k_default_material;
 	int for_tex_id = -1;
-	int dummy_named_texture_fixme = -1;
 	qboolean force_reload = false;
 	qboolean create = false;
 	qboolean metalness_set = false;
@@ -192,7 +224,6 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		if (key[0] == '{') {
 			current_material = k_default_material;
 			for_tex_id = -1;
-			dummy_named_texture_fixme = -1;
 			force_reload = false;
 			create = false;
 			metalness_set = false;
@@ -203,37 +234,43 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		}
 
 		if (key[0] == '}') {
-			if (for_tex_id < 0 && !create) {
+			if (for_tex_id <= 0 && !create) {
 				// Skip this material, as its texture hasn't been loaded
 				// NOTE: might want to check whether it makes sense wrt late-loading stuff
 				continue;
 			}
 
-			if (!name[0]) {
+			if (name[0] == '\0') {
 				WARN("Unreferenceable (no \"for_texture\", no \"new\") material found in %s", filename);
 				continue;
 			}
 
-#define LOAD_TEXTURE_FOR(name, field, colorspace) do { \
-			if (name[0] != '\0') { \
-				char texture_path[256]; \
-				MAKE_PATH(texture_path, name); \
-				const int tex_id = loadTexture(texture_path, force_reload, colorspace); \
-				if (tex_id < 0) { \
-					ERR("Failed to load texture \"%s\" for "#name"", name); \
+			// Start with *default texture for base color, it will be acquired if no replacement is specified or could be loaded.
+			current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
+
+#define LOAD_TEXTURE_FOR(name, field, colorspace) \
+			do { \
+				if (name[0] != '\0') { \
+					char texture_path[256]; \
+					MAKE_PATH(texture_path, name); \
+					const int tex_id = loadTexture(texture_path, force_reload, colorspace); \
+					if (tex_id < 0) { \
+						ERR("Failed to load texture \"%s\" for "#name"", name); \
+						if (current_material.field > 0) \
+							R_TextureAcquire(current_material.field); \
+					} else { \
+						current_material.field = tex_id; \
+					} \
 				} else { \
-					current_material.field = tex_id; \
+					if (current_material.field > 0) \
+						R_TextureAcquire(current_material.field); \
 				} \
-			}} while(0)
+			} while(0)
 
 			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color, kColorspaceNative);
 			LOAD_TEXTURE_FOR(normal_map, tex_normalmap, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(metal_map, tex_metalness, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(roughness_map, tex_roughness, kColorspaceLinear);
-
-			// If there's no explicit basecolor_map value, use the "for" target texture
-			if (current_material.tex_base_color == -1)
-				current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
 
 			if (!metalness_set && current_material.tex_metalness != tglob.whiteTexture) {
 				// If metalness factor wasn't set explicitly, but texture was specified, set it to match the texture value.
@@ -242,21 +279,36 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 
 			const int mat_id = addMaterial(name, &current_material);
 
+			releaseTexturesForMaterialPtr(&current_material);
+
 			if (mat_id < 0) {
-				ERR("Cannot add material \"%s\" for_tex_id=\"%s\"(%d)", name, for_tex_id >= 0 ? findTexture(for_tex_id)->name : "N/A", for_tex_id);
+				ERR("Cannot add material \"%s\" for_tex_id=\"%s\"(%d)", name, for_tex_id >= 0 ? R_TextureGetNameByIndex(for_tex_id) : "N/A", for_tex_id);
 				continue;
 			}
 
-			// FIXME have a personal hash map, don't use texture
-			if (dummy_named_texture_fixme > 0) {
-				assignMaterialForTexture(name, dummy_named_texture_fixme, mat_id);
+			if (create)
+			{
+				const urmom_insert_t insert = urmomInsert(&g_materials.map_desc, name);
+				if (insert.index < 0) {
+					ERR("Cannot add new material '%s', ran out of space (max=%d)", name, MAX_NEW_MATERIALS);
+					continue;
+				}
+
+				material_name_map_t *const item = g_materials.map + insert.index;
+
+				if (!insert.created)
+					WARN("Replacing material '%s'@%d %d=>%d", name, insert.index, item->mat_id, mat_id);
+				else
+					DEBUG("Mapping new material '%s'@%d => %d", name, insert.index, mat_id);
+
+				item->mat_id = mat_id;
 			}
 
 			// Assign from-texture mapping if there's a texture
 			if (for_tex_id >= 0) {
 				// Assign rendermode-specific materials
 				if (rendermode > 0) {
-					const char* const tex_name = findTexture(for_tex_id)->name;
+					const char* const tex_name = R_TextureGetNameByIndex(for_tex_id);
 					DEBUG("Adding material \"%s\" for_tex_id=\"%s\"(%d) for rendermode %d", name, tex_name, for_tex_id, rendermode);
 
 					r_vk_material_per_mode_t* const rm = g_materials.for_rendermode + rendermode;
@@ -280,21 +332,23 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 		if (!pos)
 			break;
 
+		//DEBUG("key=\"%s\", value=\"%s\"", key, value);
+
 		if (Q_stricmp(key, "for") == 0) {
 			if (name[0] != '\0')
 				WARN("Material already has \"new\" or \"for_texture\" old=\"%s\" new=\"%s\"", name, value);
 
 			const uint64_t lookup_begin_ns = aprof_time_now_ns();
-			for_tex_id = XVK_FindTextureNamedLike(value);
+			for_tex_id = R_TextureFindByNameLike(value);
+			DEBUG("R_TextureFindByNameLike(%s)=%d", value, for_tex_id);
+			if (for_tex_id >= 0)
+				ASSERT(Q_stristr(R_TextureGetNameByIndex(for_tex_id), value) != NULL);
 			g_stats.texture_lookup_duration_ns += aprof_time_now_ns() - lookup_begin_ns;
 			g_stats.texture_lookups++;
 			Q_strncpy(name, value, sizeof name);
 		} else if (Q_stricmp(key, "new") == 0) {
 			if (name[0] != '\0')
 				WARN("Material already has \"new\" or \"for_texture\" old=\"%s\" new=\"%s\"", name, value);
-
-			// TODO hash map here, don't depend on textures
-			dummy_named_texture_fixme = XVK_CreateDummyTexture(value);
 			Q_strncpy(name, value, sizeof name);
 			create = true;
 		} else if (Q_stricmp(key, "force_reload") == 0) {
@@ -382,13 +436,28 @@ static int findFilenameExtension(const char *s, int len) {
 	return len;
 }
 
+static void materialsReleaseTextures( void ) {
+	for (int i = 1; i < g_materials.count; ++i)
+		releaseTexturesForMaterial(i);
+}
+
 void R_VkMaterialsReload( void ) {
 	const uint64_t begin_time_ns = aprof_time_now_ns();
 	memset(&g_stats, 0, sizeof(g_stats));
 
+	materialsReleaseTextures();
+
 	g_materials.count = 1;
 
 	memset(g_materials.tex_to_mat, 0, sizeof g_materials.tex_to_mat);
+
+	g_materials.map_desc = (urmom_desc_t){
+		.type = kUrmomStringInsensitive,
+		.array = g_materials.map,
+		.count = COUNTOF(g_materials.map),
+		.item_size = sizeof(g_materials.map[0]),
+	};
+	urmomInit(&g_materials.map_desc);
 
 	for (int i = 0; i < COUNTOF(g_materials.for_rendermode); ++i)
 		g_materials.for_rendermode[i].count = 0;
@@ -481,7 +550,7 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 		// TODO check for replacement textures named in a predictable way
 		// If there are, create a new material and assign it here
 
-		const char* texname = findTexture(tex_index)->name;
+		const char* texname = R_TextureGetNameByIndex(tex_index);
 		DEBUG("Would try to load texture files by default names of \"%s\"", texname);
 
 		// If no PBR textures found, continue using legacy+default ones
@@ -499,17 +568,24 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 }
 
 r_vk_material_ref_t R_VkMaterialGetForName( const char *name ) {
-	// FIXME proper hash table here, don't depend on textures
-	const int dummy_tex_id_fixme = VK_FindTexture(name);
-	if (dummy_tex_id_fixme == 0) {
-		ERR("Material with name \"%s\" not found", name);
+	// Find in internal map first
+	// New materials have preference over texture names
+	const int index = urmomFind(&g_materials.map_desc, name);
+	if (index >= 0)
+		return (r_vk_material_ref_t){.index = g_materials.map[index].mat_id};
+	DEBUG("Couldn't find material '%s', fallback to texture lookup", name);
+
+	// Find by texture name
+	const int tex_id = R_TextureFindByNameLike(name);
+	if (tex_id <= 0) {
+		ERR("Neither material nor texture with name \"%s\" was found", name);
 		return (r_vk_material_ref_t){.index = -1,};
 	}
 
-	ASSERT(dummy_tex_id_fixme >= 0);
-	ASSERT(dummy_tex_id_fixme < MAX_TEXTURES);
+	ASSERT(tex_id > 0);
+	ASSERT(tex_id < MAX_TEXTURES);
 
-	return (r_vk_material_ref_t){.index = g_materials.tex_to_mat[dummy_tex_id_fixme].mat_id};
+	return (r_vk_material_ref_t){.index = g_materials.tex_to_mat[tex_id].mat_id};
 }
 
 r_vk_material_t R_VkMaterialGetForRef( r_vk_material_ref_t ref ) {
@@ -547,3 +623,8 @@ qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_mat
 
 	return false;
 }
+
+void R_VkMaterialsShutdown( void ) {
+	materialsReleaseTextures();
+}
+
