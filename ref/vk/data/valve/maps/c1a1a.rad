@@ -2,9 +2,9 @@
 +A~FIFTIES_LGT2  160 170 220  4000
 +0~GENERIC86B    60  220 170  10000
 
-+0~LAB1_CMP2     255 255 255  0
-+1~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
-+2~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
+//+1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
+//+2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 
 LAB1_COMP3D      255 255 255  0
 
