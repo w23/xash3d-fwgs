@@ -597,27 +597,33 @@ const char* R_TextureGetNameByIndex( unsigned int texnum )
 	return g_textures.all[texnum].hdr_.key;
 }
 
-static int loadTextureInternal( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean ref_interface ) {
+static int loadTextureInternalFromFile( const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean ref_interface ) {
+	qboolean success = false;
 	if( !checkTextureName( name ))
 		return 0;
 
 	const urmom_insert_t insert = urmomInsert(&g_textures.all_desc, name);
-	if (insert.index < 0)
+	if (insert.index < 0) {
 		ERR("Cannot allocate texture slot for \"%s\"", name);
+		return 0;
+	}
+
 	ASSERT(insert.index < COUNTOF(g_textures.all));
 
 	vk_texture_t *const tex = g_textures.all + insert.index;
 
-	// see if already loaded
+	// return existing if already loaded and was not forced to reload
 	if (!insert.created && !force_update) {
-		DEBUG("Found existing texture %s(%d) refcount=%d",
-			TEX_NAME(tex), insert.index, tex->refcount);
+		DEBUG("Found existing texture %s(%d) refcount=%d", TEX_NAME(tex), insert.index, tex->refcount);
+
+		// Increment refcount for refcount-aware calls (e.g. materials)
 		if (!ref_interface) {
 			tex->refcount++;
 		} else if (!tex->ref_interface_visible) {
 			tex->ref_interface_visible = true;
 			tex->refcount++;
 		}
+
 		return insert.index;
 	}
 
@@ -633,49 +639,45 @@ static int loadTextureInternal( const char *name, const byte *buf, size_t size, 
 	gEngine.Image_SetForceFlags( picFlags );
 
 	rgbdata_t *const pic = gEngine.FS_LoadImage( name, buf, size );
-	if( !pic ) {
-		if (insert.created)
-			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
-		return 0; // couldn't loading image
-	}
+	if( !pic )
+		goto cleanup;
 
+	// Process flags, convert to rgba, etc
 	tex->flags = flags;
-
-	// upload texture
 	VK_ProcessImage( tex, pic );
 
 	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, colorspace_hint ))
-	{
-		if (insert.created)
-			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
+		goto cleanup;
 
-		gEngine.FS_FreeImage( pic ); // release source texture
-		return 0;
-	}
-
-	gEngine.FS_FreeImage( pic ); // release source texture
-
-	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
-	// TODO where did we come from?
+	// New textures should have refcount = 1 regardless of refcount-aware calls
 	if (insert.created) {
 		tex->refcount = 1;
+
+		// Mark it as visible from refount-unaware calls if it came from one
 		if (ref_interface)
 			tex->ref_interface_visible = true;
 	}
 
+	success = true;
 
-	return insert.index;
+cleanup:
+	if ( !success && insert.created )
+		urmomRemoveByIndex(&g_textures.all_desc, insert.index);
+	if ( pic )
+		gEngine.FS_FreeImage( pic );
+
+	return success ? insert.index : 0;
 }
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags ) {
 	const qboolean force_update = false;
 	const qboolean ref_interface = true;
-	return loadTextureInternal(name, buf, size, flags, kColorspaceGamma, force_update, ref_interface);
+	return loadTextureInternalFromFile(name, buf, size, flags, kColorspaceGamma, force_update, ref_interface);
 }
 
 int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e colorspace, qboolean force_reload) {
 	const qboolean ref_interface = false;
-	return loadTextureInternal( filename, NULL, 0, 0, colorspace, force_reload, ref_interface );
+	return loadTextureInternalFromFile( filename, NULL, 0, 0, colorspace, force_reload, ref_interface );
 }
 
 // Unconditionally destroy the texture
@@ -796,7 +798,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 
 	if( !R_VkTextureUpload( insert.index, tex, pic, pic_count, kColorspaceGamma ))
 	{
-		if (!update_only)
+		if ( !update_only && insert.created )
 			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
 		return 0;
 	}
@@ -810,6 +812,7 @@ static int loadTextureFromBuffers( const char *name, rgbdata_t *const *const pic
 
 	return insert.index;
 }
+
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
 	return loadTextureFromBuffers(name, &pic, 1, flags, update_only);
 }
