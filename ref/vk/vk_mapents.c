@@ -581,18 +581,38 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 	}
 }
 
-static void appendExludedPairs(const entity_props_t *props) {
+static void appendExcludedPairs(const entity_props_t *props) {
 	if (props->_xvk_smoothing_excluded_pairs.num % 2 != 0) {
-		ERR("vk_mapents: smoothing group exclusion list should be list of pairs -- divisible by 2; cutting the tail");
+		ERR("vk_mapents: smoothing group exclusion pairs list should be list of pairs -- divisible by 2; cutting the tail");
 	}
 
 	int count = props->_xvk_smoothing_excluded_pairs.num & ~1;
+	if (g_map_entities.smoothing.excluded_pairs_count + count > COUNTOF(g_map_entities.smoothing.excluded_pairs)) {
+		ERR("vk_mapents: smoothing exclusion pairs capacity exceeded, go complain in github issues");
+		count = COUNTOF(g_map_entities.smoothing.excluded_pairs) - g_map_entities.smoothing.excluded_pairs_count;
+	}
+
+	memcpy(g_map_entities.smoothing.excluded_pairs + g_map_entities.smoothing.excluded_pairs_count, props->_xvk_smoothing_excluded_pairs.values, count * sizeof(int));
+
+	g_map_entities.smoothing.excluded_pairs_count += count;
+}
+
+static void appendExcludedSingles(const entity_props_t *props) {
+	int count = props->_xvk_smoothing_excluded.num;
+
 	if (g_map_entities.smoothing.excluded_count + count > COUNTOF(g_map_entities.smoothing.excluded)) {
 		ERR("vk_mapents: smoothing exclusion group capacity exceeded, go complain in github issues");
 		count = COUNTOF(g_map_entities.smoothing.excluded) - g_map_entities.smoothing.excluded_count;
 	}
 
-	memcpy(g_map_entities.smoothing.excluded + g_map_entities.smoothing.excluded_count, props->_xvk_smoothing_excluded_pairs.values, count * sizeof(int));
+	memcpy(g_map_entities.smoothing.excluded + g_map_entities.smoothing.excluded_count, props->_xvk_smoothing_excluded.values, count * sizeof(int));
+
+	if (g_log_debug_bits & LOG_MODULE) {
+		DEBUG("Adding %d smoothing-excluded surfaces", props->_xvk_smoothing_excluded.num);
+		for (int i = 0; i < props->_xvk_smoothing_excluded.num; ++i) {
+			DEBUG("%d", props->_xvk_smoothing_excluded.values[i]);
+		}
+	}
 
 	g_map_entities.smoothing.excluded_count += count;
 }
@@ -670,7 +690,11 @@ static void parseEntities( char *string, qboolean is_patch ) {
 							}
 
 							if (have_fields & Field__xvk_smoothing_excluded_pairs) {
-								appendExludedPairs(&values);
+								appendExcludedPairs(&values);
+							}
+
+							if (have_fields & Field__xvk_smoothing_excluded) {
+								appendExcludedSingles(&values);
 							}
 
 							if (have_fields & Field__xvk_smoothing_group) {
@@ -798,6 +822,7 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.entity_count = 0;
 	g_map_entities.func_any_count = 0;
 	g_map_entities.smoothing.threshold = cosf(DEG2RAD(45.f));
+	g_map_entities.smoothing.excluded_pairs_count = 0;
 	g_map_entities.smoothing.excluded_count = 0;
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i)
 		g_map_entities.smoothing.groups[i].count = 0;

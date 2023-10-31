@@ -37,6 +37,7 @@
 	X(25, string, _xvk_map_material, String) \
 	X(26, int, rendermode, Int) \
 	X(27, int, _xvk_smooth_entire_model, Int) \
+	X(28, int_array_t, _xvk_smoothing_excluded, IntArray) \
 
 /* NOTE: not used
 	X(23, int, renderamt, Int) \
@@ -162,15 +163,20 @@ typedef struct {
 		float threshold;
 
 #define MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS 32
-		int excluded[MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS * 2];
-		int excluded_count;
+		int excluded_pairs[MAX_EXCLUDED_SMOOTHING_SURFACES_PAIRS * 2];
+		int excluded_pairs_count;
 
 #define MAX_INCLUDED_SMOOTHING_GROUPS 32
 		int groups_count;
 		xvk_smoothing_group_t groups[MAX_INCLUDED_SMOOTHING_GROUPS];
+
+#define MAX_EXCLUDED_SMOOTHING_SURFACES 256
+		int excluded_count;
+		int excluded[MAX_EXCLUDED_SMOOTHING_SURFACES];
 	} smoothing;
 } xvk_map_entities_t;
 
+// TODO expose a bunch of things here as funtions, not as internal structures
 extern xvk_map_entities_t g_map_entities;
 
 enum { NoEnvironmentLights = -1, MoreThanOneEnvironmentLight = -2 };
