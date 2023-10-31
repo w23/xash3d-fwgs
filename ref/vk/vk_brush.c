@@ -848,21 +848,31 @@ static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
 }
 
 static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_entire_model, int surf1, int surf2) {
-	//return Q_min(surf1, surf2) == 741 && Q_max(surf1, surf2) == 743;
-
 	// Filter explicit exclusion
-	for (int i = 0; i < g_map_entities.smoothing.excluded_count; i+=2) {
-		const int cand1 = g_map_entities.smoothing.excluded[i];
-		const int cand2 = g_map_entities.smoothing.excluded[i+1];
+	for (int i = 0; i < g_map_entities.smoothing.excluded_pairs_count; i+=2) {
+		const int cand1 = g_map_entities.smoothing.excluded_pairs[i];
+		const int cand2 = g_map_entities.smoothing.excluded_pairs[i+1];
 
 		if ((cand1 == surf1 && cand2 == surf2)
 			|| (cand1 == surf2 && cand2 == surf1))
 			return false;
 	}
 
-	if (smooth_entire_model)
+	qboolean excluded = false;
+	for (int i = 0; i < g_map_entities.smoothing.excluded_count; ++i) {
+		const int cand = g_map_entities.smoothing.excluded[i];
+		if (cand == surf1 || cand == surf2) {
+			excluded = true;
+			break;
+		}
+	}
+
+	if (smooth_entire_model && !excluded)
 		return true;
 
+	// Smoothing groups have priority over individual exclusion.
+	// That way we can exclude a surface from smoothing with most of its neighbours,
+	// but still smooth it with some.
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i) {
 		const xvk_smoothing_group_t *g = g_map_entities.smoothing.groups + i;
 		uint32_t bits = 0;
@@ -879,6 +889,9 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_ent
 			}
 		}
 	}
+
+	if (excluded)
+		return false;
 
 	// Do not join surfaces with different textures. Assume they belong to different objects.
 	{

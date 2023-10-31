@@ -241,8 +241,10 @@ void main() {
 	//imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.)); return;
 	//const vec4 mat_rmxx = imageLoad(material_rmxx, pix);
 	//imageStore(out_dest, pix, vec4((.5 + shading_normal * .5)*.8 + .2 * mat_rmxx.a , 0.)); return;
+	//imageStore(out_dest, pix, vec4(.5 + shading_normal * .5, 0.)); return;
 
-	vec3 normal = pix.x < res.x / 2 ? shading_normal : geometry_normal;
+	//vec3 normal = pix.x < res.x / 2 ? shading_normal : geometry_normal;
+	vec3 normal = shading_normal;// : geometry_normal;
 	imageStore(out_dest, pix, vec4(.5 + normal * .5, 0.)); return;
 #endif
 

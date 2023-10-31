@@ -5,7 +5,9 @@
     - [x] single return/goto cleanup
     - [-] pass args via structs? -> not necessary
     - [-] collapse texture uploading into a single function -> not necessary, they are different enough
-- [ ] merge materials PR
+- [x] merge materials PR
+- [x] studio gibs translucency
+- [x] smoothing exclusion
 
 # 2023-10-30 E321
 - [x] missing skybox

@@ -89,3 +89,7 @@ _xvk_smooth_entire_model "1"
 {
 //"_xvk_smoothing_threshold" "44" //workaround
 }
+
+{
+_xvk_smoothing_excluded "2120 2117 2118 1269 1267 2791 2792 2793"
+}
