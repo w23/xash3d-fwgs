@@ -706,7 +706,7 @@ qboolean SV_InitGame( void )
 {
 	string dllpath;
 
-	if( svs.game_library_loaded )
+	if( svgame.hInstance )
 		return true;
 
 	// first initialize?
@@ -721,7 +721,6 @@ qboolean SV_InitGame( void )
 	}
 
 	// client frames will be allocated in SV_ClientConnect
-	svs.game_library_loaded = true;
 	return true;
 }
 
@@ -1042,8 +1041,9 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 	// force normal player collisions for single player
 	if( svs.maxclients == 1 ) Cvar_SetValue( "sv_clienttrace", 1 );
 
-	// make sure what server name doesn't contain path and extension
-	COM_FileBase( mapname, sv.name, sizeof( sv.name ));
+	// allow loading maps from subdirectories, strip extension anyway
+	Q_strncpy( sv.name, mapname, sizeof( sv.name ));
+	COM_StripExtension( sv.name );
 
 	// precache and static commands can be issued during map initialization
 	Host_SetServerState( ss_loading );
@@ -1113,28 +1113,6 @@ qboolean SV_Initialized( void )
 int SV_GetMaxClients( void )
 {
 	return svs.maxclients;
-}
-
-qboolean SV_InitGameProgs( void )
-{
-	string dllpath;
-
-	if( svgame.hInstance ) return true; // already loaded
-
-	COM_GetCommonLibraryPath( LIBRARY_SERVER, dllpath, sizeof( dllpath ));
-
-	// just try to initialize
-	SV_LoadProgs( dllpath );
-
-	return false;
-}
-
-void SV_FreeGameProgs( void )
-{
-	if( svs.initialized ) return;	// server is active
-
-	// unload progs (free cvars and commands)
-	SV_UnloadProgs();
 }
 
 /*

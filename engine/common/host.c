@@ -33,6 +33,7 @@ GNU General Public License for more details.
 #include "common.h"
 #include "base_cmd.h"
 #include "client.h"
+#include "server.h"
 #include "netchan.h"
 #include "protocol.h"
 #include "mod_local.h"
@@ -127,6 +128,7 @@ void Sys_PrintUsage( void )
 	O("-noenginejoy     ", "disable engine builtin joystick support")
 	O("-noenginemouse   ", "disable engine builtin mouse support")
 	O("-nosound         ", "disable sound output")
+	O("-timedemo        ", "run timedemo and exit")
 #endif
 
 "\nPlatform-specific options:\n"
@@ -1016,21 +1018,31 @@ void Host_InitCommon( int argc, char **argv, const char *progname, qboolean bCha
 	else
 	{
 #if TARGET_OS_IOS
-		const char *IOS_GetDocsDir();
-		Q_strncpy( host.rootdir, IOS_GetDocsDir(), sizeof(host.rootdir) );
+		Q_strncpy( host.rootdir, IOS_GetDocsDir(), sizeof( host.rootdir ));
+#elif XASH_ANDROID && XASH_SDL
+		Q_strncpy( host.rootdir, SDL_AndroidGetExternalStoragePath(), sizeof( host.rootdir ));
 #elif XASH_PSVITA
-		if ( !PSVita_GetBasePath( host.rootdir, sizeof( host.rootdir ) ) )
+		if ( !PSVita_GetBasePath( host.rootdir, sizeof( host.rootdir )))
 		{
 			Sys_Error( "couldn't find xash3d data directory" );
 			host.rootdir[0] = 0;
 		}
 #elif (XASH_SDL == 2) && !XASH_NSWITCH // GetBasePath not impl'd in switch-sdl2
-		char *szBasePath;
-
-		if( !( szBasePath = SDL_GetBasePath() ) )
+		char *szBasePath = SDL_GetBasePath();
+		if( szBasePath )
+		{
+			Q_strncpy( host.rootdir, szBasePath, sizeof( host.rootdir ));
+			SDL_free( szBasePath );
+		}
+		else
+		{
+#if XASH_POSIX || XASH_WIN32
+			if( !getcwd( host.rootdir, sizeof( host.rootdir )))
+				Sys_Error( "couldn't determine current directory: %s, getcwd: %s", SDL_GetError(), strerror( errno ));
+#else
 			Sys_Error( "couldn't determine current directory: %s", SDL_GetError() );
-		Q_strncpy( host.rootdir, szBasePath, sizeof( host.rootdir ));
-		SDL_free( szBasePath );
+#endif
+		}
 #else
 		if( !getcwd( host.rootdir, sizeof( host.rootdir )))
 		{
@@ -1149,6 +1161,7 @@ Host_Main
 int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGame, pfnChangeGame func )
 {
 	static double	oldtime, newtime;
+	string demoname;
 
 	host.starttime = Sys_DoubleTime();
 
@@ -1245,6 +1258,9 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	Cbuf_ExecStuffCmds();	// execute stuffcmds (commandline)
 	SCR_CheckStartupVids();	// must be last
 
+	if( Sys_GetParmFromCmdLine( "-timedemo", demoname ))
+		Cbuf_AddTextf( "timedemo %s\n", demoname );
+
 	oldtime = Sys_DoubleTime() - 0.1;
 
 	if( Host_IsDedicated( ))
@@ -1293,6 +1309,7 @@ void EXPORT Host_Shutdown( void )
 #endif
 
 	SV_Shutdown( "Server shutdown\n" );
+	SV_UnloadProgs();
 	SV_ShutdownFilter();
 	CL_Shutdown();
 

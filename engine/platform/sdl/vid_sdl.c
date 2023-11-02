@@ -159,8 +159,8 @@ void *SW_LockBuffer( void )
 		void *pixels;
 		int stride;
 
-		if( SDL_LockTexture(sw.tex, NULL, &pixels, &stride ) )
-			Sys_Error("%s", SDL_GetError());
+		if( SDL_LockTexture(sw.tex, NULL, &pixels, &stride ) < 0 )
+			Sys_Error( "%s: %s", __func__, SDL_GetError( ));
 		return pixels;
 	}
 
@@ -273,7 +273,7 @@ static void R_InitVideoModes( void )
 		int j;
 		SDL_DisplayMode mode;
 
-		if( SDL_GetDisplayMode( displayIndex, i, &mode ) )
+		if( SDL_GetDisplayMode( displayIndex, i, &mode ) < 0 )
 		{
 			Msg( "SDL_GetDisplayMode: %s\n", SDL_GetError() );
 			continue;
@@ -420,12 +420,16 @@ static qboolean WIN_SetWindowIcon( HICON ico )
 {
 	SDL_SysWMinfo wminfo;
 
-	if( SDL_GetWindowWMInfo( host.hWnd, &wminfo ))
+	SDL_VERSION( &wminfo.version );
+
+	if( SDL_GetWindowWMInfo( host.hWnd, &wminfo ) == SDL_TRUE )
 	{
 		SendMessage( wminfo.info.win.window, WM_SETICON, ICON_SMALL, (LONG_PTR)ico );
 		SendMessage( wminfo.info.win.window, WM_SETICON, ICON_BIG, (LONG_PTR)ico );
 		return true;
 	}
+
+	Con_Reportf( S_ERROR "%s: %s", __func__, SDL_GetError( ));
 	return false;
 }
 #endif
@@ -439,6 +443,25 @@ GL_GetProcAddress
 void *GL_GetProcAddress( const char *name )
 {
 	void *func = SDL_GL_GetProcAddress( name );
+#if !SDL_VERSION_ATLEAST( 2, 0, 6 ) && XASH_POSIX
+	if( !func && Sys_CheckParm( "-egl" ))
+	{
+		/*
+		 * SDL2 has broken SDL_GL_GetProcAddress until this commit if using egl:
+		 * https://github.com/libsdl-org/SDL/commit/466ba57d42d244e80357e9ad3011c50af30ed225
+		 * so call eglGetProcAddress directly
+		 * */
+		static void *(*peglGetProcAddress)( const char * );
+		if( !peglGetProcAddress )
+		{
+			void *lib = dlopen( "libEGL.so", RTLD_NOW );
+			if( lib )
+				*(void**)&peglGetProcAddress = dlsym( lib, "eglGetProcAddress" );
+		}
+		if( peglGetProcAddress )
+			func = peglGetProcAddress( name );
+	}
+#endif
 
 #if XASH_PSVITA
 	// try to find in main module
@@ -474,8 +497,8 @@ void GL_UpdateSwapInterval( void )
 	{
 		ClearBits( gl_vsync.flags, FCVAR_CHANGED );
 
-		if( SDL_GL_SetSwapInterval( gl_vsync.value ) )
-			Con_Reportf( S_ERROR  "SDL_GL_SetSwapInterval: %s\n", SDL_GetError( ) );
+		if( SDL_GL_SetSwapInterval( gl_vsync.value ) < 0 )
+			Con_Reportf( S_ERROR  "SDL_GL_SetSwapInterval: %s\n", SDL_GetError( ));
 	}
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 }
@@ -524,7 +547,7 @@ GL_UpdateContext
 static qboolean GL_UpdateContext( void )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	if( SDL_GL_MakeCurrent( host.hWnd, glw_state.context ))
+	if( SDL_GL_MakeCurrent( host.hWnd, glw_state.context ) < 0 )
 	{
 		Con_Reportf( S_ERROR "GL_UpdateContext: %s\n", SDL_GetError());
 		return GL_DeleteContext();
@@ -581,7 +604,7 @@ static qboolean VID_SetScreenResolution( int width, int height, window_mode_t wi
 		want.w = width;
 		want.h = height;
 
-		if( SDL_GetClosestDisplayMode( 0, &want, &got ) < 0 )
+		if( SDL_GetClosestDisplayMode( 0, &want, &got ) == NULL )
 		{
 			Con_Printf( S_ERROR "%s: SDL_GetClosestDisplayMode: %s", __func__, SDL_GetError( ));
 			return false;
@@ -627,9 +650,9 @@ void VID_RestoreScreenResolution( void )
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 }
 
+#if SDL_VERSION_ATLEAST( 2, 0, 0 )
 static void VID_SetWindowIcon( SDL_Window *hWnd )
 {
-#if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	rgbdata_t *icon = NULL;
 	char iconpath[MAX_STRING];
 	const char *localIcoPath;
@@ -667,8 +690,8 @@ static void VID_SetWindowIcon( SDL_Window *hWnd )
 #if XASH_WIN32 // ICO support only for Win32
 	WIN_SetWindowIcon( LoadIcon( host.hInst, MAKEINTRESOURCE( 101 )));
 #endif
-#endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 }
+#endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 
 static qboolean VID_CreateWindowWithSafeGL( const char *wndname, int xpos, int ypos, int w, int h, uint32_t flags )
 {
@@ -794,6 +817,7 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 	else VID_RestoreScreenResolution();
 #endif
 
+	VID_SetWindowIcon( host.hWnd );
 	SDL_ShowWindow( host.hWnd );
 
 	if( glw_state.context_type == REF_SOFTWARE )
@@ -1040,8 +1064,12 @@ qboolean R_Init_Video( const int type )
 	refState.desktopBitsPixel = 16;
 #endif
 
+#ifdef SDL_HINT_QTWAYLAND_WINDOW_FLAGS
 	SDL_SetHint( SDL_HINT_QTWAYLAND_WINDOW_FLAGS, "OverridesSystemGestures" );
+#endif
+#ifdef SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION
 	SDL_SetHint( SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION, "landscape" );
+#endif
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 ) && !XASH_WIN32
 	SDL_SetHint( "SDL_VIDEO_X11_XRANDR", "1" );
@@ -1067,7 +1095,7 @@ qboolean R_Init_Video( const int type )
 		// refdll can request some attributes
 		GL_SetupAttributes( );
 
-		if( SDL_GL_LoadLibrary( EGL_LIB ) )
+		if( SDL_GL_LoadLibrary( EGL_LIB ) < 0 )
 		{
 			Con_Reportf( S_ERROR  "Couldn't initialize OpenGL: %s\n", SDL_GetError());
 			return false;
@@ -1108,7 +1136,11 @@ rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mod
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	SDL_DisplayMode displayMode;
 
-	SDL_GetCurrentDisplayMode( 0, &displayMode );
+	if( SDL_GetCurrentDisplayMode( 0, &displayMode ) < 0 )
+	{
+		Con_Printf( S_ERROR "SDL_GetCurrentDisplayMode: %s", SDL_GetError( ));
+		return rserr_invalid_mode;
+	}
 
 	// check our desktop attributes
 	refState.desktopBitsPixel = SDL_BITSPERPIXEL( displayMode.format );
@@ -1137,8 +1169,11 @@ rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mod
 		VID_RestoreScreenResolution();
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-		if( SDL_SetWindowFullscreen( host.hWnd, 0 ))
+		if( SDL_SetWindowFullscreen( host.hWnd, 0 ) < 0 )
+		{
+			Con_Printf( S_ERROR "SDL_SetWindowFullscreen: %s", SDL_GetError( ));
 			return rserr_invalid_fullscreen;
+		}
 #if SDL_VERSION_ATLEAST( 2, 0, 5 )
 		SDL_SetWindowResizable( host.hWnd, SDL_TRUE );
 #endif

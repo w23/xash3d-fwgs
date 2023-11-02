@@ -38,6 +38,11 @@ void Platform_MessageBox( const char *title, const char *message, qboolean paren
 qboolean Sys_DebuggerPresent( void ); // optional, see Sys_DebugBreak
 void Platform_SetStatus( const char *status );
 
+// legacy iOS port functions
+#if TARGET_OS_IOS
+const char *IOS_GetDocsDir( void );
+#endif // TARGET_OS_IOS
+
 #if XASH_WIN32 || XASH_LINUX
 #define XASH_PLATFORM_HAVE_STATUS 1
 #else
@@ -135,17 +140,6 @@ static inline void Platform_Shutdown( void )
 #endif
 }
 
-static inline void *Platform_GetNativeObject( const char *name )
-{
-	void *ptr = NULL;
-
-#if XASH_ANDROID
-	ptr = Android_GetNativeObject( name );
-#endif
-
-	return ptr;
-}
-
 /*
 ==============================================================================
 
@@ -154,7 +148,6 @@ static inline void *Platform_GetNativeObject( const char *name )
 ==============================================================================
 */
 void Platform_Vibrate( float life, char flags );
-void*Platform_GetNativeObject( const char *name );
 
 /*
 ==============================================================================

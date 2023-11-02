@@ -169,7 +169,7 @@ def configure(conf):
 	conf.env.MSVC_TARGETS = ['x86' if not conf.options.ALLOW64 else 'x64']
 
 	# Load compilers early
-	conf.load('xshlib xcompile compiler_c compiler_cxx')
+	conf.load('xshlib xcompile compiler_c compiler_cxx cmake gccdeps msvcdeps')
 
 	if conf.options.NSWITCH:
 		conf.load('nswitch')
@@ -301,6 +301,7 @@ def configure(conf):
 			# '-Werror=format=2',
 			'-Werror=implicit-fallthrough=2',
 			'-Werror=logical-op',
+			'-Werror=nonnull',
 			'-Werror=packed',
 			'-Werror=packed-not-aligned',
 			'-Werror=parentheses',
@@ -475,12 +476,11 @@ int main(int argc, char **argv) { strchrnul(argv[1], 'x'); return 0; }'''
 		if conf.check_cfg(package='opus', uselib_store='opus', args='opus >= 1.4 --cflags --libs', mandatory=False):
 			# now try to link with export that only exists with CUSTOM_MODES defined
 			frag='''#include <opus_custom.h>
-int main(void) { return !opus_custom_encoder_init(0, 0, 0); }'''
+int main(void) { return !opus_custom_encoder_init((OpusCustomEncoder *)1, (const OpusCustomMode *)1, 1); }'''
 
 			if conf.check_cc(msg='Checking if opus supports custom modes', defines='CUSTOM_MODES=1', use='opus', fragment=frag, mandatory=False):
 				conf.env.HAVE_SYSTEM_OPUS = True
 
-	conf.define('XASH_BUILD_COMMIT', conf.env.GIT_VERSION if conf.env.GIT_VERSION else 'notset')
 	conf.define('XASH_LOW_MEMORY', conf.options.LOW_MEMORY)
 
 	for i in SUBDIRS:
