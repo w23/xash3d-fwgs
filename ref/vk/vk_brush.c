@@ -1183,9 +1183,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				// FIXME make an explicit list of dynamic-uv geometries
 			}
 
-			VectorCopy(surf->texinfo->vecs[0], tangent);
-			VectorNormalize(tangent);
-
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
 
@@ -1217,7 +1214,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					}
 
 					float s_off = 0, t_off = 0;
-					float s_sc = 1, t_sc = 1;
 
 					if (psurf && (psurf->flags & Patch_Surface_TexOffset)) {
 						s_off = psurf->tex_offset[0];
@@ -1225,15 +1221,31 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					}
 
 					if (psurf && (psurf->flags & Patch_Surface_TexScale)) {
-						s_sc = psurf->tex_scale[0];
-						t_sc = psurf->tex_scale[1];
+						svec[0] *= psurf->tex_scale[0];
+						svec[1] *= psurf->tex_scale[0];
+						svec[2] *= psurf->tex_scale[0];
+						tvec[0] *= psurf->tex_scale[1];
+						tvec[1] *= psurf->tex_scale[1];
+						tvec[2] *= psurf->tex_scale[1];
 					}
 
-					const float s = s_off + s_sc * DotProduct( in_vertex->position, svec ) + svec[3];
-					const float t = t_off + t_sc * DotProduct( in_vertex->position, tvec ) + tvec[3];
+					const float s = s_off + DotProduct( in_vertex->position, svec ) + svec[3];
+					const float t = t_off + DotProduct( in_vertex->position, tvec ) + tvec[3];
 
 					vertex.gl_tc[0] = s / surf->texinfo->texture->width;
 					vertex.gl_tc[1] = t / surf->texinfo->texture->height;
+
+					VectorCopy(svec, tangent);
+					VectorNormalize(tangent);
+
+					// "Inverted" texture mapping should not lead to inverted tangent/normal map
+					// Make sure that orientation is preserved.
+					{
+						vec4_t stnorm;
+						CrossProduct(tvec, svec, stnorm);
+						if (DotProduct(stnorm, surf_normal) < 0.)
+							VectorNegate(tangent, tangent);
+					}
 				}
 
 				// lightmap texture coordinates
