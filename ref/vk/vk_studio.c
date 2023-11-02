@@ -2117,18 +2117,18 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
 	ASSERT(geometries);
 
-	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
-	render_submodel->prev_verts = Mem_Malloc(vk_core.pool, verts_size);
-	memcpy(render_submodel->prev_verts, g_studio.verts, verts_size);
-
 	buildStudioSubmodelGeometry((build_submodel_geometry_t){
-		//.submodel = submodel,
 		.geometry = &geometry,
 		.geometries = geometries,
 		.vertex_count = vertex_count,
 		.index_count = index_count,
-		.prev_verts = render_submodel->prev_verts,
+		.prev_verts = g_studio.verts,
 	});
+
+	// Store vertices computed by bulidStudioSubmodelGeometry as intial prev_verts
+	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
+	render_submodel->prev_verts = Mem_Malloc(vk_core.pool, verts_size);
+	memcpy(render_submodel->prev_verts, g_studio.verts, verts_size);
 
 	render_submodel->geometries = geometries;
 	render_submodel->geometries_count = submodel->nummesh;

@@ -262,7 +262,8 @@ void main() {
 	{
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
-		const float depth = length(origin - imageLoad(position_t, pix).xyz);
+		const vec3 position = imageLoad(position_t, pix).xyz;
+		const float depth = length(origin - position);
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(prev_position, 1.)).xyz, 1.);
 		const vec2 reproj_uv = clip_space.xy / clip_space.w;
@@ -305,6 +306,8 @@ void main() {
 		colour = diffuse + specular;
 
 		//imageStore(out_dest, pix, vec4(LINEARtoSRGB(diffuse), 0.)); return;
+		//imageStore(out_dest, pix, vec4(fract(abs(position - prev_position)), 0./*unused*/)); return;
+		//imageStore(out_dest, pix, vec4(fract(abs(prev_position)), 0./*unused*/)); return;
 	}
 
 	const vec4 base_color_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
