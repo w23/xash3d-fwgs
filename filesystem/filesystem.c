@@ -770,13 +770,13 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 		else if( !Q_stricmp( token, "secure" ))
 		{
 			pfile = COM_ParseFile( pfile, token, sizeof( token ));
-			GameInfo->secure = Q_atoi( token );
+			GameInfo->secure = Q_atoi( token ) ? true : false;
 		}
 		// valid for both
 		else if( !Q_stricmp( token, "nomodels" ))
 		{
 			pfile = COM_ParseFile( pfile, token, sizeof( token ));
-			GameInfo->nomodels = Q_atoi( token );
+			GameInfo->nomodels = Q_atoi( token ) ? true : false;
 		}
 		else if( !Q_stricmp( token, isGameInfo ? "max_edicts" : "edicts" ))
 		{
@@ -844,17 +844,17 @@ void FS_ParseGenericGameInfo( gameinfo_t *GameInfo, const char *buf, const qbool
 			else if( !Q_stricmp( token, "noskills" ))
 			{
 				pfile = COM_ParseFile( pfile, token, sizeof( token ));
-				GameInfo->noskills = Q_atoi( token );
+				GameInfo->noskills = Q_atoi( token ) ? true : false;
 			}
 			else if( !Q_stricmp( token, "render_picbutton_text" ))
 			{
 				pfile = COM_ParseFile( pfile, token, sizeof( token ));
-				GameInfo->render_picbutton_text = Q_atoi( token );
+				GameInfo->render_picbutton_text = Q_atoi( token ) ? true : false;
 			}
 			else if( !Q_stricmp( token, "internal_vgui_support" ))
 			{
 				pfile = COM_ParseFile( pfile, token, sizeof( token ));
-				GameInfo->internal_vgui_support = Q_atoi( token );
+				GameInfo->internal_vgui_support = Q_atoi( token ) ? true : false;
 			}
 			else if( !Q_stricmp( token, "quicksave_aged_count" ))
 			{
@@ -1386,7 +1386,7 @@ static void _Sys_Error( const char *fmt, ... )
 	exit( 1 );
 }
 
-static void *_Platform_GetNativeObject_stub( const char *object )
+static void *Sys_GetNativeObject_stub( const char *object )
 {
 	return NULL;
 }
@@ -2841,7 +2841,7 @@ fs_interface_t g_engfuncs =
 	_Mem_Alloc,
 	_Mem_Realloc,
 	_Mem_Free,
-	_Platform_GetNativeObject_stub
+	Sys_GetNativeObject_stub
 };
 
 static qboolean FS_InitInterface( int version, fs_interface_t *engfuncs )
@@ -2883,9 +2883,9 @@ static qboolean FS_InitInterface( int version, fs_interface_t *engfuncs )
 		Con_Reportf( "filesystem_stdio: custom memory allocation functions found\n" );
 	}
 
-	if( engfuncs->_Platform_GetNativeObject )
+	if( engfuncs->_Sys_GetNativeObject )
 	{
-		g_engfuncs._Platform_GetNativeObject = engfuncs->_Platform_GetNativeObject;
+		g_engfuncs._Sys_GetNativeObject = engfuncs->_Sys_GetNativeObject;
 		Con_Reportf( "filesystem_stdio: custom platform-specific functions found\n" );
 	}
 

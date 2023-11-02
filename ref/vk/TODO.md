@@ -1,3 +1,12 @@
+# 2023-11-02 E323
+- [x] lol meta: read and sort issues
+- [x] merge from upstream
+- [ ] hevsuit glitches
+- [ ] massage shaders: consolidate all bindings explicitly
+- [ ] skip sorting-by-texture when loading brush models (=> geometry count explosion; i.e. kusochki count will explode too)
+- [ ] kusochki-vs-materials
+- [ ] -vkverbose arg for turning all debug logs before detailed cvars are read
+
 # 2023-10-31 E322
 - [x] load png blue noise files
 - [-] translucent animated thing -> needs shader rework

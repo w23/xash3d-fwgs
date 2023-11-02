@@ -1,5 +1,5 @@
 /*
-img_ktx2.c - KTX2 format load
+img_ktx2.c - ktx2 format load
 Copyright (C) 2023 Provod
 
 This program is free software: you can redistribute it and/or modify
@@ -15,51 +15,49 @@ GNU General Public License for more details.
 
 #include "imagelib.h"
 #include "xash3d_mathlib.h"
-#include "ktx2.h"
+#include "img_ktx2.h"
 
 static void Image_KTX2Format( uint32_t ktx2_format )
 {
-	switch ( ktx2_format )
+	switch( ktx2_format )
 	{
 		case KTX2_FORMAT_BC4_UNORM_BLOCK:
-			// 1 component for ref_gl
-			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.type = PF_BC4_UNSIGNED;
+			// 1 component for ref_gl
 			break;
 		case KTX2_FORMAT_BC4_SNORM_BLOCK:
-			// 1 component for ref_gl
-			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 			image.type = PF_BC4_SIGNED;
+			// 1 component for ref_gl
 			break;
 		case KTX2_FORMAT_BC5_UNORM_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
 			image.type = PF_BC5_UNSIGNED;
+			// 2 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_ALPHA );
 			break;
 		case KTX2_FORMAT_BC5_SNORM_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_ALPHA; // 2 components for ref_gl
 			image.type = PF_BC5_SIGNED;
+			// 2 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_ALPHA );
 			break;
 		case KTX2_FORMAT_BC6H_UFLOAT_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_COLOR;
 			image.type = PF_BC6H_UNSIGNED;
+			// 3 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_COLOR );
 			break;
 		case KTX2_FORMAT_BC6H_SFLOAT_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_COLOR;
 			image.type = PF_BC6H_SIGNED;
+			// 3 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_COLOR );
 			break;
 		case KTX2_FORMAT_BC7_UNORM_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
 			image.type = PF_BC7_UNORM;
+			// 4 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA );
 			break;
 		case KTX2_FORMAT_BC7_SRGB_BLOCK:
-			ClearBits( image.flags, IMAGE_HAS_LUMA );
-			image.flags |= IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA;
 			image.type = PF_BC7_SRGB;
+			// 4 components for ref_gl
+			SetBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA );
 			break;
 		default:
 			image.type = PF_UNKNOWN;
@@ -77,7 +75,6 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	// Sets image.type and image.flags
 	Image_KTX2Format( header->vkFormat );
 
-	// TODO add logs for these
 	if( image.type == PF_UNKNOWN )
 	{
 		Con_DPrintf( S_ERROR "%s: unsupported KTX2 format %d\n", __FUNCTION__, header->vkFormat );
@@ -120,7 +117,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		return false;
 	}
 
-	memcpy( &index, buffer + KTX2_IDENTIFIER_SIZE + sizeof( ktx2_header_t ), sizeof index );
+	memcpy( &index, buffer + KTX2_IDENTIFIER_SIZE + sizeof( ktx2_header_t ), sizeof( index ));
 
 	for( int mip = 0; mip < header->levelCount; ++mip )
 	{
@@ -129,7 +126,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		const uint32_t mip_size = Image_ComputeSize( image.type, width, height, image.depth );
 
 		ktx2_level_t level;
-		memcpy( &level, levels_begin + mip * sizeof level, sizeof level );
+		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
 
 		if( mip_size != level.byteLength )
 		{
@@ -154,7 +151,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	for( int mip = 0, cursor = 0; mip < header->levelCount; ++mip )
 	{
 		ktx2_level_t level;
-		memcpy( &level, levels_begin + mip * sizeof level, sizeof level );
+		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
 		memcpy( image.rgba + cursor, buffer + level.byteOffset, level.byteLength );
 		cursor += level.byteLength;
 	}
@@ -175,12 +172,14 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 		return false;
 	}
 
-	memcpy( &header, buffer + KTX2_IDENTIFIER_SIZE, sizeof header );
+	memcpy( &header, buffer + KTX2_IDENTIFIER_SIZE, sizeof( header ));
 
 	image.width = header.pixelWidth;
 	image.height = header.pixelHeight;
 	image.depth = Q_max( 1, header.pixelDepth );
 	image.num_mips = 1;
+
+	ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 
 	if( !Image_KTX2Parse( &header, buffer, filesize ))
 	{
@@ -190,16 +189,12 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 		// If KTX2 to imagelib conversion failed, try passing the file as raw data.
 		// This is useful for ref_vk which can directly support hundreds of formats which we don't convert to pixformat_t here
 
-		// TODO something like Image_CheckFlag( IL_SUPPORTS_KTX2_RAW )?
 		Con_DPrintf( S_WARN "%s: (%s) could not be converted to supported imagelib format, passing as raw KTX2 data\n", __FUNCTION__, name );
 		// This is a catch-all for ref_vk, which can do this format directly and natively
 		image.type = PF_KTX2_RAW;
 
 		image.size = filesize;
 		//image.encode = TODO custom encode type?
-
-		// Unknown format, no idea what's inside
-		ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
 
 		image.rgba = Mem_Malloc( host.imagepool, image.size );
 		memcpy( image.rgba, buffer, image.size );

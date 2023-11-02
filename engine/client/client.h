@@ -423,13 +423,6 @@ typedef struct
 	float		applied_angle;
 } screen_shake_t;
 
-typedef enum
-{
-	NET_REQUEST_CANCEL = 0,	// request was cancelled for some reasons
-	NET_REQUEST_GAMEUI,		// called from GameUI
-	NET_REQUEST_CLIENT,		// called from Client
-} net_request_type_t;
-
 typedef struct
 {
 	net_response_t		resp;
@@ -491,9 +484,7 @@ typedef struct
 	client_textmessage_t *titles;			// title messages, not network messages
 	int		numTitles;
 
-	net_request_type_t	request_type;		// filter the requests
 	net_request_t	net_requests[MAX_REQUESTS];	// no reason to keep more
-	net_request_t	*master_request;		// queued master request
 
 	efrag_t		*free_efrags;		// linked efrags
 	cl_entity_t	viewent;			// viewmodel
@@ -627,7 +618,10 @@ typedef struct
 	file_t		*demofile;
 	file_t		*demoheader;		// contain demo startup info in case we record a demo on this level
 	qboolean internetservers_wait;	// internetservers is waiting for dns request
-	qboolean internetservers_pending;	// internetservers is waiting for dns request
+	qboolean internetservers_pending; // if true, clean master server pings
+	uint32_t internetservers_key;       // compare key to validate master server reply
+	char     internetservers_query[512]; // cached query
+	uint32_t internetservers_query_len;
 
 	// legacy mode support
 	qboolean legacymode;				// one-way 48 protocol compatibility
@@ -765,7 +759,6 @@ int CL_IsDevOverviewMode( void );
 void CL_PingServers_f( void );
 void CL_SignonReply( void );
 void CL_ClearState( void );
-size_t CL_BuildMasterServerScanRequest( char *buf, size_t size, qboolean nat );
 
 //
 // cl_demo.c

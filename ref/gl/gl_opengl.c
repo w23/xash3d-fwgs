@@ -26,10 +26,14 @@ CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
 CVAR_DEFINE_AUTO( r_nocull, "0", 0, "ignore frustrum culling (perfomance test)" );
 CVAR_DEFINE_AUTO( r_lockpvs, "0", FCVAR_CHEAT, "lockpvs area at current point (pvs test)" );
 CVAR_DEFINE_AUTO( r_lockfrustum, "0", FCVAR_CHEAT, "lock frustrum area at current point (cull test)" );
-CVAR_DEFINE_AUTO( r_traceglow, "1", FCVAR_GLCONFIG, "cull flares behind models" );
+CVAR_DEFINE_AUTO( r_traceglow, "0", FCVAR_GLCONFIG, "cull flares behind models" );
 CVAR_DEFINE_AUTO( gl_round_down, "2", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "round texture sizes to nearest POT value" );
 CVAR_DEFINE( r_vbo, "gl_vbo", "0", FCVAR_ARCHIVE, "draw world using VBO (known to be glitchy)" );
 CVAR_DEFINE( r_vbo_dlightmode, "gl_vbo_dlightmode", "1", FCVAR_ARCHIVE, "vbo dlight rendering mode (0-1)" );
+CVAR_DEFINE_AUTO( r_ripple, "0", FCVAR_GLCONFIG, "enable software-like water texture ripple simulation" );
+CVAR_DEFINE_AUTO( r_ripple_updatetime, "0.05", FCVAR_GLCONFIG, "how fast ripple simulation is" );
+CVAR_DEFINE_AUTO( r_ripple_spawntime, "0.1", FCVAR_GLCONFIG, "how fast new ripples spawn" );
+
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
 
@@ -549,24 +553,54 @@ qboolean GL_CheckExtension( const char *name, const dllfunc_t *funcs, const char
 	for( func = funcs; func && func->name; func++ )
 	{
 		// functions are cleared before all the extensions are evaluated
-		if((*func->func = (void *)gEngfuncs.GL_GetProcAddress( func->name )) == NULL )
+		if(( *func->func = (void *)gEngfuncs.GL_GetProcAddress( func->name )) == NULL )
 		{
+			string name;
+			char *end;
+			size_t i = 0;
+#ifdef XASH_GLES
+			const char *suffixes[] = { "", "EXT", "OES" };
+#else
+			const char *suffixes[] = { "", "EXT" };
+#endif
+
 			// HACK: fix ARB names
-			char *str = Q_strstr( func->name, "ARB" );
-			if(str)
+			Q_strncpy( name, func->name, sizeof( name ));
+			if(( end = Q_strstr( name, "ARB" )))
 			{
-				string name;
-
-				Q_strncpy( name, func->name, MAX_STRING );
-				name[str - func->name] = '\0';
-				*func->func = gEngfuncs.GL_GetProcAddress( name );
-
-				if( !*func->func )
-					GL_SetExtension( r_ext, false );
+				*end = '\0';
 			}
-			else
-				// one or more functions are invalid, extension will be disabled
+			else // I need Q_strstrnul
+			{
+				end = name + Q_strlen( name );
+				i++; // skip empty suffix
+			}
+
+			for( ; i < sizeof( suffixes ) / sizeof( suffixes[0] ); i++ )
+			{
+				void *f;
+
+				Q_strncat( name, suffixes[i], sizeof( name ));
+
+				if(( f = gEngfuncs.GL_GetProcAddress( name )))
+				{
+					// GL_GetProcAddress prints errors about missing functions, so tell user that we found it with different name
+					gEngfuncs.Con_Printf( S_NOTE "found %s\n", name );
+
+					*func->func = f;
+					break;
+				}
+				else
+				{
+					*end = '\0'; // cut suffix, try next
+				}
+			}
+
+			// not found...
+			if( i == sizeof( suffixes ) / sizeof( suffixes[0] ))
+			{
 				GL_SetExtension( r_ext, false );
+			}
 		}
 	}
 #endif
@@ -829,7 +863,9 @@ void GL_InitExtensionsGLES( void )
 #endif
 		case GL_DEBUG_OUTPUT:
 			if( glw_state.extended )
-				GL_CheckExtension( "GL_KHR_debug", NULL, NULL, extid, 0 );
+				GL_CheckExtension( "GL_KHR_debug", debugoutputfuncs, "gl_debug_output", extid, 0 );
+			else
+				GL_SetExtension( extid, false );
 			break;
 		// case GL_TEXTURE_COMPRESSION_EXT: NOPE
 		// case GL_SHADER_GLSL100_EXT: NOPE
@@ -1093,6 +1129,7 @@ void GL_InitExtensions( void )
 
 			// force everything to happen in the main thread instead of in a separate driver thread
 			pglEnable( GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB );
+
 		}
 
 		// enable all the low priority messages
@@ -1153,6 +1190,9 @@ void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_traceglow );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_sort_textures );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_drawelements );
+	gEngfuncs.Cvar_RegisterVariable( &r_ripple );
+	gEngfuncs.Cvar_RegisterVariable( &r_ripple_updatetime );
+	gEngfuncs.Cvar_RegisterVariable( &r_ripple_spawntime );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
@@ -1345,7 +1385,7 @@ void GL_SetupAttributes( int safegl )
 #ifdef XASH_NANOGL
 	gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MAJOR_VERSION, 1 );
 	gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MINOR_VERSION, 1 );
-#elif defined( XASH_WES ) || defined( XASH_REGAL )
+#else
 	gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MAJOR_VERSION, 2 );
 	gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_MINOR_VERSION, 0 );
 #endif

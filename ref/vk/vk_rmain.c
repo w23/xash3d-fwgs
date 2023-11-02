@@ -112,7 +112,7 @@ static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean cu
 	PRINT_NOT_IMPLEMENTED();
 }
 
-extern void GL_SubdivideSurface( msurface_t *fa );
+extern void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa );
 
 static void Mod_UnloadTextures( model_t *mod )
 {

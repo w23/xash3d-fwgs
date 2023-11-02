@@ -34,7 +34,7 @@ GNU General Public License for more details.
 CVAR_DEFINE_AUTO( mp_decals, "300", FCVAR_ARCHIVE, "decals limit in multiplayer" );
 CVAR_DEFINE_AUTO( dev_overview, "0", 0, "draw level in overview-mode" );
 CVAR_DEFINE_AUTO( cl_resend, "6.0", 0, "time to resend connect" );
-CVAR_DEFINE_AUTO( cl_allow_download, "1", FCVAR_ARCHIVE, "allow to downloading resources from the server" );
+CVAR_DEFINE( cl_allow_download, "cl_allowdownload", "1", FCVAR_ARCHIVE, "allow to downloading resources from the server" );
 CVAR_DEFINE_AUTO( cl_allow_upload, "1", FCVAR_ARCHIVE, "allow to uploading resources to the server" );
 CVAR_DEFINE_AUTO( cl_download_ingame, "1", FCVAR_ARCHIVE, "allow to downloading resources while client is active" );
 CVAR_DEFINE_AUTO( cl_logofile, "lambda", FCVAR_ARCHIVE, "player logo name" );
@@ -92,7 +92,7 @@ client_t		cl;
 client_static_t	cls;
 clgame_static_t	clgame;
 
-void CL_InternetServers_f( void );
+static void CL_SendMasterServerScanRequest( void );
 
 //======================================================================
 int GAME_EXPORT CL_Active( void )
@@ -1081,7 +1081,7 @@ void CL_CheckForResend( void )
 	qboolean bandwidthTest;
 
 	if( cls.internetservers_wait )
-		CL_InternetServers_f();
+		CL_SendMasterServerScanRequest();
 
 	// if the local server is running and we aren't then connect
 	if( cls.state == ca_disconnected && SV_Active( ))
@@ -1574,10 +1574,10 @@ void CL_LocalServers_f( void )
 CL_BuildMasterServerScanRequest
 =================
 */
-size_t CL_BuildMasterServerScanRequest( char *buf, size_t size, qboolean nat )
+static size_t NONNULL CL_BuildMasterServerScanRequest( char *buf, size_t size, uint32_t *key, qboolean nat, const char *filter )
 {
 	size_t remaining;
-	char *info;
+	char *info, temp[32];
 
 	if( unlikely( size < sizeof( MS_SCAN_REQUEST )))
 		return 0;
@@ -1587,7 +1587,9 @@ size_t CL_BuildMasterServerScanRequest( char *buf, size_t size, qboolean nat )
 	info = buf + sizeof( MS_SCAN_REQUEST ) - 1;
 	remaining = size - sizeof( MS_SCAN_REQUEST );
 
-	info[0] = 0;
+	Q_strncpy( info, filter, remaining );
+
+	*key = COM_RandomLong( 0, 0x7FFFFFFF );
 
 #ifndef XASH_ALL_SERVERS
 	Info_SetValueForKey( info, "gamedir", GI->gamefolder, remaining );
@@ -1595,7 +1597,22 @@ size_t CL_BuildMasterServerScanRequest( char *buf, size_t size, qboolean nat )
 	Info_SetValueForKey( info, "clver", XASH_VERSION, remaining ); // let master know about client version
 	Info_SetValueForKey( info, "nat", nat ? "1" : "0", remaining );
 
+	Q_snprintf( temp, sizeof( temp ), "%x", *key );
+	Info_SetValueForKey( info, "key", temp, remaining );
+
 	return sizeof( MS_SCAN_REQUEST ) + Q_strlen( info );
+}
+
+/*
+=================
+CL_SendMasterServerScanRequest
+=================
+*/
+static void CL_SendMasterServerScanRequest( void )
+{
+	cls.internetservers_wait = NET_SendToMasters( NS_CLIENT,
+		cls.internetservers_query_len, cls.internetservers_query );
+	cls.internetservers_pending = true;
 }
 
 /*
@@ -1605,26 +1622,24 @@ CL_InternetServers_f
 */
 void CL_InternetServers_f( void )
 {
-	char	fullquery[512];
-	size_t len;
 	qboolean nat = cl_nat.value != 0.0f;
+	uint32_t key;
 
-	len = CL_BuildMasterServerScanRequest( fullquery, sizeof( fullquery ), nat );
+	if( Cmd_Argc( ) > 2 || ( Cmd_Argc( ) == 2 && !Info_IsValid( Cmd_Argv( 1 ))))
+	{
+		Con_Printf( S_USAGE "internetservers [filter]\n" );
+		return;
+	}
+
+	cls.internetservers_query_len = CL_BuildMasterServerScanRequest(
+		cls.internetservers_query, sizeof( cls.internetservers_query ),
+		&cls.internetservers_key, nat, Cmd_Argv( 1 ));
 
 	Con_Printf( "Scanning for servers on the internet area...\n" );
 
 	NET_Config( true, true ); // allow remote
 
-	cls.internetservers_wait = NET_SendToMasters( NS_CLIENT, len, fullquery );
-	cls.internetservers_pending = true;
-
-	if( !cls.internetservers_wait )
-	{
-		// now we clearing the vgui request
-		if( clgame.master_request != NULL )
-			memset( clgame.master_request, 0, sizeof( net_request_t ));
-		clgame.request_type = NET_REQUEST_GAMEUI;
-	}
+	CL_SendMasterServerScanRequest();
 }
 
 /*
@@ -2152,6 +2167,25 @@ void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 			return;
 		}
 
+		// check the extra header
+		if( MSG_ReadByte( msg ) == 0x7f )
+		{
+			uint32_t key = MSG_ReadDword( msg );
+
+			if( cls.internetservers_key != key )
+			{
+				Con_Printf( S_WARN "unexpected server list packet from %s (invalid key)\n", NET_AdrToString( from ));
+				return;
+			}
+
+			MSG_ReadByte( msg ); // reserved byte
+		}
+		else
+		{
+			Con_Printf( S_WARN "invalid server list packet from %s (missing extra header)\n", NET_AdrToString( from ));
+			return;
+		}
+
 		// serverlist got from masterserver
 		while( MSG_GetNumBitsLeft( msg ) > 8 )
 		{
@@ -2161,58 +2195,10 @@ void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 
 			// list is ends here
 			if( !servadr.port )
-			{
-				if( clgame.request_type == NET_REQUEST_CLIENT && clgame.master_request != NULL )
-				{
-					net_request_t	*nr = clgame.master_request;
-					net_adrlist_t	*list, **prev;
-
-					// setup the answer
-					nr->resp.remote_address = from;
-					nr->resp.error = NET_SUCCESS;
-					nr->resp.ping = host.realtime - nr->timesend;
-
-					if( nr->timeout <= host.realtime )
-						SetBits( nr->resp.error, NET_ERROR_TIMEOUT );
-
-					Con_Printf( "serverlist call: %s\n", NET_AdrToString( from ));
-					nr->pfnFunc( &nr->resp );
-
-					// throw the list, now it will be stored in user area
-					prev = (net_adrlist_t**)&nr->resp.response;
-
-					while( 1 )
-					{
-						list = *prev;
-						if( !list ) break;
-
-						// throw out any variables the game created
-						*prev = list->next;
-						Mem_Free( list );
-					}
-					memset( nr, 0, sizeof( *nr )); // done
-					clgame.request_type = NET_REQUEST_CANCEL;
-					clgame.master_request = NULL;
-				}
 				break;
-			}
 
-			if( clgame.request_type == NET_REQUEST_CLIENT && clgame.master_request != NULL )
-			{
-				net_request_t	*nr = clgame.master_request;
-				net_adrlist_t	*list;
-
-				// adding addresses into list
-				list = Z_Malloc( sizeof( *list ));
-				list->remote_address = servadr;
-				list->next = nr->resp.response;
-				nr->resp.response = list;
-			}
-			else if( clgame.request_type == NET_REQUEST_GAMEUI )
-			{
-				NET_Config( true, false ); // allow remote
-				Netchan_OutOfBandPrint( NS_CLIENT, servadr, "info %i", PROTOCOL_VERSION );
-			}
+			NET_Config( true, false ); // allow remote
+			Netchan_OutOfBandPrint( NS_CLIENT, servadr, "info %i", PROTOCOL_VERSION );
 		}
 
 		if( cls.internetservers_pending )
@@ -2261,10 +2247,13 @@ void CL_ReadNetMessage( void )
 
 	while( CL_GetMessage( net_message_buffer, &curSize ))
 	{
-		if( cls.legacymode && *((int *)&net_message_buffer) == 0xFFFFFFFE )
+		const int split_header = LittleLong( 0xFFFFFFFE );
+		if( cls.legacymode && !memcmp( &split_header, net_message_buffer, sizeof( split_header )))
+		{
 			// Will rewrite existing packet by merged
 			if( !NetSplit_GetLong( &cls.netchan.netsplit, &net_from, net_message_buffer, &curSize ) )
 				continue;
+		}
 
 		MSG_Init( &net_message, "ServerData", net_message_buffer, curSize );
 

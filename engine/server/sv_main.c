@@ -48,7 +48,8 @@ CVAR_DEFINE_AUTO( sv_send_logos, "1", 0, "send custom decal logo to other player
 CVAR_DEFINE_AUTO( sv_send_resources, "1", 0, "allow to download missed resources for players" );
 CVAR_DEFINE_AUTO( sv_logbans, "0", 0, "print into the server log info about player bans" );
 CVAR_DEFINE_AUTO( sv_allow_upload, "1", FCVAR_SERVER, "allow uploading custom resources on a server" );
-CVAR_DEFINE_AUTO( sv_allow_download, "1", FCVAR_SERVER, "allow downloading custom resources to the client" );
+CVAR_DEFINE( sv_allow_download, "sv_allowdownload", "1", FCVAR_SERVER, "allow downloading custom resources to the client" );
+static CVAR_DEFINE_AUTO( sv_allow_dlfile, "1", 0, "compatibility cvar, does nothing" );
 CVAR_DEFINE_AUTO( sv_uploadmax, "0.5", FCVAR_SERVER, "max size to upload custom resources (500 kB as default)" );
 CVAR_DEFINE_AUTO( sv_downloadurl, "", FCVAR_PROTECTED, "location from which clients can download missing files" );
 CVAR_DEFINE( sv_consistency, "mp_consistency", "1", FCVAR_SERVER, "enbale consistency check in multiplayer" );
@@ -925,6 +926,7 @@ void SV_Init( void )
 	Cvar_RegisterVariable( &sv_unlagsamples );
 	Cvar_RegisterVariable( &sv_allow_upload );
 	Cvar_RegisterVariable( &sv_allow_download );
+	Cvar_RegisterVariable( &sv_allow_dlfile );
 	Cvar_RegisterVariable( &sv_send_logos );
 	Cvar_RegisterVariable( &sv_send_resources );
 	Cvar_RegisterVariable( &sv_uploadmax );
@@ -1089,7 +1091,9 @@ void SV_Shutdown( const char *finalmsg )
 		if( CL_IsPlaybackDemo( ))
 			CL_Drop();
 
-		SV_UnloadProgs ();
+#if XASH_WIN32
+		SV_UnloadProgs();
+#endif // XASH_WIN32
 		return;
 	}
 
@@ -1106,7 +1110,10 @@ void SV_Shutdown( const char *finalmsg )
 		NET_MasterShutdown();
 
 	NET_Config( false, false );
-	SV_UnloadProgs ();
+	SV_DeactivateServer();
+#if XASH_WIN32
+	SV_UnloadProgs();
+#endif // XASH_WIN32
 	CL_Drop();
 
 	// free current level

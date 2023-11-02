@@ -166,7 +166,7 @@ void GL_ApplyTextureParams( gl_texture_t *tex )
 	}
 	else if( FBitSet( tex->flags, TF_NOMIPMAP ) || tex->numMips <= 1 )
 	{
-		if( FBitSet( tex->flags, TF_NEAREST ) || ( IsLightMap( tex ) && gl_lightmap_nearest.value ))
+		if( FBitSet( tex->flags, TF_NEAREST ) || ( IsLightMap( tex ) && gl_lightmap_nearest.value ) || ( tex->flags == TF_SKYSIDE && gl_texture_nearest.value ))
 		{
 			pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
 			pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
@@ -342,6 +342,8 @@ void R_SetTextureParameters( void )
 	// change all the existing mipmapped texture objects
 	for( i = 0; i < gl_numTextures; i++ )
 		GL_UpdateTextureParams( i );
+
+	R_UpdateRippleTexParams();
 }
 
 /*
@@ -2317,6 +2319,7 @@ void R_InitImages( void )
 	// validate cvars
 	R_SetTextureParameters();
 	GL_CreateInternalTextures();
+	R_InitRipples();
 
 	gEngfuncs.Cmd_AddCommand( "texturelist", R_TextureList_f, "display loaded textures list" );
 }

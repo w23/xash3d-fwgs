@@ -62,6 +62,29 @@ static float r_turbsin[] =
 #include "warpsin.h"
 };
 
+#define RIPPLES_CACHEWIDTH_BITS 7
+#define RIPPLES_CACHEWIDTH ( 1 << RIPPLES_CACHEWIDTH_BITS )
+#define RIPPLES_CACHEWIDTH_MASK (( RIPPLES_CACHEWIDTH ) - 1 )
+#define RIPPLES_TEXSIZE ( RIPPLES_CACHEWIDTH * RIPPLES_CACHEWIDTH )
+#define RIPPLES_TEXSIZE_MASK ( RIPPLES_TEXSIZE - 1 )
+
+STATIC_ASSERT( RIPPLES_TEXSIZE == 0x4000, "fix the algorithm to work with custom resolution" );
+
+static struct
+{
+	double time;
+	double oldtime;
+
+	short *curbuf, *oldbuf;
+	short buf[2][RIPPLES_TEXSIZE];
+	qboolean update;
+
+	uint32_t texture[RIPPLES_TEXSIZE];
+	int gl_texturenum;
+	int rippletexturenum;
+	float texturescale; // not all textures are 128x128, scale the texcoords down
+} g_ripple;
+
 static qboolean CheckSkybox( const char *name, char out[6][MAX_STRING] )
 {
 	const char	*skybox_ext[3] = { "dds", "tga", "bmp" };
@@ -799,10 +822,18 @@ void EmitWaterPolys( msurface_t *warp, qboolean reverse )
 			os = v[3];
 			ot = v[4];
 
-			s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
-			s *= ( 1.0f / SUBDIVIDE_SIZE );
+			if( !r_ripple.value )
+			{
+				s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+				t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			}
+			else
+			{
+				s = os / g_ripple.texturescale;
+				t = ot / g_ripple.texturescale;
+			}
 
-			t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			s *= ( 1.0f / SUBDIVIDE_SIZE );
 			t *= ( 1.0f / SUBDIVIDE_SIZE );
 
 			pglTexCoord2f( s, t );
@@ -821,4 +852,194 @@ void EmitWaterPolys( msurface_t *warp, qboolean reverse )
 		pglEnd();
 
 	GL_SetupFogColorForSurfaces();
+}
+
+/*
+============================================================
+
+	HALF-LIFE SOFTWARE WATER
+
+============================================================
+*/
+void R_ResetRipples( void )
+{
+	g_ripple.curbuf = g_ripple.buf[0];
+	g_ripple.oldbuf = g_ripple.buf[1];
+	g_ripple.time = g_ripple.oldtime = gpGlobals->time - 0.1;
+	memset( g_ripple.buf, 0, sizeof( g_ripple.buf ));
+}
+
+void R_InitRipples( void )
+{
+	rgbdata_t pic = { 0 };
+
+	pic.width = pic.height = RIPPLES_CACHEWIDTH;
+	pic.depth = 1;
+	pic.flags = IMAGE_HAS_COLOR;
+	pic.buffer = (byte *)g_ripple.texture;
+	pic.type = PF_RGBA_32;
+	pic.size = sizeof( g_ripple.texture );
+	pic.numMips = 1;
+	memset( pic.buffer, 0, pic.size );
+
+	g_ripple.rippletexturenum = GL_LoadTextureInternal( "*rippletex", &pic, TF_NOMIPMAP );
+}
+
+static void R_SwapBufs( void )
+{
+	short *tempbufp = g_ripple.curbuf;
+	g_ripple.curbuf = g_ripple.oldbuf;
+	g_ripple.oldbuf = tempbufp;
+}
+
+static void R_SpawnNewRipple( int x, int y, short val )
+{
+#define PIXEL( x, y ) ((( x ) & RIPPLES_CACHEWIDTH_MASK ) + ((( y ) & RIPPLES_CACHEWIDTH_MASK) << 7 ))
+	g_ripple.oldbuf[PIXEL( x, y )] += val;
+
+	val >>= 2;
+	g_ripple.oldbuf[PIXEL( x + 1, y )] += val;
+	g_ripple.oldbuf[PIXEL( x - 1, y )] += val;
+	g_ripple.oldbuf[PIXEL( x, y + 1 )] += val;
+	g_ripple.oldbuf[PIXEL( x, y - 1 )] += val;
+#undef PIXEL
+}
+
+static void R_RunRipplesAnimation( const short *oldbuf, short *pbuf )
+{
+	size_t i = 0;
+	const int w = RIPPLES_CACHEWIDTH;
+	const int m = RIPPLES_TEXSIZE_MASK;
+
+	for( i = w; i < m + w; i++, pbuf++ )
+	{
+		*pbuf = (
+			( (int)oldbuf[( i - ( w * 2 )) & m]
+			+ (int)oldbuf[( i - ( w + 1 )) & m]
+			+ (int)oldbuf[( i - ( w - 1 )) & m]
+			+ (int)oldbuf[( i ) & m]) >> 1 ) - (int)*pbuf;
+
+		*pbuf -= ( *pbuf >> 6 );
+	}
+}
+
+static int MostSignificantBit( unsigned int v )
+{
+#if __GNUC__
+	return 31 - __builtin_clz( v );
+#else
+	int i;
+	for( i = 0, v >>= 1; v; v >>= 1, i++ );
+	return i;
+#endif
+}
+
+void R_AnimateRipples( void )
+{
+	double frametime = gpGlobals->time - g_ripple.time;
+
+	g_ripple.update = r_ripple.value && frametime >= r_ripple_updatetime.value;
+
+	if( !g_ripple.update )
+		return;
+
+	g_ripple.time = gpGlobals->time;
+
+	R_SwapBufs();
+
+	if( g_ripple.time - g_ripple.oldtime > r_ripple_spawntime.value )
+	{
+		int x, y, val;
+
+		g_ripple.oldtime = g_ripple.time;
+
+		x = rand() & 0x7fff;
+		y = rand() & 0x7fff;
+		val = rand() & 0x3ff;
+
+		R_SpawnNewRipple( x, y, val );
+	}
+
+	R_RunRipplesAnimation( g_ripple.oldbuf, g_ripple.curbuf );
+}
+
+void R_UpdateRippleTexParams( void )
+{
+	gl_texture_t *tex = R_GetTexture( g_ripple.rippletexturenum );
+
+	GL_Bind( XASH_TEXTURE0, g_ripple.rippletexturenum );
+
+	if( gl_texture_nearest.value )
+	{
+		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+	}
+	else
+	{
+		pglTexParameteri( tex->target, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		pglTexParameteri( tex->target, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	}
+}
+
+void R_UploadRipples( texture_t *image )
+{
+	gl_texture_t *glt;
+	uint32_t *pixels;
+	int wbits, wmask, wshft;
+
+	// discard unuseful textures
+	if( !r_ripple.value || image->width > RIPPLES_CACHEWIDTH || image->width != image->height )
+	{
+		GL_Bind( XASH_TEXTURE0, image->gl_texturenum );
+		return;
+	}
+
+	glt = R_GetTexture( image->gl_texturenum );
+	if( !glt || !glt->original || !glt->original->buffer || !FBitSet( glt->flags, TF_EXPAND_SOURCE ))
+	{
+		GL_Bind( XASH_TEXTURE0, image->gl_texturenum );
+		return;
+	}
+
+	GL_Bind( XASH_TEXTURE0, g_ripple.rippletexturenum );
+
+	// no updates this frame
+	if( !g_ripple.update && image->gl_texturenum == g_ripple.gl_texturenum )
+		return;
+
+	g_ripple.gl_texturenum = image->gl_texturenum;
+	if( r_ripple.value == 1.0f )
+	{
+		g_ripple.texturescale = Q_max( 1.0f, image->width / 64.0f );
+	}
+	else
+	{
+		g_ripple.texturescale = 1.0f;
+	}
+
+
+	pixels = (uint32_t *)glt->original->buffer;
+	wbits = MostSignificantBit( image->width );
+	wshft = 7 - wbits;
+	wmask = image->width - 1;
+
+	for( int y = 0; y < image->height; y++ )
+	{
+		int ry = y << ( 7 + wshft );
+
+		for( int x = 0; x < image->width; x++ )
+		{
+			int rx = x << wshft;
+			int val = g_ripple.curbuf[ry + rx] >> 4;
+
+			int py = (y - val) & wmask;
+			int px = (x + val) & wmask;
+			int p = ( py << wbits ) + px;
+
+			g_ripple.texture[(y << wbits) + x] = pixels[p];
+		}
+	}
+
+	pglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, image->width, image->width, 0,
+		GL_RGBA, GL_UNSIGNED_BYTE, g_ripple.texture );
 }

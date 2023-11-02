@@ -3031,7 +3031,7 @@ void SV_SetStringArrayMode( qboolean dynamic )
 #endif
 }
 
-#if XASH_64BIT && !XASH_WIN32 && !XASH_APPLE && !XASH_NSWITCH
+#if XASH_64BIT && !XASH_WIN32 && !XASH_APPLE && !XASH_NSWITCH && !XASH_ANDROID
 #define USE_MMAP
 #include <sys/mman.h>
 #endif
@@ -5130,7 +5130,6 @@ void SV_UnloadProgs( void )
 
 	Mod_ResetStudioAPI ();
 
-	svs.game_library_loaded = false;
 	COM_FreeLibrary( svgame.hInstance );
 	Mem_FreePool( &svgame.mempool );
 	memset( &svgame, 0, sizeof( svgame ));
@@ -5148,7 +5147,14 @@ qboolean SV_LoadProgs( const char *name )
 	static playermove_t		gpMove;
 	edict_t			*e;
 
-	if( svgame.hInstance ) SV_UnloadProgs();
+	if( svgame.hInstance )
+	{
+#if XASH_WIN32
+		SV_UnloadProgs();
+#else // XASH_WIN32
+		return true;
+#endif // XASH_WIN32
+	}
 
 	// fill it in
 	svgame.pmove = &gpMove;
