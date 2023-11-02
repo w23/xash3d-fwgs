@@ -1,7 +1,8 @@
 # 2023-11-02 E323
 - [x] lol meta: read and sort issues
 - [x] merge from upstream
-- [ ] hevsuit glitches
+- [x] hevsuit glitches
+- [x] inverted normal map orientation
 - [ ] massage shaders: consolidate all bindings explicitly
 - [ ] skip sorting-by-texture when loading brush models (=> geometry count explosion; i.e. kusochki count will explode too)
 - [ ] kusochki-vs-materials
