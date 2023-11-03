@@ -71,7 +71,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 		const texture_t *tex = surf->texinfo->texture;
 
 		p += Q_snprintf(p, end - p,
-			"surface index: %d; texture: %s(%d)\n",
+			"surface index: [[ %d ]];\ntexture: %s(%d)\n",
 			surface_index, tex_name ? tex_name : "NONE", tex_id
 		);
 

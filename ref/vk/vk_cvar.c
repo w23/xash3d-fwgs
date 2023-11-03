@@ -16,8 +16,8 @@ void VK_LoadCvars( void )
 	r_lighting_modulate = gEngine.Cvar_Get( "r_lighting_modulate", "0.6", FCVAR_ARCHIVE, "lightstyles modulate scale" );
 	cl_lightstyle_lerping = gEngine.pfnGetCvarPointer( "cl_lightstyle_lerping", 0 );
 	r_lightmap = gEngine.Cvar_Get( "r_lightmap", "0", FCVAR_CHEAT, "lightmap debugging tool" );
-	ui_infotool = gEngine.Cvar_Get( "ui_infotool", "0", FCVAR_CHEAT, "DEBUG: print entity info under crosshair" );
-	vk_only = gEngine.Cvar_Get( "vk_only", "0", FCVAR_GLCONFIG, "Full disable Ray Tracing pipeline" );
+	r_infotool = gEngine.Cvar_Get( "r_infotool", "0", FCVAR_CHEAT, "DEBUG: print entity info under crosshair" );
+	rt_force_disable = gEngine.Cvar_Get( "rt_force_disable", "0", FCVAR_GLCONFIG, "Force disable Ray Tracing" );
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
 
 	vk_debug_log = gEngine.Cvar_Get("vk_debug_log", "", FCVAR_GLCONFIG, "List of modules to enable debug logs for");
@@ -25,13 +25,12 @@ void VK_LoadCvars( void )
 
 void VK_LoadCvarsAfterInit( void )
 {
-	vk_rtx_extension = gEngine.Cvar_Get( "vk_rtx_extension", vk_core.rtx ? "1" : "0", FCVAR_READ_ONLY, "" );
+	rt_capable = gEngine.Cvar_Get( "rt_capable", vk_core.rtx ? "1" : "0", FCVAR_READ_ONLY, "" );
+
 	if (vk_core.rtx) {
-		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
-		vk_rtx_bounces = gEngine.Cvar_Get( "vk_rtx_bounces", "3", FCVAR_GLCONFIG, "RTX path tracing ray bounces" );
-		vk_rtx_light_begin = gEngine.Cvar_Get( "vk_rtx_light_begin", "0", FCVAR_CHEAT, "DEBUG: disable lights with index lower than this");
-		vk_rtx_light_end = gEngine.Cvar_Get( "vk_rtx_light_end", "0", FCVAR_CHEAT, "DEBUG: disable lights with index higher than this ");
+		rt_enable = gEngine.Cvar_Get( "rt_enable", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
+		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
 	} else {
-		vk_rtx = gEngine.Cvar_Get( "vk_rtx", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software" );
+		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}
 }

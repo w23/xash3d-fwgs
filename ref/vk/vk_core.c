@@ -489,7 +489,7 @@ static qboolean createDevice( void ) {
 			is_target_device_found = true;
 		}
 
-		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(vk_only)) {
+		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(rt_force_disable)) {
 			vk_core.rtx = true;
 		}
 
