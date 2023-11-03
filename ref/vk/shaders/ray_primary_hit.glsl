@@ -8,6 +8,8 @@
 #include "rt_geometry.glsl"
 #include "color_spaces.glsl"
 
+#include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
+
 layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
 layout(set = 0, binding = 7) uniform samplerCube skybox;
@@ -103,6 +105,11 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;
+
+	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
+		const uint hash = xxhash32(geom.kusok_index);
+		payload.emissive.rgb = vec3(0xff & (hash>>16), 0xff & (hash>>8), 0xff & hash) / 255.;
+	}
 }
 
 #endif // ifndef RAY_PRIMARY_HIT_GLSL_INCLUDED

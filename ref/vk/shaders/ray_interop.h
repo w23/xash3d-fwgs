@@ -175,6 +175,7 @@ struct PushConstants {
 #define DEBUG_DISPLAY_NSHADE 4
 #define DEBUG_DISPLAY_NGEOM 5
 #define DEBUG_DISPLAY_LIGHTING 6
+#define DEBUG_DISPLAY_SURFHASH 7
 // add more when needed
 
 struct UniformBuffer {

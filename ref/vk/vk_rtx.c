@@ -163,6 +163,7 @@ static void parseDebugDisplayValue( void ) {
 	X(EMISSIVE) \
 	X(NSHADE) \
 	X(NGEOM) \
+	X(SURFHASH) \
 
 #define X(suffix) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \

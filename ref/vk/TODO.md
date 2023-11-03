@@ -1,6 +1,7 @@
 # 2023-11-03 E324
 - [x] add cvar for displaying only specified channel
-- [ ] r_lightmap
+- [x] r_lightmap
+- [x] hightlight all surfaces with random colors
 - [ ] massage shaders: consolidate all bindings explicitly
 - [ ] skip sorting-by-texture when loading brush models ~~(=> geometry count explosion; i.e. kusochki count will explode too)~~
 - [ ] kusochki-vs-materials structures
