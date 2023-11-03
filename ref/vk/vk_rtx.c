@@ -199,7 +199,11 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->frame_counter = frame_counter;
 
 	parseDebugDisplayValue();
-	ubo->debug_display_only = g_rtx.debug.rt_debug_display_only_value;
+	if (g_rtx.debug.rt_debug_display_only_value) {
+		ubo->debug_display_only = g_rtx.debug.rt_debug_display_only_value;
+	} else {
+		ubo->debug_display_only = r_lightmap->value != 0 ? DEBUG_DISPLAY_LIGHTING : DEBUG_DISPLAY_DISABLED;
+	}
 }
 
 typedef struct {

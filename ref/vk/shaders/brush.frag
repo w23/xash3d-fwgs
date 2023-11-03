@@ -13,6 +13,7 @@ struct Light {
 
 layout(set=3,binding=0) uniform UBO {
 	uint num_lights;
+	uint debug_r_lightmap;
 	Light lights[max_dlights];
 } ubo;
 
@@ -38,7 +39,7 @@ void main() {
 		discard;
 
 	outColor.a = baseColor.a;
-	outColor.rgb += baseColor.rgb * texture(sLightmap, vLightmapUV).rgb;
+	outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
 	for (uint i = 0; i < ubo.num_lights; ++i) {
 		const vec4 light_pos_r = ubo.lights[i].pos_r;
@@ -47,6 +48,9 @@ void main() {
 		const float d2 = dot(light_dir, light_dir);
 		const float r2 = light_pos_r.w * light_pos_r.w;
 		const float attenuation = dlight_attenuation_const / (d2 + r2 * .5);
-		outColor.rgb += baseColor.rgb * light_color * max(0., dot(normalize(light_dir), vNormal)) * attenuation;
+		outColor.rgb += light_color * max(0., dot(normalize(light_dir), vNormal)) * attenuation;
 	}
+
+	if (ubo.debug_r_lightmap == 0)
+		outColor.rgb *= baseColor.rgb;
 }

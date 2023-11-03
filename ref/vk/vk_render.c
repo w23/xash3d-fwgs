@@ -6,6 +6,7 @@
 #include "vk_staging.h"
 #include "vk_const.h"
 #include "vk_common.h"
+#include "vk_cvar.h"
 #include "vk_pipeline.h"
 #include "vk_textures.h"
 #include "vk_math.h"
@@ -240,7 +241,9 @@ static qboolean createPipelines( void )
 }
 
 typedef struct {
-	uint32_t num_lights, pad[3];
+	uint32_t num_lights;
+	uint32_t debug_r_lightmap;
+	uint32_t padding_[2];
 	struct {
 		vec4_t pos_r;
 		vec4_t color;
@@ -500,6 +503,7 @@ static uint32_t writeDlightsToUBO( void )
 	}
 
 	ubo_lights->num_lights = num_lights;
+	ubo_lights->debug_r_lightmap = r_lightmap->value != 0;
 	return ubo_lights_offset;
 }
 

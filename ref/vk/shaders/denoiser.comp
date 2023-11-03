@@ -261,8 +261,10 @@ void main() {
 		colour = diffuse + specular;
 	}
 
-	const vec4 base_color_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
-	colour *= base_color_a.rgb;
+	if (ubo.ubo.debug_display_only != DEBUG_DISPLAY_LIGHTING) {
+		const vec4 base_color_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
+		colour *= base_color_a.rgb;
+	}
 	colour += imageLoad(emissive, pix).rgb;
 	colour = LINEARtoSRGB(colour);
 
