@@ -89,6 +89,11 @@ static struct {
 	qboolean reload_pipeline;
 
 	matrix4x4 prev_inv_proj, prev_inv_view;
+
+	struct {
+		cvar_t *rt_debug_display_only;
+		uint32_t rt_debug_display_only_value;
+	} debug;
 } g_rtx = {0};
 
 static int findResource(const char *name) {
@@ -145,6 +150,32 @@ void VK_RayFrameBegin( void ) {
 	RT_LightsFrameBegin();
 }
 
+static void parseDebugDisplayValue( void ) {
+	if (!(g_rtx.debug.rt_debug_display_only->flags & FCVAR_CHANGED))
+		return;
+
+	g_rtx.debug.rt_debug_display_only->flags &= ~FCVAR_CHANGED;
+
+	const char *cvalue = g_rtx.debug.rt_debug_display_only->string;
+#define LIST_DISPLAYS(X) \
+	X(BASECOLOR) \
+	X(BASEALPHA) \
+	X(EMISSIVE) \
+	X(NSHADE) \
+	X(NGEOM) \
+
+#define X(suffix) \
+	if (0 == Q_stricmp(cvalue, #suffix)) { \
+		WARN("setting debug display to %s", "DEBUG_DISPLAY_"#suffix); \
+		g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_##suffix; \
+		return; \
+	}
+LIST_DISPLAYS(X)
+#undef X
+
+	g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_DISABLED;
+}
+
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y ) {
 	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
@@ -166,6 +197,9 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)FRAME_HEIGHT);
 	ubo->random_seed = (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 	ubo->frame_counter = frame_counter;
+
+	parseDebugDisplayValue();
+	ubo->debug_display_only = g_rtx.debug.rt_debug_display_only_value;
 }
 
 typedef struct {
@@ -656,6 +690,8 @@ qboolean VK_RayInit( void )
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("vk_rtx_reload", reloadPipeline, "Reload RTX shader");
+
+	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG, "Display only the specified channel (nshade, ngeom, basecolor, basealpha, ...)");
 
 	return true;
 }
