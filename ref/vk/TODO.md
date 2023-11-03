@@ -2,11 +2,11 @@
 - [x] add cvar for displaying only specified channel
 - [x] r_lightmap
 - [x] highlight all surfaces with random colors
-- [ ] highlight selected surfaces
+- [ ] highlight selected surfaces -- decided to postpone
 - [ ] massage shaders: consolidate all bindings explicitly
 - [ ] skip sorting-by-texture when loading brush models ~~(=> geometry count explosion; i.e. kusochki count will explode too)~~
 - [ ] kusochki-vs-materials structures
-- [ ] -vkverbose arg for turning all debug logs before detailed cvars are read
+- [x] -vkverbose arg for turning all debug logs before detailed cvars are read
 
 # 2023-11-02 E323
 - [x] lol meta: read and sort issues

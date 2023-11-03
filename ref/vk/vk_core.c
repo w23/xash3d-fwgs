@@ -700,6 +700,12 @@ qboolean R_VkInit( void )
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
 
+	// Force extremely verbose logs at startup.
+	// This is instrumental in some investigations, because the usual "vk_debug_log" cvar is not set
+	// at this point and cannot be used to selectively swith things on.
+	if (gEngine.Sys_CheckParm("-vkverboselogs"))
+		g_log_debug_bits = 0xffffffffu;
+
 	VK_LoadCvars();
 	VK_LogsReadCvar();
 
