@@ -3,7 +3,6 @@
 #include "vk_mapents.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
-#include "vk_cvar.h"
 #include "vk_common.h"
 #include "shaders/ray_interop.h"
 #include "bitarray.h"
@@ -98,7 +97,7 @@ vk_lights_t g_lights = {0};
 qboolean VK_LightsInit( void ) {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
 
-	gEngine.Cmd_AddCommand("vk_lights_dump", debugDumpLights, "Dump all light sources for next frame");
+	gEngine.Cmd_AddCommand("rt_debug_lights_dump", debugDumpLights, "Dump all light sources for next frame");
 
 	const int buffer_size = sizeof(struct LightsMetadata) + sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS;
 

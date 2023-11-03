@@ -228,10 +228,10 @@ void R_BeginFrame( qboolean clearScene ) {
 		R_SpeedsDisplayMore(prev_frame_event_index, frame->staging_combuf ? gpurofl : gpurofl + 1, frame->staging_combuf ? 2 : 1);
 	}
 
-	if (vk_core.rtx && FBitSet( vk_rtx->flags, FCVAR_CHANGED )) {
-		vk_frame.rtx_enabled = CVAR_TO_BOOL( vk_rtx );
+	if (vk_core.rtx && FBitSet( rt_enable->flags, FCVAR_CHANGED )) {
+		vk_frame.rtx_enabled = CVAR_TO_BOOL( rt_enable );
 	}
-	ClearBits( vk_rtx->flags, FCVAR_CHANGED );
+	ClearBits( rt_enable->flags, FCVAR_CHANGED );
 
 	updateGamma();
 
@@ -417,13 +417,6 @@ void R_EndFrame( void )
 	APROF_SCOPE_END(frame);
 }
 
-static void toggleRaytracing( void ) {
-	ASSERT(vk_core.rtx);
-	vk_frame.rtx_enabled = !vk_frame.rtx_enabled;
-	gEngine.Cvar_Set("vk_rtx", vk_frame.rtx_enabled ? "1" : "0");
-	gEngine.Con_Printf(S_WARN "Switching ray tracing to %d\n", vk_frame.rtx_enabled);
-}
-
 qboolean VK_FrameCtlInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT_EX);
@@ -470,10 +463,6 @@ qboolean VK_FrameCtlInit( void )
 	}
 
 	vk_frame.rtx_enabled = vk_core.rtx;
-
-	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_toggle", toggleRaytracing, "Toggle between rasterization and ray tracing");
-	}
 
 	return true;
 }

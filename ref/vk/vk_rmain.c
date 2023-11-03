@@ -266,7 +266,7 @@ static int VK_RefGetParm( int parm, int arg )
 	*/
 		return R_TexturesGetParm( parm, arg );
 	case PARM_MODERNFLASHLIGHT:
-		if (CVAR_TO_BOOL( vk_rtx )) {
+		if (CVAR_TO_BOOL( rt_enable )) {
 			return true;
 		}
 		return false;

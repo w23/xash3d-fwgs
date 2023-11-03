@@ -168,13 +168,24 @@ struct PushConstants {
 	uint flags;
 };
 
+#define DEBUG_DISPLAY_DISABLED 0
+#define DEBUG_DISPLAY_BASECOLOR 1
+#define DEBUG_DISPLAY_BASEALPHA 2
+#define DEBUG_DISPLAY_EMISSIVE 3
+#define DEBUG_DISPLAY_NSHADE 4
+#define DEBUG_DISPLAY_NGEOM 5
+#define DEBUG_DISPLAY_LIGHTING 6
+#define DEBUG_DISPLAY_SURFHASH 7
+// add more when needed
+
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
 	float ray_cone_width;
 	uint random_seed;
 	uint frame_counter;
-	PAD(1)
+
+	uint debug_display_only;
 };
 
 #undef PAD

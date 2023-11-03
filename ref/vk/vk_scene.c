@@ -188,7 +188,7 @@ void VK_SceneInit( void )
 	g_lists.draw_stack_pos = 0;
 
 	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
+		gEngine.Cmd_AddCommand("rt_debug_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
 	}
 }
 
@@ -715,7 +715,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 
 	VK_RenderDebugLabelEnd();
 
-	if (ui_infotool->value > 0)
+	if (r_infotool->value > 0)
 		XVK_CameraDebugPrintCenterEntity();
 
 	APROF_SCOPE_END(scene_render);
