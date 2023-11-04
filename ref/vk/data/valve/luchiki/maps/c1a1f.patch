@@ -176,3 +176,12 @@
 {
 "_xvk_smoothing_excluded_pairs" "3061 3063 3065" // wall // TODO: bad autosmooth
 }
+
+{
+"_xvk_smoothing_excluded" "2941 3107 2981 2980 2976 2944" // wall // TODO: bad autosmooth
+}
+
+
+{
+"_xvk_smoothing_excluded" "989 988" // wall // TODO: bad autosmooth
+}

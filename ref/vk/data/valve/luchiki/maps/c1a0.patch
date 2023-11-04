@@ -100,3 +100,16 @@
 {
 "_xvk_smoothing_group" "3109 3107 3105 3103 3104 3106 3108 3110"
 }
+
+{
+"_xvk_smoothing_excluded" "937" // wall near sector B sign // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_excluded" "1588 2707 2736 2711 1619 1552 1515 1511 1555 2713" // wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_excluded" "1022 1038" // walls after transition // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "2167 2171 2168 2204" // maybe slightly incorrect
+}
