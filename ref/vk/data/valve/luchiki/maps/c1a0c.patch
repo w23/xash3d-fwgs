@@ -29,6 +29,20 @@
 "_light" "215 180 95 6000"
 }
 
+// "i tak soydet" pipe
+{
+"_xvk_surface_id" "1851 1852"
+"_xvk_material" "generic031b"
+}
+{
+"_xvk_smoothing_group" "1854 1852 1866 1853 1851 1865" 
+}
+{
+"_xvk_surface_id" "1851 1852"
+"_xvk_tex_offset" "0 200"
+"_xvk_tex_scale" "1 0.05" // ugly "hack" // FIXME: 90 rotation
+}
+
 // lift/elevator
 {
 "_xvk_ent_id" "354 355" // remove hack lights entity // TODO: fix "buttons"
