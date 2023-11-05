@@ -20,7 +20,6 @@
 "_xvk_ent_id" "16 15 22 19" // remove hack lights entity
 }
 {
-{
 "_xvk_ent_id" "113"
 "_light" "100 120 160 100"
 "_xvk_radius" "10"
@@ -32,14 +31,14 @@
 
 // lift/elevator
 {
-"_xvk_ent_id" "335 354" // remove hack lights entity
+"_xvk_ent_id" "354 355" // remove hack lights entity // TODO: fix "buttons"
 }
 
 
 // section 3
 
 {
-"_xvk_ent_id" "167 163 164 165 166 186" // remove hack lights entity
+"_xvk_ent_id" "167 166 165 164 163 186" // remove hack lights entity
 }
 {
 "_xvk_surface_id" "2390 2326 2327 2328 1704" // +0~GENERIC86B    60  220 170  10000
@@ -50,7 +49,7 @@
 "_light" "200 190 130 21000"
 }
 
-// section 4
+// section 4 (control panel)
 {
 "_xvk_ent_id" "162" // remove hack lights entity
 }
@@ -58,22 +57,22 @@
 
 
 // smoothing
-{
+//{
 //"_xvk_smoothing_threshold" "44" // FIXME, 44 workaround // bad autosmooth (for metallic room wall)
-}
-{
+//}
+//{
 //"_xvk_smoothing_excluded_pairs" "189 188 183 182 184"
-}
-{
+//}
+//{
 //"_xvk_smoothing_group" 
 //"_xvk_smoothing_excluded_pairs" "182 183 184 97 74 187 188 2714 76 185" // FIXME
-}
+//}
 {
 "_xvk_smoothing_excluded_pairs" "1067 1042" // FIXME: bad autosmooth
 }
-{
+//{
 //"_xvk_smoothing_excluded_pairs" "747 748 750 751" // FIXME: bad autosmooth
-}
+//}
 {
 "_xvk_smoothing_excluded_pairs" "747 748" // FIXME: bad autosmooth
 }
