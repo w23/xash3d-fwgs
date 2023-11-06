@@ -164,6 +164,10 @@ static void parseDebugDisplayValue( void ) {
 	X(NSHADE) \
 	X(NGEOM) \
 	X(SURFHASH) \
+	X(DIRECT) \
+	X(INDIRECT) \
+	X(INDIRECT_SPEC) \
+	X(INDIRECT_DIFF) \
 
 #define X(suffix) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
@@ -173,6 +177,13 @@ static void parseDebugDisplayValue( void ) {
 	}
 LIST_DISPLAYS(X)
 #undef X
+
+	if (Q_strlen(cvalue) > 0) {
+		gEngine.Con_Printf("Invalid rt_debug_display_only mode %s. Valid modes are:\n", cvalue);
+#define X(suffix) gEngine.Con_Printf("\t%s\n", #suffix);
+LIST_DISPLAYS(X)
+#undef X
+	}
 
 	g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_DISABLED;
 }

@@ -213,6 +213,21 @@ void main() {
 
 	const Components c = blurSamples(res, pix);
 
+	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
+		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.indirect_specular), 0.)); return;
+		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT_SPEC) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_specular), 0.)); return;
+		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT_DIFF) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse), 0.)); return;
+		return;
+	}
+
 	vec3 colour = vec3(0.);
 	{
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it

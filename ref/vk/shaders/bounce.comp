@@ -149,6 +149,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	RayPayloadPrimary payload;
 	payload.base_color_a = vec4(0.);
 	payload.emissive = vec4(0.);
+	payload.material_rmxx = vec4(0.);
 	const vec3 pos = imageLoad(position_t, pix).xyz + geometry_normal * ray_normal_fudge;
 	if (!getHit(pos, bounce_direction, payload))
 		return;

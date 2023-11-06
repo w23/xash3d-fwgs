@@ -29,6 +29,11 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 	const r_vk_material_t *const mat = override_material ? override_material : &geom->material;
 	ASSERT(mat);
 
+	ASSERT(mat->tex_base_color >= 0);
+	ASSERT(mat->tex_roughness >= 0);
+	ASSERT(mat->tex_metalness >= 0);
+	ASSERT(mat->tex_normalmap >= 0);
+
 	// TODO split kusochki into static geometry data and potentially dynamic material data
 	// This data is static, should never change
 	kusok->vertex_offset = geom->vertex_offset;
