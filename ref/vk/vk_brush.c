@@ -404,32 +404,35 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 
 static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
 
-static qboolean isSurfaceAnimated( const msurface_t *s ) {
-	const texture_t *base = s->texinfo->texture;
-
-	/* FIXME don't have ent here, need to check both explicitly
-	if( ent && ent->curstate.frame ) {
-		if( base->alternate_anims )
-			base = base->alternate_anims;
-	}
-	*/
-
-	if( !base->anim_total )
+static qboolean doesTextureChainChange( const texture_t *const base ) {
+	const texture_t *cur = base;
+	if (!cur)
 		return false;
 
+	cur = cur->anim_next;
+	while (cur && cur != base) {
+		if (cur->gl_texturenum != base->gl_texturenum)
+			return true;
+		cur = cur->anim_next;
+	}
+	return false;
+}
+
+static qboolean isSurfaceAnimated( const msurface_t *s ) {
+	const texture_t *const base = s->texinfo->texture;
+
+	if( !base->anim_total && !base->alternate_anims )
+		return false;
+
+	/* TODO why did we do this? It doesn't seem to rule out animation really.
 	if( base->name[0] == '-' )
 		return false;
+	*/
 
-	// It is not an animation if all textures are the same
-	const texture_t *prev = base;
-	base = base->anim_next;
-	while (base && base != prev) {
-		if (prev->gl_texturenum != base->gl_texturenum)
-			return true;
-		base = base->anim_next;
-	}
+	if (base->alternate_anims && base->gl_texturenum != base->alternate_anims->gl_texturenum)
+		return true;
 
-	return false;
+	return doesTextureChainChange(base) || doesTextureChainChange(base->alternate_anims);
 }
 
 typedef enum {
@@ -742,7 +745,6 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 			const int geom_index = bmodel->animated_indexes[i];
 			vk_render_geometry_t *geom = bmodel->render_model.geometries + geom_index;
 			const int surface_index = geom->surf_deprecate - mod->surfaces;
-			const xvk_patch_surface_t *const patch_surface = R_VkPatchGetSurface(surface_index);
 
 			// Optionally patch by texture_s pointer and run animations
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate);
