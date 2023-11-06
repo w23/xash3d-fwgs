@@ -126,7 +126,8 @@ static void printMaterial(int index) {
 static void acquireTexturesForMaterial( int index ) {
 	const r_vk_material_t *mat = &g_materials.table[index].material;
 	DEBUG("%s(%d: %s)", __FUNCTION__, index, g_materials.table[index].name);
-	R_TextureAcquire(mat->tex_base_color);
+	if (mat->tex_base_color > 0)
+		R_TextureAcquire(mat->tex_base_color);
 	R_TextureAcquire(mat->tex_metalness);
 	R_TextureAcquire(mat->tex_roughness);
 	if (mat->tex_normalmap > 0)
@@ -134,7 +135,8 @@ static void acquireTexturesForMaterial( int index ) {
 }
 
 static void releaseTexturesForMaterialPtr( const r_vk_material_t *mat ) {
-	R_TextureRelease(mat->tex_base_color);
+	if (mat->tex_base_color > 0)
+		R_TextureRelease(mat->tex_base_color);
 	R_TextureRelease(mat->tex_metalness);
 	R_TextureRelease(mat->tex_roughness);
 	if (mat->tex_normalmap > 0)
@@ -245,8 +247,11 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				continue;
 			}
 
+			// If basecolor_map wasn't inherited
+			if (current_material.tex_base_color < 0) {
 			// Start with *default texture for base color, it will be acquired if no replacement is specified or could be loaded.
-			current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
+				current_material.tex_base_color = for_tex_id >= 0 ? for_tex_id : 0;
+			}
 
 #define LOAD_TEXTURE_FOR(name, field, colorspace) \
 			do { \
