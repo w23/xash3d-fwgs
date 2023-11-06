@@ -1,3 +1,7 @@
+# 2023-11-06 E325
+- [x] fix material asserts and inherit
+- [ ] changing textures on buttons, etc
+
 # 2023-11-03 E324
 - [x] add cvar for displaying only specified channel
 - [x] r_lightmap

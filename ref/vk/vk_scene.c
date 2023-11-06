@@ -144,7 +144,6 @@ static void preloadModels( void ) {
 }
 
 static void loadMap(const model_t* const map) {
-	VK_LogsReadCvar();
 	mapLoadBegin(map);
 
 	R_SpriteNewMapFIXME();
