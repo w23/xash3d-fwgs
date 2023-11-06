@@ -63,18 +63,125 @@
 {
 //"_xvk_smoothing_threshold" "0"
 }
+
+//{ // transit wall
+//"_xvk_smoothing_excluded_pairs" "883 884 886 887 903 1156" // TODO: bad autosmooth 
+//}
 {
-"_xvk_smoothing_group" "2044 2044 2041 753 2045 757 2053 763 765" //756 // TODO: fix bad geometry
+"_xvk_smoothing_excluded" "886 883" // TODO: bad autosmooth 
+}
+
+{
+"_xvk_smoothing_group" "1492 1496 1491 1498 1499 1497 1494 1495" // pipe
 }
 {
+"_xvk_smoothing_group" "1590 1587 1597 1599 1600 1598 1576 1584" // continue pipe
+}
+{
+"_xvk_smoothing_group" "1607 1608 1604 1609 1603 1576 1584" // continue pipe
+}
+{
+"_xvk_smoothing_group" "1592 1594 1595 1605 1610 1602 1586 1589" // continue pipe
+}
+{
+"_xvk_smoothing_group" "1503 1505 1506 1504 1502 1500 1501 1493" // pipe
+}
+{
+"_xvk_smoothing_group" "1583 1613 1555 1559 1557 1528 1579 1578 1612" // continue pipe
+}
+{
+"_xvk_smoothing_group" "1583 1613 1556 1560 1558 1529 1579 1578 1612" // continue pipe
+}
+{
+"_xvk_smoothing_excluded" "1581" // TODO: bad autosmooth 
+}
+{
+"_xvk_smoothing_group" "1577 1581 1623 1571" // continue pipe
+}
+{
+"_xvk_smoothing_group" "1623 1633 1630 1625 1620 1563 1568 1571" // continue pipe
+}
+
+{
+"_xvk_smoothing_group" "1577 1581 1623 1571" // continue pipe
+}
+
+//
+{
+"_xvk_smoothing_group" "3006 3007 3003 3005 3004 3002"
+}
+{
+"_xvk_smoothing_group" "2966 2967 2963 2965 2964 2962"
+}
+{
+"_xvk_smoothing_group" "3124 3125 3120 3123 3122 3121"
+}
+
+{
+"_xvk_smoothing_excluded" "2407" // TODO: bad autosmooth 
+}
+{
+//"_xvk_smoothing_excluded" "2413 2417" // TODO: bad autosmooth 
+}
+
+{
+"_xvk_smoothing_excluded" "2071 749" // TODO: bad autosmooth 
+}
+
+{
+"_xvk_smoothing_group" "716 749 2071 2068"
+}
+
+{
+"_xvk_smoothing_excluded" "1687 1686 1479 1747 1463" // TODO: bad autosmooth 
+}
+{
+"_xvk_smoothing_excluded" "1314 1291" // pipe // TODO: bad autosmooth 
+}	
+{
+"_xvk_smoothing_group" "1310 1314" // fix pipe
+}
+// TODO
+{
+//"_xvk_smoothing_group" "1291 1314" // continue pipe
+}
+{
+//"_xvk_smoothing_group" "1287 1314" // continue pipe
+}
+
+// wall corner near the sign C-33/a and off lamp
+
+//{
 //"_xvk_smoothing_group" "754 758 764 766"
+//}
+//{
+//"_xvk_smoothing_group" "668 765 762" // 763 (bad) // TODO: fix bad geometry
+//}
+//{
+//"_xvk_smoothing_group" "2029 2028 2052 768 760 761 663"
+//}
+{
+"_xvk_smoothing_excluded" "764 758 754 766" // TODO: bad autosmooth 
 }
 {
-"_xvk_smoothing_group" "668 765 762" // 763 (bad) // TODO: fix bad geometry
+"_xvk_smoothing_excluded" "2044 2041 763 765" // TODO: bad autosmooth 
 }
 {
-"_xvk_smoothing_group" "2029 2028 2052 768 760 761 663"
+//"_xvk_smoothing_excluded" "2029 2028 2052 760 761" // TODO: bad autosmooth 
 }
 {
-"_xvk_smoothing_excluded_pairs" "883 884 886 887 903 1156" // FIXME: bad autosmooth 
+"_xvk_smoothing_excluded" "668 667" // TODO: bad autosmooth 
+}
+{
+"_xvk_smoothing_group" "4 754" 
+}
+{
+"_xvk_smoothing_group" "16 754 758 764 766 666" 
+}
+{
+//"_xvk_smoothing_group" "2044 2044 2041 753 2045 757 2053 763 765" //756 // TODO: fix bad geometry
+}
+
+{
+"_xvk_smoothing_excluded" "1877" // TODO: bad autosmooth 
 }

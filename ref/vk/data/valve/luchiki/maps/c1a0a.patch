@@ -75,3 +75,26 @@
 //{
 //"_xvk_smoothing_excluded_pairs" "1200 1220 1221 1199 1207 1217" // TODO: need investigate
 //}
+
+{
+"_xvk_smoothing_excluded" "145 174" // wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "170 174 166"  // TODO: these faces somehow didn't autosmooth
+}
+
+{
+"_xvk_smoothing_excluded" "1200" // wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_excluded" "1324" // wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "1323 1324 1320 1322"
+}
+{
+"_xvk_smoothing_excluded" "1202" // wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "1197 1202 1201"
+}

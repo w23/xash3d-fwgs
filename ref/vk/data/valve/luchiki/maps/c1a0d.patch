@@ -83,3 +83,47 @@
 {
 "_xvk_smoothing_excluded_pairs" "2647 2648 2646"
 }
+
+{
+"_xvk_smoothing_excluded" "2899" // wall // TODO: bad autosmooth
+}
+//{
+//"_xvk_smoothing_excluded" "2210 2214" // TODO: bad autosmooth (impossible to fix manually)
+//}
+{
+"_xvk_smoothing_excluded" "1988 1983 1985" // wall // TODO: bad autosmooth
+}
+// maybe incorrect
+{
+//"_xvk_smoothing_group" "1988 1985"
+}
+{
+//"_xvk_smoothing_group" "2130 1988"
+}
+{
+//"_xvk_smoothing_group" "2131 1983"
+}
+{
+//"_xvk_smoothing_group" "1988 1983"
+}
+{
+//"_xvk_smoothing_group" "2130 2131"
+}
+//
+{
+"_xvk_smoothing_excluded" "1446 1494 1971 1970 1965 1967 1968 1966 1906 1907 1908 1439 1877 1956 1955" // near the ceiling // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "1952 1955"
+}
+//
+{ // slightly incorrect
+//"_xvk_smoothing_excluded" "2535 2536" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_group" "2536 2813"
+}
+
+{
+"_xvk_smoothing_excluded" "2895" // wall // TODO: bad autosmooth
+}

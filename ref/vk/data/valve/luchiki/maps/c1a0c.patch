@@ -20,7 +20,6 @@
 "_xvk_ent_id" "16 15 22 19" // remove hack lights entity
 }
 {
-{
 "_xvk_ent_id" "113"
 "_light" "100 120 160 100"
 "_xvk_radius" "10"
@@ -30,16 +29,30 @@
 "_light" "215 180 95 6000"
 }
 
+// "i tak soydet" pipe
+{
+"_xvk_surface_id" "1851 1852"
+"_xvk_material" "generic031b"
+}
+{
+"_xvk_smoothing_group" "1854 1852 1866 1853 1851 1865" 
+}
+{
+"_xvk_surface_id" "1851 1852"
+"_xvk_tex_offset" "0 200"
+"_xvk_tex_scale" "1 0.05" // ugly "hack" // FIXME: 90 rotation
+}
+
 // lift/elevator
 {
-"_xvk_ent_id" "335 354" // remove hack lights entity
+"_xvk_ent_id" "354 355" // remove hack lights entity // TODO: fix "buttons"
 }
 
 
 // section 3
 
 {
-"_xvk_ent_id" "167 163 164 165 166 186" // remove hack lights entity
+"_xvk_ent_id" "167 166 165 164 163 186" // remove hack lights entity
 }
 {
 "_xvk_surface_id" "2390 2326 2327 2328 1704" // +0~GENERIC86B    60  220 170  10000
@@ -50,7 +63,7 @@
 "_light" "200 190 130 21000"
 }
 
-// section 4
+// section 4 (control panel)
 {
 "_xvk_ent_id" "162" // remove hack lights entity
 }
@@ -58,22 +71,97 @@
 
 
 // smoothing
-{
+//{
 //"_xvk_smoothing_threshold" "44" // FIXME, 44 workaround // bad autosmooth (for metallic room wall)
-}
-{
+//}
+//{
 //"_xvk_smoothing_excluded_pairs" "189 188 183 182 184"
-}
-{
+//}
+//{
 //"_xvk_smoothing_group" 
 //"_xvk_smoothing_excluded_pairs" "182 183 184 97 74 187 188 2714 76 185" // FIXME
-}
+//}
 {
 "_xvk_smoothing_excluded_pairs" "1067 1042" // FIXME: bad autosmooth
 }
-{
+//{
 //"_xvk_smoothing_excluded_pairs" "747 748 750 751" // FIXME: bad autosmooth
-}
+//}
 {
 "_xvk_smoothing_excluded_pairs" "747 748" // FIXME: bad autosmooth
+}
+
+//{ // FIXME: bad autosmooth
+//"_xvk_smoothing_group" "50 132 135 130 134 128 125 131 43 47 39 49 41 37 45 50 43 48 40 49 42 38 45 51 44"
+//}
+
+{
+"_xvk_smoothing_group" "3185 3188 3178 3174 3182 3194 3191" 
+}
+
+//
+{
+"_xvk_smoothing_group" "3476 3477 3473 3475 3474 3472" 
+}
+{
+"_xvk_smoothing_group" "3436 3437 3433 3435 3434 3432" 
+}
+{
+"_xvk_smoothing_group" "3560 3561 3557 3559 3558 3556" 
+}
+
+{
+"_xvk_smoothing_group" "1669 1673 1675 1677 1676 1672 1671 1674" // pipe
+}
+{
+"_xvk_smoothing_group" "2041 2054 2056 2057 2055 2051 2052 2053" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2071 2072 2070 2068 2066 2059 2062 2042 2069" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2042 2078 2080 2092 2095 2089 2075 2079" // continue pipe
+}
+{
+"_xvk_smoothing_excluded" "2096 2094 2091" // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_group" "2073 2076 2082 2086 2091 2090 2060 2063 2087 2083" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2082 2086 2093" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2093 2094" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2094 2096" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2094 2091" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2096 2091" // continue pipe
+}
+
+
+{
+"_xvk_smoothing_group" "1681 1683 1684 1682 1680 1678 1679 1670" // continue pipe
+}
+{ // TODO: too bad geometry
+"_xvk_smoothing_group" "2112 2116 2018 2016 2012 1992 2109 2043" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2113 2117 2019 2017 2013 1993 2110 2044" // continue pipe
+}
+{
+"_xvk_smoothing_group" "2022 2036 2101 2105 2108 2104 2030 2027" // continue pipe
+}
+
+{
+"_xvk_smoothing_excluded" "1608 1525 1524 1527 1526" //wall // TODO: bad autosmooth
+}
+
+{
+"_xvk_smoothing_excluded" "750 760" //wall // TODO: bad autosmooth
 }

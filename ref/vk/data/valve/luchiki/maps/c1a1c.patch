@@ -11,14 +11,26 @@
 {
 "_xvk_ent_id" "112 111 115 114 121 116 109 110 113 95" // remove hack lights entity
 }
-{
+{ // light-wall fix
 "_xvk_ent_id" "36 38 41 37 39"
 "origin" "0 0 -7"
+}
+{ // sign "caution"
+"_xvk_ent_id" "40"
+"origin" "0 -1 0"
+}
+// remove hack light 93 (for sign "caution")
+{
+"_xvk_ent_id" "93" // remove hack lights entity
+}
+{ // sign "caution"
+"_xvk_surface_id" "4169"
+"_light" "255 255 255 100"
 }
 
 // section 2 (elevator)
 {
-"_xvk_ent_id" "93 102 92 101 99" // remove hack lights entity
+"_xvk_ent_id" "102 92 101 99" // remove hack lights entity
 }
 
 // section 3
@@ -58,15 +70,107 @@
 { // TODO: tune origin
 "_xvk_ent_id" "390 389 445 444" // remove hack lights entity
 }
+
 // section 5
+// smooth pipes
+// pipe 1
 {
-"_xvk_ent_id" "445 404 397 396" // remove hack lights entity
+"_xvk_smoothing_group" "1523 1519 1506 1503 1512 1509 1516 1520"
 }
+{
+//"_xvk_smoothing_group" "1558 1554 1506 999 997 1003 1001 1509 1553 1516 1520"
+"_xvk_smoothing_group" "1001 1003 997 999"
+}
+{
+"_xvk_smoothing_group" "1557 1555 1556 1507 998 996 1000 1002 1510 1552 1513"
+}
+{
+"_xvk_smoothing_group" "1554 1558 1557"
+}
+{
+"_xvk_smoothing_group" "5768 5766 5764 5765 5767 5769 5771 5770"
+}
+// pipe 2
+{
+"_xvk_smoothing_group" "1514 1525 1535 1545 1550 1540 1528 1533"
+}
+{
+"_xvk_smoothing_group" "1546 1542 1548 1543 1547" // bad
+}
+{
+"_xvk_smoothing_group" "1543 1531 1530 1527 1524 1537 1539 1538 1536 1531"
+}
+{
+"_xvk_smoothing_group" "5780 5778 5776 5774 5775 5777 5779 5781"
+}
+// pipe 3
+{
+"_xvk_smoothing_group" "1499 1497 1377 1369 1379 1378 1376 1367 1498 1500"
+}
+{
+"_xvk_smoothing_group" "975 990 978 994 993 988 967 971"
+}
+// pipe 4
+{
+"_xvk_smoothing_group" "1375 1374 1372 1368 1366 1370 1371 1373"
+}
+{
+"_xvk_smoothing_group" "985 976 972 968 964 980 982 986"
+}
+// pipe 5
+{
+"_xvk_smoothing_group" "919 923 920 916"
+}
+{
+"_xvk_smoothing_group" "887 843 854 892"
+}
+{
+"_xvk_smoothing_group" "927 930 934 935 948"
+}
+{
+"_xvk_smoothing_group" "887 948 916"
+}
+{
+"_xvk_smoothing_group" "925 928 895 907 906 911 900 949 939 941 933 931 940 932 929 944"
+}
+{
+"_xvk_smoothing_group" "887 948 916"
+}
+{
+"_xvk_smoothing_group" "901 947"
+}
+// pipe 6
+{
+"_xvk_smoothing_group" "884 881 878 859 897 899 898 896"
+}
+{
+"_xvk_smoothing_group" "909 910 908 902 912 904 905 903" // bad
+} 
+{
+"_xvk_smoothing_group" "946 938 943 926"
+} 
+{
+"_xvk_smoothing_group" "943 937"
+}
+// pipe 7
+{
+"_xvk_smoothing_group" "846 963 960 956 875 952 954 959"
+}
+// pipe 8
+{
+"_xvk_smoothing_group" "864 868 872 873 869 865 852 848"
+}
+
+
 // section 6
+{
+"_xvk_ent_id" "405 404 397 396" // remove hack lights entity
+}
+// section 7
 {
 "_xvk_ent_id" "288 289" // remove hack lights entity
 }
-// section 7
+// section 8
 {
 "_xvk_ent_id" "172 169" // remove hack lights entity
 }
@@ -97,12 +201,12 @@
 "_xvk_ent_id" "293 292 297" // remove hack lights entity
 }
 
-// section 8
+// section 9
 {
 "_xvk_ent_id" "174" // remove hack lights entity
 }
 
-// section 9
+// section 10
 {
 "_xvk_ent_id" "451 450 457 456" // remove hack lights entity
 }
@@ -123,7 +227,7 @@
 "origin" "-1586 1558 -2595"
 }
 
-// section 10
+// section 11
 {
 "_xvk_ent_id" "330 331 328 329" // remove hack lights entity
 }

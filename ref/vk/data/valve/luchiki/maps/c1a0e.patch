@@ -98,8 +98,16 @@
 }
 
 
+// smoothing
+{
+"_xvk_smoothing_excluded" "560 528" // wall // TODO: bad autosmooth 
+}
 
-
-
+{
+"_xvk_smoothing_excluded" "630 210 961 628 646" // wall // TODO: bad autosmooth 
+}
+{
+//"_xvk_smoothing_group" "214 210 218 630"
+}
 
 
