@@ -566,7 +566,7 @@ r_vk_material_t R_VkMaterialGetForTextureWithFlags( int tex_index, uint32_t flag
 	ret.tex_base_color = tex_index;
 
 	if ( flags & kVkMaterialFlagChrome )
-		ret.roughness = tglob.grayTexture;
+		ret.tex_roughness = tglob.grayTexture;
 
 	//DEBUG("Returning default material with tex_base_color=%d", tex_index);
 	return ret;

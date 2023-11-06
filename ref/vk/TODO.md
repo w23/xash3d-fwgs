@@ -2,6 +2,7 @@
 - [x] fix material asserts and inherit
 - [x] fixup -vkverboselogs
 - [x] changing textures on buttons, etc
+- [x] fix unpatched chrome surfaces brightness glitches
 
 # 2023-11-03 E324
 - [x] add cvar for displaying only specified channel
