@@ -161,6 +161,11 @@ static int addMaterial(const char *name, const r_vk_material_t* mat) {
 
 	printMaterial(g_materials.count);
 
+	ASSERT(mat->tex_base_color >= 0);
+	ASSERT(mat->tex_metalness >= 0);
+	ASSERT(mat->tex_roughness >= 0);
+	ASSERT(mat->tex_normalmap >= 0);
+
 	return g_materials.count++;
 }
 

@@ -1174,7 +1174,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			model_geometry->index_offset = index_offset;
 
 			if ( type == BrushSurface_Sky ) {
-#define TEX_BASE_SKYBOX 0xffffffffu // FIXME ray_interop.h
+#define TEX_BASE_SKYBOX 0x0f000000u // FIXME ray_interop.h
 				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
 			} else {
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
