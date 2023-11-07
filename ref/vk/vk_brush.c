@@ -1205,34 +1205,26 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				vertex.prev_pos[1] = in_vertex->position[1];
 				vertex.prev_pos[2] = in_vertex->position[2];
 
+				// Compute texture coordinates, process tangent
 				{
 					vec4_t svec, tvec;
-					if (psurf && (psurf->flags & Patch_Surface_STvecs)) {
-						Vector4Copy(psurf->s_vec, svec);
-						Vector4Copy(psurf->t_vec, tvec);
+					if (psurf && (psurf->flags & Patch_Surface_TexMatrix)) {
+						svec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_s[0] + surf->texinfo->vecs[1][0] * psurf->texmat_s[1];
+						svec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_s[0] + surf->texinfo->vecs[1][1] * psurf->texmat_s[1];
+						svec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_s[0] + surf->texinfo->vecs[1][2] * psurf->texmat_s[1];
+						svec[3] = surf->texinfo->vecs[0][3] + psurf->texmat_s[2];
+
+						tvec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_t[0] + surf->texinfo->vecs[1][0] * psurf->texmat_t[1];
+						tvec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_t[0] + surf->texinfo->vecs[1][1] * psurf->texmat_t[1];
+						tvec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_t[0] + surf->texinfo->vecs[1][2] * psurf->texmat_t[1];
+						tvec[3] = surf->texinfo->vecs[1][3] + psurf->texmat_t[2];
 					} else {
 						Vector4Copy(surf->texinfo->vecs[0], svec);
 						Vector4Copy(surf->texinfo->vecs[1], tvec);
 					}
 
-					float s_off = 0, t_off = 0;
-
-					if (psurf && (psurf->flags & Patch_Surface_TexOffset)) {
-						s_off = psurf->tex_offset[0];
-						t_off = psurf->tex_offset[1];
-					}
-
-					if (psurf && (psurf->flags & Patch_Surface_TexScale)) {
-						svec[0] *= psurf->tex_scale[0];
-						svec[1] *= psurf->tex_scale[0];
-						svec[2] *= psurf->tex_scale[0];
-						tvec[0] *= psurf->tex_scale[1];
-						tvec[1] *= psurf->tex_scale[1];
-						tvec[2] *= psurf->tex_scale[1];
-					}
-
-					const float s = s_off + DotProduct( in_vertex->position, svec ) + svec[3];
-					const float t = t_off + DotProduct( in_vertex->position, tvec ) + tvec[3];
+					const float s = DotProduct( in_vertex->position, svec ) + svec[3];
+					const float t = DotProduct( in_vertex->position, tvec ) + tvec[3];
 
 					vertex.gl_tc[0] = s / surf->texinfo->texture->width;
 					vertex.gl_tc[1] = t / surf->texinfo->texture->height;

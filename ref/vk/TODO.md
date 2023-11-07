@@ -1,11 +1,9 @@
 # 2023-11-07 E326
 - [x] list supported arguments for `rt_debug_display_only` cvar
 - [x] make vk_debug_log a command
-- [ ] remove stvecs from patches -- not used, inconvenient
-- [ ] patch texture coordinates by matrices
-    - [ ] add support for matrices to mapents
-    - [ ] convert old direct scale/offset patches to matrices and check that they work
-    - [ ] remove old direct scale/offset patches
+- [x] remove stvecs from patches -- not used, inconvenient
+- [x] patch texture coordinates by matrices
+- [x] add `_xvk_tex_rotate`
 
 # 2023-11-06 E325
 - [x] fix material asserts and inherit
