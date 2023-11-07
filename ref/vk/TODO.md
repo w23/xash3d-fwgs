@@ -10,7 +10,7 @@
         - not even sure we need it?
      - [ ] do not draw water sides when not requested.
      - [ ] potentially collinear planes vs ray tracing #264
-- [ ] update animated textures is now super slow
+- [ ] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
 
 # 2023-11-06 E325
 - [x] fix material asserts and inherit
