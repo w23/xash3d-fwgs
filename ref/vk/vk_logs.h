@@ -77,5 +77,4 @@ extern uint32_t g_log_debug_bits;
 		++called; \
 	} while(0)
 
-// Read debug-enabled modules from cvar
-void VK_LogsReadCvar(void);
+void R_LogSetVerboseModules( const char *modules );

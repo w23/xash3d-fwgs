@@ -701,7 +701,6 @@ qboolean R_VkInit( void )
 	vk_core.rtx = false;
 
 	VK_LoadCvars();
-	VK_LogsReadCvar();
 
 	// Force extremely verbose logs at startup.
 	// This is instrumental in some investigations, because the usual "vk_debug_log" cvar is not set

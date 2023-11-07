@@ -17,6 +17,7 @@
 #include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
+#include "camera.h"
 
 #include "ref_params.h"
 #include "eiface.h"
@@ -26,6 +27,14 @@
 
 #define MODULE_NAME "brush"
 #define LOG_MODULE LogModule_Brush
+
+typedef struct {
+	int surfaces_count;
+	const int *surfaces_indices;
+
+	r_geometry_range_t geometry;
+	vk_render_model_t render_model;
+} r_brush_water_model_t;
 
 typedef struct vk_brush_model_s {
 	model_t *engine_model;
@@ -41,13 +50,8 @@ typedef struct vk_brush_model_s {
 	matrix4x4 prev_transform;
 	float prev_time;
 
-	struct {
-		int surfaces_count;
-		const int *surfaces_indices;
-
-		r_geometry_range_t geometry;
-		vk_render_model_t render_model;
-	} water;
+	r_brush_water_model_t water;
+	r_brush_water_model_t water_sides;
 } vk_brush_model_t;
 
 typedef struct {
@@ -194,10 +198,11 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	for( glpoly_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
-		float *v;
+		const float *v;
 		if( args.reverse )
 			v = p->verts[0] + ( p->numverts - 1 ) * VERTEXSIZE;
-		else v = p->verts[0];
+		else
+			v = p->verts[0];
 
 		for( int i = 0; i < p->numverts; i++ )
 		{
@@ -212,7 +217,8 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + args.prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
 				prev_nv = prev_nv * scale + v[2];
 			}
-			else prev_nv = nv = v[2];
+			else
+				prev_nv = nv = v[2];
 
 			const float os = v[3];
 			const float ot = v[4];
@@ -367,19 +373,26 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->water.geometry);
 
-	const float scale = ent ? ent->curstate.scale : 1.f;
-
 	int vertices_offset = 0;
 	int indices_offset = 0;
 	for (int i = 0; i < bmodel->water.surfaces_count; ++i) {
 		const int surf_index = bmodel->water.surfaces_indices[i];
+		const msurface_t *warp = bmodel->engine_model->surfaces + surf_index;
+
+		/* if( warp->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES )) */
+		/* 	continue; */
+
+		const float scale = (!ent) ? 0.f :
+		 ( warp->polys->verts[0][2] >= g_camera.vieworg[2] )
+			? -ent->curstate.scale
+			: ent->curstate.scale;
 
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = bmodel->prev_time,
 			.scale = scale,
 			.reverse = false, // ??? is it ever true?
-			.warp = bmodel->engine_model->surfaces + surf_index,
+			.warp = warp,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
@@ -568,7 +581,7 @@ static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(bmodel->water.surfaces_count > 0);
 
-	fillWaterSurfaces(NULL, bmodel, bmodel->water.render_model.geometries);
+	fillWaterSurfaces(ent, bmodel, bmodel->water.render_model.geometries);
 	if (!R_RenderModelUpdate(&bmodel->water.render_model)) {
 		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
 	}
@@ -1174,7 +1187,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			model_geometry->index_offset = index_offset;
 
 			if ( type == BrushSurface_Sky ) {
-#define TEX_BASE_SKYBOX 0xffffffffu // FIXME ray_interop.h
+#define TEX_BASE_SKYBOX 0x0f000000u // FIXME ray_interop.h
 				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
 			} else {
 				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
@@ -1205,34 +1218,26 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				vertex.prev_pos[1] = in_vertex->position[1];
 				vertex.prev_pos[2] = in_vertex->position[2];
 
+				// Compute texture coordinates, process tangent
 				{
 					vec4_t svec, tvec;
-					if (psurf && (psurf->flags & Patch_Surface_STvecs)) {
-						Vector4Copy(psurf->s_vec, svec);
-						Vector4Copy(psurf->t_vec, tvec);
+					if (psurf && (psurf->flags & Patch_Surface_TexMatrix)) {
+						svec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_s[0] + surf->texinfo->vecs[1][0] * psurf->texmat_s[1];
+						svec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_s[0] + surf->texinfo->vecs[1][1] * psurf->texmat_s[1];
+						svec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_s[0] + surf->texinfo->vecs[1][2] * psurf->texmat_s[1];
+						svec[3] = surf->texinfo->vecs[0][3] + psurf->texmat_s[2];
+
+						tvec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_t[0] + surf->texinfo->vecs[1][0] * psurf->texmat_t[1];
+						tvec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_t[0] + surf->texinfo->vecs[1][1] * psurf->texmat_t[1];
+						tvec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_t[0] + surf->texinfo->vecs[1][2] * psurf->texmat_t[1];
+						tvec[3] = surf->texinfo->vecs[1][3] + psurf->texmat_t[2];
 					} else {
 						Vector4Copy(surf->texinfo->vecs[0], svec);
 						Vector4Copy(surf->texinfo->vecs[1], tvec);
 					}
 
-					float s_off = 0, t_off = 0;
-
-					if (psurf && (psurf->flags & Patch_Surface_TexOffset)) {
-						s_off = psurf->tex_offset[0];
-						t_off = psurf->tex_offset[1];
-					}
-
-					if (psurf && (psurf->flags & Patch_Surface_TexScale)) {
-						svec[0] *= psurf->tex_scale[0];
-						svec[1] *= psurf->tex_scale[0];
-						svec[2] *= psurf->tex_scale[0];
-						tvec[0] *= psurf->tex_scale[1];
-						tvec[1] *= psurf->tex_scale[1];
-						tvec[2] *= psurf->tex_scale[1];
-					}
-
-					const float s = s_off + DotProduct( in_vertex->position, svec ) + svec[3];
-					const float t = t_off + DotProduct( in_vertex->position, tvec ) + tvec[3];
+					const float s = DotProduct( in_vertex->position, svec ) + svec[3];
+					const float t = DotProduct( in_vertex->position, tvec ) + tvec[3];
 
 					vertex.gl_tc[0] = s / surf->texinfo->texture->width;
 					vertex.gl_tc[1] = t / surf->texinfo->texture->height;

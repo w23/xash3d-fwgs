@@ -26,18 +26,17 @@
 	X(14, string, _xvk_material, String) \
 	X(15, int_array_t, _xvk_ent_id, IntArray) \
 	X(16, float, _xvk_radius, Float) \
-	X(17, vec4_t, _xvk_svec, Vec4) \
-	X(18, vec4_t, _xvk_tvec, Vec4) \
-	X(19, vec2_t, _xvk_tex_offset, Vec2) \
-	X(20, vec2_t, _xvk_tex_scale, Vec2) \
-	X(21, string, model, String) \
-	X(22, float, _xvk_smoothing_threshold, Float) \
-	X(23, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
-	X(24, int_array_t, _xvk_smoothing_group, IntArray) \
-	X(25, string, _xvk_map_material, String) \
-	X(26, int, rendermode, Int) \
-	X(27, int, _xvk_smooth_entire_model, Int) \
-	X(28, int_array_t, _xvk_smoothing_excluded, IntArray) \
+	X(17, vec2_t, _xvk_tex_offset, Vec2) \
+	X(18, vec2_t, _xvk_tex_scale, Vec2) \
+	X(19, string, model, String) \
+	X(20, float, _xvk_smoothing_threshold, Float) \
+	X(21, int_array_t, _xvk_smoothing_excluded_pairs, IntArray) \
+	X(22, int_array_t, _xvk_smoothing_group, IntArray) \
+	X(23, string, _xvk_map_material, String) \
+	X(24, int, rendermode, Int) \
+	X(25, int, _xvk_smooth_entire_model, Int) \
+	X(26, int_array_t, _xvk_smoothing_excluded, IntArray) \
+	X(27, float, _xvk_tex_rotate, Float) \
 
 /* NOTE: not used
 	X(23, int, renderamt, Int) \
@@ -189,9 +188,7 @@ enum {
 	Patch_Surface_Delete = (1<<0),
 	Patch_Surface_Material = (1<<1),
 	Patch_Surface_Emissive = (1<<2),
-	Patch_Surface_STvecs = (1<<3),
-	Patch_Surface_TexOffset = (1<<4),
-	Patch_Surface_TexScale = (1<<5),
+	Patch_Surface_TexMatrix = (1<<3),
 };
 
 struct texture_s;
@@ -204,8 +201,7 @@ typedef struct {
 	vec3_t emissive;
 
 	// Texture coordinate patches
-	vec4_t s_vec, t_vec;
-	vec2_t tex_offset, tex_scale;
+	vec3_t texmat_s, texmat_t;
 } xvk_patch_surface_t;
 
 const xvk_patch_surface_t* R_VkPatchGetSurface( int surface_index );

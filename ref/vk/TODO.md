@@ -1,3 +1,17 @@
+# 2023-11-07 E326
+- [x] list supported arguments for `rt_debug_display_only` cvar
+- [x] make vk_debug_log a command
+- [x] remove stvecs from patches -- not used, inconvenient
+- [x] patch texture coordinates by matrices
+- [x] add `_xvk_tex_rotate`
+- [x] ASSERT in c2a5 -- skybox sentinel
+- [ ] woditschka
+     - [ ] height not switching to negative underwater
+        - not even sure we need it?
+     - [ ] do not draw water sides when not requested.
+     - [ ] potentially collinear planes vs ray tracing #264
+- [ ] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
+
 # 2023-11-06 E325
 - [x] fix material asserts and inherit
 - [x] fixup -vkverboselogs
@@ -175,7 +189,6 @@
 - [ ] rtx: do not rebuild static studio models (most of them). BLAS building takes most of the frame time (~12ms where ray tracing itself is just 3ms)
 - [ ] rtx: importance-sample sky light; there are sky surfaces that we can consider light sources
 - [ ] cull water surfaces (see c3a2a)
-- [ ] create water surfaces once in vk_brush
 - [ ] consider doing per-geometry rendermode: brushes can be built only once; late transparency depth sorting for vk render;
 - [ ] rtx: too many emissive lights in c3a1b
 - [ ] studio models: pre-compute buffer sizes and allocate them at once
@@ -599,3 +612,6 @@
 - [x] render skybox
 - [x] better flashlight: spotlight instead of dlight point
 - [x] rtx: add fps: rasterize into G-buffer, and only then compute lighting with rtx
+
+# Done somewhen
+- [x] create water surfaces once in vk_brush

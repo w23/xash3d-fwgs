@@ -1,12 +1,20 @@
 #include "vk_cvar.h"
 #include "vk_common.h"
 #include "vk_core.h"
+#include "vk_logs.h"
 
 #define NONEXTERN_CVAR(cvar) cvar_t *cvar;
 DECLARE_CVAR(NONEXTERN_CVAR)
 #undef NONEXTERN_CVAR
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
+
+static void setDebugLog( void ) {
+	const int argc = gEngine.Cmd_Argc();
+	const char *const modules = argc > 1 ? gEngine.Cmd_Argv(1) : "";
+	gEngine.Cvar_Set("vk_debug_log_", modules);
+	R_LogSetVerboseModules( modules );
+}
 
 void VK_LoadCvars( void )
 {
@@ -20,7 +28,9 @@ void VK_LoadCvars( void )
 	rt_force_disable = gEngine.Cvar_Get( "rt_force_disable", "0", FCVAR_GLCONFIG, "Force disable Ray Tracing" );
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
 
-	vk_debug_log = gEngine.Cvar_Get("vk_debug_log", "", FCVAR_GLCONFIG, "List of modules to enable debug logs for");
+	vk_debug_log = gEngine.Cvar_Get("vk_debug_log_", "", FCVAR_GLCONFIG | FCVAR_READ_ONLY, "");
+
+	gEngine.Cmd_AddCommand("vk_debug_log", setDebugLog, "Set modules to enable debug logs for");
 }
 
 void VK_LoadCvarsAfterInit( void )

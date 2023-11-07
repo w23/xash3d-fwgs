@@ -679,4 +679,15 @@ Hunch: need to split external/refapi refcount-unaware functionality and hash map
         - old textures (but which should've been loaded for the new map too) with refcount=1 are deleted
         - ;_;
 
+# 2023-11-07 E326
+Water :|
 
+## Overview
+- water is `msurface_t` with `SURF_DRAWTURB` (?)
+- Engine calls `GL_SubdivideSurface()` to produce `glpoly_t` chain of subdivided polygons for a given `msurface_t`
+	- When? How? Is it correct?
+	- What does it do exactly?
+- rendering uses `glpoly_t` to generate and submit heightmap-animated triangles
+- animated height depends on current camera position. Height is inverted if camera is underwater.
+- there are "water sides" with `PLANE_Z` flag. These are drawn only when `cl_entity_t.curstate.effects` has `EF_WATERSIDES` bit
+	- water sides can be found in test_brush2

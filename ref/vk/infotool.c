@@ -70,9 +70,13 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 		const char *const tex_name = R_TextureGetNameByIndex( tex_id );
 		const texture_t *tex = surf->texinfo->texture;
 
+		const texture_t* const alt = tex->alternate_anims;
+
 		p += Q_snprintf(p, end - p,
-			"surface index: [[ %d ]];\ntexture: %s(%d)\n",
-			surface_index, tex_name ? tex_name : "NONE", tex_id
+			"surface index: [[ %d ]];\ntexture: %s(%d)\n"
+			"alternate_texture: %s(%d)\n",
+			surface_index, tex_name ? tex_name : "NONE", tex_id,
+			alt ? alt->name : "N/A", alt ? alt->gl_texturenum : -1
 		);
 
 		if (tex->anim_total > 0 && tex->anim_next) {

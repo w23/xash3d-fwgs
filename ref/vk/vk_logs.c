@@ -20,9 +20,8 @@ static const struct log_pair_t {
 	{"sprite", LogModule_Sprite},
 };
 
-void VK_LogsReadCvar(void) {
+void R_LogSetVerboseModules( const char *p ) {
 	g_log_debug_bits = 0;
-	const char *p = vk_debug_log->string;
 	while (*p) {
 		const char *next = Q_strchrnul(p, ',');
 		const const_string_view_t name = {p, next - p};
@@ -31,6 +30,7 @@ void VK_LogsReadCvar(void) {
 		for (int i = 0; i < COUNTOF(g_log_module_pairs); ++i) {
 			const struct log_pair_t *const pair = g_log_module_pairs + i;
 			if (stringViewCmp(name, pair->name) == 0) {
+				gEngine.Con_Reportf("Enabling verbose logs for module \"%.*s\"\n", name.len, name.s);
 				bit = pair->bit;
 				break;
 			}

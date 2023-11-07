@@ -445,27 +445,55 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			);
 		}
 
-		if (have_fields & (Field__xvk_svec | Field__xvk_tvec)) {
-			Vector4Copy(props->_xvk_svec, psurf->s_vec);
-			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
-			psurf->flags |= Patch_Surface_STvecs;
-			DEBUG("Patch for surface %d: assign st_vec", index);
-		}
+		// Set default texture identity matrix
+		VectorSet(psurf->texmat_s, 1, 0, 0);
+		VectorSet(psurf->texmat_t, 0, 1, 0);
 
 		if (have_fields & Field__xvk_tex_scale) {
-			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
-			psurf->flags |= Patch_Surface_TexScale;
 			DEBUG("Patch for surface %d: assign tex_scale %f %f",
-				index, psurf->tex_scale[0], psurf->tex_scale[1]
-			);
+				index, props->_xvk_tex_scale[0], props->_xvk_tex_scale[1]);
+
+			psurf->texmat_s[0] = props->_xvk_tex_scale[0];
+			psurf->texmat_t[1] = props->_xvk_tex_scale[1];
+			psurf->flags |= Patch_Surface_TexMatrix;
+
 		}
 
 		if (have_fields & Field__xvk_tex_offset) {
-			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
-			psurf->flags |= Patch_Surface_TexOffset;
 			DEBUG("Patch for surface %d: assign tex_offset %f %f",
-				index, psurf->tex_offset[0], psurf->tex_offset[1]
+				index, props->_xvk_tex_offset[0], props->_xvk_tex_offset[1]);
+
+			psurf->texmat_s[2] = props->_xvk_tex_offset[0];
+			psurf->texmat_t[2] = props->_xvk_tex_offset[1];
+			psurf->flags |= Patch_Surface_TexMatrix;
+		}
+
+		if (have_fields & Field__xvk_tex_rotate) {
+			const float rad = props->_xvk_tex_rotate * M_PI / 180.;
+			const float co = cos(rad), si = sin(rad);
+
+			const float a0 = psurf->texmat_s[0], a1 = psurf->texmat_s[1];
+			const float a2 = psurf->texmat_t[0], a3 = psurf->texmat_t[1];
+
+			const float b0 = co, b1 = -si;
+			const float b2 = si, b3 = co;
+
+			const vec2_t s = {a0 * b0 + a1 * b2, a0 * b1 + a1 * b3};
+			const vec2_t t = {a2 * b0 + a3 * b2, a2 * b1 + a3 * b3};
+
+			DEBUG("Patch for surface %d: rotate by %f degrees:\n%f %f\n%f %f",
+				index, props->_xvk_tex_rotate,
+				s[0], s[1],
+				t[0], t[1]
 			);
+
+			psurf->texmat_s[0] = s[0];
+			psurf->texmat_s[1] = s[1];
+
+			psurf->texmat_t[0] = t[0];
+			psurf->texmat_t[1] = t[1];
+
+			psurf->flags |= Patch_Surface_TexMatrix;
 		}
 	}
 }

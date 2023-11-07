@@ -707,7 +707,10 @@ qboolean VK_RayInit( void )
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
 
-	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG, "Display only the specified channel (nshade, ngeom, basecolor, basealpha, ...)");
+#define X(name) #name ", "
+	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
+		"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
+#undef X
 
 	return true;
 }
