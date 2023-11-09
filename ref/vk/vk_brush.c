@@ -162,7 +162,7 @@ static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int 
 
 typedef struct {
 	float prev_time;
-	float scale;
+	float wave_height;
 	const msurface_t *warp;
 	qboolean reverse;
 
@@ -183,13 +183,6 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	ASSERT(args.warp->polys);
 
-	// set the current waveheight
-	// FIXME VK if( warp->polys->verts[0][2] >= RI.vieworg[2] )
-	// 	waveHeight = -ent->curstate.scale;
-	// else
-	// 	waveHeight = ent->curstate.scale;
-	const float scale = args.scale;
-
 	// reset fog color for nonlightmapped water
 	// FIXME VK GL_ResetFogColor();
 
@@ -207,15 +200,15 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 		for( int i = 0; i < p->numverts; i++ )
 		{
 			float nv, prev_nv;
-			if( scale )
+			if( args.wave_height )
 			{
 				nv = r_turbsin[(int)(time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
 				nv = (r_turbsin[(int)(v[0] * 5.0f + time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + nv;
-				nv = nv * scale + v[2];
+				nv = nv * args.wave_height + v[2];
 
 				prev_nv = r_turbsin[(int)(args.prev_time * 160.0f + v[1] + v[0]) & 255] + 8.0f;
 				prev_nv = (r_turbsin[(int)(v[0] * 5.0f + args.prev_time * 171.0f - v[1]) & 255] + 8.0f ) * 0.8f + prev_nv;
-				prev_nv = prev_nv * scale + v[2];
+				prev_nv = prev_nv * args.wave_height + v[2];
 			}
 			else
 				prev_nv = nv = v[2];
@@ -371,6 +364,8 @@ static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, 
 static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel, vk_render_geometry_t *geometries ) {
 	ASSERT(bmodel->water.surfaces_count > 0);
 
+	const float wave_height = (!ent) ? 0.f : ent->curstate.scale;
+
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->water.geometry);
 
 	int vertices_offset = 0;
@@ -382,15 +377,10 @@ static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel,
 		/* if( warp->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES )) */
 		/* 	continue; */
 
-		const float scale = (!ent) ? 0.f :
-		 ( warp->polys->verts[0][2] >= g_camera.vieworg[2] )
-			? -ent->curstate.scale
-			: ent->curstate.scale;
-
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = bmodel->prev_time,
-			.scale = scale,
+			.wave_height = wave_height,
 			.reverse = false, // ??? is it ever true?
 			.warp = warp,
 
