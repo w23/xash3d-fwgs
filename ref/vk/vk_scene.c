@@ -107,7 +107,7 @@ static void mapLoadBegin( const model_t *const map ) {
 }
 
 static void mapLoadEnd(const model_t *const map) {
-	// TODO should we do something like VK_BrushEndLoad?
+	// TODO should we do something like R_BrushEndLoad?
 	VK_UploadLightmap();
 }
 
@@ -122,13 +122,15 @@ static void preloadModels( void ) {
 		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
 			continue;
 
+		const qboolean is_worldmodel = i == 0;
+
 		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
 
 		R_VkMaterialsLoadForModel(m);
 
 		switch (m->type) {
 			case mod_brush:
-				if (!VK_BrushModelLoad(m))
+				if (!R_BrushModelLoad(m, is_worldmodel))
 					gEngine.Host_Error( "Couldn't load brush model %s\n", m->name );
 				break;
 
@@ -171,7 +173,7 @@ static void reloadPatches( void ) {
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
-	VK_BrushModelDestroyAll();
+	R_BrushModelDestroyAll();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	loadMap(map);
@@ -232,7 +234,7 @@ void R_SceneMapDestroy( void ) {
 	// Make sure no rendering is happening
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
-	VK_BrushModelDestroyAll();
+	R_BrushModelDestroyAll();
 }
 
 // tell the renderer what new map is started
@@ -610,7 +612,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 				}
 			}
 
-			VK_BrushModelDraw( ent, render_mode, blend, model );
+			R_BrushModelDraw( ent, render_mode, blend, model );
 			break;
 
 		case mod_studio:
@@ -658,7 +660,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		if( world && world->model )
 		{
 			const float blend = 1.f;
-			VK_BrushModelDraw( world, kRenderNormal, blend, NULL );
+			R_BrushModelDraw( world, kRenderNormal, blend, NULL );
 		}
 		APROF_SCOPE_END(draw_worldbrush);
 	}

@@ -1,3 +1,11 @@
+# 2023-11-09 E327
+- [x] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
+- [ ] woditschka
+     - [x] height not switching to negative underwater -- decided that we don't need it for now
+     - [x] do not draw water sides when not requested.
+     - [ ] potentially collinear planes vs ray tracing #264
+
+
 # 2023-11-07 E326
 - [x] list supported arguments for `rt_debug_display_only` cvar
 - [x] make vk_debug_log a command
@@ -5,12 +13,6 @@
 - [x] patch texture coordinates by matrices
 - [x] add `_xvk_tex_rotate`
 - [x] ASSERT in c2a5 -- skybox sentinel
-- [ ] woditschka
-     - [ ] height not switching to negative underwater
-        - not even sure we need it?
-     - [ ] do not draw water sides when not requested.
-     - [ ] potentially collinear planes vs ray tracing #264
-- [ ] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
 
 # 2023-11-06 E325
 - [x] fix material asserts and inherit

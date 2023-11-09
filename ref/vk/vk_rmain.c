@@ -127,7 +127,7 @@ static void Mod_UnloadTextures( model_t *mod )
 		// FIXME Mod_AliasUnloadTextures( mod->cache.data );
 		break;
 	case mod_brush:
-		VK_BrushUnloadTextures( mod );
+		R_BrushUnloadTextures( mod );
 		break;
 	case mod_sprite:
 		Mod_SpriteUnloadTextures( mod->cache.data );
