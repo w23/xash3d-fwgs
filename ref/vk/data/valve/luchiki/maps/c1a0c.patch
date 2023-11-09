@@ -35,12 +35,15 @@
 "_xvk_material" "generic031b"
 }
 {
-"_xvk_smoothing_group" "1854 1852 1866 1853 1851 1865" 
-}
-{
 "_xvk_surface_id" "1851 1852"
-"_xvk_tex_offset" "0 200"
-"_xvk_tex_scale" "1 0.05" // ugly "hack" // FIXME: 90 rotation
+//"_xvk_tex_offset" "0 200"
+//"_xvk_tex_scale" "1 0.05" // ugly "hack" // FIXME: 90 rotation
+"_xvk_tex_rotate" "270"
+"_xvk_tex_scale" "1 2.5" // TODO: better scale and ofsset
+"_xvk_tex_offset" "31 40"
+}
+{ // TODO: fix bad geometry
+"_xvk_smoothing_group" "1854 1852 1866 1853 1851 1865"
 }
 
 // lift/elevator

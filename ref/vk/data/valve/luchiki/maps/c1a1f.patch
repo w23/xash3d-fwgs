@@ -124,15 +124,17 @@
 "_xvk_surface_id" "999" // LITEPANEL1
 "_xvk_material" "+ALAB1_W6"
 "_light" "0 0 0 0"
-"_xvk_tex_offset" "24 1"
-"_xvk_tex_scale" "2.5 0.3" // TODO: rotate at 90
+"_xvk_tex_rotate" "90"
+"_xvk_tex_scale" "1.6 0.5"
+"_xvk_tex_offset" "35 2.5"
 }
 {
 "_xvk_surface_id" "1010" // LITEPANEL1
-"_xvk_material" "+0LAB1_W6"
 "_light" "255 255 255 4000"
-"_xvk_tex_offset" "24 7"
-"_xvk_tex_scale" "2.5 0.3" // TODO: rotate at 90
+"_xvk_material" "+0LAB1_W6"
+"_xvk_tex_rotate" "90"
+"_xvk_tex_scale" "1.62 0.5"
+"_xvk_tex_offset" "25 2.5" // 24.7
 }
 {
 "_xvk_surface_id" "975 2354" // +0~FIFTS_LGHT01
@@ -145,7 +147,7 @@
 "_xvk_surface_id" "974 2357" // +0~FIFTS_LGHT01
 "_xvk_material" "+0~FIFTIES_LGT2"
 "_light" "255 255 255 3000"
-"_xvk_tex_offset" "42 -18"
+"_xvk_tex_offset" "42 -19"
 "_xvk_tex_scale" "2 1.2"
 }
 { 
