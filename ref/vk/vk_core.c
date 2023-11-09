@@ -798,7 +798,7 @@ qboolean R_VkInit( void )
 	if (!R_VkOverlay_Init())
 		return false;
 
-	if (!VK_BrushInit())
+	if (!R_BrushInit())
 		return false;
 
 	if (vk_core.rtx)
@@ -829,7 +829,7 @@ void R_VkShutdown( void ) {
 		VK_RayShutdown();
 	}
 
-	VK_BrushShutdown();
+	R_BrushShutdown();
 	VK_StudioShutdown();
 	R_VkOverlay_Shutdown();
 

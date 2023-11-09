@@ -127,7 +127,7 @@ void VK_InitRandomTable( void )
 	gEngine.COM_SetRandomSeed( 0 );
 }
 
-qboolean VK_BrushInit( void )
+qboolean R_BrushInit( void )
 {
 	VK_InitRandomTable ();
 
@@ -138,7 +138,7 @@ qboolean VK_BrushInit( void )
 	return true;
 }
 
-void VK_BrushShutdown( void ) {
+void R_BrushShutdown( void ) {
 	if (g_brush.conn.edges)
 		Mem_Free(g_brush.conn.edges);
 }
@@ -431,7 +431,7 @@ static qboolean doesTextureChainChange( const texture_t *const base ) {
 	return false;
 }
 
-static qboolean isSurfaceAnimated( const msurface_t *s ) {
+static qboolean isSurfaceAnimated( const msurface_t *s, qboolean is_worldmodel ) {
 	const texture_t *const base = s->texinfo->texture;
 
 	if( !base->anim_total && !base->alternate_anims )
@@ -442,10 +442,14 @@ static qboolean isSurfaceAnimated( const msurface_t *s ) {
 		return false;
 	*/
 
-	if (base->alternate_anims && base->gl_texturenum != base->alternate_anims->gl_texturenum)
+	// Worldmodel cannot be triggered and change between alternate_anims and regular anims,
+	// therefore it should not be checked. There are lights (e.g. in c2a5) which have alternate anims.
+	// These lights get incorrectly marked as dynamic, tanking the performance.
+
+	if (!is_worldmodel && base->alternate_anims && base->gl_texturenum != base->alternate_anims->gl_texturenum)
 		return true;
 
-	return doesTextureChainChange(base) || doesTextureChainChange(base->alternate_anims);
+	return doesTextureChainChange(base) || (!is_worldmodel && doesTextureChainChange(base->alternate_anims));
 }
 
 typedef enum {
@@ -456,7 +460,7 @@ typedef enum {
 	BrushSurface_Sky,
 } brush_surface_type_e;
 
-static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
+static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qboolean is_worldmodel ) {
 // 	if ( i >= 0 && (surf->flags & ~(SURF_PLANEBACK | SURF_UNDERWATER | SURF_TRANSPARENT)) != 0)
 // 	{
 // 		DEBUG("\t%d flags: ", i);
@@ -500,14 +504,14 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i ) {
 	}
 
 	const qboolean patched_material = patch_surface && !!(patch_surface->flags & Patch_Surface_Material);
-	if (!patched_material && isSurfaceAnimated(surf)) {
+	if (!patched_material && isSurfaceAnimated(surf, is_worldmodel)) {
 		return BrushSurface_Animated;
 	}
 
 	return BrushSurface_Regular;
 }
 
-static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes) {
+static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes, qboolean is_worldmodel) {
 	bmodel->water.surfaces_count = sizes.water_surfaces;
 
 	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.water_vertices, sizes.water_indices);
@@ -525,7 +529,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmod
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
 
-		if (getSurfaceType(surf, surface_index) != BrushSurface_Water)
+		if (getSurfaceType(surf, surface_index, is_worldmodel) != BrushSurface_Water)
 			continue;
 
 		surfaces_indices[index_index++] = surface_index;
@@ -683,7 +687,7 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 	return base;
 }
 
-void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {
+void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {
 	// Expect all buffers to be bound
 	const model_t *mod = ent->model;
 	vk_brush_model_t *bmodel = mod->cache.data;
@@ -802,7 +806,7 @@ void VK_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, co
 	bmodel->prev_time = gpGlobals->time;
 }
 
-static model_sizes_t computeSizes( const model_t *mod ) {
+static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) {
 	model_sizes_t sizes = {0};
 
 	for( int i = 0; i < mod->nummodelsurfaces; ++i)
@@ -814,7 +818,7 @@ static model_sizes_t computeSizes( const model_t *mod ) {
 		if (tex_id > sizes.max_texture_id)
 			sizes.max_texture_id = tex_id;
 
-		switch (getSurfaceType(surf, surface_index)) {
+		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
 		case BrushSurface_Water:
 			sizes.water_surfaces++;
 			addWarpVertIndCounts(surf, &sizes.water_vertices, &sizes.water_indices);
@@ -848,6 +852,7 @@ typedef struct {
 	vk_render_geometry_t *out_geometries;
 	vk_vertex_t *out_vertices;
 	uint16_t *out_indices;
+	qboolean is_worldmodel;
 } fill_geometries_args_t;
 
 static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
@@ -1120,7 +1125,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			// TODO this patching should probably override entity patching below
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 
-			const brush_surface_type_e type = getSurfaceType(surf, surface_index);
+			const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
 			switch (type) {
 			case BrushSurface_Water:
 			case BrushSurface_Hidden:
@@ -1304,7 +1309,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	return true;
 }
 
-static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes ) {
+static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes, qboolean is_worldmodel ) {
 	bmodel->geometry = R_GeometryRangeAlloc(sizes.num_vertices, sizes.num_indices);
 	if (!bmodel->geometry.block_handle.size) {
 		ERR("Cannot allocate geometry for %s", mod->name );
@@ -1331,6 +1336,7 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 			.out_geometries = geometries,
 			.out_vertices = geom_lock.vertices,
 			.out_indices = geom_lock.indices,
+			.is_worldmodel = is_worldmodel,
 		});
 
 	R_GeometryRangeUnlock( &geom_lock );
@@ -1357,7 +1363,7 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 	return true;
 }
 
-qboolean VK_BrushModelLoad( model_t *mod ) {
+qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	if (mod->cache.data) {
 		WARN("Model %s was already loaded", mod->name );
 		return true;
@@ -1375,10 +1381,10 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 	Matrix4x4_LoadIdentity(bmodel->prev_transform);
 	bmodel->prev_time = gpGlobals->time;
 
-	const model_sizes_t sizes = computeSizes( mod );
+	const model_sizes_t sizes = computeSizes( mod, is_worldmodel );
 
 	if (sizes.num_surfaces != 0) {
-		if (!createRenderModel(mod, bmodel, sizes)) {
+		if (!createRenderModel(mod, bmodel, sizes, is_worldmodel)) {
 			ERR("Could not load brush model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
@@ -1386,7 +1392,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 	}
 
 	if (sizes.water_surfaces) {
-		if (!brushCreateWaterModel(mod, bmodel, sizes)) {
+		if (!brushCreateWaterModel(mod, bmodel, sizes, is_worldmodel)) {
 			ERR("Could not load brush water model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
@@ -1402,7 +1408,7 @@ qboolean VK_BrushModelLoad( model_t *mod ) {
 	return true;
 }
 
-static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
+static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	ASSERT(bmodel->engine_model);
 
 	DEBUG("%s: %s", __FUNCTION__, bmodel->engine_model->name);
@@ -1434,10 +1440,10 @@ static void VK_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	Mem_Free(bmodel);
 }
 
-void VK_BrushModelDestroyAll( void ) {
+void R_BrushModelDestroyAll( void ) {
 	DEBUG("Destroying %d brush models", g_brush.models_count);
 	for( int i = 0; i < g_brush.models_count; i++ )
-		VK_BrushModelDestroy(g_brush.models[i]);
+		R_BrushModelDestroy(g_brush.models[i]);
 
 	g_brush.stat.total_vertices = 0;
 	g_brush.stat.total_indices = 0;
@@ -1491,7 +1497,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
 
-		switch (getSurfaceType(surf, surface_index)) {
+		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
 		case BrushSurface_Regular:
 		case BrushSurface_Animated:
 			break;
@@ -1572,7 +1578,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	}
 
 	if (emissive_surfaces_count > 0) {
-		// Update emissive values in kusochki. This is required because initial VK_BrushModelLoad happens before we've read
+		// Update emissive values in kusochki. This is required because initial R_BrushModelLoad happens before we've read
 		// RAD data in vk_light.c, so the emissive values are empty. This is the place and time where we actually get to
 		// know them, so let's fixup things.
 		// TODO minor optimization: sort geom_indices to have a better chance for them to be sequential
@@ -1591,7 +1597,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	}
 }
 
-void VK_BrushUnloadTextures( model_t *mod )
+void R_BrushUnloadTextures( model_t *mod )
 {
 	int i;
 
