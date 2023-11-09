@@ -24,11 +24,11 @@ That said, we are still happy to hear that you'd like to help. Your involvement 
 Strongly suggested checklist for contributing anything, **before you start writing any code that you'd like to land here**:
 1. Find an existing issue (e.g. with `good first issue` label), or suggest your own.
 2. Let us know that you'd want to work on it, e.g. by leaving a comment on it. **Why:** any given issue might be stale, no longer relevant, being actively worked on as part of something else, or conflicting with some other approach being deliberated.
-3. Work with us on a design review for the issue. **Why:** this is live C codebase, it is rather fragile and is constantly changing. There are no good practices or stable building blocks. It is also a bit idiosyncratic in places. We just know more context about where are we going to, and where we might be heading. You might also get into surprising conflicts with things that we're working on. There are unfortunately no stable scaffolding or guardrails that would allow for easy independent collaboration yet.
-4. Only when design review has been approved you can code and make a PR.
+3. Work with us on a design review for the issue. **Why:** this is live C codebase, it is rather fragile and is constantly changing. There are no good practices or stable building blocks. It is also a bit idiosyncratic in places. We just know more context about where are we going to, and where we might be heading. You might also get into surprising conflicts with things that we're working on. There are unfortunately no stable scaffolding or guardrails that would allow for easy independent collaboration yet. Working on a design review means that we'll suggest a compatible way of doing things, and will schedule our work to minimize conflicts with yours.
+4. Open a draft PR as early as possible, even if it is not ready yet. That way we can coordinate effort, suggest things and anwer any questions.
 
 ## Code and PR
-1. Do not worry that much about code style. Be reasonable, try to either imitate the surrounding code (which has no strict style), or follow upstream recommendations.
+1. Do not worry that much about code style. Be reasonable, try to either imitate the surrounding code (which has no strict style yet), or follow upstream recommendations listed below under `Code style` section.
 2. Try to limit your changes, e.g. don't re-format lines which are not crucial to your change.
 3. Ping us in the PR if you're not hearing any feedback for a couple of days. I'm usually way too busy *with life* to be on the internets all the time, but a little nudge might be able to allocate some attention.
 
@@ -50,7 +50,7 @@ Strongly suggested checklist for contributing anything, **before you start writi
 
 ### Which branch?
 
-* We recommend using `master` branch.
+* We recommend using `vulkan` branch.
 
 ### Third-party libraries
 
