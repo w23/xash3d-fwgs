@@ -691,3 +691,25 @@ Water :|
 - animated height depends on current camera position. Height is inverted if camera is underwater.
 - there are "water sides" with `PLANE_Z` flag. These are drawn only when `cl_entity_t.curstate.effects` has `EF_WATERSIDES` bit
 	- water sides can be found in test_brush2
+
+# 2023-11-09 E327
+GL water vs test_brush2
+- `EmitWaterPolys()`
+    - is called by `R_RenderBrushPoly()`
+        - if commented out, the inner sphere disappears, as all other water
+        - is called from `R_DrawTextureChains()`
+            - is called from `R_DrawWorld()`
+    - is called by `R_DrawWaterSurfaces()`
+        - commenting out doesn affect anything ?! -- doesn't seem to be called at all
+
+- `PLANE_Z` check is in `R_DrawBrushModel()`
+
+GL:
+- default:          sphere=1 side=0
+- no PLANE_Z check: sphere=1 side=0.5 (?? two sides missing)
+
+VK:
+- default:          sphere=0 side=0
+- no PLANE_Z check: sphere=1 side=1
+
+EXPLANATION: `!=PLANE_Z` is only culled for non-worldmodel entities. Worldmodel doesn't cull by != PLANE_Z.

@@ -1,9 +1,8 @@
 # 2023-11-09 E327
 - [x] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
 - [ ] woditschka
-     - [ ] height not switching to negative underwater
-        - not even sure we need it?
-     - [ ] do not draw water sides when not requested.
+     - [x] height not switching to negative underwater -- decided that we don't need it for now
+     - [x] do not draw water sides when not requested.
      - [ ] potentially collinear planes vs ray tracing #264
 
 

@@ -55,13 +55,17 @@ typedef struct vk_brush_model_s {
 } vk_brush_model_t;
 
 typedef struct {
+	int surfaces;
+	int vertices;
+	int indices;
+} water_model_sizes_t;
+
+typedef struct {
 	int num_surfaces, num_vertices, num_indices;
 	int max_texture_id;
-	int water_surfaces;
 	int animated_count;
 
-	int water_vertices;
-	int water_indices;
+	water_model_sizes_t water, side_water;
 } model_sizes_t;
 
 typedef struct conn_edge_s {
@@ -361,45 +365,53 @@ static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, 
 }
 #endif
 
-static void fillWaterSurfaces( const cl_entity_t *ent, vk_brush_model_t *bmodel, vk_render_geometry_t *geometries ) {
-	ASSERT(bmodel->water.surfaces_count > 0);
+typedef struct {
+	const cl_entity_t *ent;
+	const msurface_t *surfaces;
+	r_brush_water_model_t *wmodel;
+	vk_render_geometry_t *geometries;
+	float prev_time;
+} fill_water_surfaces_args_t;
 
-	const float wave_height = (!ent) ? 0.f : ent->curstate.scale;
+static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
+	ASSERT(args.wmodel->surfaces_count > 0);
 
-	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->water.geometry);
+	const float wave_height = (!args.ent) ? 0.f : args.ent->curstate.scale;
+
+	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&args.wmodel->geometry);
 
 	int vertices_offset = 0;
 	int indices_offset = 0;
-	for (int i = 0; i < bmodel->water.surfaces_count; ++i) {
-		const int surf_index = bmodel->water.surfaces_indices[i];
-		const msurface_t *warp = bmodel->engine_model->surfaces + surf_index;
+	for (int i = 0; i < args.wmodel->surfaces_count; ++i) {
+		const int surf_index = args.wmodel->surfaces_indices[i];
+		const msurface_t *warp = args.surfaces + surf_index;
 
 		/* if( warp->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES )) */
 		/* 	continue; */
 
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
-			.prev_time = bmodel->prev_time,
+			.prev_time = args.prev_time,
 			.wave_height = wave_height,
 			.reverse = false, // ??? is it ever true?
 			.warp = warp,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
-			.dst_geometry = geometries + i,
+			.dst_geometry = args.geometries + i,
 
 			.out_vertex_count = &vertices,
 			.out_index_count = &indices,
 		});
 
-		geometries[i].vertex_offset = bmodel->water.geometry.vertices.unit_offset + vertices_offset;
-		geometries[i].index_offset = bmodel->water.geometry.indices.unit_offset + indices_offset;
+		args.geometries[i].vertex_offset = args.wmodel->geometry.vertices.unit_offset + vertices_offset;
+		args.geometries[i].index_offset = args.wmodel->geometry.indices.unit_offset + indices_offset;
 
 		vertices_offset += vertices;
 		indices_offset += indices;
 
-		ASSERT(vertices_offset  <= bmodel->water.geometry.vertices.count);
-		ASSERT(indices_offset <= bmodel->water.geometry.indices.count);
+		ASSERT(vertices_offset  <= args.wmodel->geometry.vertices.count);
+		ASSERT(indices_offset <= args.wmodel->geometry.indices.count);
 	}
 
 	R_GeometryRangeUnlock( &geom_lock );
@@ -447,6 +459,7 @@ typedef enum {
 	BrushSurface_Regular,
 	BrushSurface_Animated,
 	BrushSurface_Water,
+	BrushSurface_WaterSide,
 	BrushSurface_Sky,
 } brush_surface_type_e;
 
@@ -473,7 +486,9 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 		return BrushSurface_Hidden;
 
 	if (surf->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS)) {
-		return (!surf->polys) ? BrushSurface_Hidden : BrushSurface_Water;
+		return (!surf->polys) ? BrushSurface_Hidden :
+			// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides
+			(is_worldmodel || surf->plane->type == PLANE_Z) ? BrushSurface_Water : BrushSurface_WaterSide;
 	}
 
 	// Explicitly enable SURF_SKY, otherwise they will be skipped by SURF_DRAWTILED
@@ -501,46 +516,53 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 	return BrushSurface_Regular;
 }
 
-static qboolean brushCreateWaterModel(const model_t *mod, vk_brush_model_t *bmodel, const model_sizes_t sizes, qboolean is_worldmodel) {
-	bmodel->water.surfaces_count = sizes.water_surfaces;
+static qboolean brushCreateWaterModel(const model_t *mod, r_brush_water_model_t *wmodel, const water_model_sizes_t sizes, brush_surface_type_e type, qboolean is_worldmodel) {
 
-	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.water_vertices, sizes.water_indices);
+	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.vertices, sizes.indices);
 	if (!geometry.block_handle.size) {
 		ERR("Cannot allocate geometry (v=%d, i=%d) for water model %s",
-			sizes.water_vertices, sizes.water_indices, mod->name );
+			sizes.vertices, sizes.indices, mod->name );
 		return false;
 	}
 
-	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.water_surfaces);
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.surfaces);
 
-	int* const surfaces_indices = Mem_Malloc(vk_core.pool, sizes.water_surfaces * sizeof(int));
-	int index_index = 0;
+	int* const surfaces_indices = Mem_Malloc(vk_core.pool, sizes.surfaces * sizeof(int));
+	int surfaces_count = 0;
 	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
 
-		if (getSurfaceType(surf, surface_index, is_worldmodel) != BrushSurface_Water)
-			continue;
-
-		surfaces_indices[index_index++] = surface_index;
+		if (getSurfaceType(surf, surface_index, is_worldmodel) == type) {
+			surfaces_indices[surfaces_count++] = surface_index;
+		}
 	}
-	ASSERT(index_index == sizes.water_surfaces);
 
-	bmodel->water.surfaces_indices = surfaces_indices;
-	bmodel->water.geometry = geometry;
-	fillWaterSurfaces(NULL, bmodel, geometries);
+	ASSERT(surfaces_count == sizes.surfaces);
 
-	if (!R_RenderModelCreate(&bmodel->water.render_model, (vk_render_model_init_t){
+	wmodel->surfaces_indices = surfaces_indices;
+	wmodel->surfaces_count = surfaces_count;
+	wmodel->surfaces_indices = surfaces_indices;
+	wmodel->geometry = geometry;
+
+	fillWaterSurfaces( (fill_water_surfaces_args_t){
+		.ent = NULL,
+		.surfaces = mod->surfaces,
+		.wmodel = wmodel,
+		.geometries = geometries,
+		.prev_time = 0.f,
+	});
+
+	if (!R_RenderModelCreate(&wmodel->render_model, (vk_render_model_init_t){
 		.name = mod->name,
 		.geometries = geometries,
-		.geometries_count = sizes.water_surfaces,
+		.geometries_count = surfaces_count,
 		.dynamic = true,
 		})) {
 		ERR("Could not create water render model for brush model %s", mod->name);
 		return false;
 	}
 
-	bmodel->water.surfaces_indices = surfaces_indices;
 	return true;
 }
 
@@ -571,22 +593,29 @@ static material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_ty
 	return kMaterialMode_Opaque;
 }
 
-static void brushDrawWater(vk_brush_model_t *bmodel, const cl_entity_t *ent, int render_type, const vec4_t color, const matrix4x4 transform) {
+static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent, const msurface_t *surfaces, int render_type, const vec4_t color, const matrix4x4 transform, const matrix4x4 prev_transform, float prev_time) {
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
-	ASSERT(bmodel->water.surfaces_count > 0);
+	ASSERT(wmodel->surfaces_count > 0);
 
-	fillWaterSurfaces(ent, bmodel, bmodel->water.render_model.geometries);
-	if (!R_RenderModelUpdate(&bmodel->water.render_model)) {
-		ERR("Failed to update brush model \"%s\" water", bmodel->render_model.debug_name);
+	fillWaterSurfaces((fill_water_surfaces_args_t){
+		.ent = ent,
+		.surfaces = surfaces,
+		.wmodel = wmodel,
+		.geometries = wmodel->render_model.geometries,
+		.prev_time = prev_time,
+	});
+
+	if (!R_RenderModelUpdate(&wmodel->render_model)) {
+		ERR("Failed to update brush model \"%s\" water", wmodel->render_model.debug_name);
 	}
 
 	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
-	R_RenderModelDraw(&bmodel->water.render_model, (r_model_draw_t){
+	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
-		.prev_transform = &bmodel->prev_transform,
+		.prev_transform = (const matrix4x4*)prev_transform,
 	});
 
 	APROF_SCOPE_END(brush_draw_water);
@@ -736,7 +765,12 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	bmodel->render_model.lightmap = (render_mode == kRenderNormal || render_mode == kRenderTransAlpha) ? 1 : 0;
 
 	if (bmodel->water.surfaces_count)
-		brushDrawWater(bmodel, ent, render_type, color, transform);
+		brushDrawWater(&bmodel->water, ent, bmodel->engine_model->surfaces, render_type, color, transform, bmodel->prev_transform, bmodel->prev_time);
+
+	if (bmodel->water_sides.surfaces_count && FBitSet( ent->curstate.effects, EF_WATERSIDES ) ) {
+		brushDrawWater(&bmodel->water_sides, ent, bmodel->engine_model->surfaces, render_type, color, transform, bmodel->prev_transform, bmodel->prev_time);
+	}
+
 
 	++g_brush.stat.models_drawn;
 
@@ -810,8 +844,13 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 
 		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
 		case BrushSurface_Water:
-			sizes.water_surfaces++;
-			addWarpVertIndCounts(surf, &sizes.water_vertices, &sizes.water_indices);
+			sizes.water.surfaces++;
+			addWarpVertIndCounts(surf, &sizes.water.vertices, &sizes.water.indices);
+			continue;
+		case BrushSurface_WaterSide:
+			sizes.side_water.surfaces++;
+			addWarpVertIndCounts(surf, &sizes.side_water.vertices, &sizes.side_water.indices);
+			continue;
 		case BrushSurface_Hidden:
 			continue;
 
@@ -827,7 +866,14 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 		sizes.num_indices += 3 * (surf->numedges - 1);
 	}
 
-	DEBUG("Computed sizes for brush model \"%s\": num_surfaces=%d num_vertices=%d num_indices=%d max_texture_id=%d water_surfaces=%d animated_count=%d water_vertices=%d water_indices=%d", mod->name, sizes.num_surfaces, sizes.num_vertices, sizes.num_indices, sizes.max_texture_id, sizes.water_surfaces, sizes.animated_count, sizes.water_vertices, sizes.water_indices);
+	DEBUG("Computed sizes for brush model \"%s\":", mod->name);
+	DEBUG("  num_surfaces=%d animated_count=%d num_vertices=%d num_indices=%d max_texture_id=%d",
+		sizes.num_surfaces, sizes.animated_count, sizes.num_vertices, sizes.num_indices, sizes.max_texture_id);
+	DEBUG("  water_surfaces=%d water_vertices=%d water_indices=%d",
+		sizes.water.surfaces, sizes.water.vertices, sizes.water.indices);
+
+	DEBUG("  side_water_surfaces=%d side_water_vertices=%d side_water_indices=%d",
+		sizes.side_water.surfaces, sizes.side_water.vertices, sizes.side_water.indices);
 
 	return sizes;
 }
@@ -1118,6 +1164,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
 			switch (type) {
 			case BrushSurface_Water:
+			case BrushSurface_WaterSide:
 			case BrushSurface_Hidden:
 				continue;
 			case BrushSurface_Animated:
@@ -1381,16 +1428,24 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 		}
 	}
 
-	if (sizes.water_surfaces) {
-		if (!brushCreateWaterModel(mod, bmodel, sizes, is_worldmodel)) {
+	if (sizes.water.surfaces) {
+		if (!brushCreateWaterModel(mod, &bmodel->water, sizes.water, BrushSurface_Water, is_worldmodel)) {
 			ERR("Could not load brush water model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
 		}
 	}
 
-	g_brush.stat.total_vertices += sizes.num_indices + sizes.water_vertices;
-	g_brush.stat.total_indices += sizes.num_vertices + sizes.water_indices;
+	if (sizes.side_water.surfaces) {
+		if (!brushCreateWaterModel(mod, &bmodel->water_sides, sizes.side_water, BrushSurface_WaterSide, is_worldmodel)) {
+			ERR("Could not load brush water_side model %s", mod->name);
+			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
+			return false;
+		}
+	}
+
+	g_brush.stat.total_vertices += sizes.num_indices + sizes.water.vertices + sizes.side_water.vertices;
+	g_brush.stat.total_indices += sizes.num_vertices + sizes.water.indices + sizes.side_water.indices;
 
 	DEBUG("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u",
 		mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
@@ -1411,6 +1466,13 @@ static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 		Mem_Free((int*)bmodel->water.surfaces_indices);
 		Mem_Free(bmodel->water.render_model.geometries);
 		R_GeometryRangeFree(&bmodel->water.geometry);
+	}
+
+	if (bmodel->water_sides.surfaces_count) {
+		R_RenderModelDestroy(&bmodel->water_sides.render_model);
+		Mem_Free((int*)bmodel->water_sides.surfaces_indices);
+		Mem_Free(bmodel->water_sides.render_model.geometries);
+		R_GeometryRangeFree(&bmodel->water_sides.geometry);
 	}
 
 	R_RenderModelDestroy(&bmodel->render_model);
