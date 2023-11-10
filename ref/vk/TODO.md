@@ -1,10 +1,17 @@
+# 2023-11-10 E328
+- [ ] woditschka
+     - [-] potentially collinear planes vs ray tracing #264
+         - not super clear how exactly it works, and what it does. And how to cull things
+         - leaning towards making our own tesselator, as it might be universally usable for other things, e.g. detail mapping
+         - [ ] (A) try producing simple surfaces w/o tesselation, similar to regular brush surfaces
+         - [x] (C) print out all surfaces and polys to see where are they looking
+         - [-] (B) try filtering surfaces looking down
+
 # 2023-11-09 E327
 - [x] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
-- [ ] woditschka
+- [-] woditschka
      - [x] height not switching to negative underwater -- decided that we don't need it for now
      - [x] do not draw water sides when not requested.
-     - [ ] potentially collinear planes vs ray tracing #264
-
 
 # 2023-11-07 E326
 - [x] list supported arguments for `rt_debug_display_only` cvar

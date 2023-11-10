@@ -713,3 +713,18 @@ VK:
 - no PLANE_Z check: sphere=1 side=1
 
 EXPLANATION: `!=PLANE_Z` is only culled for non-worldmodel entities. Worldmodel doesn't cull by != PLANE_Z.
+
+# 2023-11-10 #E328
+MORE WATER
+- There are 2 msurface_t for water surfaces, one for each "orientation": front and back
+- The "back" one usually has SURF_PLANEBACK flag, and can be culled as such
+- For most of water bodies completely removing the SURF_PLANEBACK surface solves the coplanar glitches
+    - However, that breaks the trad rederer: can no longer see the water surface from underwater
+    - Also breaks the water spehere in test_brush2: its surfaces are not oriented properly and uniformly "outwards" vs "inwards"
+    - No amount of flag SURF_UNDERWATER/SURF_PLANEBACK culling produces consistent results
+
+What can be done:
+1. Leave it as-is, with double sided surfaces and all that. To fix ray tracing:
+    - Make it cull back-sided polygons
+    - Ensure that any reflections and refractions are delta-far-away enough to not be caught between imprecise coplanar planes.
+2. Do the culling later: at glpoly stage. Do not emit glpolys that are oriented in the opposite direction from the surface producing them.

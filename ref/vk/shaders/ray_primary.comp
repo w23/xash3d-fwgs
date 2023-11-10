@@ -69,7 +69,7 @@ void main() {
 
 	rayQueryEXT rq;
 	const uint flags = 0
-		//| gl_RayFlagsCullFrontFacingTrianglesEXT
+		| gl_RayFlagsCullFrontFacingTrianglesEXT
 		//| gl_RayFlagsOpaqueEXT
 		//| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT

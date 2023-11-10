@@ -175,6 +175,7 @@ typedef struct {
 	vk_render_geometry_t *dst_geometry;
 
 	int *out_vertex_count, *out_index_count;
+	qboolean debug;
 } compute_water_polys_t;
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
@@ -193,8 +194,32 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	int vertices = 0;
 	int indices = 0;
 
+	/* 0x18 = 0001 1000 */
+	/* 0x9A = 1001 1010 */
+
+	DEBUG("W: surf=%p flags=(%08X)%c%c%c%c%c%c%c%c type=%s normal=(%f %f %f)",
+		args.warp, args.warp->flags,
+		(args.warp->flags & SURF_PLANEBACK) ? 'B' : '.',
+		(args.warp->flags & SURF_DRAWSKY) ? 'S' : '.',
+		(args.warp->flags & SURF_DRAWTURB_QUADS) ? 'Q' : '.',
+		(args.warp->flags & SURF_DRAWTURB) ? 'U' : '.',
+		(args.warp->flags & SURF_DRAWTILED) ? 'T' : '.',
+		(args.warp->flags & SURF_CONVEYOR) ? 'C' : '.',
+		(args.warp->flags & SURF_UNDERWATER) ? 'W' : '.',
+		(args.warp->flags & SURF_TRANSPARENT) ? 'A' : '.',
+		args.warp->plane->type == PLANE_Z ? "Z" :
+			args.warp->plane->type == PLANE_Y ? "Y" :
+			args.warp->plane->type == PLANE_X ? "X" :
+			args.warp->plane->type == PLANE_NONAXIAL ? "N" : "?",
+		args.warp->plane->normal[0],
+		args.warp->plane->normal[1],
+		args.warp->plane->normal[2]
+	);
+
+
 	for( glpoly_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
+
 		const float *v;
 		if( args.reverse )
 			v = p->verts[0] + ( p->numverts - 1 ) * VERTEXSIZE;
@@ -269,6 +294,13 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 		for( int i = 0; i < p->numverts; i++ )
 			VectorNormalize(poly_vertices[i].normal);
+
+		DEBUG("  poly numvers=%d flags=%08X normal=(%f %f %f)",
+				p->numverts, p->flags,
+				poly_vertices[0].normal[0],
+				poly_vertices[0].normal[1],
+				poly_vertices[0].normal[2]
+			);
 
 		memcpy(args.dst_vertices + vertices, poly_vertices, sizeof(vk_vertex_t) * p->numverts);
 		vertices += p->numverts;
@@ -371,6 +403,7 @@ typedef struct {
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
+	qboolean debug;
 } fill_water_surfaces_args_t;
 
 static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
@@ -402,6 +435,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 
 			.out_vertex_count = &vertices,
 			.out_index_count = &indices,
+			.debug = args.debug,
 		});
 
 		args.geometries[i].vertex_offset = args.wmodel->geometry.vertices.unit_offset + vertices_offset;
@@ -486,9 +520,17 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 		return BrushSurface_Hidden;
 
 	if (surf->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS)) {
-		return (!surf->polys) ? BrushSurface_Hidden :
-			// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides
-			(is_worldmodel || surf->plane->type == PLANE_Z) ? BrushSurface_Water : BrushSurface_WaterSide;
+		if (!surf->polys)
+			return BrushSurface_Hidden;
+
+		// Water surfaces come in pairs: regular front and the opposite planeback
+		// This makes ray tracing unhappy as there are coplanar surfaces.
+		// Hide the back one.
+		/* if (surf->flags & SURF_PLANEBACK) */
+		/* 	return BrushSurface_Hidden; */
+
+		// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides
+		return (is_worldmodel || surf->plane->type == PLANE_Z) ? BrushSurface_Water : BrushSurface_WaterSide;
 	}
 
 	// Explicitly enable SURF_SKY, otherwise they will be skipped by SURF_DRAWTILED
@@ -603,6 +645,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
+		.debug = false,
 	});
 
 	if (!R_RenderModelUpdate(&wmodel->render_model)) {

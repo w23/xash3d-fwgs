@@ -52,7 +52,7 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 	rayQueryEXT rq;
 	const uint flags = 0
-		//| gl_RayFlagsCullFrontFacingTrianglesEXT
+		| gl_RayFlagsCullFrontFacingTrianglesEXT
 		//| gl_RayFlagsOpaqueEXT
 		//| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT
