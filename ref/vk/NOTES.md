@@ -728,3 +728,56 @@ What can be done:
     - Make it cull back-sided polygons
     - Ensure that any reflections and refractions are delta-far-away enough to not be caught between imprecise coplanar planes.
 2. Do the culling later: at glpoly stage. Do not emit glpolys that are oriented in the opposite direction from the surface producing them.
+
+# 2023-11-13 E329
+## To cull or not to cull?
+- Original renderer culls backfacing triangles in general.
+- Culling leads to some visual glitches for RT:
+    - First person weapon models are designed to be visible only from the first person perspective.
+        - Culling leads to holes in shadows and reflections.
+        - [x] Can culling be specified per BLAS/geometry?
+            - `VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR` can disable culling for BLAS, regardless of ray flag
+    - Some alpha-tested geometries are not thin and have two faces: front and back.
+        - When culling: there are misaligned shadows that "start from nowhere", a few cm off the visible geometry.
+        - When not culling: there are geometry doubles, and shadow doubles, ladder backsides, etc.
+            - [ ] Can we do culling for alpha-tested geometries only?
+    - Leaking shadows in cs: https://github.com/w23/xash3d-fwgs/issues/507
+        - [-] Maybe shadow rays need front-face-culling instead? Or no culling?
+            - probably not: e.g. ladder back sides are broken.
+- Is there a performance penalty to cull for RT? (likely negligible)
+
+Extra considerations:
+- Medium boundaries.
+  Glass in HL also often comes as a non-thin brush box with all 6 sides.
+  Traditionally only the front-facing sided is not culled and rendered.
+  However, for proper "physical" ray tracing both boundaries between mediums are important.
+  - [ ] Not sure we want to get _that_ physical.
+  - [ ] Glass is rather thin anyway usually.
+  - [ ] What to do with water? The game suggests having two surfaces: front and back facing.
+
+## Water
+(see E326-E328 above)
+Water surfaces are generally visible to us as surfaces with `SURF_DRAWTURB*` flag.
+They come in pairs: front and back facing.
+
+All these surfaces have tesselation, and are updating their uvs (to draw "turbulence").
+
+Properties:
+- (potentially dynamic; known only at rendering time; only for non-worldmodel): waveHeight -- makes tesselated verts go up/down.
+- Transparency
+    - Opaque with currently disabled culling are prone to co-planarity issues.
+- Emissive -- hopefully fixed, no animated textures.
+     - [ ] Known cases of nonzero waveHeight for emissive surface? Hopefully not too many.
+
+Basic kinds of water:
+- with waveHeight=0 (dynamically)
+    - remains completely flat, but texture coordinates should be updated "as turbulence"
+        - No need to tesselate? Or turbulence still implies tesselation?
+    - [ ] How do we notice that it will not have waves?
+- with nonzero waveHeight
+    - Should have both waves and turbulence uvs
+    - Needs to be tesselated
+
+- Only worldmodel seems to be generating two-sided water surfaces
+- [ ] then how do other models make water visible from under?
+

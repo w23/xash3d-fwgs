@@ -419,9 +419,6 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 		const int surf_index = args.wmodel->surfaces_indices[i];
 		const msurface_t *warp = args.surfaces + surf_index;
 
-		/* if( warp->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES )) */
-		/* 	continue; */
-
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = args.prev_time,

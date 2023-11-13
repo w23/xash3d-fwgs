@@ -1,3 +1,9 @@
+# 2023-11-13 E329
+- [-] culling -> need to cull everything except opaque and blend. Alpha-mask is culled.
+- [-] waters:
+     - [-] No water surface visible from underneath -- hidden by enabling culling
+     - [-] No coplanar issues visible? -- hidden by culling. Disabling culling makes glitches reappear
+
 # 2023-11-10 E328
 - [ ] woditschka
      - [-] potentially collinear planes vs ray tracing #264
