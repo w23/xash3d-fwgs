@@ -781,3 +781,31 @@ Basic kinds of water:
 - Only worldmodel seems to be generating two-sided water surfaces
 - [ ] then how do other models make water visible from under?
 
+# 2023-11-14 E330
+## EVEN MOAR WATER
+- Culling all water surfaces by `SURF_PLANEBACK` (see E328)
+    - fixes worldmodel coplanarity
+    - breaks test_brush2 sphere: half of the surfaces look inward (red), another set look outward (green)
+        - EXPECTED: everything is green
+        - [-]: try detecting by glpoly normal alignment vs surface alignment
+            - Doesn't really work. Opposite alignment just means that this is a PLANEBACK surface
+    - [x] What works is: leaving only `SURF_UNDERWATER` surfaces. These seem to be directed towards "air" universally,
+        which is what we need exactly.
+- [-] Transparent (and non-worldmodel brush) water surfaces don't seem to have a back side msurface_t. How does GL renderer draw them?
+    - Hypothesis: they are reversed when `EmitWaterPolys()` is called with `reverse = cull_type == CULL_BACKSIDE`
+        - `CULL_BACKSIDE` is based on `camera.origin`, `surf->plane->normal` and `SURF_PLANEBACK`
+
+## How to do trans lucent surfaces
+### Opt. I:
+Have two of them: front and back + backface culling.
+Each side has an explicit flag which one is it: water/glass -> air, or air -> water/glass.
+Shader then can figure out the refraction angle, etc.
+
+### Opt. II:
+Have only a single surface oriented towards air and no backface culling.
+Shader then figures the medium transition direction based on whether it is aligned with the normal.
+Seems to be the preferred option: less geometry overall. Do not need to generate missing "back" surfaces, as only
+worlmodel has them.
+However: glass brushes still do have back surfaces. How to deal with those? Doesn't seem to break anything for now.
+
+

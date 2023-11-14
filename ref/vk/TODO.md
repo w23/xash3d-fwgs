@@ -1,3 +1,15 @@
+# 2023-11-14 E330
+- [x] culling worldmodel waters
+     - [-] try simple flag culling (probably won't work)
+     - [-] try detecting glpoly normals -> consistent with SURF_PLANEBACK, doesn't help
+     - [x] SURF_UNDERWATER seems to get us a SINLE surface looking outwards
+- [x] investigate gl backface culling for transparent surfaces:
+    - [ ] glass -- seems to have 2nd face (brush backside)
+    - [x] water -- doesn't seem to have 2nd face
+        - [x] glpoly_t winding order is reversed when camera origin is opposite to (SURF_PLANEBACK-aware) surface normal
+- [x] discuss culling transparent surfaces strategies
+- [ ] discuss integration test strategies
+
 # 2023-11-13 E329
 - [-] culling -> need to cull everything except opaque and blend. Alpha-mask is culled.
 - [-] waters:
