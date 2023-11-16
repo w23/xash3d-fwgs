@@ -106,8 +106,15 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;
 
-	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
+
+	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+		// Nop
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
 		const uint hash = xxhash32(geom.kusok_index);
+		payload.emissive.rgb = vec3(0xff & (hash>>16), 0xff & (hash>>8), 0xff & hash) / 255.;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_TRIHASH) {
+		const int primitive_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
+		const uint hash = xxhash32(geom.kusok_index + primitive_index * 2246822519U);
 		payload.emissive.rgb = vec3(0xff & (hash>>16), 0xff & (hash>>8), 0xff & hash) / 255.;
 	}
 }
