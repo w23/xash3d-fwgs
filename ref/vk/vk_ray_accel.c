@@ -275,7 +275,9 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				case MATERIAL_MODE_OPAQUE:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+					// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
+					// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 					break;
 				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
 					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
@@ -285,14 +287,16 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				case MATERIAL_MODE_TRANSLUCENT:
 					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR;
+					// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 					break;
 				case MATERIAL_MODE_BLEND_ADD:
 				case MATERIAL_MODE_BLEND_MIX:
 				case MATERIAL_MODE_BLEND_GLOW:
 					inst[i].mask = GEOMETRY_BIT_BLEND;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+					// Force no-culling because these should be visible from any angle
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 					break;
 				default:
 					gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);

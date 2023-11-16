@@ -157,7 +157,7 @@ static const float r_turbsin[] =
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
 static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int *num_indices) {
-	for( glpoly_t *p = warp->polys; p; p = p->next ) {
+	for( const glpoly_t *p = warp->polys; p; p = p->next ) {
 		const int triangles = p->numverts - 2;
 		*num_vertices += p->numverts;
 		*num_indices += triangles * 3;
@@ -168,17 +168,54 @@ typedef struct {
 	float prev_time;
 	float wave_height;
 	const msurface_t *warp;
-	qboolean reverse;
 
 	vk_vertex_t *dst_vertices;
 	uint16_t *dst_indices;
 	vk_render_geometry_t *dst_geometry;
 
 	int *out_vertex_count, *out_index_count;
+	qboolean debug;
 } compute_water_polys_t;
+
+#if 0
+static qboolean tesselationHasSameOrientation( const msurface_t *surf, qboolean debug ) {
+	const glpoly_t *poly = surf->polys;
+	ASSERT(poly);
+	ASSERT(poly->numverts > 2);
+
+	const float *v = poly->verts[0];
+	const float *const v0 = poly->verts[0];
+	const float *const v1 = poly->verts[1];
+	const float *const v2 = poly->verts[2];
+
+	vec3_t e0, e1, normal;
+	VectorSubtract( v2, v0, e0 );
+	VectorSubtract( v1, v0, e1 );
+	/* if (surf->flags & SURF_PLANEBACK) */
+	/* 	CrossProduct( e1, e0, normal ); */
+	/* else */
+		CrossProduct( e0, e1, normal );
+
+	// Debug only
+	VectorNormalize(normal);
+	const float dot = DotProduct(normal, surf->plane->normal);
+	const qboolean same = dot > 0;
+
+	if (debug)
+	DEBUG("   surf=%p back=%d plane=(%f, %f, %f), poly=(%f, %f, %f) dot=%f same=%d",
+		surf, !!(surf->flags & SURF_PLANEBACK),
+		surf->plane->normal[0], surf->plane->normal[1], surf->plane->normal[2],
+		normal[0], normal[1], normal[2],
+		dot, same
+	);
+
+	return same;
+}
+#endif
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	const float time = gpGlobals->time;
+	const qboolean reverse = false;//!tesselationHasSameOrientation( args.warp, args.debug );
 
 #define MAX_WATER_VERTICES 16
 	vk_vertex_t poly_vertices[MAX_WATER_VERTICES];
@@ -193,10 +230,35 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	int vertices = 0;
 	int indices = 0;
 
-	for( glpoly_t *p = args.warp->polys; p; p = p->next ) {
+	/* 0x18 = 0001 1000 */
+	/* 0x9A = 1001 1010 */
+
+	if (args.debug)
+	DEBUG("W: surf=%p reverse=%d flags=(%08X)%c%c%c%c%c%c%c%c type=%s normal=(%f %f %f)",
+		args.warp, reverse, args.warp->flags,
+		(args.warp->flags & SURF_PLANEBACK) ? 'B' : '.',
+		(args.warp->flags & SURF_DRAWSKY) ? 'S' : '.',
+		(args.warp->flags & SURF_DRAWTURB_QUADS) ? 'Q' : '.',
+		(args.warp->flags & SURF_DRAWTURB) ? 'U' : '.',
+		(args.warp->flags & SURF_DRAWTILED) ? 'T' : '.',
+		(args.warp->flags & SURF_CONVEYOR) ? 'C' : '.',
+		(args.warp->flags & SURF_UNDERWATER) ? 'W' : '.',
+		(args.warp->flags & SURF_TRANSPARENT) ? 'A' : '.',
+		args.warp->plane->type == PLANE_Z ? "Z" :
+			args.warp->plane->type == PLANE_Y ? "Y" :
+			args.warp->plane->type == PLANE_X ? "X" :
+			args.warp->plane->type == PLANE_NONAXIAL ? "N" : "?",
+		args.warp->plane->normal[0],
+		args.warp->plane->normal[1],
+		args.warp->plane->normal[2]
+	);
+
+
+	for( const glpoly_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
+
 		const float *v;
-		if( args.reverse )
+		if( reverse )
 			v = p->verts[0] + ( p->numverts - 1 ) * VERTEXSIZE;
 		else
 			v = p->verts[0];
@@ -261,14 +323,40 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 				args.dst_indices[indices++] = (uint16_t)(vertices + i);
 			}
 
-			if( args.reverse )
+			if( reverse )
 				v -= VERTEXSIZE;
 			else
 				v += VERTEXSIZE;
 		}
 
-		for( int i = 0; i < p->numverts; i++ )
+		for( int i = 0; i < p->numverts; i++ ) {
 			VectorNormalize(poly_vertices[i].normal);
+#if 0
+			//const float dot = DotProduct(poly_vertices[i].normal, args.warp->plane->normal);
+			//if (dot < 0.) {
+			if (poly_vertices[i].normal[2] < 0.f) {
+				Vector4Set(poly_vertices[i].color, 255, 0, 0, 255);
+				poly_vertices[i].pos[0] -= 30.f;
+				poly_vertices[i].prev_pos[0] -= 30.f;
+				poly_vertices[i].pos[2] -= 1.f;
+				poly_vertices[i].prev_pos[2] -= 1.f;
+			} else {
+				Vector4Set(poly_vertices[i].color, 0, 255, 0, 255);
+				poly_vertices[i].pos[0] += 30.f;
+				poly_vertices[i].prev_pos[0] += 30.f;
+				poly_vertices[i].pos[2] += 1.f;
+				poly_vertices[i].prev_pos[2] += 1.f;
+			}
+#endif
+		}
+
+		if (args.debug)
+		DEBUG("  poly numvers=%d flags=%08X normal=(%f %f %f)",
+				p->numverts, p->flags,
+				poly_vertices[0].normal[0],
+				poly_vertices[0].normal[1],
+				poly_vertices[0].normal[2]
+			);
 
 		memcpy(args.dst_vertices + vertices, poly_vertices, sizeof(vk_vertex_t) * p->numverts);
 		vertices += p->numverts;
@@ -371,6 +459,7 @@ typedef struct {
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
+	qboolean debug;
 } fill_water_surfaces_args_t;
 
 static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
@@ -386,14 +475,10 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 		const int surf_index = args.wmodel->surfaces_indices[i];
 		const msurface_t *warp = args.surfaces + surf_index;
 
-		/* if( warp->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES )) */
-		/* 	continue; */
-
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = args.prev_time,
 			.wave_height = wave_height,
-			.reverse = false, // ??? is it ever true?
 			.warp = warp,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
@@ -402,6 +487,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 
 			.out_vertex_count = &vertices,
 			.out_index_count = &indices,
+			.debug = args.debug,
 		});
 
 		args.geometries[i].vertex_offset = args.wmodel->geometry.vertices.unit_offset + vertices_offset;
@@ -486,9 +572,23 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 		return BrushSurface_Hidden;
 
 	if (surf->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS)) {
-		return (!surf->polys) ? BrushSurface_Hidden :
-			// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides
-			(is_worldmodel || surf->plane->type == PLANE_Z) ? BrushSurface_Water : BrushSurface_WaterSide;
+		if (!surf->polys)
+			return BrushSurface_Hidden;
+
+		// Water surfaces come in pairs: regular front and the opposite back
+		// This makes ray tracing unhappy as there are coplanar surfaces.
+		// We'd want to turn of the back surface, but SURF_PLANEBACK is not really congruent with
+		// the logical direction of the surface, it just means that glpolys have been produced in
+		// an opposite winding order.
+		// SURF_UNDERWATER seems to be the right flag: it does seem to signal that the surface is
+		// lookint "out" from the water, directed towards "air".
+		if (surf->flags & SURF_UNDERWATER)
+			return BrushSurface_Hidden;
+		//}
+
+		// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides.
+		// All water surfaces should be present for worldmodel
+		return (is_worldmodel || surf->plane->type == PLANE_Z) ? BrushSurface_Water : BrushSurface_WaterSide;
 	}
 
 	// Explicitly enable SURF_SKY, otherwise they will be skipped by SURF_DRAWTILED
@@ -551,6 +651,7 @@ static qboolean brushCreateWaterModel(const model_t *mod, r_brush_water_model_t 
 		.wmodel = wmodel,
 		.geometries = geometries,
 		.prev_time = 0.f,
+		.debug = true,
 	});
 
 	if (!R_RenderModelCreate(&wmodel->render_model, (vk_render_model_init_t){
@@ -603,6 +704,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
+		.debug = false,
 	});
 
 	if (!R_RenderModelUpdate(&wmodel->render_model)) {

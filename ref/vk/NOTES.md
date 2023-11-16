@@ -713,3 +713,99 @@ VK:
 - no PLANE_Z check: sphere=1 side=1
 
 EXPLANATION: `!=PLANE_Z` is only culled for non-worldmodel entities. Worldmodel doesn't cull by != PLANE_Z.
+
+# 2023-11-10 #E328
+MORE WATER
+- There are 2 msurface_t for water surfaces, one for each "orientation": front and back
+- The "back" one usually has SURF_PLANEBACK flag, and can be culled as such
+- For most of water bodies completely removing the SURF_PLANEBACK surface solves the coplanar glitches
+    - However, that breaks the trad rederer: can no longer see the water surface from underwater
+    - Also breaks the water spehere in test_brush2: its surfaces are not oriented properly and uniformly "outwards" vs "inwards"
+    - No amount of flag SURF_UNDERWATER/SURF_PLANEBACK culling produces consistent results
+
+What can be done:
+1. Leave it as-is, with double sided surfaces and all that. To fix ray tracing:
+    - Make it cull back-sided polygons
+    - Ensure that any reflections and refractions are delta-far-away enough to not be caught between imprecise coplanar planes.
+2. Do the culling later: at glpoly stage. Do not emit glpolys that are oriented in the opposite direction from the surface producing them.
+
+# 2023-11-13 E329
+## To cull or not to cull?
+- Original renderer culls backfacing triangles in general.
+- Culling leads to some visual glitches for RT:
+    - First person weapon models are designed to be visible only from the first person perspective.
+        - Culling leads to holes in shadows and reflections.
+        - [x] Can culling be specified per BLAS/geometry?
+            - `VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR` can disable culling for BLAS, regardless of ray flag
+    - Some alpha-tested geometries are not thin and have two faces: front and back.
+        - When culling: there are misaligned shadows that "start from nowhere", a few cm off the visible geometry.
+        - When not culling: there are geometry doubles, and shadow doubles, ladder backsides, etc.
+            - [ ] Can we do culling for alpha-tested geometries only?
+    - Leaking shadows in cs: https://github.com/w23/xash3d-fwgs/issues/507
+        - [-] Maybe shadow rays need front-face-culling instead? Or no culling?
+            - probably not: e.g. ladder back sides are broken.
+- Is there a performance penalty to cull for RT? (likely negligible)
+
+Extra considerations:
+- Medium boundaries.
+  Glass in HL also often comes as a non-thin brush box with all 6 sides.
+  Traditionally only the front-facing sided is not culled and rendered.
+  However, for proper "physical" ray tracing both boundaries between mediums are important.
+  - [ ] Not sure we want to get _that_ physical.
+  - [ ] Glass is rather thin anyway usually.
+  - [ ] What to do with water? The game suggests having two surfaces: front and back facing.
+
+## Water
+(see E326-E328 above)
+Water surfaces are generally visible to us as surfaces with `SURF_DRAWTURB*` flag.
+They come in pairs: front and back facing.
+
+All these surfaces have tesselation, and are updating their uvs (to draw "turbulence").
+
+Properties:
+- (potentially dynamic; known only at rendering time; only for non-worldmodel): waveHeight -- makes tesselated verts go up/down.
+- Transparency
+    - Opaque with currently disabled culling are prone to co-planarity issues.
+- Emissive -- hopefully fixed, no animated textures.
+     - [ ] Known cases of nonzero waveHeight for emissive surface? Hopefully not too many.
+
+Basic kinds of water:
+- with waveHeight=0 (dynamically)
+    - remains completely flat, but texture coordinates should be updated "as turbulence"
+        - No need to tesselate? Or turbulence still implies tesselation?
+    - [ ] How do we notice that it will not have waves?
+- with nonzero waveHeight
+    - Should have both waves and turbulence uvs
+    - Needs to be tesselated
+
+- Only worldmodel seems to be generating two-sided water surfaces
+- [ ] then how do other models make water visible from under?
+
+# 2023-11-14 E330
+## EVEN MOAR WATER
+- Culling all water surfaces by `SURF_PLANEBACK` (see E328)
+    - fixes worldmodel coplanarity
+    - breaks test_brush2 sphere: half of the surfaces look inward (red), another set look outward (green)
+        - EXPECTED: everything is green
+        - [-]: try detecting by glpoly normal alignment vs surface alignment
+            - Doesn't really work. Opposite alignment just means that this is a PLANEBACK surface
+    - [x] What works is: leaving only `SURF_UNDERWATER` surfaces. These seem to be directed towards "air" universally,
+        which is what we need exactly.
+- [-] Transparent (and non-worldmodel brush) water surfaces don't seem to have a back side msurface_t. How does GL renderer draw them?
+    - Hypothesis: they are reversed when `EmitWaterPolys()` is called with `reverse = cull_type == CULL_BACKSIDE`
+        - `CULL_BACKSIDE` is based on `camera.origin`, `surf->plane->normal` and `SURF_PLANEBACK`
+
+## How to do trans lucent surfaces
+### Opt. I:
+Have two of them: front and back + backface culling.
+Each side has an explicit flag which one is it: water/glass -> air, or air -> water/glass.
+Shader then can figure out the refraction angle, etc.
+
+### Opt. II:
+Have only a single surface oriented towards air and no backface culling.
+Shader then figures the medium transition direction based on whether it is aligned with the normal.
+Seems to be the preferred option: less geometry overall. Do not need to generate missing "back" surfaces, as only
+worlmodel has them.
+However: glass brushes still do have back surfaces. How to deal with those? Doesn't seem to break anything for now.
+
+
