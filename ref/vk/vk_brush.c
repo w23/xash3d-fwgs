@@ -1656,6 +1656,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		case BrushSurface_Regular:
 		case BrushSurface_Animated:
 		case BrushSurface_Water:
+		// No known cases, also needs to be dynamic case BrushSurface_WaterSide:
 			break;
 		default:
 			continue;
@@ -1689,6 +1690,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	}
 
 	// Clear old per-geometry emissive values. The new emissive values will be assigned by the loop below only to the relevant geoms
+	// This is relevant for updating lights during development
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		vk_render_geometry_t *const geom = bmodel->render_model.geometries + i;
 		VectorClear(geom->emissive);
@@ -1703,6 +1705,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	}
 
 	// Apply all emissive surfaces found
+	int geom_indices_count = 0;
 	for (int i = 0; i < emissive_surfaces_count; ++i) {
 		const emissive_surface_t* const s = emissive_surfaces + i;
 
@@ -1728,12 +1731,13 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		}
 
 		// Assign the emissive value to the right geometry
-		if (bmodel->surface_to_geometry_index) {
+		if (bmodel->surface_to_geometry_index) { // Can be absent for water-only models
 			const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
-			if (geom_index != -1) {
+			if (geom_index != -1) { // can be missing for water surfaces
 				ASSERT(geom_index >= 0);
 				ASSERT(geom_index < bmodel->render_model.num_geometries);
-				geom_indices[i] = geom_index;
+				ASSERT(geom_indices_count < COUNTOF(geom_indices));
+				geom_indices[geom_indices_count++] = geom_index;
 				VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
 			}
 		}
@@ -1754,7 +1758,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			R_VkStagingFlushSync();
 		}
 
-		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, emissive_surfaces_count);
+		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, geom_indices_count);
 		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
 	}
 }
