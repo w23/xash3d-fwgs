@@ -164,6 +164,7 @@ static void parseDebugDisplayValue( void ) {
 	X(NSHADE) \
 	X(NGEOM) \
 	X(SURFHASH) \
+	X(TRIHASH) \
 	X(DIRECT) \
 	X(INDIRECT) \
 	X(INDIRECT_SPEC) \

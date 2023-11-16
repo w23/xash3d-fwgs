@@ -83,6 +83,31 @@ r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
 	};
 }
 
+r_geometry_range_lock_t R_GeometryRangeLockSubrange(const r_geometry_range_t *range, int vertices_offset, int vertices_count ) {
+	const vk_staging_buffer_args_t staging_args = {
+		.buffer = g_geom.buffer.buffer,
+		.offset = range->block_handle.offset + sizeof(vk_vertex_t) * vertices_offset,
+		.size = sizeof(vk_vertex_t) * vertices_count,
+		.alignment = 4,
+	};
+
+	ASSERT(staging_args.offset >= range->block_handle.offset);
+	ASSERT(staging_args.offset + staging_args.size <= range->block_handle.offset + range->block_handle.size);
+
+	const vk_staging_region_t staging = R_VkStagingLockForBuffer(staging_args);
+	ASSERT(staging.ptr);
+
+	ASSERT( range->block_handle.offset % sizeof(vk_vertex_t) == 0 );
+
+	return (r_geometry_range_lock_t){
+		.vertices = (vk_vertex_t *)staging.ptr,
+		.indices = NULL,
+		.impl_ = {
+			.staging_handle = staging.handle,
+		},
+	};
+}
+
 void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock) {
 	R_VkStagingUnlock(lock->impl_.staging_handle);
 }
