@@ -258,7 +258,20 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 }
 
 qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count) {
-	return RT_BlasBuild(model->blas, geometries, geometries_count);
+	// TODO: It might be beneficial to be able to supply which parts of the RT model should be updated.
+	// E.g.:
+	// - A flag to update BLAS (not all model updates need BLAS updates, e.g. waveHeight=0 water updates
+	// only update UVs)
+	// - A flag to update kusochki. Not all updates update offsets and textures, e.g. studio models have
+	// stable textures that don't change.
+
+	// Schedule rebuilding blas
+	if (!RT_BlasBuild(model->blas, geometries, geometries_count))
+		return false;
+
+	// Also update materials
+	RT_KusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
+	return true;
 }
 
 qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count) {

@@ -1,3 +1,10 @@
+# 2023-11-16 E331
+- [x] Emissive waters
+    - [x] add emissive water surface to polygon lights
+    - [x] update emissive color for water surfaces
+- [ ] dynamic UVs
+- [ ] discuss integration test strategies
+
 # 2023-11-14 E330
 - [x] culling worldmodel waters
      - [-] try simple flag culling (probably won't work)
@@ -8,7 +15,6 @@
     - [x] water -- doesn't seem to have 2nd face
         - [x] glpoly_t winding order is reversed when camera origin is opposite to (SURF_PLANEBACK-aware) surface normal
 - [x] discuss culling transparent surfaces strategies
-- [ ] discuss integration test strategies
 
 # 2023-11-13 E329
 - [-] culling -> need to cull everything except opaque and blend. Alpha-mask is culled.
