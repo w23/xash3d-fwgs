@@ -1,7 +1,7 @@
 # 2023-11-16 E331
-- [ ] Emissive waters
+- [x] Emissive waters
     - [x] add emissive water surface to polygon lights
-    - [ ] update emissive color for water surfaces
+    - [x] update emissive color for water surfaces
 - [ ] dynamic UVs
 - [ ] discuss integration test strategies
 
