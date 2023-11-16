@@ -36,6 +36,14 @@ typedef struct {
 	vk_render_model_t render_model;
 } r_brush_water_model_t;
 
+typedef struct {
+	float texture_width;
+	int vertices_count;
+	int vertices_src_offset;
+	int vertices_dst_offset;
+	int geometry_index;
+} r_conveyor_t;
+
 typedef struct vk_brush_model_s {
 	model_t *engine_model;
 
@@ -52,6 +60,10 @@ typedef struct vk_brush_model_s {
 
 	r_brush_water_model_t water;
 	r_brush_water_model_t water_sides;
+
+	int conveyors_count;
+	r_conveyor_t *conveyors;
+	vk_vertex_t *conveyors_vertices;
 } vk_brush_model_t;
 
 typedef struct {
@@ -64,6 +76,8 @@ typedef struct {
 	int num_surfaces, num_vertices, num_indices;
 	int max_texture_id;
 	int animated_count;
+	int conveyors_count;
+	int conveyors_vertices_count;
 
 	water_model_sizes_t water, side_water;
 } model_sizes_t;
@@ -547,6 +561,7 @@ typedef enum {
 	BrushSurface_Water,
 	BrushSurface_WaterSide,
 	BrushSurface_Sky,
+	BrushSurface_Conveyor,
 } brush_surface_type_e;
 
 static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qboolean is_worldmodel ) {
@@ -595,9 +610,12 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 	if( FBitSet( surf->flags, SURF_DRAWSKY ))
 		return BrushSurface_Sky;
 
+	if( surf->flags & SURF_CONVEYOR ) {
+		return BrushSurface_Conveyor;
+	}
+
 	//if( surf->flags & ( SURF_DRAWSKY | SURF_DRAWTURB | SURF_CONVEYOR | SURF_DRAWTURB_QUADS ) ) {
 	if( surf->flags & ( SURF_DRAWTURB | SURF_DRAWTURB_QUADS ) ) {
-	//if( surf->flags & ( SURF_DRAWSKY | SURF_CONVEYOR ) ) {
 		// FIXME don't print this on second sort-by-texture pass
 		//DEBUG("Skipping surface %d because of flags %08x", i, surf->flags);
 		return BrushSurface_Hidden;
@@ -723,16 +741,12 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 	APROF_SCOPE_END(brush_draw_water);
 }
 
-#if 0
-// TODO use this
-static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_t speed) {
+static void computeConveyorOffset(const color24 rendercolor, float tex_width, float time, vec2_t out_offset) {
 	float sy, cy;
 	float flConveyorSpeed = 0.0f;
 	float flRate, flAngle;
-	vk_texture_t *texture = R_TextureGetByIndex( tex_index );
-	//gl_texture_t	*texture;
 
-	// FIXME
+	// TODO
 	/* if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && RI.currententity == gEngfuncs.GetEntityByIndex( 0 ) ) */
 	/* { */
 	/* 	// same as doom speed */
@@ -743,16 +757,23 @@ static void computeConveyorSpeed(const color24 rendercolor, int tex_index, vec2_
 		flConveyorSpeed = (rendercolor.g<<8|rendercolor.b) / 16.0f;
 		if( rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;
 	}
-	//texture = R_GetTexture( glState.currentTextures[glState.activeTMU] );
 
-	flRate = fabs( flConveyorSpeed ) / (float)texture->width;
+	flRate = fabs( flConveyorSpeed ) / tex_width;
 	flAngle = ( flConveyorSpeed >= 0 ) ? 180 : 0;
 
+	// TODO no SinCos, no
 	SinCos( flAngle * ( M_PI_F / 180.0f ), &sy, &cy );
-	speed[0] = cy * flRate;
-	speed[1] = sy * flRate;
+	out_offset[0] = cy * flRate * time;
+	out_offset[1] = sy * flRate * time;
+
+	// make sure that we are positive
+	if( out_offset[0] < 0.0f ) out_offset[0] += 1.0f + -(int)out_offset[0];
+	if( out_offset[1] < 0.0f ) out_offset[1] += 1.0f + -(int)out_offset[1];
+
+	// make sure that we are in a [0,1] range
+	out_offset[0] = out_offset[0] - (int)out_offset[0];
+	out_offset[1] = out_offset[1] - (int)out_offset[1];
 }
-#endif
 
 /*
 ===============
@@ -873,7 +894,6 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		brushDrawWater(&bmodel->water_sides, ent, bmodel->engine_model->surfaces, render_type, color, transform, bmodel->prev_transform, bmodel->prev_time);
 	}
 
-
 	++g_brush.stat.models_drawn;
 
 	if (bmodel->render_model.num_geometries == 0)
@@ -919,6 +939,28 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		APROF_SCOPE_END(brush_update_textures);
 	}
 
+	// Move conveyors
+	for (int i = 0; i < bmodel->conveyors_count; ++i) {
+		const r_conveyor_t *const conv = bmodel->conveyors + i;
+		vec2_t offset = {0, 0};
+		computeConveyorOffset(ent->curstate.rendercolor, conv->texture_width, gpGlobals->time, offset);
+
+		ASSERT(conv->geometry_index >= 0);
+		ASSERT(conv->geometry_index < bmodel->render_model.num_geometries);
+		const vk_render_geometry_t *const geom = bmodel->render_model.geometries + conv->geometry_index;
+		const r_geometry_range_lock_t lock = R_GeometryRangeLockSubrange(&bmodel->geometry, conv->vertices_dst_offset, conv->vertices_count);
+
+		for (int j = 0; j < conv->vertices_count; ++j) {
+			const vk_vertex_t *const src = bmodel->conveyors_vertices + conv->vertices_src_offset + j;
+			vk_vertex_t *const dst = lock.vertices + j;
+			*dst = *src;
+			dst->gl_tc[0] = src->gl_tc[0] + offset[0];
+			dst->gl_tc[1] = src->gl_tc[1] + offset[1];
+		}
+
+		R_GeometryRangeUnlock(&lock);
+	}
+
 	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
@@ -958,6 +1000,11 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 
 		case BrushSurface_Animated:
 			sizes.animated_count++;
+			break;
+		case BrushSurface_Conveyor:
+			sizes.conveyors_count++;
+			sizes.conveyors_vertices_count += surf->numedges;
+			break;
 		case BrushSurface_Regular:
 		case BrushSurface_Sky:
 			break;
@@ -971,9 +1018,10 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 	DEBUG("Computed sizes for brush model \"%s\":", mod->name);
 	DEBUG("  num_surfaces=%d animated_count=%d num_vertices=%d num_indices=%d max_texture_id=%d",
 		sizes.num_surfaces, sizes.animated_count, sizes.num_vertices, sizes.num_indices, sizes.max_texture_id);
+	DEBUG("  conveyors_count=%d conveyors_vertices_count=%d",
+		sizes.conveyors_count, sizes.conveyors_vertices_count);
 	DEBUG("  water_surfaces=%d water_vertices=%d water_indices=%d",
 		sizes.water.surfaces, sizes.water.vertices, sizes.water.indices);
-
 	DEBUG("  side_water_surfaces=%d side_water_vertices=%d side_water_indices=%d",
 		sizes.side_water.surfaces, sizes.side_water.vertices, sizes.side_water.indices);
 
@@ -1234,6 +1282,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int vertex_offset = 0;
 	int num_geometries = 0;
 	int animated_count = 0;
+	int conveyors_count = 0;
+	int conveyors_vertices_count = 0;
 
 	vk_vertex_t *p_vert = args.out_vertices;
 	uint16_t *p_ind = args.out_indices;
@@ -1270,12 +1320,33 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				continue;
 			case BrushSurface_Animated:
 				args.bmodel->animated_indexes[animated_count++] = num_geometries;
+				break;
+			case BrushSurface_Conveyor:
+				break;
 			case BrushSurface_Regular:
 			case BrushSurface_Sky:
 				break;
 			}
 
 			args.bmodel->surface_to_geometry_index[i] = num_geometries;
+
+			// Fill conveyor data if conveyor
+			r_conveyor_t *conv = NULL;
+			if (type == BrushSurface_Conveyor) {
+				ASSERT(conveyors_count < args.sizes.conveyors_count);
+				conv = &args.bmodel->conveyors[conveyors_count++];
+
+				conv->vertices_count = surf->numedges;
+
+				conv->vertices_dst_offset = vertex_offset;
+				conv->vertices_src_offset = conveyors_vertices_count;
+				conveyors_vertices_count += conv->vertices_count;
+				ASSERT(conveyors_vertices_count <= args.sizes.conveyors_vertices_count);
+
+				conv->geometry_index = num_geometries;
+
+				conv->texture_width = R_TexturesGetParm(PARM_TEX_WIDTH, orig_tex_id);
+			}
 
 			++num_geometries;
 
@@ -1337,12 +1408,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				VK_CreateSurfaceLightmap( surf, args.mod );
 			}
 
-			if (FBitSet( surf->flags, SURF_CONVEYOR )) {
-				// FIXME make an explicit list of dynamic-uv geometries
-			}
-
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
+
 
 			vk_vertex_t *const pvert_begin = p_vert;
 			for( int k = 0; k < surf->numedges; k++ )
@@ -1425,6 +1493,13 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);
 
+				// Store original vertex data for conveyor reasons
+				if (conv) {
+					const int vertex_index = conv->vertices_src_offset + k;
+					ASSERT(vertex_index < args.sizes.conveyors_vertices_count);
+					args.bmodel->conveyors_vertices[vertex_index] = vertex;
+				}
+
 				*(p_vert++) = vertex;
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
@@ -1444,6 +1519,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 	ASSERT(args.sizes.num_surfaces == num_geometries);
 	ASSERT(args.sizes.animated_count == animated_count);
+	ASSERT(args.sizes.conveyors_count == conveyors_count);
+	ASSERT(args.sizes.conveyors_vertices_count == conveyors_vertices_count);
 	return true;
 }
 
@@ -1463,6 +1540,13 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 
 	if (sizes.animated_count > MAX_ANIMATED_TEXTURES) {
 		WARN("Too many animated textures %d for model \"%s\" some surfaces can be static", sizes.animated_count, mod->name);
+	}
+
+	if (sizes.conveyors_count > 0) {
+		ASSERT(sizes.conveyors_vertices_count > 3);
+		bmodel->conveyors_count = sizes.conveyors_count;
+		bmodel->conveyors_vertices = Mem_Malloc(vk_core.pool, sizeof(vk_vertex_t) * sizes.conveyors_vertices_count);
+		bmodel->conveyors = Mem_Malloc(vk_core.pool, sizeof(r_conveyor_t) * sizes.conveyors_count);
 	}
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->geometry);
@@ -1563,6 +1647,12 @@ static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 
 	ASSERT(bmodel->engine_model->cache.data == bmodel);
 	ASSERT(bmodel->engine_model->type == mod_brush);
+
+	if (bmodel->conveyors_vertices)
+		Mem_Free(bmodel->conveyors_vertices);
+
+	if (bmodel->conveyors)
+		Mem_Free(bmodel->conveyors);
 
 	if (bmodel->water.surfaces_count) {
 		R_RenderModelDestroy(&bmodel->water.render_model);
