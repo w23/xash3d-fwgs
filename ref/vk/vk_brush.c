@@ -1242,7 +1242,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
 	connectVertices(args.mod, entity_patch ? entity_patch->smooth_entire_model : false);
 
-
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
 	for (int t = 0; t <= args.sizes.max_texture_id; ++t) {
@@ -1457,6 +1456,8 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
 	bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
+	for (int i = 0; i < mod->nummodelsurfaces; ++i)
+		bmodel->surface_to_geometry_index[i] = -1;
 	bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
 	bmodel->animated_indexes_count = sizes.animated_count;
 
@@ -1654,6 +1655,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
 		case BrushSurface_Regular:
 		case BrushSurface_Animated:
+		case BrushSurface_Water:
 			break;
 		default:
 			continue;
@@ -1726,9 +1728,15 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		}
 
 		// Assign the emissive value to the right geometry
-		const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
-		geom_indices[i] = geom_index;
-		VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
+		if (bmodel->surface_to_geometry_index) {
+			const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
+			if (geom_index != -1) {
+				ASSERT(geom_index >= 0);
+				ASSERT(geom_index < bmodel->render_model.num_geometries);
+				geom_indices[i] = geom_index;
+				VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
+			}
+		}
 	}
 
 	if (emissive_surfaces_count > 0) {
