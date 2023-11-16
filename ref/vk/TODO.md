@@ -3,9 +3,9 @@
     - [x] add emissive water surface to polygon lights
     - [x] update emissive color for water surfaces
 - [x] trihash option
-- [-] dynamic UVs
+- [x] dynamic UVs
     - [x] update UVs for conveyors
-    - [ ] pls don't aggravate validation on changelevel
+    - [ ] pls don't aggravate validation on changelevel -- cannot reproduce
 - [ ] discuss integration test strategies
 
 # 2023-11-14 E330
