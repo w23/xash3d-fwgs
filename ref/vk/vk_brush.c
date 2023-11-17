@@ -1732,6 +1732,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		int surface_index;
 		const msurface_t *surf;
 		vec3_t emissive;
+		qboolean is_water;
 	} emissive_surface_t;
 	emissive_surface_t emissive_surfaces[MAX_SURFACE_LIGHTS];
 	int geom_indices[MAX_SURFACE_LIGHTS];
@@ -1741,8 +1742,9 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
+		const brush_surface_type_e type = getSurfaceType(surf, surface_index, is_worldmodel);
 
-		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
+		switch (type) {
 		case BrushSurface_Regular:
 		case BrushSurface_Animated:
 		case BrushSurface_Water:
@@ -1776,6 +1778,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		surface->model_surface_index = i;
 		surface->surface_index = surface_index;
 		surface->surf = surf;
+		surface->is_water = type == BrushSurface_Water;
 		VectorCopy(emissive, surface->emissive);
 	}
 
@@ -1816,6 +1819,21 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		// Non-static ones will be applied later when the model is actually rendered
 		if (is_static) {
 			RT_LightAddPolygon(&polylight);
+
+			/* TODO figure out when this is needed.
+			 * This is needed in cases where we can dive into emissive acid, which should illuminate what's under it
+			 * Likely, this is not a correct fix, though, see https://github.com/w23/xash3d-fwgs/issues/56
+			if (s->is_water) {
+				// Add backside for water
+				for (int i = 0; i < polylight.num_vertices; ++i) {
+					vec3_t tmp;
+					VectorCopy(polylight.vertices[i], tmp);
+					VectorCopy(polylight.vertices[polylight.num_vertices-1-i], polylight.vertices[i]);
+					VectorCopy(tmp, polylight.vertices[polylight.num_vertices-1-i]);
+					RT_LightAddPolygon(&polylight);
+				}
+			}
+			*/
 		} else {
 			bmodel->render_model.dynamic_polylights[i] = polylight;
 		}
