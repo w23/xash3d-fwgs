@@ -322,8 +322,12 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 			poly_vertices[i].normal[1] = 0;
 			poly_vertices[i].normal[2] = 0;
 
+			poly_vertices[i].tangent[0] = 0;
+			poly_vertices[i].tangent[1] = 0;
+			poly_vertices[i].tangent[2] = 0;
+
 			if (i > 1) {
-				vec3_t e0, e1, normal;
+				vec3_t e0, e1, normal, tangent;
 				VectorSubtract( poly_vertices[i - 1].pos, poly_vertices[0].pos, e0 );
 				VectorSubtract( poly_vertices[i].pos, poly_vertices[0].pos, e1 );
 				CrossProduct( e1, e0, normal );
@@ -331,6 +335,13 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 				VectorAdd(normal, poly_vertices[0].normal, poly_vertices[0].normal);
 				VectorAdd(normal, poly_vertices[i].normal, poly_vertices[i].normal);
 				VectorAdd(normal, poly_vertices[i - 1].normal, poly_vertices[i - 1].normal);
+
+				computeTangentE(tangent, e0, e1,
+					poly_vertices[0].gl_tc, poly_vertices[i-1].gl_tc, poly_vertices[i].gl_tc);
+
+				VectorAdd(tangent, poly_vertices[0].tangent, poly_vertices[0].tangent);
+				VectorAdd(tangent, poly_vertices[i].tangent, poly_vertices[i].tangent);
+				VectorAdd(tangent, poly_vertices[i - 1].tangent, poly_vertices[i - 1].tangent);
 
 				args.dst_indices[indices++] = (uint16_t)(vertices);
 				args.dst_indices[indices++] = (uint16_t)(vertices + i - 1);
@@ -345,6 +356,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 		for( int i = 0; i < p->numverts; i++ ) {
 			VectorNormalize(poly_vertices[i].normal);
+			VectorNormalize(poly_vertices[i].tangent);
 #if 0
 			//const float dot = DotProduct(poly_vertices[i].normal, args.warp->plane->normal);
 			//if (dot < 0.) {
@@ -1732,6 +1744,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		int surface_index;
 		const msurface_t *surf;
 		vec3_t emissive;
+		qboolean is_water;
 	} emissive_surface_t;
 	emissive_surface_t emissive_surfaces[MAX_SURFACE_LIGHTS];
 	int geom_indices[MAX_SURFACE_LIGHTS];
@@ -1741,8 +1754,9 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
+		const brush_surface_type_e type = getSurfaceType(surf, surface_index, is_worldmodel);
 
-		switch (getSurfaceType(surf, surface_index, is_worldmodel)) {
+		switch (type) {
 		case BrushSurface_Regular:
 		case BrushSurface_Animated:
 		case BrushSurface_Water:
@@ -1776,6 +1790,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		surface->model_surface_index = i;
 		surface->surface_index = surface_index;
 		surface->surf = surf;
+		surface->is_water = type == BrushSurface_Water;
 		VectorCopy(emissive, surface->emissive);
 	}
 
@@ -1816,6 +1831,21 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 		// Non-static ones will be applied later when the model is actually rendered
 		if (is_static) {
 			RT_LightAddPolygon(&polylight);
+
+			/* TODO figure out when this is needed.
+			 * This is needed in cases where we can dive into emissive acid, which should illuminate what's under it
+			 * Likely, this is not a correct fix, though, see https://github.com/w23/xash3d-fwgs/issues/56
+			if (s->is_water) {
+				// Add backside for water
+				for (int i = 0; i < polylight.num_vertices; ++i) {
+					vec3_t tmp;
+					VectorCopy(polylight.vertices[i], tmp);
+					VectorCopy(polylight.vertices[polylight.num_vertices-1-i], polylight.vertices[i]);
+					VectorCopy(tmp, polylight.vertices[polylight.num_vertices-1-i]);
+					RT_LightAddPolygon(&polylight);
+				}
+			}
+			*/
 		} else {
 			bmodel->render_model.dynamic_polylights[i] = polylight;
 		}
