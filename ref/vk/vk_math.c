@@ -267,12 +267,9 @@ void Matrix4x4_ConcatScale3( matrix4x4 out, float x, float y, float z )
 	Matrix4x4_Concat( out, base, temp );
 }
 
-void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const vec3_t v2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2) {
-	vec3_t e1, e2;
+void computeTangentE(vec3_t out_tangent, const vec3_t e1, const vec3_t e2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2) {
 	vec2_t duv1, duv2;
 
-	VectorSubtract(v1, v0, e1);
-	VectorSubtract(v2, v0, e2);
 	Vector2Subtract(uv1, uv0, duv1);
 	Vector2Subtract(uv2, uv0, duv2);
 
@@ -285,6 +282,15 @@ void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const 
 	out_tangent[0] = f * (duv2[1] * e1[0] - duv1[1] * e2[0]);
 	out_tangent[1] = f * (duv2[1] * e1[1] - duv1[1] * e2[1]);
 	out_tangent[2] = f * (duv2[1] * e1[2] - duv1[1] * e2[2]);
+}
+
+void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const vec3_t v2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2) {
+	vec3_t e1, e2;
+
+	VectorSubtract(v1, v0, e1);
+	VectorSubtract(v2, v0, e2);
+
+	computeTangentE(out_tangent, e1, e2, uv0, uv1, uv2);
 }
 
 void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t up, const vec3_t z, const vec3_t translate) {

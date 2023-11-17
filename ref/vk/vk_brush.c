@@ -322,8 +322,12 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 			poly_vertices[i].normal[1] = 0;
 			poly_vertices[i].normal[2] = 0;
 
+			poly_vertices[i].tangent[0] = 0;
+			poly_vertices[i].tangent[1] = 0;
+			poly_vertices[i].tangent[2] = 0;
+
 			if (i > 1) {
-				vec3_t e0, e1, normal;
+				vec3_t e0, e1, normal, tangent;
 				VectorSubtract( poly_vertices[i - 1].pos, poly_vertices[0].pos, e0 );
 				VectorSubtract( poly_vertices[i].pos, poly_vertices[0].pos, e1 );
 				CrossProduct( e1, e0, normal );
@@ -331,6 +335,13 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 				VectorAdd(normal, poly_vertices[0].normal, poly_vertices[0].normal);
 				VectorAdd(normal, poly_vertices[i].normal, poly_vertices[i].normal);
 				VectorAdd(normal, poly_vertices[i - 1].normal, poly_vertices[i - 1].normal);
+
+				computeTangentE(tangent, e0, e1,
+					poly_vertices[0].gl_tc, poly_vertices[i-1].gl_tc, poly_vertices[i].gl_tc);
+
+				VectorAdd(tangent, poly_vertices[0].tangent, poly_vertices[0].tangent);
+				VectorAdd(tangent, poly_vertices[i].tangent, poly_vertices[i].tangent);
+				VectorAdd(tangent, poly_vertices[i - 1].tangent, poly_vertices[i - 1].tangent);
 
 				args.dst_indices[indices++] = (uint16_t)(vertices);
 				args.dst_indices[indices++] = (uint16_t)(vertices + i - 1);
@@ -345,6 +356,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 		for( int i = 0; i < p->numverts; i++ ) {
 			VectorNormalize(poly_vertices[i].normal);
+			VectorNormalize(poly_vertices[i].tangent);
 #if 0
 			//const float dot = DotProduct(poly_vertices[i].normal, args.warp->plane->normal);
 			//if (dot < 0.) {

@@ -1,3 +1,8 @@
+# 2023-11-17 E332
+- [-] backside emissive water polygons:
+    - adding them makes things worse in other parts of the level
+- [x] water normalmap support -- added missing tangents
+
 # 2023-11-16 E331
 - [x] Emissive waters
     - [x] add emissive water surface to polygon lights

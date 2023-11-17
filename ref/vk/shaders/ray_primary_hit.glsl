@@ -106,7 +106,6 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;
 
-
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Nop
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {

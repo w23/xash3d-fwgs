@@ -21,6 +21,7 @@ void Matrix4x4_CreateProjection(matrix4x4 out, float xMax, float xMin, float yMa
 void Matrix4x4_CreateOrtho(matrix4x4 m, float xLeft, float xRight, float yBottom, float yTop, float zNear, float zFar);
 void Matrix4x4_CreateModelview( matrix4x4 out );
 
+void computeTangentE(vec3_t out_tangent, const vec3_t e1, const vec3_t e2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2);
 void computeTangent(vec3_t out_tangent, const vec3_t v0, const vec3_t v1, const vec3_t v2, const vec2_t uv0, const vec2_t uv1, const vec2_t uv2);
 
 void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t up, const vec3_t z, const vec3_t translate);
