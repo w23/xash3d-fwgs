@@ -2,6 +2,7 @@
 - [-] backside emissive water polygons:
     - adding them makes things worse in other parts of the level
 - [x] water normalmap support -- added missing tangents
+- [x] discuss integration test strategies
 
 # 2023-11-16 E331
 - [x] Emissive waters
@@ -11,7 +12,6 @@
 - [x] dynamic UVs
     - [x] update UVs for conveyors
     - [ ] pls don't aggravate validation on changelevel -- cannot reproduce
-- [ ] discuss integration test strategies
 
 # 2023-11-14 E330
 - [x] culling worldmodel waters

@@ -808,4 +808,92 @@ Seems to be the preferred option: less geometry overall. Do not need to generate
 worlmodel has them.
 However: glass brushes still do have back surfaces. How to deal with those? Doesn't seem to break anything for now.
 
+# 2023-11-17 E332
+## Automated testing
+Q:
+- How to run? On which hardware?
+    - Steam Deck as a target HW.
+- How to run from GH actions CI?
+- Do we need a headless build? It does require engine changes.
+- How to enable/integrate testing into the build system?
 
+### Unit tests
+Some things can be covered by unit tests. Things that are independent of the engine.
+Currently somewhat covered:
+- alolcator
+- urmom
+
+Possibly coverable:
+- Water tesselation
+- Math stuff (tangents, etc)
+- Parts of light clusters
+- Studio model:
+    - cache
+    - geometry generation
+- sebastian + meatpipe
+- brush loading
+
+Things that potentially coverable, but depend on the engine:
+- Loading patches, mapents, rad files, etc. -- Depend on engine file loading and parsing
+- Texture loading
+- studio model loading
+
+### Regression testing
+Check that:
+- internal structures have expected values. I.e. that all expected entity/material/... patches are applied for a given map:
+    - Internal lists of brush models has expected items.
+    - Each brush model has expected number of surfaces, geometries, water models, etc.
+    - Each brush surface has expected number of vertices (with expected values like position, normal, uvs, ...) expected textures/materials, etc.
+    - There's an expected number of light sources with expected properties (vertices, etc)
+- the desired image is rendered.
+- internal state remains valid/expected during game/demo play
+- performance remains within expected bounds
+
+#### Internal structures verification
+We can make a thing that dumps internal structures we care about into a file. This is done once for a "golden" state.
+This state is now what we need to compare against.
+Then for a test run we do the same thing: we just dump internal state into another file. And then we just `diff -u` this file
+with a golden file. If there are any differences, then it's a failure, and the diff file highlight which things have changed.
+This way there's no immediate need to write a deserialization -- just comparing text files is enough.
+Serialization step is expected to be reasonably simple.
+Possible concerns:
+- Text file should be somewhat structured so that context for found differences is easily reconstructible.
+- Some things are not expected to match exactly. There can be floating point differences, etc.
+- Some things can be order independent. Serializator should have a way to make a stable order for them.
+
+Possible serialization implementation:
+- Similar to R_SPEEDS, provide a way to register structures to be dumped. Pass a function that dumps these structures by `const void*`
+- This function can further pass sub-structures for serialization.
+- Pass array of types/structs for serialization. Possibly with a sort function for stable ordering.
+- Pass basic types for serialization, possibly with precision hints.
+- Pass strings for serialization.
+
+What should be the format? Simple text format is bad when we have arbitrary strings.
+Something json-like (not necessarily valid json) might be good enough.
+
+Updates to code/patches/materials might need changes to the golden state.
+Q: materials are tracked in a different repo, need to have a way to synchronize with golden state.
+We can track golden state also in a different repo, have it link to PBR repo as a submodule (or, better, just a link to a commit).
+And it can itself be a submodule for xash3d-fwgs-rt.
+
+#### Comparing rendering results
+Need to make a screenshot at desired location. Can be the first frame of a playdemo, or just a save file.
+Then need a way to compare images with given error tolerance. OR we can make everything (that we can) completely reproducible.
+E.g. fix all random seeds with known values for testing.
+Should it be a special mode, e.g. run with a save/demo, make a first screenshot and exit?
+Can we do multiple screenshots during a timedemo? Concern here is that it might be not stable enough (e.g. random particles, etc).
+
+#### Validating internal state
+Basically, lots of expensive TESTING-ONLY asserts everywhere.
+Would probably benefit from extensive context collector. `proval.h`
+
+#### Performance tracking
+Release build (i.e. w/o expensive asserts, state validation, dumping or anything) with an ability to dump profiling data.
+Run a short 1-2min timedemo, collect ALL performance stats for the entire lifetime and ALL frames:
+- all memory allocations
+- all custom metrics
+- all cpu and gpu scopes, the entire timeline
+This is then dumped into a file.
+Then there's a piece of software that analyzes these dumps. It can check for a few basic metrics (e.g. frame percentiles,
+amount and count of memory allocations, etc.) and compare them against known bounds. Going way too fast or too slow is a failure.
+The same software could do more analysis, e.g. producing graphs and statistics for all other metrics.
