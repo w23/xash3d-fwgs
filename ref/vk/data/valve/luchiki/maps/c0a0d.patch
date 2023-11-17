@@ -31,3 +31,35 @@
 "_xvk_surface_id" "1295 1294 1436 1437" // SUBWAY_LIGHTS    190 195 255  1500
 "_light" "190 195 255 5000"
 }
+
+// smoothing
+// broken massive "barrel"
+{ 
+"_xvk_smoothing_group" "1061 1017 1057 1062 1018 1058 951 913 949"
+}
+{
+"_xvk_smoothing_group" "1837 1832 1838 1866 1860 1868 1865 1859 1867"
+}
+// pipe 1
+{
+"_xvk_smoothing_group" "920 933 924 931 923 917"
+}
+{
+"_xvk_smoothing_group" "911 919 918 930 934 929 926 925 928 922 921" // FIXME: bad geometry
+}
+{
+"_xvk_smoothing_group" "854 858 860 856 864 862"
+}
+{
+"_xvk_smoothing_group" "853 857 859 855 863 861"
+}
+// pipe 2
+{
+"_xvk_smoothing_group" "916 937 939 0 942 935"
+}
+{
+"_xvk_smoothing_group" "941 936 912 938 940"
+}
+{
+"_xvk_smoothing_group" "1826 1830 1831 1827 1829 1828"
+}
