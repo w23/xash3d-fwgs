@@ -50,7 +50,7 @@ Strongly suggested checklist for contributing anything, **before you start writi
 
 ### Which branch?
 
-* We recommend using `vulkan` branch.
+* We recommend using `master` branch.
 
 ### Third-party libraries
 
