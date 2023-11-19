@@ -5,6 +5,39 @@
 {
 "_xvk_ent_id" "57 58" // remove hack light entity "EXIT"
 }
+// fix texture coordinates
+{
+"_xvk_surface_id" "3124 3125 3208 3207" // subway_lights
+"_xvk_tex_offset" "0 1.4"
+"_xvk_tex_scale" "1 0.9"
+}
+{
+"_xvk_surface_id" "3141 3139 3118 3120" // subway_ceiling (fan box)
+"_xvk_tex_offset" "40 0"
+}
+//{
+//"_xvk_surface_id" "1511" // subway_seat
+//"_xvk_tex_offset" "0 0.3"
+//}
+//{
+//"_xvk_surface_id" "1520" // subway_floor1
+//"_xvk_tex_offset" "0 2.8"
+//}
+{
+"_xvk_surface_id" "3309 3310" // subway_floor2
+"_xvk_tex_offset" "0 1"
+}
+// fix textures
+{
+"_xvk_surface_id" "3074 3073" // subway_inpanel (more correct)
+"_xvk_material" "subway_inpanel_2"
+//"_xvk_tex_offset" "15 0"
+}
+{
+"_xvk_surface_id" "3010	3009 3011 3015 3013 3012 3014 3017 3018 3016 3019 3020 3022 3021" // subway_inend -> subway_outend
+"_xvk_material" "subway_outend_2"
+}
+
 
 // section 0
 {

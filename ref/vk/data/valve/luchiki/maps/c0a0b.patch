@@ -5,6 +5,38 @@
 {
 "_xvk_ent_id" "68 67" // remove hack light entity "EXIT"
 }
+// fix texture coordinates
+{
+"_xvk_surface_id" "4213 4214 4292 4291" // subway_lights
+"_xvk_tex_offset" "0 1.4"
+"_xvk_tex_scale" "1 0.9"
+}
+{
+"_xvk_surface_id" "4225 4223 4202 4204" // subway_ceiling (fan box)
+"_xvk_tex_offset" "40 0"
+}
+//{
+//"_xvk_surface_id" "1511" // subway_seat
+//"_xvk_tex_offset" "0 0.3"
+//}
+//{
+//"_xvk_surface_id" "1520" // subway_floor1
+//"_xvk_tex_offset" "0 2.8"
+//}
+{
+"_xvk_surface_id" "4393 4394" // subway_floor2
+"_xvk_tex_offset" "0 1"
+}
+// fix textures
+{
+"_xvk_surface_id" "4158 4157" // subway_inpanel (more correct)
+"_xvk_material" "subway_inpanel_2"
+//"_xvk_tex_offset" "15 0"
+}
+{
+"_xvk_surface_id" "4101 4102 4100 4103 4104 4106 4105 4094 4093 4095 4099 4097 4096 4098" // subway_inend -> subway_outend
+"_xvk_material" "subway_outend_2"
+}
 
 
 // section 0
@@ -88,6 +120,19 @@
 
 
 // section 2
+// fix texture coordinates
+{
+"_xvk_surface_id" "45 323" // rail
+"_xvk_tex_rotate" "1.5"
+"_xvk_tex_offset" "0.2 0"
+}
+{
+"_xvk_surface_id" "322"
+"_xvk_tex_rotate" "2.7"
+"_xvk_tex_offset" "-26.3 -1"
+}
+
+
 {
 "_xvk_ent_id" "1" // sun
 "_light" "250 210 110 2500" // original: 250 210 110 150 // need tune for hdr-autoexposure
