@@ -29,7 +29,7 @@ typedef struct
 	int		maxsize;
 } cmdbuf_t;
 
-qboolean			cmd_wait;
+int			cmd_wait;
 cmdbuf_t			cmd_text, filteredcmd_text;
 byte			cmd_text_buf[MAX_CMD_BUFFER];
 byte			filteredcmd_text_buf[MAX_CMD_BUFFER];
@@ -185,6 +185,14 @@ void Cbuf_ExecuteCommandsFromBuffer( cmdbuf_t *buf, qboolean isPrivileged, int c
 
 	while( buf->cursize )
 	{
+		if( cmd_wait > 0 )
+		{
+			// skip out while text still remains in buffer,
+			// leaving it for next frame
+			cmd_wait--;
+			break;
+		}
+
 		// limit amount of commands that can be issued
 		if( cmdsToExecute >= 0 )
 		{
@@ -249,14 +257,6 @@ void Cbuf_ExecuteCommandsFromBuffer( cmdbuf_t *buf, qboolean isPrivileged, int c
 
 		// execute the command line
 		Cmd_ExecuteStringWithPrivilegeCheck( line, isPrivileged );
-
-		if( cmd_wait )
-		{
-			// skip out while text still remains in buffer,
-			// leaving it for next frame
-			cmd_wait = false;
-			break;
-		}
 	}
 }
 
@@ -372,7 +372,13 @@ bind g "cmd use rocket ; +attack ; wait ; -attack ; cmd use blaster"
 */
 void Cmd_Wait_f( void )
 {
-	cmd_wait = true;
+	if ( Cmd_Argc() > 1 )
+	{
+		const char *arg = Cmd_Argv( 1 );
+		cmd_wait = atoi( arg );
+	}
+
+	cmd_wait = Q_max( cmd_wait, 1 );
 }
 
 /*
