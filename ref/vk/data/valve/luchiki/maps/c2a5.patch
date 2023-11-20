@@ -2,3 +2,6 @@
 "_xvk_ent_id" "246" // DANGER sign
 "origin" "1 0 0"
 }
+{
+"_xvk_smoothing_threshold" "54" // FIXME
+}

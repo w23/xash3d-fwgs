@@ -230,6 +230,30 @@
 "_xvk_smoothing_excluded" "1076"
 }
 
+// grating
+{
+"_xvk_smoothing_group" "1172 1173 1174 1175 803 800 801 802"
+}
+{
+"_xvk_smoothing_group" "1841 1845 1838 1846 1349 1353 1354 1355"
+}
+{
+"_xvk_smoothing_group" "1842 1844 1839 1847 1350 1357 1358 1352"
+}
+{
+"_xvk_smoothing_group" "1843 1849 1840 1848 1351 1360 1359 1356"
+}
+{
+"_xvk_smoothing_group" "1177 1176 1179 1778 1837 1850 1852 1851"
+}
+{
+"_xvk_smoothing_group" "808 807 799 809 1366 1365 1368 1367"
+}
+{
+"_xvk_smoothing_group" "806 805 798 804 1362 1363 1364 1361"
+}
+
+
 
 // canalization
 { // bad geometry
