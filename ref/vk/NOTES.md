@@ -897,3 +897,17 @@ This is then dumped into a file.
 Then there's a piece of software that analyzes these dumps. It can check for a few basic metrics (e.g. frame percentiles,
 amount and count of memory allocations, etc.) and compare them against known bounds. Going way too fast or too slow is a failure.
 The same software could do more analysis, e.g. producing graphs and statistics for all other metrics.
+
+# 2023-11-20 E333
+## Comparing rendering results
+1. Make a script that loads save files, and takes screenshots. The result is a bunch of screenshots.
+2. Make a tiny program comparing these screenshots with golden ones.
+3. Make initial set of golden screenshots.
+4. Make a representative set of places to take screenshots of.
+5. Make a script taking screenshots, comparing results and presenting that as a build artifact.
+5. (draw the rest of the fucking owl) Integrate this into CI.
+
+Observations:
+- Need to fix window/screen resolution (doesn't work with tiling managers that well)
+- There's still some console garbage on screen
+- Making random_seed constant is not enough. There are still some per-pixel differences. Not sure why. Timing dependent, getting a different frame?

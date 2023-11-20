@@ -502,7 +502,7 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 	return true;
 }
 
-static rgbdata_t *XVK_ReadPixels( void ) {
+static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
 	r_vk_image_t dest_image;
 	const VkImage frame_image = g_frame.current.framebuffer.image;
@@ -706,7 +706,7 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	qboolean	result;
 
 	// get screen frame
-	rgbdata_t *r_shot = XVK_ReadPixels();
+	rgbdata_t *r_shot = R_VkReadPixels();
 	if (!r_shot)
 		return false;
 

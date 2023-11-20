@@ -1,3 +1,11 @@
+# 2023-11-20 E333
+- [ ] contemplate testing rendered images
+    - [x] try making a rendertest script: load multiple save, make multiple screenshots
+    - [x] compare screenshots
+    - [ ] Other infrastructure:
+        - tracking golden states
+        - testing script
+
 # 2023-11-17 E332
 - [-] backside emissive water polygons:
     - adding them makes things worse in other parts of the level
