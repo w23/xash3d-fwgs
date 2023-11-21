@@ -87,10 +87,18 @@ int main(int argc, char *argv[]) {
 
 	const uint32_t total = a.w * a.h * a.comp * 256;
 
-	fprintf(stderr, "Total difference \"%s\" vs \"%s\": %d (%.03f%%)\n", argv[1], argv[2], diff_sum, (diff_sum * 100. / total));
+	const float diff_pct_threshold = 1.f;
+	const float diff_pct = diff_sum * 100.f / total;
+	const int over = diff_pct_threshold < diff_pct;
+
+	fprintf(stderr, "%sTotal difference \"%s\" vs \"%s\": %d (%.03f%%)%s\n",
+		over ? "\033[31mFAIL " : "",
+		argv[1], argv[2], diff_sum, diff_pct,
+		over ? "\033[0m" : ""
+		);
 
 	if (!imageSave(&diff, argv[3]))
 		return 1;
 
-	return diff_sum == 0;
+	return over;
 }
