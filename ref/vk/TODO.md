@@ -1,7 +1,7 @@
 # 2023-11-21 E334
 - [ ] reproducible rendering
     - [ ] dump all components
-        - [ ] script
+        - [x] script
         - [ ] try also dumping in native code
     - [ ] script for running and comparing results
     - [ ] command for random seed fixation
