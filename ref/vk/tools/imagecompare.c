@@ -1,10 +1,17 @@
-#include <stdio.h>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#include <stdio.h>
+#include <time.h>
+
+uint64_t now( void ) {
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	return tp.tv_nsec + tp.tv_sec * 1000000000ull;
+}
 
 typedef struct {
 	int w, h;
@@ -20,6 +27,19 @@ static int imageLoad(image_t* img, const char *f) {
 }
 
 static int imageSave(image_t* img, const char *f) {
+	const char *const ext = strrchr(f, '.');
+	if (ext != NULL) {
+		if (strcmp(ext, ".png") == 0) {
+			return stbi_write_png(f, img->w, img->h, img->comp, img->data, 0);
+		} else if (strcmp(ext, ".bmp") == 0) {
+			return stbi_write_bmp(f, img->w, img->h, img->comp, img->data);
+		} else if (strcmp(ext, ".tga") == 0) {
+			return stbi_write_tga(f, img->w, img->h, img->comp, img->data);
+		} else if (strcmp(ext, ".jpg") ==0 || strcmp(ext, ".jpeg") == 0) {
+			return stbi_write_jpg(f, img->w, img->h, img->comp, img->data, 90);
+		}
+	}
+
 	return stbi_write_png(f, img->w, img->h, img->comp, img->data, 0);
 }
 
@@ -35,6 +55,8 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Usage: %s infile1 infile2 out_diff.png\n", argv[0]);
 		return 1;
 	}
+
+	const uint64_t start_ns = now();
 
 	image_t a, b;
 
@@ -57,6 +79,8 @@ int main(int argc, char *argv[]) {
 		.comp = a.comp,
 		.data = malloc(a.w * a.h * a.comp),
 	};
+
+	const uint64_t loaded_ns = now();
 
 	const unsigned char* ap = a.data, *bp = b.data;
 	unsigned char* dp = diff.data;
@@ -85,6 +109,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	const uint64_t diffd_ns = now();
+
 	const uint32_t total = a.w * a.h * a.comp * 256;
 
 	const float diff_pct_threshold = 1.f;
@@ -98,6 +124,12 @@ int main(int argc, char *argv[]) {
 
 	if (!imageSave(&diff, argv[3]))
 		return 1;
+
+	const uint64_t end_ns = now();
+
+#define MS(t) ((t)/1e6)
+	fprintf(stderr, "loading: %.03fms, diffing: %.03fms, saving: %.03fms; total: %.03fms\n",
+		MS(loaded_ns - start_ns), MS(diffd_ns - loaded_ns), MS(end_ns - diffd_ns), MS(end_ns - start_ns));
 
 	return over;
 }
