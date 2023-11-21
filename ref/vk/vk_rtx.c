@@ -163,6 +163,7 @@ static void parseDebugDisplayValue( void ) {
 	X(EMISSIVE) \
 	X(NSHADE) \
 	X(NGEOM) \
+	X(LIGHTING) \
 	X(SURFHASH) \
 	X(TRIHASH) \
 	X(DIRECT) \

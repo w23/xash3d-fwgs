@@ -1,3 +1,12 @@
+# 2023-11-21 E334
+- [ ] reproducible rendering
+    - [ ] dump all components
+        - [ ] script
+        - [ ] try also dumping in native code
+    - [ ] make sure it's reproducible
+    - [ ] contemplate infrastructure: scripts, repo, etc.
+- [ ] spec for profiler dumper
+
 # 2023-11-20 E333
 - [ ] contemplate testing rendered images
     - [x] try making a rendertest script: load multiple save, make multiple screenshots
