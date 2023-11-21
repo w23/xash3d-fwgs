@@ -91,10 +91,9 @@ int main(int argc, char *argv[]) {
 	const float diff_pct = diff_sum * 100.f / total;
 	const int over = diff_pct_threshold < diff_pct;
 
-	fprintf(stderr, "%sTotal difference \"%s\" vs \"%s\": %d (%.03f%%)%s\n",
-		over ? "\033[31mFAIL " : "",
-		argv[1], argv[2], diff_sum, diff_pct,
-		over ? "\033[0m" : ""
+	fprintf(stderr, "%s\"%s\" vs \"%s\": %d (%.03f%%)\033[0m\n",
+		over ? "\033[31mFAIL" : (diff_sum == 0 ? "\033[32m" : ""),
+		argv[1], argv[2], diff_sum, diff_pct
 		);
 
 	if (!imageSave(&diff, argv[3]))
