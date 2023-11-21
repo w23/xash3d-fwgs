@@ -26,6 +26,7 @@ scr_conspeed 100000
 con_notifytime 0
 hud_draw 0
 r_speeds 0
+rt_debug_fixed_random_seed 31337
 developer 0'''
 
 print(header)

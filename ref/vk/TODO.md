@@ -4,7 +4,7 @@
         - [x] script
         - [ ] try also dumping in native code
     - [ ] script for running and comparing results
-    - [ ] command for random seed fixation
+    - [x] command for random seed fixation
     - [ ] difference heatmap
     - [ ] difference gif
     - [ ] difference summary table
