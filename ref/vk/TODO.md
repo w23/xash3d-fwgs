@@ -1,16 +1,28 @@
+# 2023-11-23 E335
+- [x] spec for profiler dumper
+- reproducible rendering:
+    - [ ] write fixed resolution internal images -- only need this because i'm stupid and using tiling window manager
+        - [ ] how to synchronize with frames
+        - [ ] how to extract vk images
+        - [ ] how to blit/copy various image pixel formats
+        - [ ] what file format to choose for non-rgba8 formats? do we even need them?
+    - [x] script for running and comparing results
+    - [ ] make sure it's reproducible
+    - [ ] contemplate infrastructure: scripts, repo, etc.
+    - [ ] extras:
+        - [ ] difference heatmap
+        - [x] difference gif
+        - [ ] difference summary table
+        - [ ] parallelize/make gifs
+        - [ ] summary html
+- [x] consolidate all binding in shaders
+
 # 2023-11-21 E334
 - [ ] reproducible rendering
     - [ ] dump all components
         - [x] script
-        - [ ] try also dumping in native code
-    - [ ] script for running and comparing results
+        - [-] ~~try also dumping in native code~~ -- no need, it's fast enough
     - [x] command for random seed fixation
-    - [ ] difference heatmap
-    - [ ] difference gif
-    - [ ] difference summary table
-    - [ ] make sure it's reproducible
-    - [ ] contemplate infrastructure: scripts, repo, etc.
-- [ ] spec for profiler dumper
 
 # 2023-11-20 E333
 - [ ] contemplate testing rendered images

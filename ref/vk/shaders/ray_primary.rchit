@@ -1,19 +1,30 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_ray_tracing: require
 
-#include "utils.glsl"
-#include "ray_primary_common.glsl"
-#include "ray_kusochki.glsl"
-#include "color_spaces.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
 
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 7) uniform samplerCube skybox;
+
+layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
+layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
+layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
+layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
+
+#include "ray_primary_common.glsl"
 
 layout(location = PAYLOAD_LOCATION_PRIMARY) rayPayloadInEXT RayPayloadPrimary payload;
 hitAttributeEXT vec2 bary;
+
+#include "utils.glsl"
+#include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
 
 #include "rt_geometry.glsl"
 

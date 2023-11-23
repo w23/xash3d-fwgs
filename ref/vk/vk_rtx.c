@@ -33,7 +33,7 @@
 // TODO settings/realtime modifiable/adaptive
 #if 1
 #define FRAME_WIDTH 1280
-#define FRAME_HEIGHT 720
+#define FRAME_HEIGHT 800
 #elif 0
 #define FRAME_WIDTH 2560
 #define FRAME_HEIGHT 1440

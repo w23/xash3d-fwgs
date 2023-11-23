@@ -1,43 +1,48 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_ray_query: require
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
 
 #define RAY_BOUNCE
 #define RAY_QUERY
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set=0, binding=1) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 
-#define RAY_LIGHT_DIRECT_INPUTS(X) \
-	X(10, position_t, rgba32f) \
-	X(11, normals_gs, rgba16f) \
-	X(12, material_rmxx, rgba8) \
-	X(13, base_color_a, rgba8)
-#define X(index, name, format) layout(set=0,binding=index,format) uniform readonly image2D name;
-RAY_LIGHT_DIRECT_INPUTS(X)
-#undef X
+layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
+layout(set = 0, binding = 7) uniform samplerCube skybox;
 
-layout(set=0, binding=20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
-layout(set=0, binding=21, rgba16f) uniform writeonly image2D out_indirect_specular;
+layout (set = 0, binding = 8) readonly buffer SBOLights { LightsMetadata m; } lights;
+layout (set = 0, binding = 9, align = 1) readonly buffer UBOLightClusters {
+	LightCluster clusters_[MAX_LIGHT_CLUSTERS];
+} light_grid;
+
+layout(set = 0, binding = 10, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 12, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
+
+layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
+
+layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
+layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
+layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
+layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
 #include "ray_primary_common.glsl"
 #include "ray_primary_hit.glsl"
-//#include "brdf.h" // already in light.glsl below
 #include "noise.glsl"
 
-#define TEXTURES_INCLUDED_ALREADY_FIXME
 #define LIGHT_POLYGON 1
 #define LIGHT_POINT 1
-#undef SHADER_OFFSET_HIT_SHADOW_BASE
-#define SHADER_OFFSET_HIT_SHADOW_BASE 0
-#undef SHADER_OFFSET_MISS_SHADOW
-#define SHADER_OFFSET_MISS_SHADOW 0
-#undef PAYLOAD_LOCATION_SHADOW
-#define PAYLOAD_LOCATION_SHADOW 0
 
-#define BINDING_LIGHTS 19
-#define BINDING_LIGHT_CLUSTERS 18
 #include "light.glsl"
 
 #include "trace_simple_blending.glsl"
@@ -47,7 +52,6 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	geometry_normal = normalDecode(n.xy);
 	shading_normal = normalDecode(n.zw);
 }
-
 
 bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 	rayQueryEXT rq;

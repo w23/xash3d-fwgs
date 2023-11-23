@@ -1,36 +1,8 @@
 #include "utils.glsl"
 #include "noise.glsl"
 
-#define GLSL
-#include "ray_interop.h"
-#undef GLSL
-
-#define RAY_LIGHT_DIRECT_INPUTS(X) \
-	X(10, position_t, rgba32f) \
-	X(11, normals_gs, rgba16f) \
-	X(12, material_rmxx, rgba8) \
-
-#define X(index, name, format) layout(set=0,binding=index,format) uniform readonly image2D name;
-RAY_LIGHT_DIRECT_INPUTS(X)
-#undef X
-#define X(index, name, format) layout(set=0,binding=index,format) uniform writeonly image2D out_##name;
-OUTPUTS(X)
-#undef X
-
-layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
-layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
-
 #include "ray_kusochki.glsl"
 
-#undef SHADER_OFFSET_HIT_SHADOW_BASE
-#define SHADER_OFFSET_HIT_SHADOW_BASE 0
-#undef SHADER_OFFSET_MISS_SHADOW
-#define SHADER_OFFSET_MISS_SHADOW 0
-#undef PAYLOAD_LOCATION_SHADOW
-#define PAYLOAD_LOCATION_SHADOW 0
-
-#define BINDING_LIGHTS 7
-#define BINDING_LIGHT_CLUSTERS 8
 #include "light.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
