@@ -33,7 +33,7 @@
 // TODO settings/realtime modifiable/adaptive
 #if 1
 #define FRAME_WIDTH 1280
-#define FRAME_HEIGHT 720
+#define FRAME_HEIGHT 800
 #elif 0
 #define FRAME_WIDTH 2560
 #define FRAME_HEIGHT 1440
@@ -93,6 +93,8 @@ static struct {
 	struct {
 		cvar_t *rt_debug_display_only;
 		uint32_t rt_debug_display_only_value;
+
+		cvar_t *rt_debug_fixed_random_seed;
 	} debug;
 } g_rtx = {0};
 
@@ -163,6 +165,7 @@ static void parseDebugDisplayValue( void ) {
 	X(EMISSIVE) \
 	X(NSHADE) \
 	X(NGEOM) \
+	X(LIGHTING) \
 	X(SURFHASH) \
 	X(TRIHASH) \
 	X(DIRECT) \
@@ -189,6 +192,13 @@ LIST_DISPLAYS(X)
 	g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_DISABLED;
 }
 
+static uint32_t getRandomSeed( void ) {
+	if (g_rtx.debug.rt_debug_fixed_random_seed->string[0])
+		return (uint32_t)g_rtx.debug.rt_debug_fixed_random_seed->value;
+
+	return (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
+}
+
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y ) {
 	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
@@ -208,7 +218,6 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	Matrix4x4_Copy(g_rtx.prev_inv_proj, proj_inv);
 
 	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)FRAME_HEIGHT);
-	ubo->random_seed = (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 	ubo->frame_counter = frame_counter;
 
 	parseDebugDisplayValue();
@@ -217,6 +226,8 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	} else {
 		ubo->debug_display_only = r_lightmap->value != 0 ? DEBUG_DISPLAY_LIGHTING : DEBUG_DISPLAY_DISABLED;
 	}
+
+	ubo->random_seed = getRandomSeed();
 }
 
 typedef struct {
@@ -712,6 +723,9 @@ qboolean VK_RayInit( void )
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
 		"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
 #undef X
+
+	g_rtx.debug.rt_debug_fixed_random_seed = gEngine.Cvar_Get("rt_debug_fixed_random_seed", "", FCVAR_GLCONFIG,
+		"Fix random seed value for RT monte carlo sampling. Used for reproducible regression testing");
 
 	return true;
 }

@@ -10,10 +10,6 @@
 
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
-layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
-layout(set = 0, binding = 7) uniform samplerCube skybox;
-
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
 #ifndef RAY_BOUNCE
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);

@@ -1302,6 +1302,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int index_offset = args.base_index_offset;
 
 	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
+	if (entity_patch)
+		DEBUG("Found entity_patch(matmap_count=%d) for model \"%s\"", entity_patch->matmap_count, args.mod->name);
 	connectVertices(args.mod, entity_patch ? entity_patch->smooth_entire_model : false);
 
 	// Load sorted by gl_texturenum
@@ -1381,7 +1383,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			if (!material_assigned && entity_patch) {
 				for (int i = 0; i < entity_patch->matmap_count; ++i) {
 					if (entity_patch->matmap[i].from_tex == orig_tex_id) {
-						model_geometry->material = R_VkMaterialGetForTexture(entity_patch->matmap[i].to_mat.index);
+						model_geometry->material = R_VkMaterialGetForRef(entity_patch->matmap[i].to_mat);
+						DEBUG("  Assigning entity_patch/material[%d] for surf=%d to mat ref=%d",
+							i, surface_index, entity_patch->matmap[i].to_mat.index);
 						material_assigned = true;
 						break;
 					}

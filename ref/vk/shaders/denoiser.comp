@@ -1,6 +1,5 @@
 #version 460
 
-#include "noise.glsl"
 #include "utils.glsl"
 #include "color_spaces.glsl"
 
@@ -230,6 +229,11 @@ void main() {
 
 	vec3 colour = vec3(0.);
 	{
+		vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
+		vec3 specular = c.direct_specular + c.indirect_specular;
+
+//#define DISABLE_TEMPORAL_DENOISER
+#ifndef DISABLE_TEMPORAL_DENOISER
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const vec3 position = imageLoad(position_t, pix).xyz;
@@ -243,8 +247,6 @@ void main() {
 		const float depth_treshold = 0.01 * clip_space.w;
 
 		float better_depth_offset = depth_treshold;
-		vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
-		vec3 specular = c.direct_specular + c.indirect_specular;
 		vec3 history_diffuse = diffuse;
 		vec3 history_specular = specular;
 		const int TEMPORAL_KERNEL = 1; // lifekilled says it should be fixed
@@ -273,6 +275,7 @@ void main() {
 
 		imageStore(out_temporal_diffuse, pix, vec4(diffuse, depth));
 		imageStore(out_temporal_specular, pix, vec4(specular, 0./*unused*/));
+#endif // ifndef DISABLE_TEMPORAL_DENOISER
 		colour = diffuse + specular;
 	}
 

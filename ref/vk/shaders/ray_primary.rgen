@@ -4,20 +4,15 @@
 
 #include "ray_primary_common.glsl"
 
-#define RAY_PRIMARY_OUTPUTS(X) \
-	X(10, base_color_a, rgba8) \
-	X(11, position_t, rgba32f) \
-	X(12, normals_gs, rgba16f) \
-	X(13, material_rmxx, rgba8) \
-	X(14, emissive, rgba16f) \
-	X(15, geometry_prev_position, rgba32f) \
-
-#define X(index, name, format) layout(set=0,binding=index,format) uniform writeonly image2D out_##name;
-RAY_PRIMARY_OUTPUTS(X)
-#undef X
-
 layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+
+layout(set = 0, binding = 10, rgba8) uniform writeonly image2D out_base_color_a;
+layout(set = 0, binding = 11, rgba32f) uniform writeonly image2D out_position_t;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_normals_gs;
+layout(set = 0, binding = 13, rgba8) uniform writeonly image2D out_material_rmxx;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_emissive;
+layout(set = 0, binding = 15, rgba32f) uniform writeonly image2D out_geometry_prev_position;
 
 layout(location = PAYLOAD_LOCATION_PRIMARY) rayPayloadEXT RayPayloadPrimary payload;
 

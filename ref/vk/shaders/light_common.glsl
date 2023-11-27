@@ -4,10 +4,6 @@
 
 #include "ray_kusochki.glsl"
 
-#ifndef TEXTURES_INCLUDED_ALREADY_FIXME
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
-#endif
-
 #ifdef RAY_TRACE2
 #include "ray_shadow_interface.glsl"
 layout(location = PAYLOAD_LOCATION_SHADOW) rayPayloadEXT RayPayloadShadow payload_shadow;

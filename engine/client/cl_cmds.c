@@ -192,7 +192,12 @@ void CL_ScreenShot_f( void )
 	int	i;
 	string	checkname;
 
-	if( CL_IsDevOverviewMode() == 1 )
+	if ( Cmd_Argc() > 1)
+	{
+		Q_strncpy( cls.shotname, Cmd_Argv( 1 ), sizeof( cls.shotname ));
+		cls.scrshot_action = scrshot_normal; // build new frame for screenshot
+	}
+	else if( CL_IsDevOverviewMode() == 1 )
 	{
 		// special case for write overview image and script file
 		Q_snprintf( cls.shotname, sizeof( cls.shotname ), "overviews/%s.bmp", clgame.mapname );

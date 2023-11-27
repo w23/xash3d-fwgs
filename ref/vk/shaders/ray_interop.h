@@ -47,6 +47,16 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 
 #endif // not GLSL
 
+struct Vertex {
+	vec3 pos;
+	vec3 prev_pos;
+	vec3 normal;
+	vec3 tangent;
+	vec2 gl_tc;
+	vec2 _unused_lm_tc;
+	uint color;
+};
+
 #define GEOMETRY_BIT_OPAQUE 0x01
 #define GEOMETRY_BIT_ALPHA_TEST 0x02
 #define GEOMETRY_BIT_BLEND 0x04
