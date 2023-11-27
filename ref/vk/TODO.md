@@ -1,3 +1,20 @@
+# 2023-11-27 E337
+- [x] make rendetest.py the central script
+    - [x] parallelize/make gifs
+    - [x] diff/convert in parallel
+- [-] backside transparency
+     - [x] added to rendertest
+     - [ ] consider passing a special flag for single-sided blended surfaces (i.e. brush surfaces)
+- [x] fix per-entity material mapping, #669
+    - [x] add to rendertest
+- [ ] html report
+
+# 2023-11-24 E336
+- reproducible rendering:
+    - [x] make sure it's reproducible -- given carefully spaced `wait N`s and `playersonly` it gets pretty reproducible
+    - [x] difference heatmap
+    - [x] contemplate infrastructure: scripts, repo, etc.
+
 # 2023-11-23 E335
 - [x] spec for profiler dumper
 - reproducible rendering:
@@ -7,13 +24,9 @@
         - [ ] how to blit/copy various image pixel formats
         - [ ] what file format to choose for non-rgba8 formats? do we even need them?
     - [x] script for running and comparing results
-    - [ ] make sure it's reproducible
-    - [ ] contemplate infrastructure: scripts, repo, etc.
-    - [ ] extras:
-        - [ ] difference heatmap
+    - [-] extras:
         - [x] difference gif
         - [ ] difference summary table
-        - [ ] parallelize/make gifs
         - [ ] summary html
 - [x] consolidate all binding in shaders
 
