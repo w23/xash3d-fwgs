@@ -116,6 +116,7 @@ typedef struct {
 	} matmap[MAX_MATERIAL_MAPPINGS];
 
 	int rendermode;
+	int patch_rendermode_plus_one;
 
 	qboolean smooth_entire_model;
 
