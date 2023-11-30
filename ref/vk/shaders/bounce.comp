@@ -189,7 +189,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 
 void main() {
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
-	const ivec2 res = ivec2(imageSize(out_indirect_diffuse)) / INDIRECT_SCALE;
+	const ivec2 res = ubo.ubo.res / INDIRECT_SCALE;
 	if (any(greaterThanEqual(pix, res))) {
 		return;
 	}

@@ -1,7 +1,7 @@
 #include "vk_devmem.h"
 #include "alolcator.h"
 
-#define MAX_DEVMEM_ALLOCS 16
+#define MAX_DEVMEM_ALLOCS 32
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
 
 typedef struct {

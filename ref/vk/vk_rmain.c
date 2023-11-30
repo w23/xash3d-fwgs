@@ -270,6 +270,14 @@ static int VK_RefGetParm( int parm, int arg )
 			return true;
 		}
 		return false;
+	case PARM_WIDESCREEN:
+		return gpGlobals->wideScreen;
+	case PARM_FULLSCREEN:
+		return gpGlobals->fullScreen;
+	case PARM_SCREEN_WIDTH:
+		return gpGlobals->width;
+	case PARM_SCREEN_HEIGHT:
+		return gpGlobals->height;
 	}
 
 	PRINT_NOT_IMPLEMENTED_ARGS("(%s(%d), %d)", getParmName(parm), parm, arg);

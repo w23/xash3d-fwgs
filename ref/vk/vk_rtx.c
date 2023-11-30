@@ -31,16 +31,8 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 
 // TODO settings/realtime modifiable/adaptive
-#if 1
-#define FRAME_WIDTH 1280
-#define FRAME_HEIGHT 800
-#elif 0
-#define FRAME_WIDTH 2560
-#define FRAME_HEIGHT 1440
-#else
-#define FRAME_WIDTH 1920
-#define FRAME_HEIGHT 1080
-#endif
+#define MAX_FRAME_WIDTH 3840
+#define MAX_FRAME_HEIGHT 2160
 
 	// TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
@@ -100,6 +92,7 @@ static struct {
 } g_rtx = {0};
 
 static int findResource(const char *name) {
+	// TODO hash table
 	// Find the exact match if exists
 	// There might be gaps, so we need to check everything
 	for (int i = 0; i < MAX_RESOURCES; ++i) {
@@ -200,7 +193,7 @@ static uint32_t getRandomSeed( void ) {
 	return (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 }
 
-static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y ) {
+static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
 	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
 	matrix4x4 proj_inv, view_inv;
@@ -218,7 +211,9 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	Matrix4x4_Copy(g_rtx.prev_inv_view, view_inv);
 	Matrix4x4_Copy(g_rtx.prev_inv_proj, proj_inv);
 
-	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)FRAME_HEIGHT);
+	ubo->res[0] = frame_width;
+	ubo->res[1] = frame_height;
+	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ubo->frame_counter = frame_counter;
 
 	parseDebugDisplayValue();
@@ -237,6 +232,7 @@ typedef struct {
 	uint32_t frame_counter;
 	float fov_angle_y;
 	const vk_lights_bindings_t *light_bindings;
+	int frame_width, frame_height;
 } perform_tracing_args_t;
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
@@ -342,7 +338,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	// TODO move this to "TLAS producer"
 	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
 
-	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y);
+	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
 
 	{ // FIXME this should be done automatically inside meatpipe, TODO
 		//const uint32_t size = sizeof(struct Lights);
@@ -378,8 +374,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	R_VkMeatpipePerform(g_rtx.mainpipe, combuf, (vk_meatpipe_perfrom_args_t) {
 		.frame_set_slot = args->frame_index,
-		.width = FRAME_WIDTH,
-		.height = FRAME_HEIGHT,
+		.width = args->frame_width,
+		.height = args->frame_height,
 		.resources = g_rtx.mainpipe_resources,
 	});
 
@@ -388,8 +384,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
-				.width = FRAME_WIDTH,
-				.height = FRAME_HEIGHT,
+				.width = args->frame_width,
+				.height = args->frame_height,
 				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
 			},
@@ -495,8 +491,8 @@ static void reloadMainpipe(void) {
 				}
 				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
-					.width = FRAME_WIDTH,
-					.height = FRAME_HEIGHT,
+					.width = MAX_FRAME_WIDTH,
+					.height = MAX_FRAME_HEIGHT,
 					.depth = 1,
 					.mips = 1,
 					.layers = 1,
@@ -619,6 +615,9 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
+	const int frame_width = Q_min(args->dst.width, MAX_FRAME_WIDTH);
+	const int frame_height = Q_min(args->dst.height, MAX_FRAME_HEIGHT);
+
 	// Do not draw when we have no swapchain
 	if (args->dst.image_view == VK_NULL_HANDLE)
 		goto tail;
@@ -628,8 +627,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
-				.width = FRAME_WIDTH,
-				.height = FRAME_HEIGHT,
+				.width = frame_width,
+				.height = frame_height,
 				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			},
@@ -651,6 +650,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_counter = g_rtx.frame_number,
 			.fov_angle_y = args->fov_angle_y,
 			.light_bindings = &light_bindings,
+			.frame_width = frame_width,
+			.frame_height = frame_height,
 		};
 		performTracing( args->combuf, &trace_args );
 	}

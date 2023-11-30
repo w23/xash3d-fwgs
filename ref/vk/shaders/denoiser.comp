@@ -176,8 +176,8 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 }
 
 void main() {
-	ivec2 res = ivec2(imageSize(base_color_a));
-	ivec2 pix = ivec2(gl_GlobalInvocationID);
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID);
 
 	if (any(greaterThanEqual(pix, res))) {
 		return;

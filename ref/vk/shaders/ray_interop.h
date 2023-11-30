@@ -22,6 +22,7 @@
 #define vec4 vec4_t
 #define mat4 matrix4x4
 typedef int ivec3[3];
+typedef int ivec2[2];
 #define TOKENPASTE(x, y) x ## y
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 #define PAD(x) float TOKENPASTE2(pad_, __LINE__)[x];
@@ -196,6 +197,7 @@ struct PushConstants {
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
+	ivec2 res;
 	float ray_cone_width;
 	uint random_seed;
 	uint frame_counter;
