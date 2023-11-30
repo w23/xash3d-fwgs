@@ -1,9 +1,14 @@
+# 2023-11-30 E339
+- [x] rendermode patch
+	- [x] track patch by boolean, not another field
+- [x] missing polylight on c2a1b
+	- [x] "proper" slow fix: make func_water emissive surfaces dynamic
+		- [x] extract dynamic polylights from render/rt models
+
 # 2023-11-28 E338
 - [x] rendertest
     - [x] read imagecompare results
     - [x] html report
-- [-] rendermode patch
-	- [ ] track patch by boolean, not another field
 
 # 2023-11-27 E337
 - [x] make rendetest.py the central script

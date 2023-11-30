@@ -354,13 +354,6 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 		}
 	}
 
-	for (int i = 0; i < args.dynamic_polylights_count; ++i) {
-		rt_light_add_polygon_t *const polylight = args.dynamic_polylights + i;
-		polylight->transform_row = (const matrix3x4*)args.transform;
-		polylight->dynamic = true;
-		RT_LightAddPolygon(polylight);
-	}
-
 	rt_draw_instance_t *const draw_instance = getDrawInstance();
 	if (!draw_instance)
 		return;

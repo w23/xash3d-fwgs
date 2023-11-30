@@ -671,9 +671,6 @@ qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t a
 }
 
 void R_RenderModelDestroy( vk_render_model_t* model ) {
-	if (model->dynamic_polylights)
-		Mem_Free(model->dynamic_polylights);
-
 	if (model->rt_model)
 		RT_ModelDestroy(model->rt_model);
 }
@@ -791,8 +788,6 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color_srgb = args.color,
-			.dynamic_polylights = model->dynamic_polylights,
-			.dynamic_polylights_count = model->dynamic_polylights_count,
 			.override = {
 				.material = args.material_override,
 				.geoms = model->geometries,

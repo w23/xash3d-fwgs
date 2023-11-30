@@ -60,9 +60,6 @@ typedef struct {
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color_srgb;
 
-	struct rt_light_add_polygon_s *dynamic_polylights;
-	int dynamic_polylights_count;
-
 	struct {
 		const struct r_vk_material_s *material;
 
