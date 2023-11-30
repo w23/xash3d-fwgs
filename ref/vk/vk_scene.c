@@ -252,6 +252,8 @@ void R_NewMap( void ) {
 	// Make sure that EntityData doesn't accidentally reference old pointers.
 	VK_EntityDataClear();
 
+	RT_FrameDiscontinuity();
+
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
 		return;

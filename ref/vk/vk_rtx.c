@@ -87,6 +87,7 @@ static struct {
 	rt_resource_t res[MAX_RESOURCES];
 
 	qboolean reload_pipeline;
+	qboolean discontinuity;
 
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
@@ -318,7 +319,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		src->image = tmp_img;
 
 		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (res->resource.write.pipelines == 0) {
+		if (g_rtx.discontinuity || res->resource.write.pipelines == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
 			R_VkImageClear( cmdbuf, res->image.image );
 			res->resource.write.pipelines = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -656,6 +657,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 tail:
 	APROF_SCOPE_END(ray_frame_end);
+	g_rtx.discontinuity = false;
 }
 
 static void reloadPipeline( void ) {
@@ -741,4 +743,8 @@ void VK_RayShutdown( void ) {
 
 	RT_VkAccelShutdown();
 	RT_DynamicModelShutdown();
+}
+
+void RT_FrameDiscontinuity( void ) {
+	g_rtx.discontinuity = true;
 }
