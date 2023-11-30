@@ -84,3 +84,7 @@ typedef struct {
 } rt_frame_add_once_t;
 
 void RT_FrameAddOnce( rt_frame_add_once_t args );
+
+// Signal that the next frame is discontinuous, and all accumulated screen-space
+// statistics should be reset. Should help with newmap/saveload/teleport denoiser artifacts.
+void RT_FrameDiscontinuity( void );

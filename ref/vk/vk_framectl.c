@@ -642,7 +642,10 @@ static rgbdata_t *R_VkReadPixels( void ) {
 				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
 	}
 
-	submit( combuf, true, draw );
+	{
+		const qboolean wait = true;
+		submit( combuf, wait, draw );
+	}
 
 	// copy bytes to buffer
 	{
@@ -705,6 +708,8 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	int	width = 0, height = 0;
 	qboolean	result;
 
+	const uint64_t start_ns = aprof_time_now_ns();
+
 	// get screen frame
 	rgbdata_t *r_shot = R_VkReadPixels();
 	if (!r_shot)
@@ -745,10 +750,15 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	gEngine.Image_Process( &r_shot, width, height, flags, 0.0f );
 
 	// write image
+	const uint64_t save_begin_ns = aprof_time_now_ns();
 	result = gEngine.FS_SaveImage( filename, r_shot );
+	const uint64_t save_end_ns = aprof_time_now_ns();
+
 	gEngine.fsapi->AllowDirectPaths( false );			// always reset after store screenshot
 	gEngine.FS_FreeImage( r_shot );
 
-	gEngine.Con_Printf("Wrote screenshot %s\n", filename);
+	const uint64_t end_ns = aprof_time_now_ns();
+	gEngine.Con_Printf("Wrote screenshot %s. Saving file: %.03fms, total: %.03fms\n",
+		filename, (save_end_ns - save_begin_ns) / 1e6, (end_ns - start_ns) / 1e6);
 	return result;
 }

@@ -46,6 +46,7 @@ typedef struct {
 
 typedef struct vk_brush_model_s {
 	model_t *engine_model;
+	int patch_rendermode;
 
 	r_geometry_range_t geometry;
 
@@ -428,57 +429,6 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-#if 0 // TOO OLD
-static void brushDrawWaterSurfaces( const cl_entity_t *ent, const vec4_t color, const matrix4x4 transform ) {
-	const model_t *model = ent->model;
-	vec3_t mins, maxs;
-
-	if( !VectorIsNull( ent->angles ))
-	{
-		for( int i = 0; i < 3; i++ )
-		{
-			mins[i] = ent->origin[i] - model->radius;
-			maxs[i] = ent->origin[i] + model->radius;
-		}
-		//rotated = true;
-	}
-	else
-	{
-		VectorAdd( ent->origin, model->mins, mins );
-		VectorAdd( ent->origin, model->maxs, maxs );
-		//rotated = false;
-	}
-
-	// if( R_CullBox( mins, maxs ))
-	// 	return;
-
-	VK_RenderModelDynamicBegin( brushRenderModeToRenderType(ent->curstate.rendermode), color, transform, "%s water", model->name );
-
-	// Iterate through all surfaces, find *TURB*
-	for( int i = 0; i < model->nummodelsurfaces; i++ )
-	{
-		const msurface_t *surf = model->surfaces + model->firstmodelsurface + i;
-
-		if( !FBitSet( surf->flags, SURF_DRAWTURB ) && !FBitSet( surf->flags, SURF_DRAWTURB_QUADS) )
-			continue;
-
-		if( surf->plane->type != PLANE_Z && !FBitSet( ent->curstate.effects, EF_WATERSIDES ))
-			continue;
-
-		if( mins[2] + 1.0f >= surf->plane->dist )
-			continue;
-
-		EmitWaterPolys( ent, surf, false );
-	}
-
-	// submit as dynamic model
-	VK_RenderModelDynamicCommit();
-
-	// TODO:
-	// - upload water geometry only once, animate in compute/vertex shader
-}
-#endif
-
 typedef struct {
 	const cl_entity_t *ent;
 	const msurface_t *surfaces;
@@ -857,6 +807,9 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	else
 		Matrix4x4_LoadIdentity(transform);
 
+	if (bmodel->patch_rendermode >= 0)
+		render_mode = bmodel->patch_rendermode;
+
 	vec4_t color = {1, 1, 1, 1};
 	vk_render_type_e render_type = kVkRenderTypeSolid;
 	switch (render_mode) {
@@ -1042,7 +995,7 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 
 typedef struct {
 	const model_t *mod;
-	const vk_brush_model_t *bmodel;
+	vk_brush_model_t *bmodel;
 	model_sizes_t sizes;
 	uint32_t base_vertex_offset;
 	uint32_t base_index_offset;
@@ -1302,8 +1255,14 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int index_offset = args.base_index_offset;
 
 	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
-	if (entity_patch)
-		DEBUG("Found entity_patch(matmap_count=%d) for model \"%s\"", entity_patch->matmap_count, args.mod->name);
+	if (entity_patch) {
+		DEBUG("Found entity_patch(matmap_count=%d, rendermode_patched=%d rendermode=%d) for model \"%s\"",
+			entity_patch->matmap_count, entity_patch->rendermode_patched, entity_patch->rendermode, args.mod->name);
+
+		if (entity_patch->rendermode_patched > 0)
+			args.bmodel->patch_rendermode = entity_patch->rendermode;
+	}
+
 	connectVertices(args.mod, entity_patch ? entity_patch->smooth_entire_model : false);
 
 	// Load sorted by gl_texturenum
@@ -1616,6 +1575,7 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	g_brush.models[g_brush.models_count++] = bmodel;
 
 	bmodel->engine_model = mod;
+	bmodel->patch_rendermode = -1;
 	mod->cache.data = bmodel;
 
 	Matrix4x4_LoadIdentity(bmodel->prev_transform);

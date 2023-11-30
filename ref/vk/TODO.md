@@ -1,3 +1,10 @@
+# 2023-11-28 E338
+- [x] rendertest
+    - [x] read imagecompare results
+    - [x] html report
+- [-] rendermode patch
+	- [ ] track patch by boolean, not another field
+
 # 2023-11-27 E337
 - [x] make rendetest.py the central script
     - [x] parallelize/make gifs
@@ -7,7 +14,6 @@
      - [ ] consider passing a special flag for single-sided blended surfaces (i.e. brush surfaces)
 - [x] fix per-entity material mapping, #669
     - [x] add to rendertest
-- [ ] html report
 
 # 2023-11-24 E336
 - reproducible rendering:
