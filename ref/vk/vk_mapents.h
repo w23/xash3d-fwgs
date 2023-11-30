@@ -106,8 +106,6 @@ typedef struct {
 	string model;
 	vec3_t origin;
 
-	qboolean origin_patched;
-
 #define MAX_MATERIAL_MAPPINGS 8
 	int matmap_count;
 	struct {
@@ -116,7 +114,6 @@ typedef struct {
 	} matmap[MAX_MATERIAL_MAPPINGS];
 
 	int rendermode;
-	int patch_rendermode_plus_one;
 
 	qboolean smooth_entire_model;
 
@@ -126,6 +123,10 @@ typedef struct {
 
 	struct cl_entity_s *ent;
 	*/
+
+	// TODO flags
+	qboolean origin_patched;
+	qboolean rendermode_patched;
 } xvk_mapent_func_any_t;
 
 typedef struct {

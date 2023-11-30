@@ -1256,11 +1256,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 	const xvk_mapent_func_any_t *const entity_patch = getModelFuncAnyPatch(args.mod);
 	if (entity_patch) {
-		DEBUG("Found entity_patch(matmap_count=%d, rendermode=%d) for model \"%s\"",
-			entity_patch->matmap_count, entity_patch->patch_rendermode_plus_one - 1, args.mod->name);
+		DEBUG("Found entity_patch(matmap_count=%d, rendermode_patched=%d rendermode=%d) for model \"%s\"",
+			entity_patch->matmap_count, entity_patch->rendermode_patched, entity_patch->rendermode, args.mod->name);
 
-		if (entity_patch->patch_rendermode_plus_one > 0)
-			args.bmodel->patch_rendermode = entity_patch->patch_rendermode_plus_one - 1;
+		if (entity_patch->rendermode_patched > 0)
+			args.bmodel->patch_rendermode = entity_patch->rendermode;
 	}
 
 	connectVertices(args.mod, entity_patch ? entity_patch->smooth_entire_model : false);

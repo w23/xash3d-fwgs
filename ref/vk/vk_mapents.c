@@ -527,8 +527,9 @@ static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_field
 	}
 
 	if (have_fields & Field_rendermode) {
-		e->patch_rendermode_plus_one = props->rendermode + 1;
-		DEBUG("Patching ent=%d func_any=%d rendermode=%d", e->entity_index, index, e->patch_rendermode_plus_one);
+		e->rendermode = props->rendermode;
+		e->rendermode_patched = true;
+		DEBUG("Patching ent=%d func_any=%d rendermode=%d", e->entity_index, index, e->rendermode);
 	}
 
 	if (have_fields & Field__xvk_smooth_entire_model) {
