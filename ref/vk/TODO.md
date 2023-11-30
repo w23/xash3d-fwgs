@@ -4,6 +4,12 @@
 - [x] missing polylight on c2a1b
 	- [x] "proper" slow fix: make func_water emissive surfaces dynamic
 		- [x] extract dynamic polylights from render/rt models
+- [x] Reuse GPU scope names
+- [x] Support changing screen resolution up to UHD
+- [ ] Better resolution changes:
+    - [ ] Dynamic max resolution (start with current one, then grow by some growth factor)
+    - [ ] Increase/dynamic devmem count.
+        - [ ] Dynamic array primitive
 
 # 2023-11-28 E338
 - [x] rendertest
