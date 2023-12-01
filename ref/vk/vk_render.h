@@ -105,16 +105,6 @@ typedef struct vk_render_model_s {
 	vk_render_geometry_t *geometries;
 
 	struct rt_model_s *rt_model;
-
-	// This model will be one-frame only, its buffers are not preserved between frames
-	// TODO deprecate
-	qboolean dynamic;
-
-	// Polylights which need to be added per-frame dynamically
-	// Used for non-worldmodel brush models which are not static
-	// TODO this doesn't belong here at all
-	struct rt_light_add_polygon_s *dynamic_polylights;
-	int dynamic_polylights_count;
 } vk_render_model_t;
 
 // Initialize model from scratch

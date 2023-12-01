@@ -59,7 +59,7 @@ Ray getPrimaryRay(in vec2 uv) {
 
 void main() {
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
-	const ivec2 res = ivec2(imageSize(out_position_t));
+	const ivec2 res = ubo.ubo.res;
 	if (any(greaterThanEqual(pix, res))) {
 		return;
 	}

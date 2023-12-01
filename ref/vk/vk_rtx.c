@@ -30,17 +30,8 @@
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
-// TODO settings/realtime modifiable/adaptive
-#if 1
-#define FRAME_WIDTH 1280
-#define FRAME_HEIGHT 800
-#elif 0
-#define FRAME_WIDTH 2560
-#define FRAME_HEIGHT 1440
-#else
-#define FRAME_WIDTH 1920
-#define FRAME_HEIGHT 1080
-#endif
+#define MIN_FRAME_WIDTH 1280
+#define MIN_FRAME_HEIGHT 800
 
 	// TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
@@ -86,10 +77,12 @@ static struct {
 
 	rt_resource_t res[MAX_RESOURCES];
 
+	matrix4x4 prev_inv_proj, prev_inv_view;
+
 	qboolean reload_pipeline;
 	qboolean discontinuity;
 
-	matrix4x4 prev_inv_proj, prev_inv_view;
+	int max_frame_width, max_frame_height;
 
 	struct {
 		cvar_t *rt_debug_display_only;
@@ -100,6 +93,7 @@ static struct {
 } g_rtx = {0};
 
 static int findResource(const char *name) {
+	// TODO hash table
 	// Find the exact match if exists
 	// There might be gaps, so we need to check everything
 	for (int i = 0; i < MAX_RESOURCES; ++i) {
@@ -110,7 +104,7 @@ static int findResource(const char *name) {
 	return -1;
 }
 
-static int getResourceSlotForName(const char *name) {
+static int findResourceOrEmptySlot(const char *name) {
 	const int index = findResource(name);
 	if (index >= 0)
 		return index;
@@ -200,7 +194,7 @@ static uint32_t getRandomSeed( void ) {
 	return (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 }
 
-static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y ) {
+static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
 	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
 	matrix4x4 proj_inv, view_inv;
@@ -218,7 +212,9 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	Matrix4x4_Copy(g_rtx.prev_inv_view, view_inv);
 	Matrix4x4_Copy(g_rtx.prev_inv_proj, proj_inv);
 
-	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)FRAME_HEIGHT);
+	ubo->res[0] = frame_width;
+	ubo->res[1] = frame_height;
+	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ubo->frame_counter = frame_counter;
 
 	parseDebugDisplayValue();
@@ -237,6 +233,7 @@ typedef struct {
 	uint32_t frame_counter;
 	float fov_angle_y;
 	const vk_lights_bindings_t *light_bindings;
+	int frame_width, frame_height;
 } perform_tracing_args_t;
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
@@ -342,7 +339,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	// TODO move this to "TLAS producer"
 	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
 
-	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y);
+	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
 
 	{ // FIXME this should be done automatically inside meatpipe, TODO
 		//const uint32_t size = sizeof(struct Lights);
@@ -378,8 +375,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	R_VkMeatpipePerform(g_rtx.mainpipe, combuf, (vk_meatpipe_perfrom_args_t) {
 		.frame_set_slot = args->frame_index,
-		.width = FRAME_WIDTH,
-		.height = FRAME_HEIGHT,
+		.width = args->frame_width,
+		.height = args->frame_height,
 		.resources = g_rtx.mainpipe_resources,
 	});
 
@@ -388,8 +385,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
-				.width = FRAME_WIDTH,
-				.height = FRAME_HEIGHT,
+				.width = args->frame_width,
+				.height = args->frame_height,
 				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
 			},
@@ -477,7 +474,7 @@ static void reloadMainpipe(void) {
 		// TODO this should be specified as a flag, from rt.json
 		const qboolean output = Q_strcmp("dest", mr->name) == 0;
 
-		const int index = create ? getResourceSlotForName(mr->name) : findResource(mr->name);
+		const int index = create ? findResourceOrEmptySlot(mr->name) : findResource(mr->name);
 		if (index < 0) {
 			ERR("Couldn't find resource/slot for %s", mr->name);
 			goto fail;
@@ -489,14 +486,19 @@ static void reloadMainpipe(void) {
 			newpipe_out = res;
 
 		if (create) {
-			if (res->image.image == VK_NULL_HANDLE || mr->image_format != res->image.format) {
-				if (res->image.image != VK_NULL_HANDLE) {
+			const qboolean is_compatible = (res->image.image != VK_NULL_HANDLE)
+				&& (mr->image_format == res->image.format)
+				&& (g_rtx.max_frame_width <= res->image.width)
+				&& (g_rtx.max_frame_height <= res->image.height);
+
+			if (!is_compatible) {
+				if (res->image.image != VK_NULL_HANDLE)
 					R_VkImageDestroy(&res->image);
-				}
+
 				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
-					.width = FRAME_WIDTH,
-					.height = FRAME_HEIGHT,
+					.width = g_rtx.max_frame_width,
+					.height = g_rtx.max_frame_height,
 					.depth = 1,
 					.mips = 1,
 					.layers = 1,
@@ -515,9 +517,12 @@ static void reloadMainpipe(void) {
 		newpipe_resources[i] = &res->resource;
 
 		if (create) {
-			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 				newpipe_resources[i]->value.image_object = &res->image;
+			}
 
+			// TODO full r/w initialization
+			res->resource.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit
@@ -605,7 +610,23 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// if (vk_core.debug)
 	// 	XVK_RayModel_Validate();
 
-	if (g_rtx.reload_pipeline) {
+	qboolean need_reload = g_rtx.reload_pipeline;
+
+	if (g_rtx.max_frame_width < args->dst.width) {
+		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
+		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
+		// TODO only reload resources, no need to reload the entire pipeline
+		need_reload = true;
+	}
+
+	if (g_rtx.max_frame_height < args->dst.height) {
+		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
+		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
+		// TODO only reload resources, no need to reload the entire pipeline
+		need_reload = true;
+	}
+
+	if (need_reload) {
 		WARN("Reloading RTX shaders/pipelines");
 		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
@@ -619,6 +640,13 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
+	ASSERT(args->dst.width <= g_rtx.max_frame_width);
+	ASSERT(args->dst.height <= g_rtx.max_frame_height);
+
+	// TODO dynamic scaling based on perf
+	const int frame_width = args->dst.width;
+	const int frame_height = args->dst.height;
+
 	// Do not draw when we have no swapchain
 	if (args->dst.image_view == VK_NULL_HANDLE)
 		goto tail;
@@ -628,8 +656,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
-				.width = FRAME_WIDTH,
-				.height = FRAME_HEIGHT,
+				.width = frame_width,
+				.height = frame_height,
 				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
 				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			},
@@ -651,6 +679,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_counter = g_rtx.frame_number,
 			.fov_angle_y = args->fov_angle_y,
 			.light_bindings = &light_bindings,
+			.frame_width = frame_width,
+			.frame_height = frame_height,
 		};
 		performTracing( args->combuf, &trace_args );
 	}
@@ -668,6 +698,9 @@ qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
 	// TODO complain and cleanup on failure
+
+	g_rtx.max_frame_width = MIN_FRAME_WIDTH;
+	g_rtx.max_frame_height = MIN_FRAME_HEIGHT;
 
 	if (!RT_VkAccelInit())
 		return false;

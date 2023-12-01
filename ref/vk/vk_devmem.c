@@ -1,7 +1,7 @@
 #include "vk_devmem.h"
 #include "alolcator.h"
 
-#define MAX_DEVMEM_ALLOCS 16
+#define MAX_DEVMEM_ALLOCS 32
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
 
 typedef struct {
@@ -111,12 +111,6 @@ vk_devmem_t VK_DevMemAllocate(const char *name, VkMemoryRequirements req, VkMemo
 			allocate_flags, type_index);
 	}
 
-	if (vk_core.rtx) {
-		// TODO this is needed only for the ray tracer and only while there's no proper staging
-		// Once staging is established, we can avoid forcing this on every devmem allocation
-		allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-	}
-
 	for (int i = 0; i < g_vk_devmem.num_allocs; ++i) {
 		vk_device_memory_t *const device_memory = g_vk_devmem.allocs + i;
 		if (device_memory->type_index != type_index)
@@ -177,7 +171,13 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 
 	aloPoolFree(device_memory->allocator, mem->priv_.block);
 
+	ASSERT(device_memory->refcount > 0);
 	device_memory->refcount--;
+
+	if (device_memory->refcount == 0) {
+		// FIXME free empty
+		gEngine.Con_Reportf(S_WARN "devmem[%d] reached refcount=0\n", mem->priv_.devmem);
+	}
 }
 
 qboolean VK_DevMemInit( void ) {

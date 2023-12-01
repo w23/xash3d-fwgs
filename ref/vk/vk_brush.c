@@ -65,6 +65,10 @@ typedef struct vk_brush_model_s {
 	int conveyors_count;
 	r_conveyor_t *conveyors;
 	vk_vertex_t *conveyors_vertices;
+
+	// Polylights which need to be added per-frame dynamically
+	struct rt_light_add_polygon_s *dynamic_polylights;
+	int dynamic_polylights_count;
 } vk_brush_model_t;
 
 typedef struct {
@@ -809,6 +813,14 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 
 	if (bmodel->patch_rendermode >= 0)
 		render_mode = bmodel->patch_rendermode;
+
+	// Add dynamic polylights if any
+	for (int i = 0; i < bmodel->dynamic_polylights_count; ++i) {
+		rt_light_add_polygon_t *const polylight = bmodel->dynamic_polylights + i;
+		polylight->transform_row = (const matrix3x4*)transform;
+		polylight->dynamic = true;
+		RT_LightAddPolygon(polylight);
+	}
 
 	vec4_t color = {1, 1, 1, 1};
 	vk_render_type_e render_type = kVkRenderTypeSolid;
@@ -1624,6 +1636,9 @@ static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	ASSERT(bmodel->engine_model->cache.data == bmodel);
 	ASSERT(bmodel->engine_model->type == mod_brush);
 
+	if (bmodel->dynamic_polylights)
+		Mem_Free(bmodel->dynamic_polylights);
+
 	if (bmodel->conveyors_vertices)
 		Mem_Free(bmodel->conveyors_vertices);
 
@@ -1767,10 +1782,10 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 
 	// Non-static brush models may move around and so must have their emissive surfaces treated as dynamic
 	if (!is_static) {
-		if (bmodel->render_model.dynamic_polylights)
-			Mem_Free(bmodel->render_model.dynamic_polylights);
-		bmodel->render_model.dynamic_polylights_count = emissive_surfaces_count;
-		bmodel->render_model.dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->render_model.dynamic_polylights[0]) * emissive_surfaces_count);
+		if (bmodel->dynamic_polylights)
+			Mem_Free(bmodel->dynamic_polylights);
+		bmodel->dynamic_polylights_count = emissive_surfaces_count;
+		bmodel->dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->dynamic_polylights[0]) * emissive_surfaces_count);
 	}
 
 	// Apply all emissive surfaces found
@@ -1811,7 +1826,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			}
 			*/
 		} else {
-			bmodel->render_model.dynamic_polylights[i] = polylight;
+			bmodel->dynamic_polylights[i] = polylight;
 		}
 
 		// Assign the emissive value to the right geometry

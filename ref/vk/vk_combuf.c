@@ -121,6 +121,12 @@ static const char* myStrdup(const char *src) {
 }
 
 int R_VkGpuScope_Register(const char *name) {
+	// Find existing scope with the same name
+	for (int i = 0; i < g_combuf.scopes_count; ++i) {
+		if (Q_strcmp(name, g_combuf.scopes[i].name) == 0)
+			return i;
+	}
+
 	if (g_combuf.scopes_count == MAX_GPU_SCOPES) {
 		gEngine.Con_Printf(S_ERROR "Cannot register GPU profiler scope \"%s\": max number of scope %d reached\n", name, MAX_GPU_SCOPES);
 		return -1;
