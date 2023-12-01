@@ -921,3 +921,17 @@ Observations:
     first frame (verify that?).
 - Image comparison is slow. ~~4.7s for all images.~~
     After optimization: 1.3s for everything. Built using `-O3 -march=native`. Saves into tga. Was > 16s.
+
+# 2023-12-01 E340
+## Dynamic max frame size
+- Why do we even need it: current max of UHD is
+	- (a) too big for most use cases (e.g. steam deck is 800p and can never be larger), wastes too much memory
+	- (b) may be too small for the bright hidpi future
+- Issues with making it dynamic:
+	- Need to resize resources, i.e. g-buffer images.
+	- We can't yet free empty devmem allocations. Freeing devmem entries leads to a bit of refactoring. Need to manage
+	  them using a freelist, handle holes, etc. Or, alternatively, do the dumb iteration over everything twice:
+	  first, looking for an existing compatible allocation,
+	  second, looking for a hole, if no compat allocation found.
+	  Whether that's too slow will be visible when we embark on changelevel optimization journey. And if it is, we
+	  could replace it with proper freelist thing from alolcator.

@@ -30,9 +30,8 @@
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
-// TODO settings/realtime modifiable/adaptive
-#define MAX_FRAME_WIDTH 3840
-#define MAX_FRAME_HEIGHT 2160
+#define MIN_FRAME_WIDTH 1280
+#define MIN_FRAME_HEIGHT 800
 
 	// TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
@@ -78,10 +77,12 @@ static struct {
 
 	rt_resource_t res[MAX_RESOURCES];
 
+	matrix4x4 prev_inv_proj, prev_inv_view;
+
 	qboolean reload_pipeline;
 	qboolean discontinuity;
 
-	matrix4x4 prev_inv_proj, prev_inv_view;
+	int max_frame_width, max_frame_height;
 
 	struct {
 		cvar_t *rt_debug_display_only;
@@ -103,7 +104,7 @@ static int findResource(const char *name) {
 	return -1;
 }
 
-static int getResourceSlotForName(const char *name) {
+static int findResourceOrEmptySlot(const char *name) {
 	const int index = findResource(name);
 	if (index >= 0)
 		return index;
@@ -473,7 +474,7 @@ static void reloadMainpipe(void) {
 		// TODO this should be specified as a flag, from rt.json
 		const qboolean output = Q_strcmp("dest", mr->name) == 0;
 
-		const int index = create ? getResourceSlotForName(mr->name) : findResource(mr->name);
+		const int index = create ? findResourceOrEmptySlot(mr->name) : findResource(mr->name);
 		if (index < 0) {
 			ERR("Couldn't find resource/slot for %s", mr->name);
 			goto fail;
@@ -485,14 +486,19 @@ static void reloadMainpipe(void) {
 			newpipe_out = res;
 
 		if (create) {
-			if (res->image.image == VK_NULL_HANDLE || mr->image_format != res->image.format) {
-				if (res->image.image != VK_NULL_HANDLE) {
+			const qboolean is_compatible = (res->image.image != VK_NULL_HANDLE)
+				&& (mr->image_format == res->image.format)
+				&& (g_rtx.max_frame_width <= res->image.width)
+				&& (g_rtx.max_frame_height <= res->image.height);
+
+			if (!is_compatible) {
+				if (res->image.image != VK_NULL_HANDLE)
 					R_VkImageDestroy(&res->image);
-				}
+
 				const r_vk_image_create_t create = {
 					.debug_name = mr->name,
-					.width = MAX_FRAME_WIDTH,
-					.height = MAX_FRAME_HEIGHT,
+					.width = g_rtx.max_frame_width,
+					.height = g_rtx.max_frame_height,
 					.depth = 1,
 					.mips = 1,
 					.layers = 1,
@@ -511,9 +517,12 @@ static void reloadMainpipe(void) {
 		newpipe_resources[i] = &res->resource;
 
 		if (create) {
-			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 				newpipe_resources[i]->value.image_object = &res->image;
+			}
 
+			// TODO full r/w initialization
+			res->resource.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit
@@ -601,7 +610,23 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// if (vk_core.debug)
 	// 	XVK_RayModel_Validate();
 
-	if (g_rtx.reload_pipeline) {
+	qboolean need_reload = g_rtx.reload_pipeline;
+
+	if (g_rtx.max_frame_width < args->dst.width) {
+		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
+		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
+		// TODO only reload resources, no need to reload the entire pipeline
+		need_reload = true;
+	}
+
+	if (g_rtx.max_frame_height < args->dst.height) {
+		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
+		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
+		// TODO only reload resources, no need to reload the entire pipeline
+		need_reload = true;
+	}
+
+	if (need_reload) {
 		WARN("Reloading RTX shaders/pipelines");
 		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
@@ -615,8 +640,12 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
-	const int frame_width = Q_min(args->dst.width, MAX_FRAME_WIDTH);
-	const int frame_height = Q_min(args->dst.height, MAX_FRAME_HEIGHT);
+	ASSERT(args->dst.width <= g_rtx.max_frame_width);
+	ASSERT(args->dst.height <= g_rtx.max_frame_height);
+
+	// TODO dynamic scaling based on perf
+	const int frame_width = args->dst.width;
+	const int frame_height = args->dst.height;
 
 	// Do not draw when we have no swapchain
 	if (args->dst.image_view == VK_NULL_HANDLE)
@@ -669,6 +698,9 @@ qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
 	// TODO complain and cleanup on failure
+
+	g_rtx.max_frame_width = MIN_FRAME_WIDTH;
+	g_rtx.max_frame_height = MIN_FRAME_HEIGHT;
 
 	if (!RT_VkAccelInit())
 		return false;

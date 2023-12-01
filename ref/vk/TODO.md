@@ -1,3 +1,9 @@
+# 2023-12-01 E340
+- [x] Better resolution changes:
+    - [x] Dynamic max resolution (start with current one, then grow by some growth factor)
+- [ ] Discuss Per-pixel profiling
+- [ ] Discuss Env-based verbose log control
+
 # 2023-11-30 E339
 - [x] rendermode patch
 	- [x] track patch by boolean, not another field
@@ -6,10 +12,7 @@
 		- [x] extract dynamic polylights from render/rt models
 - [x] Reuse GPU scope names
 - [x] Support changing screen resolution up to UHD
-- [ ] Better resolution changes:
-    - [ ] Dynamic max resolution (start with current one, then grow by some growth factor)
-    - [ ] Increase/dynamic devmem count.
-        - [ ] Dynamic array primitive
+    - [x] Increase devmem count.
 
 # 2023-11-28 E338
 - [x] rendertest
