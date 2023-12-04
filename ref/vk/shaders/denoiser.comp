@@ -128,6 +128,9 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 			if ( scale <= 0. )
 				continue;
 
+			const ivec2 p_indirect = pix / INDIRECT_SCALE + ivec2(x, y);
+			const bool do_indirect = all(lessThan(p_indirect, res_scaled)) && all(greaterThanEqual(p_indirect, ivec2(0)));
+
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(DIRECT_DIFFUSE_KERNEL))))
 			{
 				const float direct_diffuse_scale = scale * normpdf(x, direct_diffuse_sigma) * normpdf(y, direct_diffuse_sigma);
@@ -139,13 +142,14 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))))
 			{
-				const ivec2 pscaled = pix / INDIRECT_SCALE + ivec2(x, y);
+				// TODO indirect operates at different scale, do a separate pass
+				if (do_indirect) {
+					const float indirect_diffuse_scale = scale
+						* normpdf(x, indirect_diffuse_sigma)
+						* normpdf(y, indirect_diffuse_sigma);
 
-				if (all(lessThan(pscaled, res_scaled)) && all(greaterThanEqual(pscaled, ivec2(0)))) {
-					const float indirect_diffuse_scale = scale * normpdf(x, indirect_diffuse_sigma) * normpdf(y, indirect_diffuse_sigma);
 					indirect_diffuse_total += indirect_diffuse_scale;
-
-					c.indirect_diffuse += imageLoad(indirect_diffuse, pscaled).rgb * indirect_diffuse_scale;
+					c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb * indirect_diffuse_scale;
 				}
 			}
 
@@ -157,7 +161,10 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				c.direct_specular += imageLoad(light_poly_specular, p).rgb * specular_scale;
 				c.direct_specular += imageLoad(light_point_specular, p).rgb * specular_scale;
 
-				c.indirect_specular += imageLoad(indirect_specular, p / INDIRECT_SCALE).rgb * specular_scale;
+				// TODO indirect operates at different scale, do a separate pass
+				if (do_indirect) {
+					c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb * specular_scale;
+				}
 			}
 		}
 
@@ -254,6 +261,10 @@ void main() {
 			for(int y = -TEMPORAL_KERNEL; y <=TEMPORAL_KERNEL; y++) {
 				const ivec2 p = reproj_pix + ivec2(x, y);
 				if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
+					continue;
+				}
+
+				if (any(greaterThanEqual(reproj_pix, res)) || any(lessThan(reproj_pix, ivec2(0)))) {
 					continue;
 				}
 				const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
