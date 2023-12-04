@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-#define LOG_MODULE LogModule_Material
+#define LOG_MODULE mat
 
 #define MAX_INCLUDE_DEPTH 4
 

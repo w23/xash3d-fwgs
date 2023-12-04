@@ -19,7 +19,7 @@
 
 #include <math.h> // sqrt
 
-#define LOG_MODULE LogModule_Textures
+#define LOG_MODULE tex
 #define MODULE_NAME "textures"
 
 #define MAX_SAMPLERS 8 // TF_NEAREST x 2 * TF_BORDER x 2 * TF_CLAMP x 2

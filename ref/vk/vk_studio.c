@@ -28,7 +28,7 @@
 #include <stdlib.h>
 
 #define MODULE_NAME "studio"
-#define LOG_MODULE LogModule_Studio
+#define LOG_MODULE studio
 
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4

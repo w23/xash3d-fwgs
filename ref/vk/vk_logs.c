@@ -7,17 +7,9 @@ static const struct log_pair_t {
 	const char *name;
 	uint32_t bit;
 } g_log_module_pairs[] = {
-	{"misc", LogModule_Misc},
-	{"tex", LogModule_Textures},
-	{"brush", LogModule_Brush},
-	{"light", LogModule_Lights},
-	{"studio", LogModule_Studio},
-	{"patch", LogModule_Patch},
-	{"mat", LogModule_Material},
-	{"meat", LogModule_Meatpipe},
-	{"rt", LogModule_RT},
-	{"rmain", LogModule_RMain},
-	{"sprite", LogModule_Sprite},
+#define X(m) {LOG_NAME(m), LOG_BIT(m)},
+	LIST_LOG_MODULES(X)
+#undef X
 };
 
 void R_LogSetVerboseModules( const char *p ) {

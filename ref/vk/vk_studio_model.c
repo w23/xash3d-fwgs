@@ -6,7 +6,7 @@
 #include "xash3d_mathlib.h"
 
 #define MODULE_NAME "studio"
-#define LOG_MODULE LogModule_Studio
+#define LOG_MODULE studio
 
 typedef struct {
 	const studiohdr_t *studio_header_key;

@@ -1,3 +1,11 @@
+# 2023-12-04 E341
+- [ ] investigate envlight missing #680
+- [x] add more logs for the above
+- [x] double switchable lights, #679
+- [ ] tone down the specular indirect blur
+- [ ] increase rendertest wait by 1
+- [ ] update rendertest images
+
 # 2023-12-01 E340
 - [x] Better resolution changes:
     - [x] Dynamic max resolution (start with current one, then grow by some growth factor)

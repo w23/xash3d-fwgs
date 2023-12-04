@@ -21,7 +21,7 @@
 
 #include <memory.h>
 
-#define LOG_MODULE LogModule_RMain
+#define LOG_MODULE rmain
 
 ref_api_t gEngine = {0};
 ref_globals_t *gpGlobals = NULL;

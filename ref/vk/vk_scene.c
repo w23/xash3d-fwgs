@@ -30,7 +30,7 @@
 #include <stdlib.h> // qsort
 #include <memory.h>
 
-#define LOG_MODULE LogModule_Misc
+#define LOG_MODULE misc
 
 #define PROFILER_SCOPES(X) \
 	X(scene_render, "VK_SceneRender"); \

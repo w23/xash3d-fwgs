@@ -15,9 +15,8 @@
 
 #include "xash3d_mathlib.h"
 
-#define LOG_MODULE LogModule_RT
-
 #define MODULE_NAME "accel"
+#define LOG_MODULE rt
 
 typedef struct rt_blas_s {
 	const char *debug_name;
