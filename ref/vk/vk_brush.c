@@ -889,14 +889,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 			// Optionally patch by texture_s pointer and run animations
 			const texture_t *t = R_TextureAnimation(ent, geom->surf_deprecate);
 			const int new_tex_id = t->gl_texturenum;
-
-			if (new_tex_id >= 0 && new_tex_id != geom->ye_olde_texture) {
-				geom->ye_olde_texture = new_tex_id;
-				geom->material = R_VkMaterialGetForTexture(new_tex_id);
-				if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
-					g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
-				}
-			}
+			ASSERT(new_tex_id >= 0);
 
 			// Animated textures can be emissive
 			// Add them as dynamic lights for now. It would probably be better if they were static lights (for worldmodel),
@@ -907,6 +900,15 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 				polylight.dynamic = true;
 				polylight.transform_row = (const matrix3x4*)&transform;
 				RT_LightAddPolygon(&polylight);
+			}
+
+			if (new_tex_id == geom->ye_olde_texture)
+				continue;
+
+			geom->ye_olde_texture = new_tex_id;
+			geom->material = R_VkMaterialGetForTexture(new_tex_id);
+			if (updated_textures_count < MAX_ANIMATED_TEXTURES) {
+				g_brush.updated_textures[updated_textures_count++] = bmodel->animated_indexes[i];
 			}
 		}
 
@@ -1378,6 +1380,11 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				material_assigned = true;
 			}
 
+			// Make sure animated textures undergo at least the first update
+			// To update emissive and other texture states
+			if (type == BrushSurface_Animated)
+				model_geometry->ye_olde_texture = -1;
+
 			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
@@ -1737,10 +1744,14 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 
 		switch (type) {
 		case BrushSurface_Regular:
-		case BrushSurface_Animated:
 		case BrushSurface_Water:
 		// No known cases, also needs to be dynamic case BrushSurface_WaterSide:
 			break;
+		// Animated textures are enumerated in `R_BrushModelDraw()` and are added as dynamic lights
+		// when their current frame is emissive. Do not add such surfaces here to avoid adding them twice.
+		// TODO: Most of the animated surfaces are techically static: i.e. they don't really move.
+		// Make a special case for static lights that can be off.
+		case BrushSurface_Animated:
 		default:
 			continue;
 		}
