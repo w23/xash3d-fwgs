@@ -2,18 +2,23 @@
 
 #include "vk_common.h"
 
+#define LIST_LOG_MODULES(X) \
+	X(misc) \
+	X(tex) \
+	X(brush) \
+	X(light) \
+	X(studio) \
+	X(patch) \
+	X(mat) \
+	X(meat) \
+	X(rt) \
+	X(rmain) \
+	X(sprite) \
+
 enum {
-	LogModule_Misc = (1<<0),
-	LogModule_Textures = (1<<1),
-	LogModule_Brush = (1<<2),
-	LogModule_Lights = (1<<3),
-	LogModule_Studio = (1<<4),
-	LogModule_Patch = (1<<5),
-	LogModule_Material = (1<<6),
-	LogModule_Meatpipe = (1<<7),
-	LogModule_RT = (1<<8),
-	LogModule_RMain = (1<<9),
-	LogModule_Sprite = (1<<10),
+#define X(m) LogModule_##m,
+LIST_LOG_MODULES(X)
+#undef X
 };
 
 extern uint32_t g_log_debug_bits;
@@ -24,26 +29,32 @@ extern uint32_t g_log_debug_bits;
 // - file:line in message
 // - consistent prefixes (see THROTTLED variant)
 
-#define DEBUG(msg, ...) \
+#define LOG_BIT(m) (1 << LogModule_##m)
+#define LOG_NAME(m) #m
+
+#define LOG_VERBOSE_IMPL(m) (g_log_debug_bits & LOG_BIT(m))
+#define LOG_VERBOSE LOG_VERBOSE_IMPL(LOG_MODULE)
+
+#define DEBUG_IMPL(module, msg, ...) \
 	do { \
-		if (g_log_debug_bits & (LOG_MODULE)) { \
-			gEngine.Con_Reportf("vk: " msg "\n", ##__VA_ARGS__); \
+		if (g_log_debug_bits & LOG_BIT(module)) { \
+			gEngine.Con_Reportf("vk/" LOG_NAME(module) ": " msg "\n", ##__VA_ARGS__); \
 		} \
 	} while(0)
 
-#define WARN(msg, ...) \
+#define WARN_IMPL(module, msg, ...) \
 	do { \
-		gEngine.Con_Printf(S_WARN "vk: " msg "\n", ##__VA_ARGS__); \
+		gEngine.Con_Printf(S_WARN "vk/" LOG_NAME(module) ": " msg "\n", ##__VA_ARGS__); \
 	} while(0)
 
-#define ERR(msg, ...) \
+#define ERR_IMPL(module, msg, ...) \
 	do { \
-		gEngine.Con_Printf(S_ERROR "vk: " msg "\n", ##__VA_ARGS__); \
+		gEngine.Con_Printf(S_ERROR "vk/" LOG_NAME(module) ": " msg "\n", ##__VA_ARGS__); \
 	} while(0)
 
-#define INFO(msg, ...) \
+#define INFO_IMPL(module, msg, ...) \
 	do { \
-		gEngine.Con_Printf("vk: " msg "\n", ##__VA_ARGS__); \
+		gEngine.Con_Printf("vk/" LOG_NAME(module) ": " msg "\n", ##__VA_ARGS__); \
 	} while(0)
 
 #define PRINT_THROTTLED(delay, prefix, msg, ...) \
@@ -56,6 +67,11 @@ extern uint32_t g_log_debug_bits;
 		} \
 		++called; \
 	} while(0)
+
+#define DEBUG(msg, ...) DEBUG_IMPL(LOG_MODULE, msg, ##__VA_ARGS__)
+#define WARN(msg, ...) WARN_IMPL(LOG_MODULE, msg, ##__VA_ARGS__)
+#define ERR(msg, ...) ERR_IMPL(LOG_MODULE, msg, ##__VA_ARGS__)
+#define INFO(msg, ...) INFO_IMPL(LOG_MODULE, msg, ##__VA_ARGS__)
 
 #define ERROR_THROTTLED(delay, msg, ...) PRINT_THROTTLED(delay, S_ERROR "vk: ", msg, ##__VA_ARGS__)
 

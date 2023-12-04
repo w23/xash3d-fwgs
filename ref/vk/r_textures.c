@@ -18,8 +18,8 @@
 #include <memory.h>
 #include <math.h>
 
-#define LOG_MODULE LogModule_Textures
 #define MODULE_NAME "textures"
+#define LOG_MODULE tex
 
 vk_textures_global_t tglob = {0};
 

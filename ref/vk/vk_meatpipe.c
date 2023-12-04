@@ -9,7 +9,7 @@
 
 #include "profiler.h"
 
-#define LOG_MODULE LogModule_Meatpipe
+#define LOG_MODULE meat
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 

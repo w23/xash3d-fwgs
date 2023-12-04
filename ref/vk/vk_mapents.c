@@ -9,7 +9,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define LOG_MODULE LogModule_Patch
+#define LOG_MODULE patch
 
 xvk_map_entities_t g_map_entities;
 
@@ -640,7 +640,7 @@ static void appendExcludedSingles(const entity_props_t *props) {
 
 	memcpy(g_map_entities.smoothing.excluded + g_map_entities.smoothing.excluded_count, props->_xvk_smoothing_excluded.values, count * sizeof(int));
 
-	if (g_log_debug_bits & LOG_MODULE) {
+	if (LOG_VERBOSE) {
 		DEBUG("Adding %d smoothing-excluded surfaces", props->_xvk_smoothing_excluded.num);
 		for (int i = 0; i < props->_xvk_smoothing_excluded.num; ++i) {
 			DEBUG("%d", props->_xvk_smoothing_excluded.values[i]);

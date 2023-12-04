@@ -26,7 +26,7 @@
 
 #include <string.h>
 
-#define LOG_MODULE LogModule_RT
+#define LOG_MODULE rt
 
 #define MAX_FRAMES_IN_FLIGHT 2
 

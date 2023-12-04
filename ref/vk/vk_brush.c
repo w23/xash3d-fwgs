@@ -26,7 +26,7 @@
 #include <memory.h>
 
 #define MODULE_NAME "brush"
-#define LOG_MODULE LogModule_Brush
+#define LOG_MODULE brush
 
 typedef struct {
 	int surfaces_count;

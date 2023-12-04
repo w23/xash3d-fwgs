@@ -1,3 +1,7 @@
+# 2023-12-04 E341
+- [ ] investigate envlight missing #680
+- [x] add more logs for the above
+
 # 2023-12-01 E340
 - [x] Better resolution changes:
     - [x] Dynamic max resolution (start with current one, then grow by some growth factor)

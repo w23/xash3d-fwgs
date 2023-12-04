@@ -25,7 +25,7 @@
 #include "pmtrace.h"
 
 #define MODULE_NAME "light"
-#define LOG_MODULE LogModule_Lights
+#define LOG_MODULE light
 
 #define PROFILER_SCOPES(X) \
 	X(finalize , "RT_LightsFrameEnd"); \
