@@ -935,3 +935,79 @@ Observations:
 	  second, looking for a hole, if no compat allocation found.
 	  Whether that's too slow will be visible when we embark on changelevel optimization journey. And if it is, we
 	  could replace it with proper freelist thing from alolcator.
+
+# 2023-12-05 E342
+## Shader profiling
+### Data sources
+- VK_KHR_performance_query
+    - Available only on AMD ≤ RX 6900 on Linux and Intel cards
+    - Example list of metrics available on my AMD card:
+        - Got 17 counters:
+            - 0: command GRBM/GPU active cycles, C (cycles the GPU is active processing a command buffer.)
+            - 1: command Shaders/Waves, generic (Number of waves executed)
+            - 2: command Shaders/Instructions, generic (Number of Instructions executed)
+            - 3: command Shaders/VALU Instructions, generic (Number of VALU Instructions executed)
+            - 4: command Shaders/SALU Instructions, generic (Number of SALU Instructions executed)
+            - 5: command Shaders/VMEM Load Instructions, generic (Number of VMEM load instructions executed)
+            - 6: command Shaders/SMEM Load Instructions, generic (Number of SMEM load instructions executed)
+            - 7: command Shaders/VMEM Store Instructions, generic (Number of VMEM store instructions executed)
+            - 8: command Shaders/LDS Instructions, generic (Number of LDS Instructions executed)
+            - 9: command Shaders/GDS Instructions, generic (Number of GDS Instructions executed)
+            - 10: command Shader Utilization/VALU Busy, % (Percentage of time the VALU units are busy)
+            - 11: command Shader Utilization/SALU Busy, % (Percentage of time the SALU units are busy)
+            - 12: command Memory/VRAM read size, b (Number of bytes read from VRAM)
+            - 13: command Memory/VRAM write size, b (Number of bytes written to VRAM)
+            - 14: command Memory/L0 cache hit ratio, b (Hit ratio of L0 cache)
+            - 15: command Memory/L1 cache hit ratio, b (Hit ratio of L1 cache)
+            - 16: command Memory/L2 cache hit ratio, b (Hit ratio of L2 cache)
+- VK_KHR_shader_clock
+    - Available almost everywhere
+    - Enables:
+        - https://registry.khronos.org/OpenGL/extensions/ARB/ARB_shader_clock.txt
+            - `uint64_t clockARB()` || `uvec2 clock2x32ARB()`
+            - gives subgroup-local monotonic time in unspecified units
+        - https://github.com/KhronosGroup/GLSL/blob/master/extensions/ext/GL_EXT_shader_realtime_clock.txt
+            - `clockRealtimeEXT` || `clockRealtime2x32EXT`
+            - gpu-global time in unspecified units
+
+### Data collection
+#### Shader clocks
+Need to get per-pixel values out of shader.
+##### Simplest method: thermal map
+The simplest method is to have yet another texture that we can write into, and have a rt_debug_display_only output.
+- Texture format? E.g.:
+    - rgba16f -- 4 channels for 4 delta values scaled by something from UBO
+    - rgba16f -- 4 channels for 4 absolute values scaled by UBO const
+
+This doesn't need anything special. Can use basically the same machinery we have now.
+
+##### On-GPU profile analysis
+1. Shader specifies arbitrary buffer+struct
+2. Sebastian reads struct size (w/o parsing fields) and notes that in meat file
+3. Native code just creates the buffer for GPU only, w/o being aware of what's inside.
+4. Have a dedicated compute pass reading these buffers and summarizing them into a texture or a buffer defined at compile time.
+5. Read this texture/buffer after frame.
+
+This would need:
+- sebastian parsing buffer array item size
+- meat buffer item size metadata
+- native buffer creation
+- native buffer r/w state/barrier tracking
+
+If extracting data from buffer:
+- passing vk buffer data back to cpu land w/ synchronization
+
+##### Universal method would be
+1. Allow specifying arbitrary structures/buffers in shaders.
+2. Teach sebastian.py to parse these structures and encode their layout in meat files
+3. Native could would create such structures with specified size/resolution (how to know expected size?)
+4. Native would then copy them over to CPU land and parse based on meat metadata.
+
+This would need the same as above, plus:
+- sebastian parsing struct fields
+- meatpipe reading fields
+
+- Q: how to analyze this volume of data on CPU?
+- A: probably should still do it on GPU lol
+
+This would also allow passing arbitrary per-pixel data from shaders, which would make shader debugging much much easier.
