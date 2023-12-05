@@ -167,6 +167,8 @@ static void parseDebugDisplayValue( void ) {
 	X(INDIRECT) \
 	X(INDIRECT_SPEC) \
 	X(INDIRECT_DIFF) \
+	X(TIME_DIRECT_POLY) \
+	X(TIME_DIRECT_POINT) \
 
 #define X(suffix) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \

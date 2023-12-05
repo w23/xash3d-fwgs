@@ -192,6 +192,8 @@ struct PushConstants {
 #define DEBUG_DISPLAY_INDIRECT_SPEC 10
 #define DEBUG_DISPLAY_INDIRECT_DIFF 11
 #define DEBUG_DISPLAY_TRIHASH 12
+#define DEBUG_DISPLAY_TIME_DIRECT_POLY 13
+#define DEBUG_DISPLAY_TIME_DIRECT_POINT 14
 // add more when needed
 
 struct UniformBuffer {

@@ -1,7 +1,12 @@
+#extension GL_ARB_shader_clock: enable
+#extension GL_EXT_shader_realtime_clock: enable
+#extension GL_ARB_gpu_shader_int64: enable
 #include "utils.glsl"
 #include "noise.glsl"
 
 #include "ray_kusochki.glsl"
+
+vec4 profile = vec4(0.);
 
 #include "light.glsl"
 
@@ -11,7 +16,12 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
+//#define timeNow clockRealtimeEXT
+#define timeNow clockARB
+
 void main() {
+	const uint64_t time_begin = timeNow();
+
 #ifdef RAY_TRACE
 	const vec2 uv = (gl_LaunchIDEXT.xy + .5) / gl_LaunchSizeEXT.xy * 2. - 1.;
 	const ivec2 pix = ivec2(gl_LaunchIDEXT.xy);
@@ -49,13 +59,20 @@ void main() {
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	computeLighting(pos + geometry_normal * .001, shading_normal, throughput, -direction, material, diffuse, specular);
 
+	const uint64_t time_end = timeNow();
+	const uint64_t time_diff = time_end - time_begin;
+
+	const float time_diff_f = float(time_diff) / 1e6;////float(time_diff >> 60);// / 1e6;
+
 #if LIGHT_POINT
-	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
+	imageStore(out_light_point_diffuse, pix, vec4(diffuse, time_diff_f));
 	imageStore(out_light_point_specular, pix, vec4(specular, 0.f));
+	//imageStore(out_light_point_profile, pix, profile);
 #endif
 
 #if LIGHT_POLYGON
-	imageStore(out_light_poly_diffuse, pix, vec4(diffuse, 0.f));
+	imageStore(out_light_poly_diffuse, pix, vec4(diffuse, time_diff_f));
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
+	//imageStore(out_light_poly_profile, pix, profile);
 #endif
 }
