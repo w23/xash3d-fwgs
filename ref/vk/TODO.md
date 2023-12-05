@@ -1,10 +1,14 @@
+# 2023-12-05 E342
+- [x] tone down the specular indirect blur
+- [ ] try func_wall static light opt, #687
+- [x] increase rendertest wait by 1 -- increased scroll speed instead
+- [x] update rendertest images
+
 # 2023-12-04 E341
-- [ ] investigate envlight missing #680
+- [-] investigate envlight missing #680
+	- couldn't reproduce more than once
 - [x] add more logs for the above
 - [x] double switchable lights, #679
-- [ ] tone down the specular indirect blur
-- [ ] increase rendertest wait by 1
-- [ ] update rendertest images
 
 # 2023-12-01 E340
 - [x] Better resolution changes:

@@ -95,16 +95,19 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 
 	const int DIRECT_DIFFUSE_KERNEL = 3;
 	const int INDIRECT_DIFFUSE_KERNEL = 5;
-	const int SPECULAR_KERNEL = 2;
-	const int KERNEL_SIZE = max(max(DIRECT_DIFFUSE_KERNEL, INDIRECT_DIFFUSE_KERNEL), SPECULAR_KERNEL);
+	const int DIRECT_SPECULAR_KERNEL = 2;
+	const int INDIRECT_SPECULAR_KERNEL = 2;
+	const int KERNEL_SIZE = max(max(max(DIRECT_DIFFUSE_KERNEL, INDIRECT_DIFFUSE_KERNEL), DIRECT_SPECULAR_KERNEL), INDIRECT_SPECULAR_KERNEL);
 
 	const float direct_diffuse_sigma = DIRECT_DIFFUSE_KERNEL / 2.;
 	const float indirect_diffuse_sigma = INDIRECT_DIFFUSE_KERNEL / 2.;
-	const float specular_sigma = SPECULAR_KERNEL / 2.;
+	const float direct_specular_sigma = DIRECT_SPECULAR_KERNEL / 2.;
+	const float indirect_specular_sigma = INDIRECT_SPECULAR_KERNEL / 2.;
 
 	float direct_diffuse_total = 0.;
 	float indirect_diffuse_total = 0.;
-	float specular_total = 0.;
+	float direct_specular_total = 0.;
+	float indirect_specular_total = 0.;
 
 	const ivec2 res_scaled = res / INDIRECT_SCALE;
 	for (int x = -KERNEL_SIZE; x <= KERNEL_SIZE; ++x)
@@ -140,29 +143,34 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
-			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))))
+			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
 			{
 				// TODO indirect operates at different scale, do a separate pass
-				if (do_indirect) {
-					const float indirect_diffuse_scale = scale
-						* normpdf(x, indirect_diffuse_sigma)
-						* normpdf(y, indirect_diffuse_sigma);
+				const float indirect_diffuse_scale = scale
+					* normpdf(x, indirect_diffuse_sigma)
+					* normpdf(y, indirect_diffuse_sigma);
 
-					indirect_diffuse_total += indirect_diffuse_scale;
-					c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb * indirect_diffuse_scale;
-				}
+				indirect_diffuse_total += indirect_diffuse_scale;
+				c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb * indirect_diffuse_scale;
 			}
 
-			if (all(lessThan(abs(ivec2(x, y)), ivec2(SPECULAR_KERNEL))))
+			if (all(lessThan(abs(ivec2(x, y)), ivec2(DIRECT_SPECULAR_KERNEL))))
 			{
-				const float specular_scale = scale * normpdf(x, specular_sigma) * normpdf(y, specular_sigma);
-				specular_total += specular_scale;
+				const float specular_scale = scale * normpdf(x, direct_specular_sigma) * normpdf(y, direct_specular_sigma);
+				direct_specular_total += specular_scale;
 
 				c.direct_specular += imageLoad(light_poly_specular, p).rgb * specular_scale;
 				c.direct_specular += imageLoad(light_point_specular, p).rgb * specular_scale;
+			}
 
-				// TODO indirect operates at different scale, do a separate pass
+			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_SPECULAR_KERNEL)))) {
+				const ivec2 p_indirect = (pix + ivec2(x, y)) / INDIRECT_SCALE;// + ivec2(x, y);
+				const bool do_indirect = all(lessThan(p_indirect, res_scaled)) && all(greaterThanEqual(p_indirect, ivec2(0)));
+
 				if (do_indirect) {
+					// TODO indirect operates at different scale, do a separate pass
+					const float specular_scale = scale * normpdf(x, indirect_specular_sigma) * normpdf(y, indirect_specular_sigma);
+					indirect_specular_total += specular_scale;
 					c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb * specular_scale;
 				}
 			}
@@ -174,10 +182,11 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 	if (indirect_diffuse_total > 0.)
 		c.indirect_diffuse *= indirect_diffuse_total;
 
-	if (specular_total > 0.) {
-		c.direct_specular *= specular_total;
-		c.indirect_specular *= specular_total;
-	}
+	if (direct_specular_total > 0.)
+		c.direct_specular *= direct_specular_total;
+
+	if (indirect_specular_total > 0.)
+		c.indirect_specular *= indirect_specular_total;
 
 	return c;
 }
