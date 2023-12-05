@@ -1,16 +1,50 @@
+# 2023-12-05 E342
+- [x] tone down the specular indirect blur
+- [-] try func_wall static light opt, #687
+	→ decided to postpone, a lot more logic changes are needed
+- [x] increase rendertest wait by 1 -- increased scroll speed instead
+- [x] update rendertest images
+- [x] Discuss shader profiling
+- [-] Discuss Env-based verbose log control
+
+Longer-term agenda for current season:
+- [ ] Tools:
+	- [ ] Shader profiling. Measure impact of changes. Regressions.
+- [ ] Better PBR math, e.g.:
+	- [ ] fix black dielectrics, #666
+- [ ] Transparency:
+	- [ ] Figure out why additive transparency differs visibly from raster
+	- [ ] Extract and specialize effects, e.g.
+		- [ ] Rays -> volumetrics
+		- [ ] Glow -> bloom
+		- [ ] Smoke -> volumetrics
+		- [ ] Sprites/portals -> emissive volumetrics
+		- [ ] Holo models -> emissive additive
+		- [ ] Some additive -> translucent
+		- [ ] what else
+	- [ ] Proper material mode for translucency, with reflections, refraction (index), fresnel, etc.
+- [ ] Lighting
+	- [ ] Point spheres sampling
+	- [ ] Increase limits
+	- [ ] s/poly/triangle/ -- simpler sampling, universal
+	- [ ] Better and dynamically sized clusters
+	- [ ] Cache rays -- do not cast shadow rays for everything, do a separate ray-only pass for visibility caching
+- [ ] Bounces
+	- [ ] Moar bounces
+	- [ ] MIS
+	- [ ] Cache directions for strong indirect light
+
 # 2023-12-04 E341
-- [ ] investigate envlight missing #680
+- [-] investigate envlight missing #680
+	- couldn't reproduce more than once
 - [x] add more logs for the above
 - [x] double switchable lights, #679
-- [ ] tone down the specular indirect blur
-- [ ] increase rendertest wait by 1
-- [ ] update rendertest images
+
+-- season cut --
 
 # 2023-12-01 E340
 - [x] Better resolution changes:
     - [x] Dynamic max resolution (start with current one, then grow by some growth factor)
-- [ ] Discuss Per-pixel profiling
-- [ ] Discuss Env-based verbose log control
 
 # 2023-11-30 E339
 - [x] rendermode patch
