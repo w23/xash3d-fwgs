@@ -45,7 +45,8 @@
 		X(Buffer, light_grid) \
 		X(Texture, textures) \
 		X(Texture, skybox) \
-		X(Texture, blue_noise_texture)
+		X(Texture, blue_noise_texture) \
+		X(Buffer, prof_direct_poly) \
 
 enum {
 #define RES_ENUM(type, name) ExternalResource_##name,
@@ -80,9 +81,12 @@ static struct {
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
 	qboolean reload_pipeline;
+	qboolean dump_profiling_data;
 	qboolean discontinuity;
 
 	int max_frame_width, max_frame_height;
+
+	vk_buffer_t prof_direct_poly;
 
 	struct {
 		cvar_t *rt_debug_display_only;
@@ -266,6 +270,9 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	// TODO move these to vk_geometry
 	RES_SET_SBUFFER_FULL(indices, args->render_args->geometry_data);
 	RES_SET_SBUFFER_FULL(vertices, args->render_args->geometry_data);
+
+	// TODO register this one properly
+	RES_SET_SBUFFER_FULL(prof_direct_poly, g_rtx.prof_direct_poly);
 
 	// TODO move this to lights
 	RES_SET_BUFFER(lights, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, args->light_bindings->buffer, args->light_bindings->metadata.offset, args->light_bindings->metadata.size);
@@ -593,6 +600,35 @@ fail:
 	R_VkMeatpipeDestroy(newpipe);
 }
 
+static void dumpProfilingData(int w, int h) {
+	FILE *f = fopen("gpuprof.dump", "w");
+	for (int y = 0; y < h; ++y) {
+		const struct ProfilingStruct *s = ((const struct ProfilingStruct*)(g_rtx.prof_direct_poly.mapped)) + y * g_rtx.max_frame_width;
+		for (int x = 0; x < w; ++x, ++s) {
+			const unsigned long long begin = s->data[0][0] | ((uint64_t)(s->data[0][1]) << 32);
+			const unsigned long long end = s->data[0][2] | ((uint64_t)(s->data[0][3]) << 32);
+			fprintf(f, "x=%d y=%d %016llx %016llx %llu %llu d=%llu\n", x, y, begin, end, begin, end, end - begin);
+		}
+	}
+	fclose(f);
+}
+
+static void resizeResources(void) {
+	// TODO resize textures/images
+
+	if (g_rtx.prof_direct_poly.buffer != VK_NULL_HANDLE) {
+		VK_BufferDestroy(&g_rtx.prof_direct_poly);
+	}
+
+	const uint32_t size = sizeof(struct ProfilingStruct) * g_rtx.max_frame_width * g_rtx.max_frame_height;
+	const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	const VkMemoryPropertyFlags memf = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	if (!VK_BufferCreate("prof_direct_poly", &g_rtx.prof_direct_poly, size, usage, memf)) {
+		gEngine.Host_Error("Failed to recreate prof_direct_poly");
+	}
+}
+
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
 	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
@@ -612,26 +648,40 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// if (vk_core.debug)
 	// 	XVK_RayModel_Validate();
 
-	qboolean need_reload = g_rtx.reload_pipeline;
+	qboolean resize = false;
 
 	if (g_rtx.max_frame_width < args->dst.width) {
 		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		resize = true;
 	}
 
 	if (g_rtx.max_frame_height < args->dst.height) {
 		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		resize = true;
+	}
+
+	// TODO only reload resources, no need to reload the entire pipeline
+	const qboolean need_reload = g_rtx.reload_pipeline || resize;
+
+	if (need_reload || resize || g_rtx.dump_profiling_data) {
+		WARN("Reloading RTX shaders/pipelines");
+		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+	}
+
+	if (g_rtx.dump_profiling_data) {
+		// TODO using next frame w/h is not correct, need previous w/h
+		dumpProfilingData(args->dst.width, args->dst.height);
+		g_rtx.dump_profiling_data = false;
+	}
+
+	if (resize) {
+		// Resize after wait idle
+		resizeResources();
 	}
 
 	if (need_reload) {
-		WARN("Reloading RTX shaders/pipelines");
-		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
-
 		reloadMainpipe();
 
 		g_rtx.reload_pipeline = false;
@@ -692,8 +742,12 @@ tail:
 	g_rtx.discontinuity = false;
 }
 
-static void reloadPipeline( void ) {
+static void cmdReloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
+}
+
+static void cmdDumpProfilingData( void ) {
+	g_rtx.dump_profiling_data = true;
 }
 
 qboolean VK_RayInit( void )
@@ -754,7 +808,10 @@ qboolean VK_RayInit( void )
 
 	RT_RayModel_Clear();
 
-	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
+	resizeResources();
+
+	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", cmdReloadPipeline, "Reload RT pipelines");
+	gEngine.Cmd_AddCommand("rt_debug_prof_dump", cmdDumpProfilingData, "Dump profiling data");
 
 #define X(name) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
@@ -775,6 +832,7 @@ void VK_RayShutdown( void ) {
 	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
 	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
+	VK_BufferDestroy(&g_rtx.prof_direct_poly);
 
 	RT_VkAccelShutdown();
 	RT_DynamicModelShutdown();

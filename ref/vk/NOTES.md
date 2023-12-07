@@ -1011,3 +1011,16 @@ This would need the same as above, plus:
 - A: probably should still do it on GPU lol
 
 This would also allow passing arbitrary per-pixel data from shaders, which would make shader debugging much much easier.
+
+# 2023-12-07 E343
+## What do we really need for shader profiling
+### Optimizing polygon light sampling
+- Per-pixel numbers:
+	- Total shader time
+	- Sampling selection time (Σ)
+		- Selecting lights to sample (+count)
+		- Selecting light point to sample
+		- Vertices count
+	- Ray tracing time (Σ, +count)
+- Aggregate numbers:
+	- TODO: what does VK_KHR_performance_query give us? Regs usage, etc.

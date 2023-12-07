@@ -32,6 +32,8 @@ layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } 
 layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
 //layout(set = 0, binding = 34, rgba16f) uniform writeonly image2D out_light_point_profile;
+//layout(set = 0, binding = 34, std430) writeonly buffer Profiling { ProfilingStruct prof_direct_point[]; };
+
 
 #define RAY_QUERY
 #define LIGHT_POINT 1

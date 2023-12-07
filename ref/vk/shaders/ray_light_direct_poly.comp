@@ -31,7 +31,8 @@ layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } ku
 layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
 layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
-layout(set = 0, binding = 34, rgba16f) uniform writeonly image2D out_light_poly_profile;
+//layout(set = 0, binding = 34, rgba16f) uniform writeonly image2D out_light_poly_profile;
+layout(set = 0, binding = 34, std430) writeonly restrict buffer Profiling { ProfilingStruct a[]; } prof_direct_poly;
 
 #define RAY_QUERY
 #define LIGHT_POLYGON 1

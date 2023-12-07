@@ -21,13 +21,15 @@
 #define vec3 vec3_t
 #define vec4 vec4_t
 #define mat4 matrix4x4
-typedef int ivec3[3];
-typedef int ivec2[2];
+typedef int32_t ivec3[3];
+typedef int32_t ivec2[2];
+typedef uint32_t uvec2[2];
+typedef uint32_t uvec3[3];
+typedef uint32_t uvec4[4];
 #define TOKENPASTE(x, y) x ## y
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 #define PAD(x) float TOKENPASTE2(pad_, __LINE__)[x];
 #define STRUCT struct
-
 enum {
 #define DECLARE_SPECIALIZATION_CONSTANT(index, type, name, default_value) \
 	SPEC_##name##_INDEX = index,
@@ -205,6 +207,10 @@ struct UniformBuffer {
 	uint frame_counter;
 
 	uint debug_display_only;
+};
+
+struct ProfilingStruct {
+	uvec4 data[4];
 };
 
 #undef PAD

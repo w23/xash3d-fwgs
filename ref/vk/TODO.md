@@ -1,3 +1,9 @@
+# 2023-12-07 E343
+- [x] extract raw shader clock
+- [ ] display times as scopes somewhere
+- [ ] extract sampling times
+- [ ] extract ray times
+
 # 2023-12-05 E342
 - [x] tone down the specular indirect blur
 - [-] try func_wall static light opt, #687
