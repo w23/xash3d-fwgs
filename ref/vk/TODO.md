@@ -1,8 +1,17 @@
+# Next
+- [ ] performance query
+
+# 2023-12-08 E344
+- [x] measure percentage of direct light shader phases:
+	- [x] how long does sampling take -- ~~supposedly ALU-bound, need clockARB()?~~
+	- [x] how long does ray tracing take -- ~~supposedly mem-bound, clockRealtimeEXT()?~~
+- [ ] try mapping shader realtime clock values to calibrated vk compute dispatch timestamps
+	Similar to what RGP draws, but not quite the same. Not sure if this is valuable, but it would be neat
+
 # 2023-12-07 E343
 - [x] extract raw shader clock
-- [ ] display times as scopes somewhere
-- [ ] extract sampling times
-- [ ] extract ray times
+- [-] display times as scopes somewhere
+	→ tried chrome trace in ff profiler, it broke (200k scopes in 1k threads is too much)
 
 # 2023-12-05 E342
 - [x] tone down the specular indirect blur

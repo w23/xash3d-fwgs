@@ -25,6 +25,7 @@
 #include "xash3d_mathlib.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 #define LOG_MODULE rt
 
@@ -600,16 +601,107 @@ fail:
 	R_VkMeatpipeDestroy(newpipe);
 }
 
+static int u32cmp(const void *l, const void *r) {
+	return *(const uint32_t*)l - *(const uint32_t*)r;
+}
+
 static void dumpProfilingData(int w, int h) {
+	uint64_t min = UINT64_MAX;
+	const struct ProfilingStruct *const prof = (const struct ProfilingStruct*)g_rtx.prof_direct_poly.mapped;
+	for (int i = 0; i < w * h; ++i) {
+		const struct ProfilingStruct *s = prof + i;
+		// TODO: time can wrap
+		const unsigned long long begin = s->data[0][0] | ((uint64_t)(s->data[0][1]) << 32);
+		min = Q_min(begin, min);
+	}
+
+	int sampling_hist[20] = {0};
+	int ray_hist[20] = {0};
+	int total = 0;
+
+	uint32_t *all_samples = Mem_Calloc(vk_core.pool, w * h * sizeof(uint32_t));
+	uint32_t *all_rays = Mem_Calloc(vk_core.pool, w * h * sizeof(uint32_t));
+
 	FILE *f = fopen("gpuprof.dump", "w");
 	for (int y = 0; y < h; ++y) {
 		const struct ProfilingStruct *s = ((const struct ProfilingStruct*)(g_rtx.prof_direct_poly.mapped)) + y * g_rtx.max_frame_width;
 		for (int x = 0; x < w; ++x, ++s) {
-			const unsigned long long begin = s->data[0][0] | ((uint64_t)(s->data[0][1]) << 32);
-			const unsigned long long end = s->data[0][2] | ((uint64_t)(s->data[0][3]) << 32);
-			fprintf(f, "x=%d y=%d %016llx %016llx %llu %llu d=%llu\n", x, y, begin, end, begin, end, end - begin);
+#define TIME_READ(c, i) ((uint64_t)s->data[c][i*2+0] | ((uint64_t)(s->data[c][i*2+1]) << 32))
+			const unsigned long long begin = TIME_READ(0, 0);
+			const unsigned long long end = TIME_READ(0, 1);
+			const uint32_t delta = end - begin;
+
+			uint32_t shader_delta = s->data[1][0];
+			const uint32_t sampling_delta = s->data[1][1];
+			const uint32_t ray_delta = s->data[1][2];
+
+			const uint32_t lights = s->data[2][0];
+			const uint32_t samples = s->data[2][1];
+			const uint32_t rays = s->data[2][2];
+
+			while (shader_delta < sampling_delta || shader_delta < ray_delta) {
+				ERR("shader_delta wraparound detected, fixing");
+				shader_delta += 0x100000u;
+			}
+
+			/* if (shader_delta != delta) */
+			/* 	ERR("Shader and local deltas don't match: d=%d", shader_delta - delta); */
+
+			if (!shader_delta)
+				continue;
+
+			const float sampling_pct = sampling_delta * 100.f / shader_delta;
+			const float ray_pct = ray_delta * 100.f / shader_delta;
+
+			fprintf(f, "total=%d lights=%d sampling=%d(%.02f%%; %d) ray=%d(%.02f%%; %d)\n",
+				shader_delta, lights,
+				sampling_delta, sampling_pct, samples,
+				ray_delta, ray_pct, rays);
+
+			assert(sampling_pct < 100.);
+			sampling_hist[(int)(sampling_pct / 5.)]++;
+
+			assert(ray_pct < 100.);
+			ray_hist[(int)(ray_pct / 5.)]++;
+
+			all_rays[total] = ray_delta;
+			all_samples[total] = sampling_delta;
+			++total;
+
+			//fwrite(&begin, sizeof(begin), 1, f);
+			//fwrite(&end, sizeof(end), 1, f);
+			//fprintf(f, "x=%d y=%d %016llx %016llx %llu %llu d=%llu\n", x, y, begin, end, begin, end, end - begin);
+			//fprintf(f, "%016llx %016llx\n", begin, end);
+			//fprintf(f, "{\"name\":\"dpoly\",\"cat\":\"shader\",\"ph\":\"B\",\"ts\":%llu,\"tid\":%d}\n", (begin - min), tid);
+			//fprintf(f, "{\"name\":\"dpoly\",\"cat\":\"shader\",\"ph\":\"E\",\"ts\":%llu,\"tid\":%d}\n", (end - min), tid);
 		}
 	}
+
+	for (int i = 0, s = 0, r = 0; i < 20; ++i) {
+		s += sampling_hist[i];
+		r += ray_hist[i];
+		fprintf(f, "%d-%d%%:\ts=%d(%d, %.02f%%)\tr=%d(%d, %.02f%%)\n",
+			i*5, i*5+5,
+			sampling_hist[i], s, s * 100.f / total,
+			ray_hist[i], r, r * 100.f / total);
+	}
+
+	qsort(all_rays, total, sizeof(all_rays[0]), u32cmp);
+	qsort(all_samples, total, sizeof(all_samples[0]), u32cmp);
+
+	fprintf(f, "percentiles:\n");
+	static const int pcts[] = {99, 95, 90, 75, 50};
+	for (int i = 0; i < COUNTOF(pcts); ++i) {
+		const int pct = pcts[i];
+		const int index = total * pct / 100;
+		fprintf(f, "%d%%: ray=%d sampling=%d\n", pct,
+			all_rays[index], all_samples[index]
+		);
+	}
+
+	Mem_Free(all_rays);
+	Mem_Free(all_samples);
+
 	fclose(f);
 }
 

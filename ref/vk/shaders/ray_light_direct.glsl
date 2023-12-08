@@ -1,14 +1,6 @@
-#define PROF_USE_REALTIME
-#ifdef PROF_USE_REALTIME
-#extension GL_ARB_gpu_shader_int64: enable
-#extension GL_EXT_shader_realtime_clock: enable
-#else
-#extension GL_ARB_shader_clock: enable
-#endif
-
-
 #include "utils.glsl"
 #include "noise.glsl"
+#include "time.glsl"
 
 #include "ray_kusochki.glsl"
 
@@ -22,25 +14,8 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
-#ifdef PROF_USE_REALTIME
-// On mesa+amdgpu there's a clear gradient: pixels on top of screen take 2-3x longer to compute than bottom ones. Also,
-// it does flicker a lot.
-// Deltas are about 30000-100000 parrots
-#define timeNow clockRealtime2x32EXT
-#else
-// clockARB doesn't give directly usable time values on mesa+amdgpu
-// even deltas between them are not meaningful enough.
-// On mesa+amdgpu clockARB() values are limited to lower 20bits, and they wrap around a lot.
-// Absolute difference value are often 30-50% of the available range, so it's not that far off from wrapping around
-// multiple times, rendering the value completely useless.
-// Deltas are around 300000-500000 parrots.
-// Other than that, the values seem uniform across the screen (as compared to realtime clock, which has a clearly
-// visible gradient: top differences are larger than bottom ones.
-#define timeNow clock2x32ARB
-#endif
-
 void main() {
-	const uvec2 time_begin = timeNow();
+	const time_t time_begin = timeNow();
 
 #ifdef RAY_TRACE
 	const vec2 uv = (gl_LaunchIDEXT.xy + .5) / gl_LaunchSizeEXT.xy * 2. - 1.;
@@ -79,19 +54,12 @@ void main() {
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	computeLighting(pos + geometry_normal * .001, shading_normal, throughput, -direction, material, diffuse, specular);
 
-	const uvec2 time_end = timeNow();
+	const time_t time_end = timeNow();
 	//const uint64_t time_diff = time_end - time_begin;
 	//const uint time_diff = time_begin.x - time_end.x;
 
-#ifdef PROF_USE_REALTIME
-	const uint64_t begin64 = time_begin.x | (uint64_t(time_begin.y) << 32);
-	const uint64_t end64 = time_end.x | (uint64_t(time_end.y) << 32);
-	const uint64_t time_diff = end64 - begin64;
-	const float time_diff_f = float(time_diff) / 1e5;
-#else
-	const uint time_diff = time_begin.x - time_end.x;
-	const float time_diff_f = float(time_diff & 0xfffffu) / 1e6;
-#endif
+	const uint time_diff = timeDelta(time_begin, time_end);
+	const float time_diff_f = float(time_diff) / 1e6;
 
 	const uint prof_index = pix.x + pix.y * ubo.ubo.res.x;
 #if LIGHT_POINT
@@ -106,5 +74,9 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 	//imageStore(out_light_poly_profile, pix, profile);
 	prof_direct_poly.a[prof_index].data[0] = uvec4(time_begin, time_end);
+	prof_direct_poly.a[prof_index].data[1] = uvec4(timeDelta(time_begin, time_end), prof_sampling, prof_ray, 0);
+	prof_direct_poly.a[prof_index].data[2] = uvec4(prof_lights, prof_samples, prof_rays, 0);
+	//prof_direct_poly.a[prof_index].data[2] = uvec4(prof_ray_begin, prof_ray_end);
+	//prof_direct_poly.a[prof_index].data[3] = uvec4(prof_light_count, 0, 0, 0);
 #endif
 }

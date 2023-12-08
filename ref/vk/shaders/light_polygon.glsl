@@ -5,6 +5,10 @@
 
 #include "noise.glsl"
 #include "utils.glsl"
+#include "time.glsl"
+
+uint prof_sampling = 0, prof_ray = 0;
+uint prof_lights = 0, prof_samples = 0, prof_rays = 0;
 
 #define DO_ALL_IN_CLUSTER 1
 
@@ -232,9 +236,14 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 
 		const float plane_dist = dot(poly.plane, vec4(P, 1.f));
 
+		++prof_lights;
+
 		if (plane_dist < 0.)
 			continue;
 
+		++prof_samples;
+
+		const time_t prof_sampling_begin = timeNow();
 #ifdef PROJECTED
 		const vec4 light_sample_dir = getPolygonLightSampleProjected(view_dir, ctx, poly);
 #elif defined(SOLID)
@@ -244,6 +253,7 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 #else
 		const vec4 light_sample_dir = getPolygonLightSampleSimple(P, view_dir, poly);
 #endif
+		prof_sampling += timeDelta(prof_sampling_begin, timeNow());
 
 		if (light_sample_dir.w <= 0.)
 			continue;
@@ -251,7 +261,12 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 		const float dist = - plane_dist / dot(light_sample_dir.xyz, poly.plane.xyz);
 		const vec3 emissive = poly.emissive;
 
-		if (!shadowed(P, light_sample_dir.xyz, dist)) {
+		const time_t prof_ray_begin = timeNow();
+		const bool shadow = shadowed(P, light_sample_dir.xyz, dist);
+		prof_ray += timeDelta(prof_ray_begin, timeNow());
+		++prof_rays;
+
+		if (!shadow) {
 			//const float estimate = total_contrib;
 			const float estimate = light_sample_dir.w;
 			vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
