@@ -98,6 +98,9 @@ static const char* device_extensions_rt[] = {
 	VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 	VK_KHR_RAY_QUERY_EXTENSION_NAME,
+
+	// TODO optional
+	VK_KHR_SHADER_CLOCK_EXTENSION_NAME,
 };
 
 static const char* device_extensions_nv_checkpoint[] = {
@@ -526,9 +529,16 @@ static qboolean createDevice( void ) {
 			.pNext = head,
 			.rayQuery = VK_TRUE,
 		};
+		head = &ray_query_pipeline_feature;
+		VkPhysicalDeviceShaderClockFeaturesKHR shader_clock_feature = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+			.pNext = head,
+			.shaderDeviceClock = VK_TRUE,
+			.shaderSubgroupClock = VK_TRUE,
+		};
 
 		if (vk_core.rtx) {
-			head = &ray_query_pipeline_feature;
+			head = &shader_clock_feature;
 		} else {
 			head = NULL;
 		}
@@ -537,7 +547,8 @@ static qboolean createDevice( void ) {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 			.pNext = head,
 			.features.samplerAnisotropy = candidate_device->features.features.samplerAnisotropy,
-			.features.shaderInt16 = true,
+			.features.shaderInt16 = VK_TRUE,
+			.features.shaderInt64 = VK_TRUE,
 		};
 		head = &features;
 

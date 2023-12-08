@@ -220,6 +220,12 @@ void main() {
 		readNormals(pix, geometry_normal, shading_normal);
 		imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.));
 		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_TIME_DIRECT_POLY) {
+		imageStore(out_dest, pix, vec4(imageLoad(light_poly_diffuse, pix).a)); return;
+		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_TIME_DIRECT_POINT) {
+		imageStore(out_dest, pix, vec4(imageLoad(light_point_diffuse, pix).a)); return;
+		return;
 	}
 
 #ifdef DEBUG_NOISE

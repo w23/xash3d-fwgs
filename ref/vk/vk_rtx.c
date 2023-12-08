@@ -25,6 +25,7 @@
 #include "xash3d_mathlib.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 #define LOG_MODULE rt
 
@@ -45,7 +46,8 @@
 		X(Buffer, light_grid) \
 		X(Texture, textures) \
 		X(Texture, skybox) \
-		X(Texture, blue_noise_texture)
+		X(Texture, blue_noise_texture) \
+		X(Buffer, prof_direct_poly) \
 
 enum {
 #define RES_ENUM(type, name) ExternalResource_##name,
@@ -80,9 +82,12 @@ static struct {
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
 	qboolean reload_pipeline;
+	qboolean dump_profiling_data;
 	qboolean discontinuity;
 
 	int max_frame_width, max_frame_height;
+
+	vk_buffer_t prof_direct_poly;
 
 	struct {
 		cvar_t *rt_debug_display_only;
@@ -167,6 +172,8 @@ static void parseDebugDisplayValue( void ) {
 	X(INDIRECT) \
 	X(INDIRECT_SPEC) \
 	X(INDIRECT_DIFF) \
+	X(TIME_DIRECT_POLY) \
+	X(TIME_DIRECT_POINT) \
 
 #define X(suffix) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
@@ -264,6 +271,9 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	// TODO move these to vk_geometry
 	RES_SET_SBUFFER_FULL(indices, args->render_args->geometry_data);
 	RES_SET_SBUFFER_FULL(vertices, args->render_args->geometry_data);
+
+	// TODO register this one properly
+	RES_SET_SBUFFER_FULL(prof_direct_poly, g_rtx.prof_direct_poly);
 
 	// TODO move this to lights
 	RES_SET_BUFFER(lights, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, args->light_bindings->buffer, args->light_bindings->metadata.offset, args->light_bindings->metadata.size);
@@ -591,6 +601,126 @@ fail:
 	R_VkMeatpipeDestroy(newpipe);
 }
 
+static int u32cmp(const void *l, const void *r) {
+	return *(const uint32_t*)l - *(const uint32_t*)r;
+}
+
+static void dumpProfilingData(int w, int h) {
+	uint64_t min = UINT64_MAX;
+	const struct ProfilingStruct *const prof = (const struct ProfilingStruct*)g_rtx.prof_direct_poly.mapped;
+	for (int i = 0; i < w * h; ++i) {
+		const struct ProfilingStruct *s = prof + i;
+		// TODO: time can wrap
+		const unsigned long long begin = s->data[0][0] | ((uint64_t)(s->data[0][1]) << 32);
+		min = Q_min(begin, min);
+	}
+
+	int sampling_hist[20] = {0};
+	int ray_hist[20] = {0};
+	int total = 0;
+
+	uint32_t *all_samples = Mem_Calloc(vk_core.pool, w * h * sizeof(uint32_t));
+	uint32_t *all_rays = Mem_Calloc(vk_core.pool, w * h * sizeof(uint32_t));
+
+	FILE *f = fopen("gpuprof.dump", "w");
+	for (int y = 0; y < h; ++y) {
+		const struct ProfilingStruct *s = ((const struct ProfilingStruct*)(g_rtx.prof_direct_poly.mapped)) + y * g_rtx.max_frame_width;
+		for (int x = 0; x < w; ++x, ++s) {
+#define TIME_READ(c, i) ((uint64_t)s->data[c][i*2+0] | ((uint64_t)(s->data[c][i*2+1]) << 32))
+			const unsigned long long begin = TIME_READ(0, 0);
+			const unsigned long long end = TIME_READ(0, 1);
+			const uint32_t delta = end - begin;
+
+			uint32_t shader_delta = s->data[1][0];
+			const uint32_t sampling_delta = s->data[1][1];
+			const uint32_t ray_delta = s->data[1][2];
+
+			const uint32_t lights = s->data[2][0];
+			const uint32_t samples = s->data[2][1];
+			const uint32_t rays = s->data[2][2];
+
+			while (shader_delta < sampling_delta || shader_delta < ray_delta) {
+				ERR("shader_delta wraparound detected, fixing");
+				shader_delta += 0x100000u;
+			}
+
+			/* if (shader_delta != delta) */
+			/* 	ERR("Shader and local deltas don't match: d=%d", shader_delta - delta); */
+
+			if (!shader_delta)
+				continue;
+
+			const float sampling_pct = sampling_delta * 100.f / shader_delta;
+			const float ray_pct = ray_delta * 100.f / shader_delta;
+
+			fprintf(f, "total=%d lights=%d sampling=%d(%.02f%%; %d) ray=%d(%.02f%%; %d)\n",
+				shader_delta, lights,
+				sampling_delta, sampling_pct, samples,
+				ray_delta, ray_pct, rays);
+
+			assert(sampling_pct < 100.);
+			sampling_hist[(int)(sampling_pct / 5.)]++;
+
+			assert(ray_pct < 100.);
+			ray_hist[(int)(ray_pct / 5.)]++;
+
+			all_rays[total] = ray_delta;
+			all_samples[total] = sampling_delta;
+			++total;
+
+			//fwrite(&begin, sizeof(begin), 1, f);
+			//fwrite(&end, sizeof(end), 1, f);
+			//fprintf(f, "x=%d y=%d %016llx %016llx %llu %llu d=%llu\n", x, y, begin, end, begin, end, end - begin);
+			//fprintf(f, "%016llx %016llx\n", begin, end);
+			//fprintf(f, "{\"name\":\"dpoly\",\"cat\":\"shader\",\"ph\":\"B\",\"ts\":%llu,\"tid\":%d}\n", (begin - min), tid);
+			//fprintf(f, "{\"name\":\"dpoly\",\"cat\":\"shader\",\"ph\":\"E\",\"ts\":%llu,\"tid\":%d}\n", (end - min), tid);
+		}
+	}
+
+	for (int i = 0, s = 0, r = 0; i < 20; ++i) {
+		s += sampling_hist[i];
+		r += ray_hist[i];
+		fprintf(f, "%d-%d%%:\ts=%d(%d, %.02f%%)\tr=%d(%d, %.02f%%)\n",
+			i*5, i*5+5,
+			sampling_hist[i], s, s * 100.f / total,
+			ray_hist[i], r, r * 100.f / total);
+	}
+
+	qsort(all_rays, total, sizeof(all_rays[0]), u32cmp);
+	qsort(all_samples, total, sizeof(all_samples[0]), u32cmp);
+
+	fprintf(f, "percentiles:\n");
+	static const int pcts[] = {99, 95, 90, 75, 50};
+	for (int i = 0; i < COUNTOF(pcts); ++i) {
+		const int pct = pcts[i];
+		const int index = total * pct / 100;
+		fprintf(f, "%d%%: ray=%d sampling=%d\n", pct,
+			all_rays[index], all_samples[index]
+		);
+	}
+
+	Mem_Free(all_rays);
+	Mem_Free(all_samples);
+
+	fclose(f);
+}
+
+static void resizeResources(void) {
+	// TODO resize textures/images
+
+	if (g_rtx.prof_direct_poly.buffer != VK_NULL_HANDLE) {
+		VK_BufferDestroy(&g_rtx.prof_direct_poly);
+	}
+
+	const uint32_t size = sizeof(struct ProfilingStruct) * g_rtx.max_frame_width * g_rtx.max_frame_height;
+	const VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	const VkMemoryPropertyFlags memf = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	if (!VK_BufferCreate("prof_direct_poly", &g_rtx.prof_direct_poly, size, usage, memf)) {
+		gEngine.Host_Error("Failed to recreate prof_direct_poly");
+	}
+}
+
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
 	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
@@ -610,26 +740,40 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// if (vk_core.debug)
 	// 	XVK_RayModel_Validate();
 
-	qboolean need_reload = g_rtx.reload_pipeline;
+	qboolean resize = false;
 
 	if (g_rtx.max_frame_width < args->dst.width) {
 		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		resize = true;
 	}
 
 	if (g_rtx.max_frame_height < args->dst.height) {
 		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		resize = true;
+	}
+
+	// TODO only reload resources, no need to reload the entire pipeline
+	const qboolean need_reload = g_rtx.reload_pipeline || resize;
+
+	if (need_reload || resize || g_rtx.dump_profiling_data) {
+		WARN("Reloading RTX shaders/pipelines");
+		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+	}
+
+	if (g_rtx.dump_profiling_data) {
+		// TODO using next frame w/h is not correct, need previous w/h
+		dumpProfilingData(args->dst.width, args->dst.height);
+		g_rtx.dump_profiling_data = false;
+	}
+
+	if (resize) {
+		// Resize after wait idle
+		resizeResources();
 	}
 
 	if (need_reload) {
-		WARN("Reloading RTX shaders/pipelines");
-		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
-
 		reloadMainpipe();
 
 		g_rtx.reload_pipeline = false;
@@ -690,8 +834,12 @@ tail:
 	g_rtx.discontinuity = false;
 }
 
-static void reloadPipeline( void ) {
+static void cmdReloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
+}
+
+static void cmdDumpProfilingData( void ) {
+	g_rtx.dump_profiling_data = true;
 }
 
 qboolean VK_RayInit( void )
@@ -752,7 +900,10 @@ qboolean VK_RayInit( void )
 
 	RT_RayModel_Clear();
 
-	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
+	resizeResources();
+
+	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", cmdReloadPipeline, "Reload RT pipelines");
+	gEngine.Cmd_AddCommand("rt_debug_prof_dump", cmdDumpProfilingData, "Dump profiling data");
 
 #define X(name) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
@@ -773,6 +924,7 @@ void VK_RayShutdown( void ) {
 	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
 	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
+	VK_BufferDestroy(&g_rtx.prof_direct_poly);
 
 	RT_VkAccelShutdown();
 	RT_DynamicModelShutdown();
