@@ -40,13 +40,15 @@ void main() {
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
 
-	const vec3 pos = imageLoad(position_t, pix).xyz;
-
-	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
+	const vec4 pos_t = imageLoad(position_t, pix);
 
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	computeLighting(pos + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
+
+	if (pos_t.w > 0.) {
+		vec3 geometry_normal, shading_normal;
+		readNormals(pix, geometry_normal, shading_normal);
+		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
+	}
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
