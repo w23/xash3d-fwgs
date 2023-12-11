@@ -11,7 +11,7 @@ const float shadow_offset_fudge = .1;
 #endif
 
 #if LIGHT_POINT
-void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 throughput, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
@@ -24,7 +24,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 throughput, vec
 	for (uint i = 0; i < lights.m.num_point_lights; ++i) {
 #endif
 
-		vec3 color = lights.m.point_lights[i].color_stopdot.rgb * throughput;
+		vec3 color = lights.m.point_lights[i].color_stopdot.rgb;
 		if (dot(color,color) < color_culling_threshold)
 			continue;
 
@@ -114,7 +114,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 throughput, vec
 }
 #endif
 
-void computeLighting(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
 	const ivec3 light_cell = ivec3(floor(P / LIGHT_GRID_CELL_SIZE)) - lights.m.grid_min_cell;
@@ -122,7 +122,7 @@ void computeLighting(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialPro
 
 #ifdef USE_CLUSTERS
 	if (any(greaterThanEqual(light_cell, lights.m.grid_size)) || cluster_index >= MAX_LIGHT_CLUSTERS)
-		return; // throughput * vec3(1., 0., 0.);
+		return; // vec3(1., 0., 0.);
 #endif
 
 	//diffuse = specular = vec3(1.);
@@ -138,7 +138,7 @@ void computeLighting(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialPro
 	//C += .3 * fract(vec3(light_cell) / 4.);
 
 #if LIGHT_POLYGON
-	sampleEmissiveSurfaces(P, N, throughput, view_dir, material, cluster_index, diffuse, specular);
+	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular);
 	// These constants are empirical. There's no known math reason behind them
 	diffuse /= 25.0;
 	specular /= 25.0;
@@ -146,7 +146,7 @@ void computeLighting(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialPro
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
-	computePointLights(P, N, cluster_index, throughput, view_dir, material, ldiffuse, lspecular);
+	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular);
 	// These constants are empirical. There's no known math reason behind them
 	ldiffuse /= 4.;
 	lspecular /= 4.;

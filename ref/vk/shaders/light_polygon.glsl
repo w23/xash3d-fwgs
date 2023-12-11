@@ -197,7 +197,7 @@ void sampleSinglePolygonLight(in vec3 P, in vec3 N, in vec3 view_dir, in SampleC
 
 #if 0
 // Sample random one
-void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialProperties material, uint cluster_index, inout vec3 diffuse, inout vec3 specular) {
+void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, uint cluster_index, inout vec3 diffuse, inout vec3 specular) {
 	const uint num_polygons = uint(light_grid.clusters_[cluster_index].num_polygons);
 
 	if (num_polygons == 0)
@@ -215,7 +215,7 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 }
 
 #elif 1
-void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, MaterialProperties material, uint cluster_index, inout vec3 diffuse, inout vec3 specular) {
+void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, uint cluster_index, inout vec3 diffuse, inout vec3 specular) {
 #if DO_ALL_IN_CLUSTER
 	const SampleContext ctx = buildSampleContext(P, N, view_dir);
 
@@ -256,8 +256,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 			const float estimate = light_sample_dir.w;
 			vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
 			evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
-			diffuse += throughput * emissive * estimate * poly_diffuse;
-			specular += throughput * emissive * estimate * poly_specular;
+			diffuse += emissive * estimate * poly_diffuse;
+			specular += emissive * estimate * poly_specular;
 		}
 	}
 #else // DO_ALL_IN_CLUSTERS
@@ -310,8 +310,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 	const vec3 emissive = poly.emissive;
 	vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
 	evalSplitBRDF(N, normalize(poly.center-P), view_dir, material, poly_diffuse, poly_specular);
-	diffuse += throughput * emissive * total_contrib;
-	specular += throughput * emissive * total_contrib;
+	diffuse += emissive * total_contrib;
+	specular += emissive * total_contrib;
 #else
 	const SampleContext ctx = buildSampleContext(P, N, view_dir);
 	const PolygonLight poly = lights.m.polygons[selected - 1];
@@ -332,8 +332,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 throughput, vec3 view_dir, Mate
 		const float estimate = light_sample_dir.w;
 		vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
 		evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
-		diffuse += throughput * emissive * estimate;
-		specular += throughput * emissive * estimate;
+		diffuse += emissive * estimate;
+		specular += emissive * estimate;
 	}
 #endif
 #endif

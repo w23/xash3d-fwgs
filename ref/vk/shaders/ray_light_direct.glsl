@@ -45,9 +45,8 @@ void main() {
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
 
-	const vec3 throughput = vec3(1.);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	computeLighting(pos + geometry_normal * .001, shading_normal, throughput, -direction, material, diffuse, specular);
+	computeLighting(pos + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
