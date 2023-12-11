@@ -702,6 +702,10 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = (const matrix4x4*)prev_transform,
+		.override = {
+			.material = NULL,
+			.old_texture = -1,
+		},
 	});
 
 	APROF_SCOPE_END(brush_draw_water);
@@ -947,6 +951,10 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,
+		.override = {
+			.material = NULL,
+			.old_texture = -1,
+		},
 	});
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);

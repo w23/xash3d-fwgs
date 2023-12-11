@@ -131,7 +131,10 @@ typedef struct {
 	const vec4_t *color;
 	const matrix4x4 *transform, *prev_transform;
 
-	const r_vk_material_t* material_override;
+	struct {
+		const r_vk_material_t* material;
+		int old_texture;
+	} override;
 } r_model_draw_t;
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);

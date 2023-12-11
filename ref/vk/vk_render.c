@@ -789,7 +789,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color_srgb = args.color,
 			.override = {
-				.material = args.material_override,
+				.material = args.override.material,
 				.geoms = model->geometries,
 				.geoms_count = model->num_geometries,
 			},
@@ -803,7 +803,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = args.transform,
 			.color = args.color,
 			.render_type = args.render_type,
-			.textures_override = args.material_override ? args.material_override->tex_base_color : -1,
+			.textures_override = args.override.old_texture,
 		});
 	}
 }

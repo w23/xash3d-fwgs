@@ -2334,7 +2334,10 @@ static void R_StudioDrawPoints( void ) {
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
-		.material_override = NULL,
+		.override = {
+			.material = NULL,
+			.old_texture = -1,
+		},
 	});
 
 	++g_studio_stats.submodels_total;

@@ -811,7 +811,10 @@ static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *fram
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
-		.material_override = &material_override,
+		.override = {
+			.material = &material_override,
+			.old_texture = texture,
+		},
 	});
 }
 
