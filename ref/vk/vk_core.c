@@ -327,6 +327,8 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 
 	*available_devices = Mem_Malloc(vk_core.pool, num_physical_devices * sizeof(vk_available_device_t));
 	this_device = *available_devices;
+
+	qboolean has_rt = false;
 	for (uint32_t i = 0; i < num_physical_devices; ++i) {
 		uint32_t queue_index = VK_QUEUE_FAMILY_IGNORED;
 		VkPhysicalDeviceProperties props;
@@ -417,7 +419,7 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 			this_device->anisotropy = features.features.samplerAnisotropy;
 			gEngine.Con_Printf("\t\tAnistoropy supported: %d\n", this_device->anisotropy);
 
-			this_device->ray_tracing = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
+			has_rt |= this_device->ray_tracing = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
 			gEngine.Con_Printf("\t\tRay tracing supported: %d\n", this_device->ray_tracing);
 
 			this_device->nv_checkpoint = vk_core.debug && deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_nv_checkpoint, ARRAYSIZE(device_extensions_nv_checkpoint));
@@ -436,6 +438,18 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 	}
 
 	Mem_Free(physical_devices);
+	
+	if (!has_rt) {
+		gEngine.Con_Printf( "^6===================================================^7\n" );
+		gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");
+		#if defined XASH_64BIT
+		gEngine.Con_Printf(S_NOTE "^3Check that you have compatible hardware and drivers.^7\n");
+		#else
+		gEngine.Con_Printf(S_WARN "^3You're running in ^132-bit ^3mode!^7\n");
+		gEngine.Con_Printf(S_NOTE "^3Ray Tracing REQUIRES ^264-bit ^3process!\n^5Please rebuild and start the 64-bit xash3d binary.^7\n");
+		#endif
+		gEngine.Con_Printf( "^6===================================================^7\n" );
+	}
 
 	return this_device - *available_devices;
 }
@@ -473,9 +487,9 @@ static qboolean createDevice( void ) {
 	char unique_deviceID[16];
 	const qboolean is_target_device = vk_device_target_id && Q_stricmp(vk_device_target_id->string, "") && num_available_devices > 0;
 	qboolean is_target_device_found = false;
-	vk_available_device_t *candidate_device;
+
 	for (int i = 0; i < num_available_devices; ++i) {
-		candidate_device = available_devices + i;
+		const vk_available_device_t *candidate_device = available_devices + i;
 		// Skip non-target device
 		Q_snprintf( unique_deviceID, sizeof( unique_deviceID ), "%04x:%04x", candidate_device->props.vendorID, candidate_device->props.deviceID );
 		if (is_target_device && !is_target_device_found && Q_stricmp(vk_device_target_id->string, unique_deviceID)) {
@@ -630,20 +644,6 @@ static qboolean createDevice( void ) {
 		}
 
 		vkGetDeviceQueue(vk_core.device, 0, 0, &vk_core.queue);
-		is_target_device_found = true;
-	}
-	if (is_target_device_found) {
-		if (!candidate_device->ray_tracing && !CVAR_TO_BOOL(rt_force_disable)) {
-			gEngine.Con_Printf( "^6===================================================^7\n" );
-			gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");
-			#if defined XASH_64BIT
-			gEngine.Con_Printf(S_NOTE "^3Check that you have compatible hardware and drivers.^7\n");
-			#else
-			gEngine.Con_Printf(S_WARN "^3You're running in ^132-bit ^3mode!^7\n");
-			gEngine.Con_Printf(S_NOTE "^3Ray Tracing REQUIRES ^264-bit ^3process!\n^5Please rebuild and start the 64-bit xash3d binary.^7\n");
-			#endif
-			gEngine.Con_Printf( "^6===================================================^7\n" );
-		}
 		return true;
 	}
 
