@@ -98,6 +98,10 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	diffuse = vec3(0.);
 	specular = vec3(0.);
 
+	const vec4 pos_t = imageLoad(position_t, pix);
+	if (pos_t.w <= 0.)
+		return;
+
 	const vec4 material_data = imageLoad(material_rmxx, pix);
 	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
 
@@ -154,11 +158,9 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	payload.base_color_a = vec4(0.);
 	payload.emissive = vec4(0.);
 	payload.material_rmxx = vec4(0.);
-	const vec3 pos = imageLoad(position_t, pix).xyz + geometry_normal * ray_normal_fudge;
+	const vec3 pos = pos_t.xyz + geometry_normal * ray_normal_fudge;
 	if (!getHit(pos, bounce_direction, payload))
 		return;
-
-	throughput *= payload.base_color_a.rgb;
 
 	// 4. Sample light sources
 	{
@@ -172,9 +174,11 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		hit_material.emissive = vec3(0.f);
 		hit_material.metalness = payload.material_rmxx.g;
 		hit_material.roughness = payload.material_rmxx.r;
-		computeLighting(hit_pos, hit_shading_normal, throughput, -bounce_direction, hit_material, ldiffuse, lspecular);
+		computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
-		vec3 background = ldiffuse + lspecular;
+		vec3 background = payload.base_color_a.rgb * ldiffuse;
+		background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
+
 		vec3 emissive = vec3(0.);
 		traceSimpleBlending(pos, bounce_direction, payload.hit_t.w, emissive, background);
 		const vec3 final_color = emissive + background;
@@ -201,7 +205,7 @@ void main() {
 
 	rand01_state = ubo.ubo.random_seed + pix.x * 1833 + pix.y * 31337 + 12;
 
-	vec3 diffuse, specular;
+	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	computeBounce(pix * INDIRECT_SCALE, direction, diffuse, specular);
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));

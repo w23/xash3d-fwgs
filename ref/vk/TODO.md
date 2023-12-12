@@ -1,3 +1,9 @@
+# 2023-12-11 E345
+- [x] fix incorrect basecolor brdf multiplication, #666
+- [ ] Patch overlay textures (#696) → turned out to be much more difficult than expected.
+- [x] Do not patch sprite textures for traditional raster, #695
+- [x] fixup skybox glitches caused by #666 fix
+
 # 2023-12-05 E342
 - [x] tone down the specular indirect blur
 - [-] try func_wall static light opt, #687

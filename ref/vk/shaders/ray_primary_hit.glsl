@@ -29,6 +29,8 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	const Material material = kusok.material;
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
+		// Mark as non-geometry
+		payload.hit_t.w = -payload.hit_t.w;
 		payload.emissive.rgb = texture(skybox, rayDirection).rgb;
 		return;
 	} else {
