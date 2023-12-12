@@ -425,6 +425,20 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 
 			this_device->calibrated_timestamps = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_extra, ARRAYSIZE(device_extensions_extra));
 
+			if (!this_device->ray_tracing) {
+				#if defined XASH_64BIT
+				gEngine.Con_Printf( "^6================================================^7\n" );
+				gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.\n^3Check that you have compatible hardware and drivers.^7\n");
+				gEngine.Con_Printf( "^6================================================^7\n" );
+				#else
+				gEngine.Con_Printf( "^6================================================^7\n" );
+				gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");
+				gEngine.Con_Printf(S_WARN "^3You're running in ^132-bit ^3mode!^7\n");
+				gEngine.Con_Printf(S_NOTE "^3Ray Tracing REQUIRES ^264-bit ^3process!\n^5Please rebuild and start the 64-bit xash3d binary.^7\n");
+				gEngine.Con_Printf( "^6================================================^7\n" );
+				#endif
+			}
+
 			Mem_Free(extensions);
 		}
 
