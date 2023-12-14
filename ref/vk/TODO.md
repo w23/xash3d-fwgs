@@ -1,4 +1,4 @@
-# 2023-12-14 E346
+# 2023-12-14 E346-E347
 - [x] Optimize skybox loading, #706
     - [x] Do not load skybox when there are no SURF_DRAWSKY, #579
     - [x] Do not reload the same skybox

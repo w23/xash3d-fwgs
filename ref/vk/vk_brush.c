@@ -995,6 +995,10 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 			break;
 		case BrushSurface_Sky:
 			sizes.sky_surfaces_count++;
+
+			// Do not count towards surfaces that we'll load (still need to count if for the purpose of loading skybox)
+			if (g_map_entities.remove_all_sky_surfaces)
+				continue;
 			break;
 		case BrushSurface_Regular:
 			break;
@@ -1321,8 +1325,10 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				break;
 			case BrushSurface_Conveyor:
 				break;
-			case BrushSurface_Regular:
 			case BrushSurface_Sky:
+				if (g_map_entities.remove_all_sky_surfaces)
+					continue;
+			case BrushSurface_Regular:
 				break;
 			}
 

@@ -733,6 +733,11 @@ static void parseEntities( char *string, qboolean is_patch ) {
 							if (have_fields & Field__xvk_smoothing_group) {
 								addSmoothingGroup(&values);
 							}
+
+							if (have_fields & Field__xvk_remove_all_sky_surfaces) {
+								DEBUG("_xvk_remove_all_sky_surfaces=%d", values._xvk_remove_all_sky_surfaces);
+								g_map_entities.remove_all_sky_surfaces = values._xvk_remove_all_sky_surfaces;
+							}
 						}
 					}
 					break;

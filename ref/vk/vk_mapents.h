@@ -37,6 +37,7 @@
 	X(25, int, _xvk_smooth_entire_model, Int) \
 	X(26, int_array_t, _xvk_smoothing_excluded, IntArray) \
 	X(27, float, _xvk_tex_rotate, Float) \
+	X(28, int, _xvk_remove_all_sky_surfaces, Int) \
 
 /* NOTE: not used
 	X(23, int, renderamt, Int) \
@@ -175,6 +176,8 @@ typedef struct {
 		int excluded_count;
 		int excluded[MAX_EXCLUDED_SMOOTHING_SURFACES];
 	} smoothing;
+
+	qboolean remove_all_sky_surfaces;
 } xvk_map_entities_t;
 
 // TODO expose a bunch of things here as funtions, not as internal structures
