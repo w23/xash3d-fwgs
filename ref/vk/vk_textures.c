@@ -463,6 +463,44 @@ static qboolean needToCreateImage( int index, vk_texture_t *tex, const r_vk_imag
 	return true;
 }
 
+static const char *getPFName(int pf_type) {
+	switch (pf_type) {
+		case PF_UNKNOWN: return "PF_UNKNOWN";
+		case PF_INDEXED_24: return "PF_INDEXED_24";
+		case PF_INDEXED_32: return "PF_INDEXED_32";
+		case PF_RGBA_32: return "PF_RGBA_32";
+		case PF_BGRA_32: return "PF_BGRA_32";
+		case PF_RGB_24: return "PF_RGB_24";
+		case PF_BGR_24: return "PF_BGR_24";
+		case PF_LUMINANCE: return "PF_LUMINANCE";
+		case PF_DXT1: return "PF_DXT1";
+		case PF_DXT3: return "PF_DXT3";
+		case PF_DXT5: return "PF_DXT5";
+		case PF_ATI2: return "PF_ATI2";
+		case PF_BC4_SIGNED: return "PF_BC4_SIGNED";
+		case PF_BC4_UNSIGNED: return "PF_BC4_UNSIGNED";
+		case PF_BC5_SIGNED: return "PF_BC5_SIGNED";
+		case PF_BC5_UNSIGNED: return "PF_BC5_UNSIGNED";
+		case PF_BC6H_SIGNED: return "PF_BC6H_SIGNED";
+		case PF_BC6H_UNSIGNED: return "PF_BC6H_UNSIGNED";
+		case PF_BC7_UNORM: return "PF_BC7_UNORM";
+		case PF_BC7_SRGB: return "PF_BC7_SRGB";
+		case PF_KTX2_RAW: return "PF_KTX2_RAW";
+	}
+
+	return "INVALID";
+}
+
+static const char* getColorspaceHintName(colorspace_hint_e ch) {
+	switch (ch) {
+		case kColorspaceGamma: return "gamma";
+		case kColorspaceLinear: return "linear";
+		case kColorspaceNative: return "native";
+	}
+
+	return "INVALID";
+}
+
 static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
 	tex->total_size = 0;
 
@@ -485,7 +523,11 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 		if (!validatePicLayers(TEX_NAME(tex), layers, num_layers))
 			return false;
 
-		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", index, TEX_NAME(tex), mipCount, compute_mips, num_layers);
+		DEBUG("Uploading texture[%d] %s, %dx%d fmt=%s(%s) cs=%s mips=%d(build=%d), layers=%d",
+			index, TEX_NAME(tex), width, height,
+			getPFName(layers[0]->type), R_VkFormatName(format),
+			getColorspaceHintName(colorspace_hint),
+			mipCount, compute_mips, num_layers);
 
 		// TODO (not sure why, but GL does this)
 		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
@@ -596,14 +638,15 @@ VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
 	};
 }
 
-qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder) {
+qboolean R_VkTexturesSkyboxUploadSides( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder) {
 	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
+	dest->flags |= TF_NOMIPMAP;
 	return uploadTexture(-1, dest, sides, 6, true, colorspace_hint);
 }
 
-qboolean R_VkTexturesSkyboxUploadKTX( const char *filename ) {
-	ERR("%s(%s): not implemented", __FUNCTION__, filename);
+qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const pic ) {
+	ERR("%s(%s): not implemented", __FUNCTION__, name);
 	return false;
 }
 

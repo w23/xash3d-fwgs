@@ -1031,3 +1031,16 @@ This would also allow passing arbitrary per-pixel data from shaders, which would
             - `FS_LoadImage()` and `ImageProcess()`
             - `R_VkTextureSkyboxUpload(sides)`
     - if failed and not default already: `R_TextureSetupSky(default)` (recurse)
+
+# 2023-12-14 E34a
+## TIL engine imagelib `FS_LoadImage()`:
+1. Pick format based on extension
+2. If no extension is specified, try all supported extensions in sequence.
+3. If loading single file failed, try to load it as skybox cubemap:
+   Go through all sides suffixes and try to load them in the similar fashion:
+   if no extension, then try all supported extensions
+
+- `Image_Process()` can only rotate uncompressed formats. (Technically it might be possible to also
+  rotate some compressed format, which will amount to just reordering blocks, and then reordering block
+  contents. Mendokusai). Therefore, we can't just replace png sides with compressed ktx2 sides directly.
+  KTX2 sides should be pre-rotated.

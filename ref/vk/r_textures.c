@@ -126,58 +126,6 @@ void R_TexturesShutdown( void )
 	R_VkTexturesShutdown();
 }
 
-/* OBSOLETE
-static vk_texture_t *Common_AllocTexture( const char *name, texFlags_t flags )
-{
-	vk_texture_t	*tex;
-	uint		i;
-
-	// find a free texture_t slot
-	for( i = 0, tex = vk_textures; i < vk_numTextures; i++, tex++ )
-		if( !tex->name[0] ) break;
-
-	if( i == vk_numTextures )
-	{
-		if( vk_numTextures == MAX_TEXTURES )
-			gEngine.Host_Error( "VK_AllocTexture: MAX_TEXTURES limit exceeds\n" );
-		vk_numTextures++;
-	}
-
-	tex = &vk_textures[i];
-
-	// copy initial params
-	Q_strncpy( tex->name, name, sizeof( tex->name ));
-	tex->texnum = i; // texnum is used for fast acess into vk_textures array too
-	tex->flags = flags;
-
-	// add to hash table
-	tex->hashValue = COM_HashKey( name, TEXTURES_HASH_SIZE );
-	tex->nextHash = vk_texturesHashTable[tex->hashValue];
-	vk_texturesHashTable[tex->hashValue] = tex;
-
-	// FIXME this is not strictly correct. Refcount management should be done differently wrt public ref_interface_t
-	tex->refcount = 1;
-	return tex;
-}
-
-static vk_texture_t *Common_TextureForName( const char *name )
-{
-	vk_texture_t	*tex;
-	uint		hash;
-
-	// find the texture in array
-	hash = COM_HashKey( name, TEXTURES_HASH_SIZE );
-
-	for( tex = vk_texturesHashTable[hash]; tex != NULL; tex = tex->nextHash )
-	{
-		if( !Q_stricmp( tex->name, name ))
-			return tex;
-	}
-
-	return NULL;
-}
-*/
-
 static qboolean checkTextureName( const char *name )
 {
 	int len;
@@ -297,7 +245,7 @@ static void createDefaultTextures( void )
 		sides[5] = pic;
 
 		const qboolean is_placeholder = true;
-		R_VkTexturesSkyboxUpload( "skybox_placeholder", sides, kColorspaceGamma, is_placeholder );
+		R_VkTexturesSkyboxUploadSides( "skybox_placeholder", sides, kColorspaceGamma, is_placeholder );
 	}
 }
 
@@ -814,7 +762,7 @@ static const struct {
 	uint flags;
 } k_skybox_info[6] = {
 	{"rt", IMAGE_ROT_90},
-	{"lf", IMAGE_FLIP_Y | IMAGE_ROT_90 | IMAGE_FLIP_X},
+	{"lf", IMAGE_ROT270},
 	{"bk", IMAGE_FLIP_Y},
 	{"ft", IMAGE_FLIP_X},
 	{"up", IMAGE_ROT_90},
@@ -827,7 +775,7 @@ static const struct {
 
 static int CheckSkyboxSides( const char *name )
 {
-	const char	*skybox_ext[] = { "png", "dds", "tga", "bmp" };
+	const char	*skybox_ext[] = { "ktx2", "png", "dds", "tga", "bmp" };
 	int		i, j, num_checked_sides;
 	char		sidename[MAX_VA_STRING];
 
@@ -878,6 +826,8 @@ static qboolean loadSkyboxSides( const char *prefix, int style ) {
 		if (!sides[i] || !sides[i]->buffer)
 			break;
 
+		DEBUG("%s: %d: %s", __FUNCTION__, i, sidename);
+
 		{
 			uint img_flags = k_skybox_info[i].flags;
 			// we need to expand image into RGBA buffer
@@ -885,7 +835,6 @@ static qboolean loadSkyboxSides( const char *prefix, int style ) {
 				img_flags |= IMAGE_FORCE_RGBA;
 			gEngine.Image_Process( &sides[i], 0, 0, img_flags, 0.f );
 		}
-		DEBUG( "%s%s%s", prefix, k_skybox_info[i].suffix, i != 5 ? ", " : ". " );
 	}
 
 	if( i != 6 )
@@ -893,7 +842,7 @@ static qboolean loadSkyboxSides( const char *prefix, int style ) {
 
 	{
 		const qboolean is_placeholder = false;
-		success = R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, is_placeholder );
+		success = R_VkTexturesSkyboxUploadSides( prefix, sides, kColorspaceGamma, is_placeholder );
 	}
 
 cleanup:
@@ -956,13 +905,14 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 
 	// Try loading skybox in this sequence:
 	// 1. Single pbr/env/<sky>.ktx2 cubemap
+	/* TODO
 	{
 		char ktx_path[MAX_STRING];
 		Q_snprintf(ktx_path, sizeof(ktx_path), "pbr/env/%.*s.ktx2", basename.len, basename.s);
 
-		if (R_VkTexturesSkyboxUploadKTX(ktx_path))
+		if (R_VkTexturesSkyboxUpload(ktx_path))
 			goto success;
-	}
+	}*/
 
 	// 2. pbr/env/<sky>_<side>.{png, ...} sides
 	if (skyboxLoadSides(basename, "pbr/env/%.*s"))
