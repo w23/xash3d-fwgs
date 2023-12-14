@@ -193,9 +193,8 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 		};
 
 		if ( g_devmem.verbose ) {
-			unsigned long long size = (unsigned long long) mai.allocationSize;
-			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %llu, memoryTypeBits: 0x%x, allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => typeIndex: %d }\n",
-				size, req.memoryTypeBits, PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), mai.memoryTypeIndex );
+			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %s, memoryTypeBits: 0x%x, allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => typeIndex: %d }\n",
+				Q_memprint( (float)mai.allocationSize ), req.memoryTypeBits, PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), mai.memoryTypeIndex );
 		}
 		ASSERT( mai.memoryTypeIndex != UINT32_MAX );
 
@@ -218,13 +217,11 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 		if ( slot->property_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ) {
 			XVK_CHECK( vkMapMemory( vk_core.device, slot->device_memory, 0, slot->size, 0, &slot->mapped ) );
 			if ( g_devmem.verbose ) {
-				size_t size          = (size_t) slot->size;
 				size_t device        = (size_t) vk_core.device;
 				size_t device_memory = (size_t) slot->device_memory;
 				// `z` - specifies `size_t` length
-
-				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, mapped: 0x%zx, device_memory: 0x%zx, size: %llu }\n",
-					device, slot->mapped, device_memory, size );
+				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, mapped: 0x%zx, device_memory: 0x%zx, size: %s }\n",
+					device, slot->mapped, device_memory, Q_memprint( (float)slot->size ) );
 			}
 		} else {
 			slot->mapped = NULL;
@@ -243,10 +240,9 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 	const int type_index = findMemoryWithType(req.memoryTypeBits, property_flags);
 
 	if ( g_devmem.verbose ) {
-
 		const char *usage_type_str = VK_DevMemUsageTypeString( usage_type );
-		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
-			name, usage_type_str, req.size, req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %s, alignment: %llu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
+			name, usage_type_str, Q_memprint( (float)req.size ), req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
 	}
 
 	if ( vk_core.rtx ) {
@@ -321,8 +317,8 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 
 	if ( g_devmem.verbose ) {
 		const char *usage_type = VK_DevMemUsageTypeString( mem->usage_type );
-		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d, usage: %s, size: %u, alignment: %d, alignment_hole: %d }\n",
-			slot_index, mem->internal.block_index, usage_type, mem->internal.block_size, mem->internal.block_alignment, mem->internal.block_alignment_hole );
+		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d, usage: %s, size: %s, alignment: %d, alignment_hole: %d }\n",
+			slot_index, mem->internal.block_index, usage_type, Q_memprint( (float)mem->internal.block_size ), mem->internal.block_alignment, mem->internal.block_alignment_hole );
 	}
 
 	aloPoolFree( slot->allocator, mem->internal.block_index );
