@@ -53,6 +53,33 @@ static struct {
 	qboolean verbose;
 } g_devmem;
 
+// Format for printf-like functions to represent bits of `VkMemoryPropertyFlags`.
+// Usage example:   gEngine.Con_Reportf( "property_flags: " PRI_VKMEMPROPFLAGS_FMT "\n", PRI_VKMEMPROPFLAGS_ARG( property_flags ) );
+#define PRI_VKMEMPROPFLAGS_FMT "%c%c%c%c%c"
+
+// Inline arguments for `PRI_VKMEMPROPFLAGS_FMT` format macro.
+#define PRI_VKMEMPROPFLAGS_ARG( flags ) \
+	( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT     ) ? 'D' : '-', \
+	( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT     ) ? 'V' : '-', \
+	( flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT    ) ? 'C' : '-', \
+	( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT      ) ? '$' : '-', \
+	( flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT ) ? 'L' : '-'
+	// Not used:
+	// VK_MEMORY_PROPERTY_PROTECTED_BIT
+	// VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD
+	// VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD
+	// VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV
+
+// Format for printf-like functions to represent bits of `VkMemoryAllocateFlags`.
+// Usage example:   gEngine.Con_Reportf( "allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT "\n", PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ) );
+#define PRI_VKMEMALLOCFLAGS_FMT "%c%c%c"
+
+// Inline arguments for `PRI_VKMEMALLOCFLAGS_FMT` format macro.
+#define PRI_VKMEMALLOCFLAGS_ARG( flags ) \
+	( flags & VK_MEMORY_ALLOCATE_DEVICE_MASK_BIT                   ) ? 'M' : '-', \
+	( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT                ) ? 'A' : '-', \
+	( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT ) ? 'R' : '-'
+
 // Register allocation in overall stats and for the corresponding type stats too.
 #define REGISTER_ALLOCATION( type, size, alignment ) \
 	register_allocation_for_type( VK_DEVMEM_USAGE_TYPE_ALL, size, alignment ); \
@@ -124,36 +151,6 @@ static void register_free_for_type( vk_devmem_usage_type_t type, int size, int a
 	}
 }
 
-#define VKMEMPROPFLAGS_COUNT 5
-#define VKMEMPROPFLAGS_STRLEN (VKMEMPROPFLAGS_COUNT + 1)
-
-// Fills string `out_flags` with characters at each corresponding flag slot.
-static void VK_MemoryPropertyFlags_String( VkMemoryPropertyFlags flags, char out_flags[VKMEMPROPFLAGS_STRLEN] ) {
-	int flag = 0;
-	if ( flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT     )  {out_flags[flag] = 'D';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT     )  {out_flags[flag] = 'V';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT    )  {out_flags[flag] = 'C';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT      )  {out_flags[flag] = '$';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT )  {out_flags[flag] = 'L';}  else  {out_flags[flag] = '-';}  flag += 1;
-	// VK_MEMORY_PROPERTY_PROTECTED_BIT
-	// VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD
-	// VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD
-	// VK_MEMORY_PROPERTY_RDMA_CAPABLE_BIT_NV
-	out_flags[flag] = '\0';
-}
-
-#define VKMEMALLOCFLAGS_COUNT 3
-#define VKMEMALLOCFLAGS_STRLEN (VKMEMALLOCFLAGS_COUNT + 1)
-
-// Fills string `out_flags` with characters at each corresponding flag slot.
-static void VK_MemoryAllocateFlags_String( VkMemoryAllocateFlags flags, char out_flags[VKMEMALLOCFLAGS_STRLEN] ) {
-	int flag = 0;
-	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_MASK_BIT                   )  {out_flags[flag] = 'M';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT                )  {out_flags[flag] = 'A';}  else  {out_flags[flag] = '-';}  flag += 1;
-	if ( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT )  {out_flags[flag] = 'R';}  else  {out_flags[flag] = '-';}  flag += 1;
-	out_flags[flag] = '\0';
-}
-
 static int findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
 	const VkPhysicalDeviceMemoryProperties *const properties = &vk_core.physical_device.memory_properties2.memoryProperties;
 	for ( int type = 0; type < (int)properties->memoryTypeCount; type += 1 ) {
@@ -198,11 +195,9 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 		};
 
 		if ( g_devmem.verbose ) {
-			char allocate_flags_str[VKMEMALLOCFLAGS_STRLEN];
-			VK_MemoryAllocateFlags_String( allocate_flags, allocate_flags_str );
 			unsigned long long size = (unsigned long long) mai.allocationSize;
-			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %llu, memoryTypeBits: 0x%x, allocate_flags: %s => typeIndex: %d }\n",
-				size, req.memoryTypeBits, allocate_flags_str, mai.memoryTypeIndex );
+			gEngine.Con_Reportf( "  ^3->^7 ^6AllocateDeviceMemory:^7 { size: %llu, memoryTypeBits: 0x%x, allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => typeIndex: %d }\n",
+				size, req.memoryTypeBits, PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), mai.memoryTypeIndex );
 		}
 		ASSERT( mai.memoryTypeIndex != UINT32_MAX );
 
@@ -229,8 +224,9 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 				size_t device        = (size_t) vk_core.device;
 				size_t device_memory = (size_t) slot->device_memory;
 				// `z` - specifies `size_t` length
-				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, device_memory: 0x%zx, size: %zu }\n",
-					device, device_memory, size );
+
+				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, mapped: 0x%zx, device_memory: 0x%zx, size: %llu }\n",
+					device, slot->mapped, device_memory, size );
 			}
 		} else {
 			slot->mapped = NULL;
@@ -249,17 +245,10 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 	const int type_index = findMemoryWithType(req.memoryTypeBits, property_flags);
 
 	if ( g_devmem.verbose ) {
-		char property_flags_str[VKMEMPROPFLAGS_STRLEN];
-		char allocate_flags_str[VKMEMALLOCFLAGS_STRLEN];
-		VK_MemoryPropertyFlags_String( property_flags, property_flags_str );
-		VK_MemoryAllocateFlags_String( allocate_flags, allocate_flags_str );
 
 		const char *usage_type_str = VK_DevMemUsageTypeString( usage_type );
-
-		unsigned long long req_size      = (unsigned long long) req.size;
-		unsigned long long req_alignment = (unsigned long long) req.alignment;
-		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: %s, allocate_flags: %s => type_index: %d }\n",
-			name, usage_type_str, req_size, req_alignment, req.memoryTypeBits, property_flags_str, allocate_flags_str, type_index );
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %llu, alignment: %llu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
+			name, usage_type_str, req.size, req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
 	}
 
 	if ( vk_core.rtx ) {
@@ -370,7 +359,7 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 }
 
 qboolean VK_DevMemInit( void ) {
-	g_devmem.verbose = gEngine.Sys_CheckParm( "-vkdebugmem" );
+	g_devmem.verbose = !!gEngine.Sys_CheckParm( "-vkdebugmem" );
 
 	// Register standalone metrics.
 	R_SPEEDS_METRIC( g_devmem.alloc_slots_count, "allocated_slots", kSpeedsMetricCount );
