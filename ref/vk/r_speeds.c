@@ -3,6 +3,7 @@
 #include "vk_framectl.h"
 #include "vk_cvar.h"
 #include "vk_combuf.h"
+#include "stringview.h"
 
 #include "profiler.h"
 
@@ -302,23 +303,9 @@ static void handlePause( uint32_t prev_frame_index ) {
 	}
 }
 
-// TODO move this to vk_common or something
-int stringViewCmp(const_string_view_t sv, const char* s) {
-	for (int i = 0; i < sv.len; ++i) {
-		const int d = sv.s[i] - s[i];
-		if (d != 0)
-			return d;
-		if (s[i] == '\0')
-			return 1;
-	}
-
-	// Check that both strings end the same
-	return '\0' - s[sv.len];
-}
-
 static int findMetricIndexByName( const_string_view_t name) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
-		if (stringViewCmp(name, g_speeds.metrics[i].name) == 0)
+		if (svCmp(name, g_speeds.metrics[i].name) == 0)
 			return i;
 	}
 
@@ -327,7 +314,7 @@ static int findMetricIndexByName( const_string_view_t name) {
 
 static int findGraphIndexByName( const_string_view_t name) {
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
-		if (stringViewCmp(name, g_speeds.graphs[i].name) == 0)
+		if (svCmp(name, g_speeds.graphs[i].name) == 0)
 			return i;
 	}
 

@@ -559,7 +559,7 @@ static const ref_interface_t gReffuncs =
 	.R_GetTextureOriginalBuffer = R_GetTextureOriginalBuffer_UNUSED,
 	.GL_LoadTextureFromBuffer = R_TextureUploadFromBuffer,
 	.GL_ProcessTexture = GL_ProcessTexture_UNUSED,
-	.R_SetupSky = R_TextureSetupSky,
+	.R_SetupSky = R_TextureSetupCustomSky,
 
 	// 2D
 	R_Set2DMode,

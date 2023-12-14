@@ -1,5 +1,6 @@
 #include "vk_logs.h"
 #include "vk_cvar.h"
+#include "stringview.h"
 
 uint32_t g_log_debug_bits = 0;
 
@@ -21,7 +22,7 @@ void R_LogSetVerboseModules( const char *p ) {
 
 		for (int i = 0; i < COUNTOF(g_log_module_pairs); ++i) {
 			const struct log_pair_t *const pair = g_log_module_pairs + i;
-			if (stringViewCmp(name, pair->name) == 0) {
+			if (svCmp(name, pair->name) == 0) {
 				gEngine.Con_Reportf("Enabling verbose logs for module \"%.*s\"\n", name.len, name.s);
 				bit = pair->bit;
 				break;

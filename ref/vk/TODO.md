@@ -1,8 +1,17 @@
+# 2023-12-14 E346
+- [x] Optimize skybox loading, #706
+    - [x] Do not load skybox when there are no SURF_DRAWSKY, #579
+    - [x] Do not reload the same skybox
+    - [ ] Load skyboxes from KTX2
+    - [ ] do not generate mips for skybox
+- [ ] add skybox test
+
 # 2023-12-11 E345
-- [x] fix incorrect basecolor brdf multiplication, #666
+- [x] fix black dielectrics, #666
+    - [x] fix incorrect basecolor brdf multiplication, #666
+    - [x] fixup skybox glitches caused by #666 fix
 - [ ] Patch overlay textures (#696) → turned out to be much more difficult than expected.
 - [x] Do not patch sprite textures for traditional raster, #695
-- [x] fixup skybox glitches caused by #666 fix
 
 # 2023-12-05 E342
 - [x] tone down the specular indirect blur
@@ -17,7 +26,6 @@ Longer-term agenda for current season:
 - [ ] Tools:
 	- [ ] Shader profiling. Measure impact of changes. Regressions.
 - [ ] Better PBR math, e.g.:
-	- [ ] fix black dielectrics, #666
 - [ ] Transparency:
 	- [ ] Figure out why additive transparency differs visibly from raster
 	- [ ] Extract and specialize effects, e.g.

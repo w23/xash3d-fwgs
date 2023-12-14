@@ -1011,3 +1011,23 @@ This would need the same as above, plus:
 - A: probably should still do it on GPU lol
 
 This would also allow passing arbitrary per-pixel data from shaders, which would make shader debugging much much easier.
+
+# 2023-12-12 E346
+## Skyboxes
+### Current state
+- `R_TextureSetupSky()`
+    - called from:
+        ← `vk_scene.c`/`R_NewMap()`
+        ← engine ?? -- seems optional, r_soft doesn't implement it. Set on:
+            - `skybox` console command
+            - certain movevars change, whatever that is
+    - `unloadSkybox()`
+    - for [pbr/, old/] do
+        - `CheckSkybox()`
+            - make sidenames and check whether files exist
+        - `loadSkybox()`
+            - `unloadSkybox()`
+            - make sidenames
+            - `FS_LoadImage()` and `ImageProcess()`
+            - `R_VkTextureSkyboxUpload(sides)`
+    - if failed and not default already: `R_TextureSetupSky(default)` (recurse)

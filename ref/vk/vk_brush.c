@@ -83,6 +83,7 @@ typedef struct {
 	int animated_count;
 	int conveyors_count;
 	int conveyors_vertices_count;
+	int sky_surfaces_count;
 
 	water_model_sizes_t water, side_water;
 } model_sizes_t;
@@ -992,8 +993,10 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 			sizes.conveyors_count++;
 			sizes.conveyors_vertices_count += surf->numedges;
 			break;
-		case BrushSurface_Regular:
 		case BrushSurface_Sky:
+			sizes.sky_surfaces_count++;
+			break;
+		case BrushSurface_Regular:
 			break;
 		}
 
@@ -1609,6 +1612,11 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	bmodel->prev_time = gpGlobals->time;
 
 	const model_sizes_t sizes = computeSizes( mod, is_worldmodel );
+
+	if (is_worldmodel) {
+		tglob.current_map_has_surf_sky = sizes.sky_surfaces_count != 0;
+		DEBUG("sky_surfaces_count=%d, current_map_has_surf_sky=%d", sizes.sky_surfaces_count, tglob.current_map_has_surf_sky);
+	}
 
 	if (sizes.num_surfaces != 0) {
 		if (!createRenderModel(mod, bmodel, sizes, is_worldmodel)) {

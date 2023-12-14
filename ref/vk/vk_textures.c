@@ -58,9 +58,6 @@ void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
 
-// FIXME should be static
-void unloadSkybox( void );
-
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
@@ -189,7 +186,7 @@ qboolean R_VkTexturesInit( void ) {
 static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
-	unloadSkybox();
+	R_VkTexturesSkyboxUnload();
 	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
 	R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
 
@@ -581,13 +578,12 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 	// TODO tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 }
 
-void unloadSkybox( void ) {
+void R_VkTexturesSkyboxUnload(void) {
+	DEBUG("%s", __FUNCTION__);
 	if (g_vktextures.skybox_cube.vk.image.image) {
 		R_VkTextureDestroy( -1, &g_vktextures.skybox_cube );
 		memset(&g_vktextures.skybox_cube, 0, sizeof(g_vktextures.skybox_cube));
 	}
-
-	tglob.fCustomSkybox = false;
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
@@ -604,6 +600,11 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], 
 	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
 	return uploadTexture(-1, dest, sides, 6, true, colorspace_hint);
+}
+
+qboolean R_VkTexturesSkyboxUploadKTX( const char *filename ) {
+	ERR("%s(%s): not implemented", __FUNCTION__, filename);
+	return false;
 }
 
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
