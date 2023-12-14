@@ -11,6 +11,7 @@ void aloPoolDestroy(struct alo_pool_s*);
 typedef struct {
 	alo_size_t offset;
 	alo_size_t size;
+	alo_size_t alignment_hole;
 
 	int index;
 } alo_block_t;

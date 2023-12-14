@@ -81,17 +81,17 @@ static struct {
 	( flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT ) ? 'R' : '-'
 
 // Register allocation in overall stats and for the corresponding type stats too.
-#define REGISTER_ALLOCATION( type, size, alignment ) \
-	register_allocation_for_type( VK_DEVMEM_USAGE_TYPE_ALL, size, alignment ); \
-	register_allocation_for_type( type, size, alignment );
+#define REGISTER_ALLOCATION( type, size, alignment, alignment_hole ) \
+	register_allocation_for_type( VK_DEVMEM_USAGE_TYPE_ALL, size, alignment, alignment_hole ); \
+	register_allocation_for_type( type, size, alignment, alignment_hole );
 
 // Register deallocation (freeing) in overall stats and for the corresponding type stats too.
-#define REGISTER_FREE( type, size, alignment ) \
-	register_free_for_type( VK_DEVMEM_USAGE_TYPE_ALL, size, alignment ); \
-	register_free_for_type( type, size, alignment );
+#define REGISTER_FREE( type, size, alignment, alignment_hole ) \
+	register_free_for_type( VK_DEVMEM_USAGE_TYPE_ALL, size, alignment, alignment_hole ); \
+	register_free_for_type( type, size, alignment, alignment_hole );
 
 // Register allocation in stats of the provided type.
-static void register_allocation_for_type( vk_devmem_usage_type_t type, int size, int alignment ) {
+static void register_allocation_for_type( vk_devmem_usage_type_t type, int size, int alignment, int alignment_hole ) {
 	ASSERT( type >= VK_DEVMEM_USAGE_TYPE_ALL );
 	ASSERT( type <  VK_DEVMEM_USAGE_TYPES_COUNT );
 
@@ -112,7 +112,6 @@ static void register_allocation_for_type( vk_devmem_usage_type_t type, int size,
 
 	/* Update alignment holes stats. */
 
-	int alignment_hole = size % alignment;
 	if ( alignment_hole > 0 ) {
 		// Update current alignment holes stats.
 		stats->current.align_holes      += 1;
@@ -131,7 +130,7 @@ static void register_allocation_for_type( vk_devmem_usage_type_t type, int size,
 }
 
 // Register deallocation (freeing) in stats of the provided type.
-static void register_free_for_type( vk_devmem_usage_type_t type, int size, int alignment ) {
+static void register_free_for_type( vk_devmem_usage_type_t type, int size, int alignment, int alignment_hole ) {
 	ASSERT( type >= VK_DEVMEM_USAGE_TYPE_ALL );
 	ASSERT( type <  VK_DEVMEM_USAGE_TYPES_COUNT );
 
@@ -144,7 +143,6 @@ static void register_free_for_type( vk_devmem_usage_type_t type, int size, int a
 	
 	/* Update current alignment holes stats. */
 
-	int alignment_hole = size % alignment;
 	if ( alignment_hole > 0 ) {
 		stats->current.align_holes      -= 1;
 		stats->current.align_holes_size -= size;
@@ -258,9 +256,9 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 	}
 
 	alo_block_t block;
-	int slot_index = -1;
-	for ( int _slot_index = 0; _slot_index < g_devmem.alloc_slots_count; _slot_index += 1 ) {
-		vk_device_memory_slot_t *const slot = g_devmem.alloc_slots + _slot_index;
+	int selected_slot_index = -1;
+	for ( int slot_index = 0; slot_index < g_devmem.alloc_slots_count; slot_index += 1 ) {
+		vk_device_memory_slot_t *const slot = g_devmem.alloc_slots + slot_index;
 		if ( slot->type_index != type_index )
 			continue;
 
@@ -274,62 +272,62 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 		if ( block.size == 0 )
 			continue;
 
-		slot_index = _slot_index;
+		selected_slot_index = slot_index;
 		break;
 	}
 
-	if ( slot_index < 0 ) {
-		slot_index = allocateDeviceMemory( req, type_index, allocate_flags );
-		ASSERT( slot_index >= 0 );
-		if ( slot_index < 0 )
+	if ( selected_slot_index < 0 ) {
+		selected_slot_index = allocateDeviceMemory( req, type_index, allocate_flags );
+		ASSERT( selected_slot_index >= 0 );
+		if ( selected_slot_index < 0 )
 			return devmem;
 
-		struct alo_pool_s *allocator = g_devmem.alloc_slots[slot_index].allocator;
+		struct alo_pool_s *allocator = g_devmem.alloc_slots[selected_slot_index].allocator;
 		block = aloPoolAllocate( allocator, req.size, req.alignment );
 		ASSERT( block.size != 0 );
 	}
 
 	{
-		vk_device_memory_slot_t *const slot = g_devmem.alloc_slots + slot_index;
+		vk_device_memory_slot_t *const slot = g_devmem.alloc_slots + selected_slot_index;
 		devmem.device_memory = slot->device_memory;
 		devmem.offset        = block.offset;
 		devmem.mapped        = slot->mapped ? (char *)slot->mapped + block.offset : NULL;
 
 		if ( g_devmem.verbose ) {
-			gEngine.Con_Reportf( "  ^3->^7 Allocated: { slot: %d, block: %d, offset: %d, size: %d }\n", 
-				slot_index, block.index, (int)block.offset, (int)block.size );
+			gEngine.Con_Reportf( "  ^3->^7 Allocated: { slot: %d, block: %d, offset: %u, size: %u, hole: %u }\n", 
+				selected_slot_index, block.index, block.offset, block.size, block.alignment_hole );
 		}
 
 		slot->refcount++;
-		devmem._slot_index      = slot_index;
-		devmem._block_index     = block.index;
-		devmem._block_size      = block.size;
-		devmem._block_alignment = req.alignment;
+		devmem.internal.slot_index           = selected_slot_index;
+		devmem.internal.block_index          = block.index;
+		devmem.internal.block_size           = block.size;
+		devmem.internal.block_alignment      = req.alignment;
+		devmem.internal.block_alignment_hole = block.alignment_hole;
 
-		REGISTER_ALLOCATION( usage_type, block.size, req.alignment );
+		REGISTER_ALLOCATION( usage_type, block.size, req.alignment, block.alignment_hole );
 
 		return devmem;
 	}
 }
 
 void VK_DevMemFree(const vk_devmem_t *mem) {
-	ASSERT( mem->_slot_index >= 0 );
-	ASSERT( mem->_slot_index < g_devmem.alloc_slots_count );
+	int slot_index = mem->internal.slot_index;
+	ASSERT( slot_index >= 0 );
+	ASSERT( slot_index < g_devmem.alloc_slots_count );
 
-	int slot_index = mem->_slot_index;
 	vk_device_memory_slot_t *const slot = g_devmem.alloc_slots + slot_index;
 	ASSERT( mem->device_memory == slot->device_memory );
 
 	if ( g_devmem.verbose ) {
 		const char *usage_type = VK_DevMemUsageTypeString( mem->usage_type );
-		int align_hole = mem->_block_size % mem->_block_alignment;
-		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d, usage: %s, size: %d, alignment: %d, hole: %d }\n",
-			slot_index, mem->_block_index, usage_type, mem->_block_size, mem->_block_alignment, align_hole );
+		gEngine.Con_Reportf( "^2VK_DevMemFree:^7 { slot: %d, block: %d, usage: %s, size: %u, alignment: %d, alignment_hole: %d }\n",
+			slot_index, mem->internal.block_index, usage_type, mem->internal.block_size, mem->internal.block_alignment, mem->internal.block_alignment_hole );
 	}
 
-	aloPoolFree( slot->allocator, mem->_block_index );
+	aloPoolFree( slot->allocator, mem->internal.block_index );
 
-	REGISTER_FREE( mem->usage_type, mem->_block_size, mem->_block_alignment );
+	REGISTER_FREE( mem->usage_type, mem->internal.block_size, mem->internal.block_alignment, mem->internal.block_alignment_hole );
 
 	slot->refcount--;
 }

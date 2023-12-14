@@ -27,11 +27,16 @@ typedef struct vk_devmem_s {
 	vk_devmem_usage_type_t usage_type;
 	void *mapped;
 
-	// Internal
-	int _slot_index;
-	int _block_index; 
-	int _block_size;
-	int _block_alignment;
+	struct {
+		int slot_index;
+		int block_index;
+		
+		// alolcator.h:
+		// typedef uint32_t alo_size_t; 
+		uint32_t block_size;
+		uint32_t block_alignment;
+		uint32_t block_alignment_hole;
+	} internal;
 } vk_devmem_t;
 
 typedef struct vk_devmem_allocate_args_s {
@@ -50,5 +55,5 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 void VK_DevMemFree(const vk_devmem_t *mem);
 
 // Returns short string representation of `vk_devmem_usage_type_t` usage type.
-const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type );
+static const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type );
 

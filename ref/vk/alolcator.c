@@ -196,6 +196,7 @@ alo_block_t aloPoolAllocate(struct alo_pool_s* pool, alo_size_t size, alo_size_t
 			ret.index = i;
 			ret.offset = offset;
 			ret.size = size;
+			ret.alignment_hole = alignment_hole;
 			break;
 		}
 	}
