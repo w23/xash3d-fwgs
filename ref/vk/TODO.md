@@ -7,11 +7,14 @@
           KTX2 sides should be pre-rotated
     - [ ] KTX2 cubemaps
     - [x] do not generate mips for skybox
+    - [x] support imagelib cubemaps
+    - [x] use imagelib skybox loader
+        - [ ] fix ktx2 sides corruption
 - [x] Hide all SURF_DRAWSKY while retaining skybox, #579
 - [ ] add skybox test
-- [ ] possible issues with TF_NOMIPMAP
-    - [ ] used incorrectly when loading blue noise textures
-    - [ ] what about regular usage?
+- [x] possible issues with TF_NOMIPMAP
+    - [x] used incorrectly when loading blue noise textures
+    - [x] what about regular usage?
 
 # 2023-12-11 E345
 - [x] fix black dielectrics, #666

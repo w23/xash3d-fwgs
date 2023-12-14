@@ -34,11 +34,10 @@ typedef struct vk_texture_s
 qboolean R_VkTexturesInit( void );
 void R_VkTexturesShutdown( void );
 
-qboolean R_VkTexturesSkyboxUploadSides( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder);
-qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const pic );
+qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, qboolean placeholder);
 void R_VkTexturesSkyboxUnload(void);
 
-qboolean R_VkTextureUpload(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, colorspace_hint_e colorspace_hint);
+qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint);
 void R_VkTextureDestroy(int index, vk_texture_t *tex);
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void );

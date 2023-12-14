@@ -232,20 +232,11 @@ static void createDefaultTextures( void )
 	tglob.cinTexture = R_TextureUploadFromBufferNew( "*cintexture", pic, TF_NOMIPMAP|TF_CLAMP );
 
 	{
-		rgbdata_t *sides[6];
-		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
-		for( x = 0; x < 16; x++ )
-			((uint *)pic->buffer)[x] = 0;
-
-		sides[0] = pic;
-		sides[1] = pic;
-		sides[2] = pic;
-		sides[3] = pic;
-		sides[4] = pic;
-		sides[5] = pic;
+		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR | IMAGE_CUBEMAP );
+		memset(pic->buffer, 0, pic->size);
 
 		const qboolean is_placeholder = true;
-		R_VkTexturesSkyboxUploadSides( "skybox_placeholder", sides, kColorspaceGamma, is_placeholder );
+		R_VkTexturesSkyboxUpload( "skybox_placeholder", pic, kColorspaceGamma, is_placeholder );
 	}
 }
 
@@ -477,50 +468,6 @@ void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags
 	}
 }
 
-qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layers, int num_layers) {
-	for (int i = 0; i < num_layers; ++i) {
-		// FIXME create empty black texture if there's no buffer
-		if (!layers[i]->buffer) {
-			ERR("Texture %s layer %d missing buffer", name, i);
-			return false;
-		}
-
-		if (i == 0)
-			continue;
-
-		if (layers[0]->type != layers[i]->type) {
-			ERR("Texture %s layer %d has type %d inconsistent with layer 0 type %d", name, i, layers[i]->type, layers[0]->type);
-			return false;
-		}
-
-		if (layers[0]->width != layers[i]->width
-			|| layers[0]->height != layers[i]->height
-			|| layers[0]->depth != layers[i]->depth) {
-			ERR("Texture %s layer %d has resolution %dx%d%d inconsistent with layer 0 resolution %dx%dx%d",
-				name, i,
-				layers[i]->width, layers[i]->height, layers[i]->depth,
-				layers[0]->width, layers[0]->height, layers[0]->depth);
-			return false;
-		}
-
-		if ((layers[0]->flags ^ layers[i]->flags) & IMAGE_HAS_ALPHA) {
-			ERR("Texture %s layer %d has_alpha=%d inconsistent with layer 0 has_alpha=%d",
-				name, i,
-				!!(layers[i]->flags & IMAGE_HAS_ALPHA),
-				!!(layers[0]->flags & IMAGE_HAS_ALPHA));
-			return false;
-		}
-
-		if (layers[0]->numMips != layers[i]->numMips) {
-			ERR("Texture %s layer %d has numMips %d inconsistent with layer 0 numMips %d",
-				name, i, layers[i]->numMips, layers[0]->numMips);
-			return false;
-		}
-	}
-
-	return true;
-}
-
 ///////////// Render API funcs /////////////
 int R_TextureFindByName( const char *name )
 {
@@ -584,11 +531,16 @@ static int loadTextureInternalFromFile( const char *name, const byte *buf, size_
 	if( !pic )
 		goto cleanup;
 
+	if (pic->flags & IMAGE_CUBEMAP) {
+		ERR("%s: '%s' is invalid: cubemaps are not supported here", __FUNCTION__, name);
+		goto cleanup;
+	}
+
 	// Process flags, convert to rgba, etc
 	tex->flags = flags;
 	ProcessImage( tex, pic );
 
-	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, colorspace_hint ))
+	if( !R_VkTextureUpload( insert.index, tex, pic, colorspace_hint ))
 		goto cleanup;
 
 	// New textures should have refcount = 1 regardless of refcount-aware calls
@@ -708,6 +660,11 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 	if( !pic )
 		return 0;
 
+	if (pic->flags & IMAGE_CUBEMAP) {
+		ERR("%s: '%s' is invalid: cubemaps are not supported here", __FUNCTION__, name);
+		return 0;
+	}
+
 	if( !checkTextureName( name ))
 		return 0;
 
@@ -740,7 +697,7 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 
 	ProcessImage( tex, pic );
 
-	if( !R_VkTextureUpload( insert.index, tex, &pic, 1, kColorspaceGamma ))
+	if( !R_VkTextureUpload( insert.index, tex, pic, kColorspaceGamma ))
 	{
 		if ( !update_only && insert.created )
 			urmomRemoveByIndex(&g_textures.all_desc, insert.index);
@@ -757,6 +714,7 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 	return insert.index;
 }
 
+/*
 static const struct {
 	const char *suffix;
 	uint flags;
@@ -842,7 +800,7 @@ static qboolean loadSkyboxSides( const char *prefix, int style ) {
 
 	{
 		const qboolean is_placeholder = false;
-		success = R_VkTexturesSkyboxUploadSides( prefix, sides, kColorspaceGamma, is_placeholder );
+		success = R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, is_placeholder );
 	}
 
 cleanup:
@@ -873,6 +831,44 @@ static qboolean skyboxLoadSides(const_string_view_t base, const char *prefix) {
 	// TODO merge together as in gl_warp.c
 	const int style = CheckSkyboxSides( loadname );
 	return loadSkyboxSides(loadname, style);
+}
+*/
+
+static qboolean skyboxLoad(const_string_view_t base, const char *prefix) {
+	qboolean success = false;
+	char loadname[MAX_STRING];
+	Q_snprintf( loadname, sizeof( loadname ), prefix, base.len, base.s );
+
+	rgbdata_t *pic = gEngine.FS_LoadImage( loadname, NULL, 0 );
+	if (!pic)
+		return false;
+
+	if (!(pic->flags & IMAGE_CUBEMAP)) {
+		ERR("%s: '%s' is invalid: skybox is expected to be a cubemap ", __FUNCTION__, loadname);
+		goto cleanup;
+	}
+
+	{
+		uint img_flags = pic->flags;
+		if( pic->type == PF_INDEXED_24 || pic->type == PF_INDEXED_32 )
+			img_flags |= IMAGE_FORCE_RGBA;
+
+		gEngine.Image_Process( &pic, 0, 0, img_flags, 0.f );
+	}
+
+	{
+		const qboolean is_placeholder = false;
+		success = R_VkTexturesSkyboxUpload( prefix, pic, kColorspaceGamma, is_placeholder );
+	}
+
+cleanup:
+	if (pic)
+		gEngine.FS_FreeImage(pic);
+
+	if (success)
+		DEBUG( "Loaded skybox %s", prefix );
+
+	return success;
 }
 
 static void skyboxUnload( void ) {
@@ -915,11 +911,11 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 	}*/
 
 	// 2. pbr/env/<sky>_<side>.{png, ...} sides
-	if (skyboxLoadSides(basename, "pbr/env/%.*s"))
+	if (skyboxLoad(basename, "pbr/env/%.*s"))
 		goto success;
 
 	// 3. Old gfx/env/<sky>_<side>.{png, ...} sides
-	if (skyboxLoadSides(basename, "gfx/env/%.*s"))
+	if (skyboxLoad(basename, "gfx/env/%.*s"))
 		goto success;
 
 	return false;
@@ -931,7 +927,7 @@ success:
 
 static const char *k_skybox_default = "desert";
 
-void skyboxLoad( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
+void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
 	DEBUG("%s: skyboxname='%s' is_custom=%d force_reload=%d", __FUNCTION__, skyboxname, is_custom, force_reload);
 
 	if (!skyboxTryLoad(skyboxname, force_reload)) {
@@ -949,12 +945,12 @@ void skyboxLoad( const char *skyboxname, qboolean is_custom, qboolean force_relo
 void R_TextureSetupCustomSky( const char *skyboxname ) {
 	const qboolean is_custom = true;
 	const qboolean force_reload = false;
-	skyboxLoad(skyboxname, is_custom, force_reload);
+	skyboxSetup(skyboxname, is_custom, force_reload);
 }
 
 void R_TextureSetupSky( const char *skyboxname, qboolean force_reload ) {
 	const qboolean is_custom = false;
-	skyboxLoad(skyboxname, is_custom, force_reload);
+	skyboxSetup(skyboxname, is_custom, force_reload);
 }
 
 // FIXME move to r_textures_extra.h
