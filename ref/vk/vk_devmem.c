@@ -32,10 +32,11 @@ typedef struct vk_devmem_allocation_stats_s {
 	// Metrics updated whenever new highest value is registered.
 	struct {
 		int allocations;          // Highest number of allocations made.
-		int allocated;            // Largest size of allocated memory. 
+		int allocated;            // Largest size of allocated memory.
+		int allocation;           // Largest size of single allocation made.
 		int align_holes;          // Highest number of alignment holes made.
-		int align_holes_size;     // Largest size of alignment holes made. 
-		int align_hole_size;      // Largest size of the largest alignment hole made.
+		int align_holes_size;     // Largest size of alignment holes made.
+		int align_hole_size;      // Largest size of single alignment hole made.
 	} peak;
 } vk_devmem_allocation_stats_t;
 
@@ -109,6 +110,9 @@ static void register_allocation_for_type( vk_devmem_usage_type_t type, int size,
 
 	if ( stats->peak.allocated < stats->current.allocated )
 		stats->peak.allocated = stats->current.allocated;
+
+	if ( stats->peak.allocation < size )
+		stats->peak.allocation = size;
 
 	/* Update alignment holes stats. */
 
@@ -347,6 +351,7 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
  	REGISTER_STATS_METRIC( stats->current.align_holes_size,  current_align_holes_size##usage_suffix,  g_devmem.stats[usage_suffix].current.align_holes_size,  kSpeedsMetricBytes ); \
  	REGISTER_STATS_METRIC( stats->peak.allocations,          peak_allocations##usage_suffix,          g_devmem.stats[usage_suffix].peak.allocations,          kSpeedsMetricCount ); \
  	REGISTER_STATS_METRIC( stats->peak.allocated,            peak_allocated##usage_suffix,            g_devmem.stats[usage_suffix].peak.allocated,            kSpeedsMetricBytes ); \
+ 	REGISTER_STATS_METRIC( stats->peak.allocation,           peak_allocation##usage_suffix,           g_devmem.stats[usage_suffix].peak.allocation,           kSpeedsMetricBytes ); \
  	REGISTER_STATS_METRIC( stats->peak.align_holes,          peak_align_holes##usage_suffix,          g_devmem.stats[usage_suffix].peak.align_holes,          kSpeedsMetricCount ); \
  	REGISTER_STATS_METRIC( stats->peak.align_holes_size,     peak_align_holes_size##usage_suffix,     g_devmem.stats[usage_suffix].peak.align_holes_size,     kSpeedsMetricBytes ); \
  	REGISTER_STATS_METRIC( stats->peak.align_hole_size,      peak_align_hole_size##usage_suffix,      g_devmem.stats[usage_suffix].peak.align_hole_size,      kSpeedsMetricBytes ); \
