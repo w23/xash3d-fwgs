@@ -1,3 +1,8 @@
+# 2023-12-15 E348
+- [x] fix ktx2 sides corruption
+- [ ] KTX2 cubemaps
+- [ ] add skybox test
+
 # 2023-12-14 E346-E347
 - [x] Optimize skybox loading, #706
     - [x] Do not load skybox when there are no SURF_DRAWSKY, #579
@@ -5,13 +10,10 @@
     - [-] Load skyboxes from KTX2 sides
         → doesn't work as easily, as there's no way to rotate compressed images.
           KTX2 sides should be pre-rotated
-    - [ ] KTX2 cubemaps
     - [x] do not generate mips for skybox
     - [x] support imagelib cubemaps
     - [x] use imagelib skybox loader
-        - [ ] fix ktx2 sides corruption
 - [x] Hide all SURF_DRAWSKY while retaining skybox, #579
-- [ ] add skybox test
 - [x] possible issues with TF_NOMIPMAP
     - [x] used incorrectly when loading blue noise textures
     - [x] what about regular usage?
