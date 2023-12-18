@@ -1032,7 +1032,7 @@ This would also allow passing arbitrary per-pixel data from shaders, which would
             - `R_VkTextureSkyboxUpload(sides)`
     - if failed and not default already: `R_TextureSetupSky(default)` (recurse)
 
-# 2023-12-14 E34a
+# 2023-12-14 E347
 ## TIL engine imagelib `FS_LoadImage()`:
 1. Pick format based on extension
 2. If no extension is specified, try all supported extensions in sequence.
@@ -1044,3 +1044,38 @@ This would also allow passing arbitrary per-pixel data from shaders, which would
   rotate some compressed format, which will amount to just reordering blocks, and then reordering block
   contents. Mendokusai). Therefore, we can't just replace png sides with compressed ktx2 sides directly.
   KTX2 sides should be pre-rotated.
+
+# 2023-12-15 E348
+## Textures layout
+imagelib image buffer layout:
+	- sides[1|6]
+		- mips[biggest -> smallest]
+			- (pixel data)
+
+KTX2 file layout:
+- mips[smallest -> biggest]
+	- sides[1|6]
+		- (pixel data)
+
+# 2023-12-18 E349
+## Xash vs KTX2/vk cubemap face order
+Vulkan order:
++X, -X, +Y, -Y, +Z, -Z
+rt, lf, bk, ft, up, dn
+ 0,  1,  2,  3,  4,  5
+
+Xash order:
+ft, bk, up, dn, rt, lf
+
+Remap (KTX2 -> xash || xash[face] = KTX2[map[face]]):
+ 3,  2,  4,  5,  0,  1
+
+Remap (xash -> vk, vk[map[face]] = xash[face]):
+ 4,  5,  1,  0,  2,  3
+??? this shoudln't work
+
+default cubemap order:
+xash   vk (remapped)
++Y = -X
++X = +Z
++Z = +Y
