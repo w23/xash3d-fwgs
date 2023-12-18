@@ -1011,3 +1011,71 @@ This would need the same as above, plus:
 - A: probably should still do it on GPU lol
 
 This would also allow passing arbitrary per-pixel data from shaders, which would make shader debugging much much easier.
+
+# 2023-12-12 E346
+## Skyboxes
+### Current state
+- `R_TextureSetupSky()`
+    - called from:
+        ← `vk_scene.c`/`R_NewMap()`
+        ← engine ?? -- seems optional, r_soft doesn't implement it. Set on:
+            - `skybox` console command
+            - certain movevars change, whatever that is
+    - `unloadSkybox()`
+    - for [pbr/, old/] do
+        - `CheckSkybox()`
+            - make sidenames and check whether files exist
+        - `loadSkybox()`
+            - `unloadSkybox()`
+            - make sidenames
+            - `FS_LoadImage()` and `ImageProcess()`
+            - `R_VkTextureSkyboxUpload(sides)`
+    - if failed and not default already: `R_TextureSetupSky(default)` (recurse)
+
+# 2023-12-14 E347
+## TIL engine imagelib `FS_LoadImage()`:
+1. Pick format based on extension
+2. If no extension is specified, try all supported extensions in sequence.
+3. If loading single file failed, try to load it as skybox cubemap:
+   Go through all sides suffixes and try to load them in the similar fashion:
+   if no extension, then try all supported extensions
+
+- `Image_Process()` can only rotate uncompressed formats. (Technically it might be possible to also
+  rotate some compressed format, which will amount to just reordering blocks, and then reordering block
+  contents. Mendokusai). Therefore, we can't just replace png sides with compressed ktx2 sides directly.
+  KTX2 sides should be pre-rotated.
+
+# 2023-12-15 E348
+## Textures layout
+imagelib image buffer layout:
+	- sides[1|6]
+		- mips[biggest -> smallest]
+			- (pixel data)
+
+KTX2 file layout:
+- mips[smallest -> biggest]
+	- sides[1|6]
+		- (pixel data)
+
+# 2023-12-18 E349
+## Xash vs KTX2/vk cubemap face order
+Vulkan order:
++X, -X, +Y, -Y, +Z, -Z
+rt, lf, bk, ft, up, dn
+ 0,  1,  2,  3,  4,  5
+
+Xash order:
+ft, bk, up, dn, rt, lf
+
+Remap (KTX2 -> xash || xash[face] = KTX2[map[face]]):
+ 3,  2,  4,  5,  0,  1
+
+Remap (xash -> vk, vk[map[face]] = xash[face]):
+ 4,  5,  1,  0,  2,  3
+??? this shoudln't work
+
+default cubemap order:
+xash   vk (remapped)
++Y = -X
++X = +Z
++Z = +Y

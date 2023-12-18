@@ -28,12 +28,5 @@ inline static int clampi32(int v, int min, int max) {
 	return v;
 }
 
-typedef struct {
-	const char *s;
-	int len;
-} const_string_view_t;
-
-int stringViewCmp(const_string_view_t sv, const char* s);
-
 extern ref_api_t gEngine;
 extern ref_globals_t *gpGlobals;

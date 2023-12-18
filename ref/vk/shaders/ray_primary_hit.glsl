@@ -31,7 +31,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
 		// Mark as non-geometry
 		payload.hit_t.w = -payload.hit_t.w;
-		payload.emissive.rgb = texture(skybox, rayDirection).rgb;
+		payload.emissive.rgb = texture(skybox, rayDirection).rgb * ubo.ubo.skybox_exposure;
 		return;
 	} else {
 		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);

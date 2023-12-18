@@ -4,4 +4,5 @@
 }
 {
 "_xvk_smoothing_threshold" "54" // FIXME
+"_xvk_remove_all_sky_surfaces" "1"
 }

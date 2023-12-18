@@ -87,30 +87,6 @@ static void loadLights( const model_t *const map ) {
 	RT_LightsLoadEnd();
 }
 
-// Clears all old map data
-static void mapLoadBegin( const model_t *const map ) {
-	VK_EntityDataClear();
-
-	// Depends on VK_EntityDataClear()
-	R_StudioCacheClear();
-	R_GeometryBuffer_MapClear();
-
-	VK_ClearLightmap();
-
-	// This is to ensure that we have computed lightstyles properly
-	VK_RunLightStyles();
-
-	if (vk_core.rtx)
-		VK_RayNewMap();
-
-	RT_LightsNewMap(map);
-}
-
-static void mapLoadEnd(const model_t *const map) {
-	// TODO should we do something like R_BrushEndLoad?
-	VK_UploadLightmap();
-}
-
 static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
@@ -145,8 +121,22 @@ static void preloadModels( void ) {
 	}
 }
 
-static void loadMap(const model_t* const map) {
-	mapLoadBegin(map);
+static void loadMap(const model_t* const map, qboolean force_reload) {
+	VK_EntityDataClear();
+
+	// Depends on VK_EntityDataClear()
+	R_StudioCacheClear();
+	R_GeometryBuffer_MapClear();
+
+	VK_ClearLightmap();
+
+	// This is to ensure that we have computed lightstyles properly
+	VK_RunLightStyles();
+
+	if (vk_core.rtx)
+		VK_RayNewMapBegin();
+
+	RT_LightsNewMap(map);
 
 	R_SpriteNewMapFIXME();
 
@@ -162,8 +152,22 @@ static void loadMap(const model_t* const map) {
 
 	preloadModels();
 
+	// Can only do after preloadModels(), as we need to know whether there are SURF_DRAWSKY
+	R_TextureSetupSky( gEngine.pfnGetMoveVars()->skyName, force_reload );
+
 	loadLights(map);
-	mapLoadEnd(map);
+
+	// TODO should we do something like R_BrushEndLoad?
+	VK_UploadLightmap();
+
+	// This is needed mainly for picking up skybox only after it has been loaded
+	// Most of the things here could be simplified if we had less imperative style for this renderer:
+	// - Group everything into modules with explicit dependencies, then init/shutdown/newmap order could
+	//   be automatic and correct.
+	// - "Rendergraph"-like dependencies for resources (like textures, materials, skybox, ...). Then they
+	//   could be loaded lazily when needed, and after all the needed info for them has been collected.
+	if (vk_core.rtx)
+		VK_RayNewMapEnd();
 }
 
 static void reloadPatches( void ) {
@@ -176,7 +180,8 @@ static void reloadPatches( void ) {
 	R_BrushModelDestroyAll();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
-	loadMap(map);
+	const qboolean force_reload = true;
+	loadMap(map, force_reload);
 
 	R_VkStagingFlushSync();
 }
@@ -260,9 +265,8 @@ void R_NewMap( void ) {
 
 	// Make sure that we're not rendering anything before starting to mess with GPU objects
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
-	R_TextureSetupSky( gEngine.pfnGetMoveVars()->skyName );
-
-	loadMap(map);
+	const qboolean force_reload = false;
+	loadMap(map, force_reload);
 
 	R_StudioResetPlayerModels();
 }

@@ -115,7 +115,7 @@ void main() {
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	} else {
 		// Draw skybox when nothing is hit
-		payload.emissive.rgb = texture(skybox, ray.direction).rgb;
+		payload.emissive.rgb = texture(skybox, ray.direction).rgb * ubo.ubo.skybox_exposure;
 	}
 
 	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);

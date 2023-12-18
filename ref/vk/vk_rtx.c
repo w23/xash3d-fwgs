@@ -118,13 +118,14 @@ static int findResourceOrEmptySlot(const char *name) {
 	return -1;
 }
 
-void VK_RayNewMap( void ) {
+void VK_RayNewMapBegin( void ) {
 	RT_VkAccelNewMap();
 	RT_RayModel_Clear();
+}
 
+void VK_RayNewMapEnd( void ) {
 	g_rtx.res[ExternalResource_skybox].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		// FIXME we should pick tglob.dii_all_textures here directly
 		.value = (vk_descriptor_value_t){
 			.image = R_VkTexturesGetSkyboxDescriptorImageInfo(),
 		},
@@ -132,7 +133,6 @@ void VK_RayNewMap( void ) {
 
 	g_rtx.res[ExternalResource_blue_noise_texture].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		// FIXME we should pick tglob.dii_all_textures here directly
 		.value = (vk_descriptor_value_t){
 			.image = R_VkTexturesGetBlueNoiseImageInfo(),
 		},
@@ -216,6 +216,7 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->res[1] = frame_height;
 	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ubo->frame_counter = frame_counter;
+	ubo->skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
 
 	parseDebugDisplayValue();
 	if (g_rtx.debug.rt_debug_display_only_value) {

@@ -41,7 +41,7 @@ void main() {
 	const Kusok kusok = getKusok(geom.kusok_index);
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = texture(skybox, gl_WorldRayDirectionEXT).rgb;
+		payload.emissive.rgb = texture(skybox, gl_WorldRayDirectionEXT).rgb * ubo.ubo.skybox_exposure;
 		return;
 	} else {
 		const vec4 color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;

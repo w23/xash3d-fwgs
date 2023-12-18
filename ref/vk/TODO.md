@@ -1,8 +1,33 @@
+# 2023-12-18 E349
+- [x] KTX2 cubemaps
+- [ ] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
+- [ ] variable cubemap exposure
+- [ ] add skybox test
+
+# 2023-12-15 E348
+- [x] fix ktx2 sides corruption
+
+# 2023-12-14 E346-E347
+- [x] Optimize skybox loading, #706
+    - [x] Do not load skybox when there are no SURF_DRAWSKY, #579
+    - [x] Do not reload the same skybox
+    - [-] Load skyboxes from KTX2 sides
+        → doesn't work as easily, as there's no way to rotate compressed images.
+          KTX2 sides should be pre-rotated
+    - [x] do not generate mips for skybox
+    - [x] support imagelib cubemaps
+    - [x] use imagelib skybox loader
+- [x] Hide all SURF_DRAWSKY while retaining skybox, #579
+- [x] possible issues with TF_NOMIPMAP
+    - [x] used incorrectly when loading blue noise textures
+    - [x] what about regular usage?
+
 # 2023-12-11 E345
-- [x] fix incorrect basecolor brdf multiplication, #666
+- [x] fix black dielectrics, #666
+    - [x] fix incorrect basecolor brdf multiplication, #666
+    - [x] fixup skybox glitches caused by #666 fix
 - [ ] Patch overlay textures (#696) → turned out to be much more difficult than expected.
 - [x] Do not patch sprite textures for traditional raster, #695
-- [x] fixup skybox glitches caused by #666 fix
 
 # 2023-12-05 E342
 - [x] tone down the specular indirect blur
@@ -17,7 +42,6 @@ Longer-term agenda for current season:
 - [ ] Tools:
 	- [ ] Shader profiling. Measure impact of changes. Regressions.
 - [ ] Better PBR math, e.g.:
-	- [ ] fix black dielectrics, #666
 - [ ] Transparency:
 	- [ ] Figure out why additive transparency differs visibly from raster
 	- [ ] Extract and specialize effects, e.g.

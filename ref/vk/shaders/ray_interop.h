@@ -201,6 +201,7 @@ struct UniformBuffer {
 	float ray_cone_width;
 	uint random_seed;
 	uint frame_counter;
+	float skybox_exposure;
 
 	uint debug_display_only;
 };

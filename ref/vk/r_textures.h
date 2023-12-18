@@ -23,6 +23,8 @@ typedef struct vk_textures_global_s
 
 	// TODO wire it up for ref_interface_t return
 	qboolean fCustomSkybox;
+
+	qboolean current_map_has_surf_sky;
 } vk_textures_global_t;
 
 // TODO rename this consistently
@@ -37,7 +39,7 @@ void R_TexturesShutdown( void );
 int R_TextureFindByName( const char *name );
 const char* R_TextureGetNameByIndex( unsigned int texnum );
 
-void R_TextureSetupSky( const char *skyboxname );
+void R_TextureSetupCustomSky( const char *skyboxname );
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags );
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only );
@@ -67,3 +69,10 @@ int R_TextureFindByNameLike( const char *texture_name );
 
 struct vk_texture_s;
 struct vk_texture_s *R_TextureGetByIndex( uint index );
+
+void R_TextureSetupSky( const char *skyboxname, qboolean force_reload );
+
+typedef struct r_skybox_info_s {
+	float exposure;
+} r_skybox_info_t;
+r_skybox_info_t R_TexturesGetSkyboxInfo( void );

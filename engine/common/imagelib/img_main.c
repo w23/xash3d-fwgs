@@ -178,7 +178,9 @@ static qboolean FS_AddSideToPack( int adjust_flags )
 	}
 
 	// keep constant size, render.dll expecting it
-	image.size = image.source_width * image.source_height * 4;
+	// NOTE: This is super incorrect for compressed images.
+	// No idea why it was needed
+	// image.size = image.source_width * image.source_height * 4;
 
 	// mixing dds format with any existing ?
 	if( image.type != image.source_type )

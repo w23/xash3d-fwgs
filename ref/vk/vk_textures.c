@@ -52,20 +52,16 @@ static struct {
 // Exported from r_textures.h
 size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
 int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
-qboolean validatePicLayers(const char* const name, rgbdata_t *const *const layers, int num_layers);
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
 
 static VkSampler pickSamplerForFlags( texFlags_t flags );
-static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint);
-
-// FIXME should be static
-void unloadSkybox( void );
+static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
 
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
 
-static void generateFallbackNoiseTextures( rgbdata_t *pic ) {
+static void generateFallbackNoiseTextures( const rgbdata_t *pic ) {
 	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
 
 	const int blue_noise_count = pic->size / sizeof(uint32_t);
@@ -83,11 +79,11 @@ static void loadBlueNoiseTextures(void) {
 	const size_t blue_noise_count = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * BLUE_NOISE_SIZE;
 	const size_t blue_noise_size = blue_noise_count * sizeof(uint32_t);
 	uint32_t *const scratch = Mem_Malloc(vk_core.pool /* TODO textures pool */, blue_noise_size);
-	rgbdata_t pic = {
+	const rgbdata_t pic = {
 		.width = BLUE_NOISE_SIZE,
 		.height = BLUE_NOISE_SIZE,
 		.depth = BLUE_NOISE_SIZE,
-		.flags = TF_NOMIPMAP,
+		.flags = 0,
 		.type = PF_RGBA_32,
 		.size = blue_noise_size,
 		.buffer = (byte*)scratch,
@@ -139,9 +135,8 @@ static void loadBlueNoiseTextures(void) {
 
 	const char *const name = fail ? "*bluenoise/pcg_fallback" : "*bluenoise";
 	Q_strncpy(g_vktextures.blue_noise.hdr_.key, name, sizeof(g_vktextures.blue_noise.hdr_.key));
-	rgbdata_t *pica[1] = {&pic};
-	const qboolean is_cubemap = false;
-	ASSERT(uploadTexture(-1, &g_vktextures.blue_noise, pica, 1, is_cubemap, kColorspaceLinear));
+	g_vktextures.blue_noise.flags = TF_NOMIPMAP;
+	ASSERT(uploadTexture(-1, &g_vktextures.blue_noise, &pic, kColorspaceLinear));
 	Mem_Free(scratch);
 }
 
@@ -189,7 +184,7 @@ qboolean R_VkTexturesInit( void ) {
 static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
-	unloadSkybox();
+	R_VkTexturesSkyboxUnload();
 	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
 	R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
 
@@ -466,32 +461,82 @@ static qboolean needToCreateImage( int index, vk_texture_t *tex, const r_vk_imag
 	return true;
 }
 
-static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint) {
+static const char *getPFName(int pf_type) {
+	switch (pf_type) {
+		case PF_UNKNOWN: return "PF_UNKNOWN";
+		case PF_INDEXED_24: return "PF_INDEXED_24";
+		case PF_INDEXED_32: return "PF_INDEXED_32";
+		case PF_RGBA_32: return "PF_RGBA_32";
+		case PF_BGRA_32: return "PF_BGRA_32";
+		case PF_RGB_24: return "PF_RGB_24";
+		case PF_BGR_24: return "PF_BGR_24";
+		case PF_LUMINANCE: return "PF_LUMINANCE";
+		case PF_DXT1: return "PF_DXT1";
+		case PF_DXT3: return "PF_DXT3";
+		case PF_DXT5: return "PF_DXT5";
+		case PF_ATI2: return "PF_ATI2";
+		case PF_BC4_SIGNED: return "PF_BC4_SIGNED";
+		case PF_BC4_UNSIGNED: return "PF_BC4_UNSIGNED";
+		case PF_BC5_SIGNED: return "PF_BC5_SIGNED";
+		case PF_BC5_UNSIGNED: return "PF_BC5_UNSIGNED";
+		case PF_BC6H_SIGNED: return "PF_BC6H_SIGNED";
+		case PF_BC6H_UNSIGNED: return "PF_BC6H_UNSIGNED";
+		case PF_BC7_UNORM: return "PF_BC7_UNORM";
+		case PF_BC7_SRGB: return "PF_BC7_SRGB";
+		case PF_KTX2_RAW: return "PF_KTX2_RAW";
+	}
+
+	return "INVALID";
+}
+
+static const char* getColorspaceHintName(colorspace_hint_e ch) {
+	switch (ch) {
+		case kColorspaceGamma: return "gamma";
+		case kColorspaceLinear: return "linear";
+		case kColorspaceNative: return "native";
+	}
+
+	return "INVALID";
+}
+
+// xash imagelib cubemap layer order is not the one that vulkan expects
+static const int g_remap_cube_layer[6] = {
+	/* ft = */ 3,
+	/* bk = */ 2,
+	/* up = */ 4,
+	/* dn = */ 5,
+	/* rt = */ 0,
+	/* lf = */ 1,
+};
+
+static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint) {
 	tex->total_size = 0;
 
-	if (num_layers == 1 && layers[0]->type == PF_KTX2_RAW) {
-		if (!uploadRawKtx2(index, tex, layers[0]))
+	if (pic->type == PF_KTX2_RAW) {
+		if (!uploadRawKtx2(index, tex, pic))
 			return false;
 	} else {
-		const int width = layers[0]->width;
-		const int height = layers[0]->height;
-		const int depth = Q_max(1, layers[0]->depth);
-		const qboolean compute_mips = layers[0]->type == PF_RGBA_32 && layers[0]->numMips < 2;
-		const VkFormat format = VK_GetFormat(layers[0]->type, colorspace_hint);
-		const int mipCount = compute_mips ? CalcMipmapCount( width, height, depth, tex->flags, true ) : layers[0]->numMips;
+		const int width = pic->width;
+		const int height = pic->height;
+		const int depth = Q_max(1, pic->depth);
+		const qboolean compute_mips = !(tex->flags & TF_NOMIPMAP) && pic->type == PF_RGBA_32 && pic->numMips < 2;
+		const VkFormat format = VK_GetFormat(pic->type, colorspace_hint);
+		const int mipCount = compute_mips ? CalcMipmapCount( width, height, depth, tex->flags, true ) : Q_max(1, pic->numMips);
+		const qboolean is_cubemap = !!(pic->flags & IMAGE_CUBEMAP);
 
 		if (format == VK_FORMAT_UNDEFINED) {
-			ERR("Unsupported PF format %d", layers[0]->type);
+			ERR("Unsupported PF format %d", pic->type);
 			return false;
 		}
 
-		if (!validatePicLayers(TEX_NAME(tex), layers, num_layers))
-			return false;
-
-		DEBUG("Uploading texture[%d] %s, mips=%d(build=%d), layers=%d", index, TEX_NAME(tex), mipCount, compute_mips, num_layers);
+		DEBUG("Uploading texture[%d] %s, %dx%d fmt=%s(%s) cs=%s mips=%d(build=%d), is_cubemap=%d",
+			index, TEX_NAME(tex), width, height,
+			getPFName(pic->type), R_VkFormatName(format),
+			getColorspaceHintName(colorspace_hint),
+			mipCount, compute_mips, is_cubemap);
 
 		// TODO (not sure why, but GL does this)
-		// if( !ImageCompressed( layers->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( layers->flags, IMAGE_ONEBIT_ALPHA ))
+		// if( !ImageCompressed( pic->type ) && !FBitSet( tex->flags, TF_NOMIPMAP ) && FBitSet( pic->flags, IMAGE_ONEBIT_ALPHA ))
 		// 	data = GL_ApplyFilter( data, tex->width, tex->height );
 
 		{
@@ -501,13 +546,13 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 				.height = height,
 				.depth = depth,
 				.mips = mipCount,
-				.layers = num_layers,
+				.layers = is_cubemap ? 6 : 1,
 				.format = format,
 				.tiling = VK_IMAGE_TILING_OPTIMAL,
 				.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 				.flags = 0
-					| ((layers[0]->flags & IMAGE_HAS_ALPHA) ? 0 : kVkImageFlagIgnoreAlpha)
-					| (cubemap ? kVkImageFlagIsCubemap : 0)
+					| ((pic->flags & IMAGE_HAS_ALPHA) ? 0 : kVkImageFlagIgnoreAlpha)
+					| (is_cubemap ? kVkImageFlagIsCubemap : 0)
 					| (colorspace_hint == kColorspaceGamma ? kVkImageFlagCreateUnormView : 0),
 			};
 
@@ -522,17 +567,16 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 		{
 			R_VkImageUploadBegin(&tex->vk.image);
 
-			for (int layer = 0; layer < num_layers; ++layer) {
-				const rgbdata_t *const pic = layers[layer];
-				byte *buf = pic->buffer;
-
+			byte *buf = pic->buffer;
+			const int layers_count = is_cubemap ? 6 : 1;
+			for (int layer = 0; layer < layers_count; ++layer) {
 				for (int mip = 0; mip < mipCount; ++mip) {
 					const int width = Q_max( 1, ( pic->width >> mip ));
 					const int height = Q_max( 1, ( pic->height >> mip ));
 					const int depth = Q_max( 1, ( pic->depth >> mip ));
 					const size_t mip_size = CalcImageSize( pic->type, width, height, depth );
 
-					R_VkImageUploadSlice(&tex->vk.image, layer, mip, mip_size, buf);
+					R_VkImageUploadSlice(&tex->vk.image, is_cubemap ? g_remap_cube_layer[layer] : 0, mip, mip_size, buf);
 					tex->total_size += mip_size;
 
 					// Build mip in place for the next mip level
@@ -542,6 +586,10 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 					} else {
 						buf += mip_size;
 					}
+				}
+
+				if (compute_mips) {
+					buf += CalcImageSize(pic->type, width, height, depth);
 				}
 			}
 
@@ -556,8 +604,8 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, rgbdata_t *const *co
 	return true;
 }
 
-qboolean R_VkTextureUpload(int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, colorspace_hint_e colorspace_hint) {
-	return uploadTexture( index, tex, layers, num_layers, false, colorspace_hint );
+qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint) {
+	return uploadTexture( index, tex, pic, colorspace_hint );
 }
 
 void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
@@ -581,13 +629,12 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 	// TODO tex->vk.descriptor_unorm = VK_NULL_HANDLE;
 }
 
-void unloadSkybox( void ) {
+void R_VkTexturesSkyboxUnload(void) {
+	DEBUG("%s", __FUNCTION__);
 	if (g_vktextures.skybox_cube.vk.image.image) {
 		R_VkTextureDestroy( -1, &g_vktextures.skybox_cube );
 		memset(&g_vktextures.skybox_cube, 0, sizeof(g_vktextures.skybox_cube));
 	}
-
-	tglob.fCustomSkybox = false;
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
@@ -600,10 +647,12 @@ VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
 	};
 }
 
-qboolean R_VkTexturesSkyboxUpload( const char *name, rgbdata_t *const sides[6], colorspace_hint_e colorspace_hint, qboolean placeholder) {
+qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, qboolean placeholder) {
 	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
-	return uploadTexture(-1, dest, sides, 6, true, colorspace_hint);
+	dest->flags |= TF_NOMIPMAP;
+	ASSERT(pic->flags & IMAGE_CUBEMAP);
+	return uploadTexture(-1, dest, pic, colorspace_hint);
 }
 
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
