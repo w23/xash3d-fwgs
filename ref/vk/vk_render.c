@@ -48,6 +48,8 @@ static struct {
 	vk_buffer_t uniform_buffer;
 	uint32_t ubo_align;
 
+	cvar_t *use_material_textures;
+
 	struct {
 		int dynamic_model_count;
 		int models_count;
@@ -294,6 +296,8 @@ static struct {
 
 qboolean VK_RenderInit( void ) {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
+
+	g_render.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
 
 	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
 
@@ -726,7 +730,9 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
-		const int tex = args.textures_override > 0 ? args.textures_override : geom->ye_olde_texture;
+		const int tex_mat = geom->material.tex_base_color;
+		const int geom_tex = g_render.use_material_textures->value && (tex_mat > 0 && tex_mat < MAX_TEXTURES) ? tex_mat : geom->ye_olde_texture;
+		const int tex = args.textures_override > 0 ? args.textures_override : geom_tex;
 		const qboolean split = current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
