@@ -167,24 +167,26 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	memcpy( image.rgba, buffer, image.size );
 
-	int cursors[6] = {0};
-	if ( header->faceCount == 6 ) {
-		image.flags |= IMAGE_CUBEMAP;
-
-		for ( int face = 0; face < header->faceCount; ++face )
-			cursors[face] = g_remap_cube_layer[face] * total_size / header->faceCount;
-	}
-
-	for( int mip = 0; mip < header->levelCount; ++mip )
 	{
-		ktx2_level_t level;
-		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+		int cursors[6] = {0};
+		if ( header->faceCount == 6 ) {
+			image.flags |= IMAGE_CUBEMAP;
 
-		const int face_size = level.byteLength / header->faceCount;
-		for ( int face = 0; face < header->faceCount; ++face )
+			for ( int face = 0; face < header->faceCount; ++face )
+				cursors[face] = g_remap_cube_layer[face] * total_size / header->faceCount;
+		}
+
+		for( int mip = 0; mip < header->levelCount; ++mip )
 		{
-			memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
-			cursors[face] += face_size;
+			ktx2_level_t level;
+			memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+
+			const int face_size = level.byteLength / header->faceCount;
+			for ( int face = 0; face < header->faceCount; ++face )
+			{
+				memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
+				cursors[face] += face_size;
+			}
 		}
 	}
 
