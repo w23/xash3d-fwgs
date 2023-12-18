@@ -41,9 +41,27 @@
 "origin" "-53 285 -142"
 }
 
-// section 3
+// section 3 (servernaya)
 {
 "_xvk_ent_id" "283 296 275 278 291 273 292 271" // remove hack lights entity
+}
+
+// monitors // TODO: BETTER STRETCH
+{
+"_xvk_surface_id" "4146" // 4140
+"_xvk_tex_offset" "1 0"
+}
+{
+"_xvk_surface_id" "4158" // 4152
+"_xvk_tex_offset" "1.5 0"
+}
+{
+"_xvk_surface_id" "4170" // 4164
+"_xvk_tex_offset" "0.3 0"
+}
+{
+"_xvk_surface_id" "4176" // 4134
+"_xvk_tex_offset" "1.5 0"
 }
 
 {
@@ -159,14 +177,14 @@
 }
 {
 "_xvk_surface_id" "796 795 807 800 809 808 805 801 796 780"
-"_xvk_material" "generic_metal1" // TODO: texture -> material
+"_xvk_material" "generic_metal1"
 }
 {
 "_xvk_smoothing_group" "766 765 772 773 777 776 768 769"
 }
 {
 "_xvk_surface_id" "766 765 772 773 777 776 768 769"
-"_xvk_material" "generic_metal1" // TODO: texture -> material
+"_xvk_material" "generic_metal1"
 }
 
 {
