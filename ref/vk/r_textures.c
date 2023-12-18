@@ -30,7 +30,10 @@ static struct {
 	vk_texture_t all[MAX_TEXTURES];
 	urmom_desc_t all_desc;
 
-	char current_skybox_name[MAX_STRING];
+	struct {
+		r_skybox_info_t info;
+		char current_name[MAX_STRING];
+	} skybox;
 } g_textures;
 
 static void createDefaultTextures( void );
@@ -714,125 +717,55 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 	return insert.index;
 }
 
-/*
-static const struct {
-	const char *suffix;
-	uint flags;
-} k_skybox_info[6] = {
-	{"rt", IMAGE_ROT_90},
-	{"lf", IMAGE_ROT270},
-	{"bk", IMAGE_FLIP_Y},
-	{"ft", IMAGE_FLIP_X},
-	{"up", IMAGE_ROT_90},
-	{"dn", IMAGE_ROT_90},
-};
+static void skyboxParseInfo( const char *name ) {
+	// Start with default info
+	g_textures.skybox.info = (r_skybox_info_t) {
+		.exposure = 1.f,
+	};
 
-#define SKYBOX_MISSED	0
-#define SKYBOX_HLSTYLE	1
-#define SKYBOX_Q1STYLE	2
+	char filename[MAX_STRING];
+	Q_snprintf(filename, sizeof(filename), "%s.mat", name);
+	byte *data = gEngine.fsapi->LoadFile( filename, 0, false );
 
-static int CheckSkyboxSides( const char *name )
-{
-	const char	*skybox_ext[] = { "ktx2", "png", "dds", "tga", "bmp" };
-	int		i, j, num_checked_sides;
-	char		sidename[MAX_VA_STRING];
-
-	// search for skybox images
-	for( i = 0; i < ARRAYSIZE(skybox_ext); i++ )
-	{
-		num_checked_sides = 0;
-		for( j = 0; j < 6; j++ )
-		{
-			// build side name
-			Q_snprintf( sidename, sizeof( sidename ), "%s%s.%s", name, k_skybox_info[j].suffix, skybox_ext[i] );
-			if( gEngine.fsapi->FileExists( sidename, false ))
-				num_checked_sides++;
-		}
-
-		if( num_checked_sides == 6 )
-			return SKYBOX_HLSTYLE; // image exists
-
-		for( j = 0; j < 6; j++ )
-		{
-			// build side name
-			Q_snprintf( sidename, sizeof( sidename ), "%s_%s.%s", name, k_skybox_info[j].suffix, skybox_ext[i] );
-			if( gEngine.fsapi->FileExists( sidename, false ))
-				num_checked_sides++;
-		}
-
-		if( num_checked_sides == 6 )
-			return SKYBOX_Q1STYLE; // images exists
+	qboolean success = false;
+	if (!data) {
+		INFO("Couldn't read skybox info '%s'", filename);
+		goto cleanup;
 	}
 
-	return SKYBOX_MISSED;
-}
+	for (char *pos = (char*)data;;) {
+		char key[MAX_STRING];
+		char value[MAX_STRING];
 
-static qboolean loadSkyboxSides( const char *prefix, int style ) {
-	if( !checkTextureName( prefix ))
-		return false;
-
-	int i;
-	rgbdata_t *sides[6];
-	qboolean success = false;
-	for( i = 0; i < 6; i++ ) {
-		char sidename[MAX_STRING];
-		if( style == SKYBOX_HLSTYLE )
-			Q_snprintf( sidename, sizeof( sidename ), "%s%s", prefix, k_skybox_info[i].suffix );
-		else Q_snprintf( sidename, sizeof( sidename ), "%s_%s", prefix, k_skybox_info[i].suffix );
-
-		sides[i] = gEngine.FS_LoadImage( sidename, NULL, 0);
-		if (!sides[i] || !sides[i]->buffer)
+		pos = COM_ParseFile(pos, key, sizeof(key));
+		if (!pos)
 			break;
 
-		DEBUG("%s: %d: %s", __FUNCTION__, i, sidename);
+		pos = COM_ParseFile(pos, value, sizeof(value));
+		if (!pos)
+			break;
 
-		{
-			uint img_flags = k_skybox_info[i].flags;
-			// we need to expand image into RGBA buffer
-			if( sides[i]->type == PF_INDEXED_24 || sides[i]->type == PF_INDEXED_32 )
-				img_flags |= IMAGE_FORCE_RGBA;
-			gEngine.Image_Process( &sides[i], 0, 0, img_flags, 0.f );
+		if (Q_strcmp(key, "exposure") == 0) {
+			float exposure = 0;
+			if (1 != sscanf(value, "%f", &exposure)) {
+				ERR("Cannot parse exposure '%s' in skybox info '%s'", value, filename);
+				break;
+			}
+
+			g_textures.skybox.info.exposure = exposure;
+			DEBUG("Loaded skybox exposure=%f from '%s'", exposure, filename);
+		} else {
+			WARN("Unexpected key '%s' in skybox info '%s'", key, filename);
+			break;
 		}
-	}
 
-	if( i != 6 )
-		goto cleanup;
-
-	{
-		const qboolean is_placeholder = false;
-		success = R_VkTexturesSkyboxUpload( prefix, sides, kColorspaceGamma, is_placeholder );
+		success = true;
 	}
 
 cleanup:
-	for (int j = 0; j < i; ++j)
-		gEngine.FS_FreeImage( sides[j] ); // release source texture
-
-	if (success)
-		DEBUG( "Loaded sided skybox %s", prefix );
-
-	return success;
+	if (data)
+		Mem_Free(data);
 }
-
-static void makeSkyboxPath(const char *skyboxname, const char *skybox_prefix, char *out_name, int out_length ) {
-	Q_snprintf( out_name, out_length, skybox_prefix, skyboxname );
-	COM_StripExtension( out_name );
-
-	// kill the underline suffix to find them manually later
-	const int len = Q_strlen( out_name );
-
-	if( out_name[len - 1] == '_' )
-		out_name[len - 1] = '\0';
-}
-
-static qboolean skyboxLoadSides(const_string_view_t base, const char *prefix) {
-	char loadname[MAX_STRING];
-	Q_snprintf( loadname, sizeof( loadname ), prefix, base.len, base.s );
-
-	// TODO merge together as in gl_warp.c
-	const int style = CheckSkyboxSides( loadname );
-	return loadSkyboxSides(loadname, style);
-}
-*/
 
 static qboolean skyboxLoad(const_string_view_t base, const char *prefix) {
 	qboolean success = false;
@@ -861,6 +794,9 @@ static qboolean skyboxLoad(const_string_view_t base, const char *prefix) {
 		success = R_VkTexturesSkyboxUpload( prefix, pic, kColorspaceGamma, is_placeholder );
 	}
 
+	if (success)
+		skyboxParseInfo(loadname);
+
 cleanup:
 	if (pic)
 		gEngine.FS_FreeImage(pic);
@@ -872,8 +808,13 @@ cleanup:
 }
 
 static void skyboxUnload( void ) {
+	DEBUG("%s", __FUNCTION__);
 	R_VkTexturesSkyboxUnload();
-	g_textures.current_skybox_name[0] = '\0';
+	g_textures.skybox.info = (r_skybox_info_t) {
+		.exposure = 1.f,
+	};
+
+	g_textures.skybox.current_name[0] = '\0';
 }
 
 static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
@@ -888,40 +829,30 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 	if (basename.len > 0 && basename.s[basename.len - 1] == '_')
 		basename.len--;
 
-	if( !basename.len )
-	{
+	if ( !basename.len ) {
 		skyboxUnload();
-		return true; // clear old skybox
+		// No skybox
+		return true;
 	}
 
 	// Do not reload the same skybox
 	// TODO except explicit patches reload
-	if (!force_reload && svCmp(basename, g_textures.current_skybox_name) == 0)
+	if (!force_reload && svCmp(basename, g_textures.skybox.current_name) == 0)
 		return true;
 
-	// Try loading skybox in this sequence:
-	// 1. Single pbr/env/<sky>.ktx2 cubemap
-	/* TODO
-	{
-		char ktx_path[MAX_STRING];
-		Q_snprintf(ktx_path, sizeof(ktx_path), "pbr/env/%.*s.ktx2", basename.len, basename.s);
-
-		if (R_VkTexturesSkyboxUpload(ktx_path))
-			goto success;
-	}*/
-
-	// 2. pbr/env/<sky>_<side>.{png, ...} sides
+	// Try loading newer "PBR" upscaled skybox first
 	if (skyboxLoad(basename, "pbr/env/%.*s"))
 		goto success;
 
-	// 3. Old gfx/env/<sky>_<side>.{png, ...} sides
+	// Try loading original game skybox
 	if (skyboxLoad(basename, "gfx/env/%.*s"))
 		goto success;
 
+	skyboxUnload();
 	return false;
 
 success:
-	svStrncpy(basename, g_textures.current_skybox_name, sizeof(g_textures.current_skybox_name));
+	svStrncpy(basename, g_textures.skybox.current_name, sizeof(g_textures.skybox.current_name));
 	return true;
 }
 
@@ -951,6 +882,10 @@ void R_TextureSetupCustomSky( const char *skyboxname ) {
 void R_TextureSetupSky( const char *skyboxname, qboolean force_reload ) {
 	const qboolean is_custom = false;
 	skyboxSetup(skyboxname, is_custom, force_reload);
+}
+
+r_skybox_info_t R_TexturesGetSkyboxInfo( void ) {
+	return g_textures.skybox.info;
 }
 
 // FIXME move to r_textures_extra.h

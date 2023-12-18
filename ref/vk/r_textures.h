@@ -71,3 +71,8 @@ struct vk_texture_s;
 struct vk_texture_s *R_TextureGetByIndex( uint index );
 
 void R_TextureSetupSky( const char *skyboxname, qboolean force_reload );
+
+typedef struct r_skybox_info_s {
+	float exposure;
+} r_skybox_info_t;
+r_skybox_info_t R_TexturesGetSkyboxInfo( void );

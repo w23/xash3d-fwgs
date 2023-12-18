@@ -216,6 +216,7 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->res[1] = frame_height;
 	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ubo->frame_counter = frame_counter;
+	ubo->skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
 
 	parseDebugDisplayValue();
 	if (g_rtx.debug.rt_debug_display_only_value) {
