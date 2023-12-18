@@ -179,9 +179,11 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		for( int mip = 0; mip < header->levelCount; ++mip )
 		{
 			ktx2_level_t level;
-			memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+			int face_size = 0;
 
-			const int face_size = level.byteLength / header->faceCount;
+			memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+			face_size = level.byteLength / header->faceCount;
+
 			for ( int face = 0; face < header->faceCount; ++face )
 			{
 				memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
