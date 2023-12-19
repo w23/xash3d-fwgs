@@ -8,7 +8,7 @@ uint32_t RVkModule_InitAll( RVkModule* modules, uint32_t count ) {
 			break;
 
 		if ( module->Init( RVkModuleLogLevels_All, RVkModuleArgs_Empty ) != RVkModuleResult_Success ) {
-			module->Shutdown();
+			module->Shutdown( true );
 			break;
 		}
 
@@ -20,7 +20,7 @@ uint32_t RVkModule_InitAll( RVkModule* modules, uint32_t count ) {
 		int32_t last_inited_module_index = module_index - 1;
 		while ( last_inited_module_index >= 0 ) {
 			RVkModule *const module = &modules[last_inited_module_index];
-			module->Shutdown();
+			module->Shutdown( true );
 		}
 	}
 

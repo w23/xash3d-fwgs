@@ -19,6 +19,15 @@
 
 #include <math.h> // sqrt
 
+RVkModule g_module_textures = {
+	.name = "textures",
+	.data = &g_module_textures,
+	.state = RVkModuleState_PreInitialized,
+	.Init = Impl_Init,
+	.GetResultName = Impl_GetResultName,
+	.Shutdown = Impl_Shutdown
+};
+
 #define LOG_MODULE tex
 #define MODULE_NAME "textures"
 
@@ -49,13 +58,108 @@ static struct {
 	vk_texture_t blue_noise;
 } g_vktextures;
 
+// FIXME should be static
+void unloadSkybox( void );
+
+static VkSampler pickSamplerForFlags( texFlags_t flags );
+static qboolean uploadTexture( int index, vk_texture_t *tex, rgbdata_t *const *const layers, int num_layers, qboolean cubemap, colorspace_hint_e colorspace_hint );
+static void textureDestroy( unsigned int index );
+static void loadBlueNoiseTextures( void );
+
+RVkModuleResult Impl_Init( RVkModuleLogLevels log_levels, RVkModuleArgs args ) {
+	// TODO(nilsoncore): Implement RVkModule_GetNameHash
+	g_module_textures.hash = RVkModule_GetNameHash( g_module_textures.name ); 
+	g_module_textures.log_levels = 0;
+	g_module_textures.log_levels |= log_levels;
+
+	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_vktextures.stats.size_total, "size_total", kSpeedsMetricBytes);
+
+	// TODO really check device caps for this
+	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
+
+	g_vktextures.default_sampler = pickSamplerForFlags(0);
+
+	// NOTE(nilsoncore):
+	// old: ASSERT(g_vktextures.default_sampler != VK_NULL_HANDLE);
+	// new:
+	if ( g_vktextures.default_sampler == VK_NULL_HANDLE ) {
+		g_module_textures.state = RVkModuleState_FailedToInitialize;
+	 	return RVkModuleTexturesResult_DefaultSamplerCreationError;
+	}
+
+
+	/* FIXME
+	// validate cvars
+	R_SetTextureParameters();
+	*/
+
+	/* FIXME
+	gEngine.Cmd_AddCommand( "texturelist", R_TextureList_f, "display loaded textures list" );
+	*/
+
+	// Fill empty texture with references to the default texture
+	{
+		const VkImageView default_view = R_TextureGetByIndex(tglob.defaultTexture)->vk.image.view;
+
+		// NOTE(nilsoncore):
+		// old: ASSERT(default_view != VK_NULL_HANDLE);
+		// new:
+		if ( default_view == VK_NULL_HANDLE ) {
+			g_module_textures.state = RVkModuleState_FailedToInitialize;
+			return RVkModuleTexturesResult_DefaultImageViewAcquireError;
+		}
+
+		for (int i = 0; i < MAX_TEXTURES; ++i) {
+			const vk_texture_t *const tex = R_TextureGetByIndex(i);
+			if (tex->vk.image.view)
+				continue;
+
+			g_vktextures.dii_all_textures[i] = (VkDescriptorImageInfo){
+				.imageView =  default_view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = g_vktextures.default_sampler,
+			};
+		}
+	}
+
+	// NOTE(nilsoncore):
+	//   This function will fallback to regular random generated textures,
+	// so the module will load and function either way.
+	//   Although we could make an optional 'something' (var, arg, etc.)
+	// that controls this behaviour.
+	loadBlueNoiseTextures();
+
+	g_module_textures.state = RVkModuleState_Initialized;
+	return RVkModuleTexturesResult_Success;
+};
+
+const char *Impl_GetResultName( RVkModuleResult result ) {
+	switch ( ( RVkModuleTexturesResult )result ) {
+		case RVkModuleTexturesResult_Success:                      return "Success";
+		case RVkModuleTexturesResult_DefaultSamplerCreationError:  return "DefaultSamplerCreationError";
+		case RVkModuleTexturesResult_DefaultImageViewAcquireError: return "DefaultImageViewAcquireError";
+		default:                                                   return "(invalid)";
+	}
+};
+
+void Impl_Shutdown( qboolean forced ) {
+	unloadSkybox();
+	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
+	R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
+
+	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
+		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
+			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
+	}
+
+	g_module_textures.state = ( forced ) ? RVkModuleState_ForcedShutdown : RVkModuleState_ManualShutdown;
+};
+
 // Exported from r_textures.h
 size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
 int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
-
-static VkSampler pickSamplerForFlags( texFlags_t flags );
-static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
 
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
@@ -181,8 +285,6 @@ qboolean R_VkTexturesInit( void ) {
 	
 	return true;
 }
-
-static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
 	R_VkTexturesSkyboxUnload();

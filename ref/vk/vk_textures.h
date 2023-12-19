@@ -1,11 +1,27 @@
 #pragma once
 
-#include "r_textures.h"
 #include "vk_core.h"
+#include "vk_module.h"
+
+#include "r_textures.h"
 #include "vk_image.h"
 #include "vk_const.h"
 
 #include "unordered_roadmap.h"
+
+// -- Module API implementation START --
+extern RVkModule g_module_textures;
+
+typedef enum {
+	RVkModuleTexturesResult_Success = RVkModuleResult_Success,
+	RVkModuleTexturesResult_DefaultSamplerCreationError,
+	RVkModuleTexturesResult_DefaultImageViewAcquireError
+} RVkModuleTexturesResult;
+
+static RVkModuleResult Impl_Init( RVkModuleLogLevels log_levels, RVkModuleArgs args );
+static    const char * Impl_GetResultName( RVkModuleResult result );
+static            void Impl_Shutdown( qboolean forced );
+// -- Module API implementation END --
 
 typedef struct vk_texture_s
 {
