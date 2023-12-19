@@ -1,6 +1,6 @@
 # 2023-12-19 E350
 - [x] fixup skybox reflections
-- [ ] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
+- [x] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
 - [ ] variable cubemap exposure
 - [ ] add skybox test
 
