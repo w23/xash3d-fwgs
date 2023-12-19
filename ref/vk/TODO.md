@@ -1,11 +1,11 @@
 # 2023-12-19 E350
 - [x] fixup skybox reflections
 - [x] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
-- [ ] variable cubemap exposure
-- [ ] add skybox test
+- [x] add skybox test
 
 # 2023-12-18 E349
 - [x] KTX2 cubemaps
+- [x] variable cubemap exposure (in .mat file)
 
 # 2023-12-15 E348
 - [x] fix ktx2 sides corruption
