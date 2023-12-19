@@ -65,7 +65,7 @@ typedef uint64_t RVkModuleNameHash;
 
 typedef RVkModuleResult ( *RVkModulePfn_Init )( RVkModuleLogLevels /*log_levels*/, RVkModuleArgs /*args*/ );
 typedef    const char * ( *RVkModulePfn_GetResultName )( RVkModuleResult /*result*/ );
-typedef            void ( *RVkModulePfn_Shutdown )( void );
+typedef            void ( *RVkModulePfn_Shutdown )( qboolean /*forced*/ );
 
 typedef struct RVkModule {
 	// `PreInitialization`-filled fields.

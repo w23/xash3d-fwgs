@@ -2,6 +2,7 @@
 
 #include "vk_common.h"
 #include "r_textures.h"
+#include "vk_textures.h"
 #include "vk_overlay.h"
 #include "vk_renderstate.h"
 #include "vk_staging.h"
@@ -691,6 +692,13 @@ static const r_vk_module_t *const modules[] = {
 	...
 };
 */
+
+// TODO(nilsoncore): Integrate all other modules.
+extern RVkModule g_module_textures;
+
+static const RVkModule *const g_modules[] = {
+	&g_module_textures
+};
 
 qboolean R_VkInit( void )
 {
