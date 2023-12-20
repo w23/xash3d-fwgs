@@ -75,10 +75,27 @@
 {
 "_xvk_ent_id" "10 17 9 18 51 15 12 11 19 13 16" // remove hack lights
 }
+// monitors
+{
+"_xvk_surface_id" "930"
+"_xvk_tex_offset" "-2.4 0"
+}
+{
+"_xvk_surface_id" "934"
+"_xvk_tex_offset" "3 0"
+}
+{
+"_xvk_surface_id" "2082"
+"_xvk_tex_offset" "-2.7 0"
+}
+{
+"_xvk_surface_id" "2086"
+"_xvk_tex_offset" "-2.4 0"
+}
+
 
 
 // end
-
 {
 "_xvk_ent_id" "20" // tune hack light entity
 "_cone" "0"
