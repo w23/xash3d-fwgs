@@ -304,6 +304,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 		ASSERT(res->source_index_plus_1 <= COUNTOF(g_rtx.res));
 		rt_resource_t *const src = g_rtx.res + res->source_index_plus_1 - 1;
+		ASSERT(res != src);
 
 		// Swap resources
 		const vk_resource_t tmp_res = res->resource;
@@ -319,12 +320,17 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		// If there was no initial state, prepare it. (this should happen only for the first frame)
 		if (g_rtx.discontinuity || res->resource.write.pipelines == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
+			DEBUG("discontinuity: %s", res->name);
 			R_VkImageClear( cmdbuf, res->image.image );
 			res->resource.write.pipelines = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			res->resource.write.image_layout = VK_IMAGE_LAYOUT_GENERAL;
 			res->resource.write.access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		}
 	}
+
+	if (g_rtx.discontinuity)
+		DEBUG("discontinuity => false");
+	g_rtx.discontinuity = false;
 
 	// Clear intra-frame resources
 	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
@@ -688,7 +694,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 tail:
 	APROF_SCOPE_END(ray_frame_end);
-	g_rtx.discontinuity = false;
 }
 
 static void reloadPipeline( void ) {
@@ -780,5 +785,6 @@ void VK_RayShutdown( void ) {
 }
 
 void RT_FrameDiscontinuity( void ) {
+	DEBUG("%s", __FUNCTION__);
 	g_rtx.discontinuity = true;
 }

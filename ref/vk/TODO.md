@@ -1,8 +1,45 @@
+Longer-term agenda for current season:
+- [ ] Better PBR math, e.g.:
+	- [ ] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
+	- [ ] Fresnel issues (esp. with skybox)
+	- [ ] Just make sure that all the BRDF math is correct
+- [ ] Transparency/translucency:
+	- [ ] Proper material mode for translucency, with reflections, refraction (index), fresnel, etc.
+	- [ ] Figure out why additive transparency differs visibly from raster
+	- [ ] Extract and specialize effects, e.g.
+		- [ ] Rays -> volumetrics
+		- [ ] Glow -> bloom
+		- [ ] Smoke -> volumetrics
+		- [ ] Sprites/portals -> emissive volumetrics
+		- [ ] Holo models -> emissive additive
+		- [ ] Some additive -> translucent
+		- [ ] what else
+- [ ] Render-graph-ish approach to resources.
+- [ ] Performance tools -- needed for perf and lighting work below:
+	- [ ] Needs: render-graph-ish things for fast iterations when exporting custom situational metrics for the shader.
+	- [ ] Purpose: shader profiling. Measure impact of changes. Regressions.
+	- [ ] WIP shader clocks: https://github.com/w23/xash3d-fwgs/pull/692
+	- [ ] WIP perf query: https://github.com/w23/xash3d-fwgs/pull/500
+- [ ] Lighting
+	- [ ] Point spheres sampling
+	- [ ] Increase limits
+	- [ ] s/poly/triangle/ -- simpler sampling, universal
+	- [ ] Better and dynamically sized clusters
+	- [ ] Cache rays -- do not cast shadow rays for everything, do a separate ray-only pass for visibility caching
+- [ ] Bounces
+	- [ ] Moar bounces
+	- [ ] MIS
+	- [ ] Cache directions for strong indirect light
+
+
+# 2023-12-19 E350
+- [x] fixup skybox reflections
+- [x] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
+- [x] add skybox test
+
 # 2023-12-18 E349
 - [x] KTX2 cubemaps
-- [ ] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
-- [ ] variable cubemap exposure
-- [ ] add skybox test
+- [x] variable cubemap exposure (in .mat file)
 
 # 2023-12-15 E348
 - [x] fix ktx2 sides corruption
@@ -37,32 +74,6 @@
 - [x] update rendertest images
 - [x] Discuss shader profiling
 - [-] Discuss Env-based verbose log control
-
-Longer-term agenda for current season:
-- [ ] Tools:
-	- [ ] Shader profiling. Measure impact of changes. Regressions.
-- [ ] Better PBR math, e.g.:
-- [ ] Transparency:
-	- [ ] Figure out why additive transparency differs visibly from raster
-	- [ ] Extract and specialize effects, e.g.
-		- [ ] Rays -> volumetrics
-		- [ ] Glow -> bloom
-		- [ ] Smoke -> volumetrics
-		- [ ] Sprites/portals -> emissive volumetrics
-		- [ ] Holo models -> emissive additive
-		- [ ] Some additive -> translucent
-		- [ ] what else
-	- [ ] Proper material mode for translucency, with reflections, refraction (index), fresnel, etc.
-- [ ] Lighting
-	- [ ] Point spheres sampling
-	- [ ] Increase limits
-	- [ ] s/poly/triangle/ -- simpler sampling, universal
-	- [ ] Better and dynamically sized clusters
-	- [ ] Cache rays -- do not cast shadow rays for everything, do a separate ray-only pass for visibility caching
-- [ ] Bounces
-	- [ ] Moar bounces
-	- [ ] MIS
-	- [ ] Cache directions for strong indirect light
 
 # 2023-12-04 E341
 - [-] investigate envlight missing #680

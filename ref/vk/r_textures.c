@@ -767,17 +767,21 @@ cleanup:
 		Mem_Free(data);
 }
 
-static qboolean skyboxLoad(const_string_view_t base, const char *prefix) {
+static qboolean skyboxLoadF(const char *fmt, ...) {
 	qboolean success = false;
-	char loadname[MAX_STRING];
-	Q_snprintf( loadname, sizeof( loadname ), prefix, base.len, base.s );
+	char buffer[MAX_STRING];
 
-	rgbdata_t *pic = gEngine.FS_LoadImage( loadname, NULL, 0 );
+	va_list argptr;
+	va_start( argptr, fmt );
+	Q_vsnprintf( buffer, sizeof buffer, fmt, argptr );
+	va_end( argptr );
+
+	rgbdata_t *pic = gEngine.FS_LoadImage( buffer, NULL, 0 );
 	if (!pic)
 		return false;
 
 	if (!(pic->flags & IMAGE_CUBEMAP)) {
-		ERR("%s: '%s' is invalid: skybox is expected to be a cubemap ", __FUNCTION__, loadname);
+		ERR("%s: '%s' is invalid: skybox is expected to be a cubemap ", __FUNCTION__, buffer);
 		goto cleanup;
 	}
 
@@ -791,18 +795,18 @@ static qboolean skyboxLoad(const_string_view_t base, const char *prefix) {
 
 	{
 		const qboolean is_placeholder = false;
-		success = R_VkTexturesSkyboxUpload( prefix, pic, kColorspaceGamma, is_placeholder );
+		success = R_VkTexturesSkyboxUpload( buffer, pic, kColorspaceGamma, is_placeholder );
 	}
 
 	if (success)
-		skyboxParseInfo(loadname);
+		skyboxParseInfo(buffer);
 
 cleanup:
 	if (pic)
 		gEngine.FS_FreeImage(pic);
 
 	if (success)
-		DEBUG( "Loaded skybox %s", prefix );
+		DEBUG( "Loaded skybox %s", buffer );
 
 	return success;
 }
@@ -841,11 +845,11 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 		return true;
 
 	// Try loading newer "PBR" upscaled skybox first
-	if (skyboxLoad(basename, "pbr/env/%.*s"))
+	if (skyboxLoadF("pbr/env/%.*s", basename.len, basename.s))
 		goto success;
 
 	// Try loading original game skybox
-	if (skyboxLoad(basename, "gfx/env/%.*s"))
+	if (skyboxLoadF("gfx/env/%.*s", basename.len, basename.s))
 		goto success;
 
 	skyboxUnload();
