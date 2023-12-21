@@ -176,8 +176,9 @@ qboolean R_VkTexturesInit( void ) {
 		}
 	}
 
-	loadBlueNoiseTextures();
-
+	if (vk_core.rtx)
+		loadBlueNoiseTextures();
+	
 	return true;
 }
 
@@ -186,8 +187,9 @@ static void textureDestroy( unsigned int index );
 void R_VkTexturesShutdown( void ) {
 	R_VkTexturesSkyboxUnload();
 	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
-	R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
-
+	if (vk_core.rtx)
+		R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
+	
 	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
 		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
 			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
