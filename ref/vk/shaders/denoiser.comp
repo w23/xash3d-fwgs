@@ -306,8 +306,18 @@ void main() {
 		colour = diffuse + specular;
 	}
 
+// See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
+// This macro enabled adding emissive to the final color in the *incorrect* sRGB-γ space. But it makes
+// it look much more like the original. Adding emissive in the *correct* linear space differs
+// from the original a lot, and looks perceptively worse.
+#define ADD_EMISSIVE_IN_GAMMA_SPACE
+#ifndef ADD_EMISSIVE_IN_GAMMA_SPACE
+	// Physically correct, but looks dull
 	colour += imageLoad(emissive, pix).rgb;
 	colour = LINEARtoSRGB(colour);
+#else // INCORRECT
+	colour = LINEARtoSRGB(colour) + LINEARtoSRGB(imageLoad(emissive, pix).rgb);
+#endif
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }

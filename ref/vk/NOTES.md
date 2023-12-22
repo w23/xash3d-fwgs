@@ -1079,3 +1079,11 @@ xash   vk (remapped)
 +Y = -X
 +X = +Z
 +Z = +Y
+
+# 2023-12-22 E352
+## sRGB vs γ blending
+Original:
+    `color = a + b`
+Our:
+    `color = sqrt(a*a + b*b)`
+There's nothing we can to do `a` only that would make it fake the "original" mixing result.
