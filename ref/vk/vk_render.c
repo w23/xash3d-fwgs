@@ -136,6 +136,7 @@ static qboolean createPipelines( void )
 			.blendEnable = VK_FALSE,
 
 			.cullMode = VK_CULL_MODE_FRONT_BIT,
+			.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		};
 
 		for (int i = 0; i < kVkRenderType_COUNT; ++i)

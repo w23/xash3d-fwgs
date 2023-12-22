@@ -36,6 +36,8 @@ typedef struct {
   VkBlendOp                alphaBlendOp;
 
   VkCullModeFlags cullMode;
+
+  VkPrimitiveTopology	   primitiveTopology;
 } vk_pipeline_graphics_create_info_t;
 
 VkPipeline VK_PipelineGraphicsCreate(const vk_pipeline_graphics_create_info_t *ci);

@@ -693,7 +693,11 @@ enum
 	kRenderTransAlpha,		// src*srca+dest*(1-srca)
 	kRenderTransAdd,		// src*a+dest
 };
-
+enum 
+{
+	kRenderFillMode = kRenderTransAdd,  
+	kRenderLineMode, 
+};
 enum
 {
 	kRenderFxNone = 0,
