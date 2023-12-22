@@ -791,6 +791,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 		ASSERT(model->rt_model);
 		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
 			.material_mode = args.material_mode,
+			.material_flags = args.material_flags,
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color_srgb = args.color,

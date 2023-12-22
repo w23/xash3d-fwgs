@@ -700,6 +700,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = (const matrix4x4*)prev_transform,
@@ -949,6 +950,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,

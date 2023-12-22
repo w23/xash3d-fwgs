@@ -361,6 +361,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = kusochki_offset;
 	draw_instance->material_mode = args.material_mode;
+	draw_instance->material_flags = args.material_flags;
 	sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
@@ -453,6 +454,7 @@ void RT_DynamicModelProcessFrame(void) {
 		draw_instance->blas_addr = dyn->blas_addr;
 		draw_instance->kusochki_offset = kusochki_offset;
 		draw_instance->material_mode = i;
+		draw_instance->material_flags = 0;
 		Vector4Set(draw_instance->color, 1, 1, 1, 1);
 		Matrix3x4_LoadIdentity(draw_instance->transform_row);
 		Matrix4x4_LoadIdentity(draw_instance->prev_transform_row);

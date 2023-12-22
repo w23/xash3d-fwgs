@@ -58,6 +58,8 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 
 typedef struct {
 	int material_mode;
+	uint32_t material_flags;
+
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color_srgb;
 

@@ -2331,6 +2331,7 @@ static void R_StudioDrawPoints( void ) {
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_CullBackFace_Bit, // TODO for transparent only?
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
