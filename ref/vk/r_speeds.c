@@ -405,9 +405,8 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 		const int height = watermarks ? y_pos : 2 * g_speeds.font_metrics.scale;
 		const int y = frame_bar_y - y_pos;
 
-		// TODO lines
-		CL_FillRGBA(x0, y, x1-x0, height, red, green, blue, 127);
-		R_DrawLine(x0, y, x1-x0, height);
+		//CL_FillRGBA(x0, y, x1-x0, height, red, green, blue, 127);
+		R_DrawLine(x0, y, x1-x0, height, red, green, blue);
 
 		if (i == graph->data_count - 1) {
 			char buf[16];

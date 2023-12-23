@@ -23,12 +23,12 @@ typedef struct vertex_2d_s {
 // TODO should these be dynamic?
 #define MAX_PICS 16384
 #define MAX_VERTICES (MAX_PICS * 6)
-#define MAX_BATCHES 16384 //256
+#define MAX_BATCHES 16384
 
 typedef struct {
 	uint32_t vertex_offset, vertex_count;
 	int texture;
-	int blending_mode;
+	int pipeline_mode;
 } batch_t;
 
 static struct {
@@ -46,10 +46,11 @@ static struct {
 	batch_t batch[MAX_BATCHES];
 	int batch_count;
 
+	int white_texture_ref_index;
 	// TODO texture bindings?
 } g2d;
 
-static vertex_2d_t* allocQuadVerts(int blending_mode, int texnum) {
+static vertex_2d_t* allocQuadVerts(int pipeline_mode, int texnum) {
 	const uint32_t pics_offset = R_FlippingBuffer_Alloc(&g2d.pics_buffer_alloc, 6, 1);
 	vertex_2d_t* const ptr = ((vertex_2d_t*)(g2d.pics_buffer.mapped)) + pics_offset;
 	batch_t *batch = g2d.batch + (g2d.batch_count-1);
@@ -63,7 +64,7 @@ static vertex_2d_t* allocQuadVerts(int blending_mode, int texnum) {
 	}
 
 	if (batch->texture != texnum
-		|| batch->blending_mode != blending_mode
+		|| batch->pipeline_mode != pipeline_mode
 		|| batch->vertex_offset > pics_offset) {
 		if (batch->vertex_count != 0) {
 			if (g2d.batch_count == MAX_BATCHES) {
@@ -81,7 +82,7 @@ static vertex_2d_t* allocQuadVerts(int blending_mode, int texnum) {
 		batch->vertex_offset = pics_offset;
 		batch->vertex_count = 0;
 		batch->texture = texnum;
-		batch->blending_mode = blending_mode;
+		batch->pipeline_mode = pipeline_mode;
 	}
 
 	batch->vertex_count += 6;
@@ -89,7 +90,7 @@ static vertex_2d_t* allocQuadVerts(int blending_mode, int texnum) {
 	return ptr;
 }
 
-static vertex_2d_t* allocDoubleVerts(int blending_mode, int texnum) {
+static vertex_2d_t* allocDoubleVerts(int pipeline_mode, int texnum) {
 	const uint32_t lines_offset = (R_FlippingBuffer_Alloc(&g2d.lines_buffer_alloc, 2, 1) / 2);
 	vertex_2d_t* const ptr = ((vertex_2d_t*)(g2d.lines_buffer.mapped)) + lines_offset;
 	batch_t *batch = g2d.batch + (g2d.batch_count-1);
@@ -102,7 +103,7 @@ static vertex_2d_t* allocDoubleVerts(int blending_mode, int texnum) {
 		return NULL;
 	}
 	if (batch->texture != texnum ||
-		batch->blending_mode != blending_mode
+		batch->pipeline_mode != pipeline_mode
 		|| batch->vertex_offset > lines_offset) {
 		if (batch->vertex_count != 0) {
 			if (g2d.batch_count == MAX_BATCHES) {
@@ -120,7 +121,7 @@ static vertex_2d_t* allocDoubleVerts(int blending_mode, int texnum) {
 		batch->vertex_offset = lines_offset;
 		batch->vertex_count = 0;
 		batch->texture = texnum; 
-		batch->blending_mode = blending_mode;
+		batch->pipeline_mode = pipeline_mode;
 	}
 
 	batch->vertex_count += 2;
@@ -157,15 +158,16 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 	}
 }
 
-static void drawLine(float x1, float y1, float x2, float y2) 
+static void drawLine(float x1, float y1, float x2, float y2, float r, float g, float b) 
 {
 	const color_rgba8_t prev_color = vk_renderstate.tri_color;
 	const int prev_blending = vk_renderstate.blending_mode;
-
+	
+	// TODO: Line with transparency
 	vk_renderstate.blending_mode = kRenderLineMode;
-	vk_renderstate.tri_color = (color_rgba8_t){255, 255, 255, 255};
-
-	vertex_2d_t *const p = allocDoubleVerts(vk_renderstate.blending_mode, R_TextureFindByName(REF_WHITE_TEXTURE));
+	vk_renderstate.tri_color = (color_rgba8_t){r, g, b, 255};
+	
+	vertex_2d_t *const p = allocDoubleVerts(vk_renderstate.blending_mode, g2d.white_texture_ref_index);
 
 	if (!p) 
 		return;
@@ -184,7 +186,6 @@ static void drawLine(float x1, float y1, float x2, float y2)
 		
 		p[0] = (vertex_2d_t){x1, y1, 0, 0, color};
 		p[1] = (vertex_2d_t){x2, y2, 0, 0, color};
-
 	}
 	
 	vk_renderstate.tri_color = prev_color;
@@ -197,7 +198,7 @@ static void drawFill( float x, float y, float w, float h, int r, int g, int b, i
 	const int prev_blending = vk_renderstate.blending_mode;
 	vk_renderstate.blending_mode = blending_mode;
 	vk_renderstate.tri_color = (color_rgba8_t){r, g, b, a};
-	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, /* TODO what is this garbage, get it by number */ R_TextureFindByName(REF_WHITE_TEXTURE));
+	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, g2d.white_texture_ref_index);
 	vk_renderstate.tri_color = prev_color;
 	vk_renderstate.blending_mode = prev_blending;
 }
@@ -296,6 +297,7 @@ static qboolean createPipelines( void )
 					pci.dstAlphaBlendFactor = pci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 					break;
 				case kRenderLineMode: 
+					pci.blendEnable = VK_FALSE;
 					pci.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
 					break;
 			}
@@ -304,7 +306,7 @@ static qboolean createPipelines( void )
 
 			if (!g2d.pipelines[i])
 			{
-				// TODO complain
+				ERR("Pipeline %i is not created. Probably ci->num_stages > MAX_STAGES", i);
 				return false;
 			}
 		}
@@ -331,6 +333,8 @@ qboolean R_VkOverlay_Init( void ) {
 
 	R_FlippingBuffer_Init(&g2d.lines_buffer_alloc, MAX_VERTICES);
 
+	g2d.white_texture_ref_index = R_TextureFindByName(REF_WHITE_TEXTURE);
+
 	return true;
 }
 
@@ -344,18 +348,18 @@ void R_VkOverlay_Shutdown( void ) {
 	vkDestroyPipelineLayout(vk_core.device, g2d.pipeline_layout, NULL);
 }
 
-static void drawOverlay( VkCommandBuffer cmdbuf ) {
-	DEBUG_BEGIN(cmdbuf, "2d overlay");
-
+static void drawImages(VkCommandBuffer cmdbuf)
+{
 	const VkDeviceSize offset = 0;
 	vkCmdBindVertexBuffers(cmdbuf, 0, 1, &g2d.pics_buffer.buffer, &offset);
 	
 	for (int i = 0; i < g2d.batch_count && g2d.batch[i].vertex_count > 0; ++i)
 	{
-		const int blend = g2d.batch[i].blending_mode;
-		if(blend == kRenderLineMode)
+		const int pipeline_mode = g2d.batch[i].pipeline_mode;
+		if(pipeline_mode == kRenderLineMode)
 			continue;
-		const VkPipeline pipeline = g2d.pipelines[blend];
+
+		const VkPipeline pipeline = g2d.pipelines[pipeline_mode];
 		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm( g2d.batch[i].texture );
 		if (tex_unorm)
 		{
@@ -365,16 +369,23 @@ static void drawOverlay( VkCommandBuffer cmdbuf ) {
 		} // FIXME else what?
 	}
 	
+}
+
+static void drawLines(VkCommandBuffer cmdbuf)
+{
+	const VkDeviceSize offset = 0;
+
 	vkCmdBindVertexBuffers(cmdbuf, 0, 1, &g2d.lines_buffer.buffer, &offset);
 	
 	for (int i = 0; i < g2d.batch_count && g2d.batch[i].vertex_count > 0; ++i)
 	{
-		const int blend = g2d.batch[i].blending_mode;
-		if(blend != kRenderLineMode)
+		const int pipeline_mode = g2d.batch[i].pipeline_mode;
+		if(pipeline_mode != kRenderLineMode)
 			continue;
 
-		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(g2d.batch[i].texture );
-		const VkPipeline pipeline = g2d.pipelines[blend];
+		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(g2d.batch[i].texture);
+		const VkPipeline pipeline = g2d.pipelines[pipeline_mode];
+
 		if (tex_unorm)
 		{
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -382,6 +393,14 @@ static void drawOverlay( VkCommandBuffer cmdbuf ) {
 			vkCmdDraw(cmdbuf, g2d.batch[i].vertex_count, 1, g2d.batch[i].vertex_offset, 0);
 		} // FIXME else what?
 	}
+
+}
+
+static void drawOverlay( VkCommandBuffer cmdbuf ) {
+	DEBUG_BEGIN(cmdbuf, "2d overlay");
+	
+	drawImages(cmdbuf);
+	drawLines(cmdbuf);
 
 	DEBUG_END(cmdbuf);
 }
@@ -413,7 +432,7 @@ void CL_FillRGBABlend( float x, float y, float w, float h, int r, int g, int b, 
 	drawFill(x, y, w, h, r, g, b, a, kRenderTransColor);
 }
 
-void R_DrawLine(float x1, float y1, float x2, float y2) // TODO: Colors
+void R_DrawLine(float x1, float y1, float x2, float y2, float r, float g, float b) 
 {
-	drawLine(x1, y1, x2, y2);
+	drawLine(x1, y1, x2, y2, r, g, b);
 }

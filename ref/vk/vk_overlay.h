@@ -3,7 +3,7 @@
 #include "vk_core.h"
 #include "xash3d_types.h"
 
-void R_DrawLine(float x1, float y1, float x2, float y2); // TODO: Colors
+void R_DrawLine(float x1, float y1, float x2, float y2, float r, float g, float b); 
 
 void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty );
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum );
