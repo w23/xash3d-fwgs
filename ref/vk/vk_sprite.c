@@ -14,6 +14,8 @@
 #include "pmtrace.h"
 #include "pm_defs.h"
 
+#include "vk_ray_internal.h" // @MaterialMode
+
 #include <memory.h>
 
 #define MODULE_NAME "sprite"
@@ -22,6 +24,40 @@
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
 #define GLARE_FALLOFF	19000.0f
+
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// createQuadModel: R_GeometryRangeAlloc, R_GeometryRangeLock, R_GeometryRangeUnlock
+	// destroyQuadModel: R_GeometryRangeFree
+	&g_module_geometry,
+
+	// createQuadModel: R_VkMaterialGetForTexture
+	// R_DrawSpriteQuad: R_VkMaterialGetForTexture
+	&g_module_materials,
+
+	// createQuadModel: R_RenderModelCreate
+	// destroyQuadModel: R_RenderModelDestroy
+	// R_DrawSpriteQuad: R_RenderModelDraw
+	&g_module_render,
+
+	// R_DrawSpriteQuad: R_VkMaterialModeFromRenderType -- @MaterialMode: Why is it in ray_model and not in render?
+	&g_module_ray_model,
+
+	// VK_SpriteLoadFrame: R_TextureUploadFromFile
+	// Mod_LoadMapSprite: R_TextureUploadFromBuffer
+	// Mod_SpriteUnloadTextures: R_TextureFree
+	&g_module_textures_api
+};
+
+RVkModule g_module_sprite = {
+	.name = "sprite",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
 
 static struct {
 	struct {
@@ -127,17 +163,6 @@ static void destroyQuadModel(void) {
 
 	g_sprite.quad.model.num_geometries = 0;
 	g_sprite.quad.geom.block_handle.size = 0;
-}
-
-qboolean R_SpriteInit(void) {
-	R_SPEEDS_COUNTER(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
-
-	return true;
-	// TODO return createQuadModel();
-}
-
-void R_SpriteShutdown(void) {
-	destroyQuadModel();
 }
 
 void R_SpriteNewMapFIXME(void) {
@@ -1108,4 +1133,22 @@ void Mod_SpriteUnloadTextures( void *data )
 			}
 		}
 	}
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_sprite );
+
+	R_SPEEDS_COUNTER(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_sprite );
+	return true;
+	// TODO return createQuadModel();
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_sprite );
+
+	destroyQuadModel();
+
+	XRVkModule_OnShutdownEnd( g_module_sprite );
 }

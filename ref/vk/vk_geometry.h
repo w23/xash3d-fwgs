@@ -1,9 +1,14 @@
 #pragma once
+
+#include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_common.h"
 #include "r_block.h"
-#include "vk_core.h"
 
 #include <stdint.h>
+
+extern RVkModule g_module_geometry;
 
 // General buffer usage pattern
 // 1. alloc (allocates buffer mem, stores allocation data)
@@ -82,9 +87,6 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock );
 
 void R_GeometryBuffer_MapClear( void ); // Free the entire buffer for a new map
-
-qboolean R_GeometryBuffer_Init(void);
-void R_GeometryBuffer_Shutdown(void);
 
 void R_GeometryBuffer_Flip(void);
 

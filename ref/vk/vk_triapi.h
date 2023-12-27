@@ -1,6 +1,10 @@
 #pragma once
 
+#include "vk_module.h"
+
 #include "xash3d_types.h"
+
+extern RVkModule g_module_triapi;
 
 typedef struct model_s model_t;
 

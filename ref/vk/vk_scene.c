@@ -45,6 +45,69 @@
 PROFILER_SCOPES(SCOPE_DECLARE)
 #undef SCOPE_DECLARE
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// loadLights: RT_LightsLoadBegin, RT_LightsLoadEnd
+	// loadMap: RT_LightsNewMap
+	// VK_SceneRender: RT_LightAddFlashlight
+	&g_module_light,
+
+	// loadLights: RT_LightsLoadBegin
+	// preloadModels: R_BrushModelLoad
+	// reloadPatches: R_BrushModelDestroyAll
+	// R_SceneMapDestroy: R_BrushModelDestroyAll
+	// drawEntity: R_BrushModelDraw
+	// VK_SceneRender: R_BrushModelDraw
+	&g_module_brush,
+
+	// preloadModels: R_VkMaterialsLoadForModel
+	// loadMap: R_VkMaterialsReload
+	&g_module_materials,
+
+	// preloadModels: R_StudioModelPreload -- studio_model module
+	// loadMap: R_StudioCacheClear
+	// R_NewMap: R_StudioResetPlayerModels
+	// drawEntity: VK_StudioDrawModel
+	// VK_SceneRender: R_RunViewmodelEvents, R_DrawViewModel
+	&g_module_studio,
+
+	// loadMap: R_GeometryBuffer_MapClear -- obsolete, doesn't do anything
+	&g_module_geometry,
+
+	// loadMap: VK_RayNewMapBegin, VK_RayNewMapEnd
+	// R_NewMap: RT_FrameDiscontinuity
+	&g_module_rtx,
+
+	// loadMap: R_SpriteNewMapFIXME
+	// drawEntity: R_VkSpriteDrawModel
+	&g_module_sprite,
+
+	// loadMap: R_TextureSetupSky
+	&g_module_textures_api,
+
+	// reloadPatches: R_VkStagingFlushSync
+	&g_module_staging,
+
+	// VK_SceneRender: VK_RenderSetupCamera, VK_RenderDebugLabelBegin, VK_RenderDebugLabelEnd
+	&g_module_render,
+
+	// CL_DrawBeams: R_BeamDrawCustomEntity, R_BeamDraw
+	&g_module_beams
+
+	// loadMap: VK_ClearLightmap, VK_RunLightStyles, VK_UploadLightmap -- make lightmap module?
+	// loadMap: XVK_ParseMapEntities, XVK_ParseMapPatches -- make mapents module?
+};
+
+RVkModule g_module_scene = {
+	.name = "scene",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct vk_trans_entity_s {
 	struct cl_entity_s *entity;
 	int render_mode;
@@ -184,18 +247,6 @@ static void reloadPatches( void ) {
 	loadMap(map, force_reload);
 
 	R_VkStagingFlushSync();
-}
-
-void VK_SceneInit( void )
-{
-	PROFILER_SCOPES(APROF_SCOPE_INIT);
-
-	g_lists.draw_list = g_lists.draw_stack;
-	g_lists.draw_stack_pos = 0;
-
-	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("rt_debug_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
-	}
 }
 
 #define R_ModelOpaque( rm )	( rm == kRenderNormal )
@@ -466,123 +517,6 @@ static int R_TransEntityCompare( const void *a, const void *b)
 	return 0;
 }
 
-// FIXME where should this function be
-#define RP_NORMALPASS() true // FIXME ???
-int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
-{
-	int	blend = 0;
-	float	offset, dist;
-	vec3_t	tmp;
-
-	offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
-
-	switch( e->curstate.renderfx )
-	{
-	case kRenderFxPulseSlowWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 2 + offset );
-		break;
-	case kRenderFxPulseFastWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 8 + offset );
-		break;
-	case kRenderFxPulseSlow:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 2 + offset );
-		break;
-	case kRenderFxPulseFast:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 8 + offset );
-		break;
-	case kRenderFxFadeSlow:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt > 0 )
-				e->curstate.renderamt -= 1;
-			else e->curstate.renderamt = 0;
-		}
-		blend = e->curstate.renderamt;
-		break;
-	case kRenderFxFadeFast:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt > 3 )
-				e->curstate.renderamt -= 4;
-			else e->curstate.renderamt = 0;
-		}
-		blend = e->curstate.renderamt;
-		break;
-	case kRenderFxSolidSlow:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt < 255 )
-				e->curstate.renderamt += 1;
-			else e->curstate.renderamt = 255;
-		}
-		blend = e->curstate.renderamt;
-		break;
-	case kRenderFxSolidFast:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt < 252 )
-				e->curstate.renderamt += 4;
-			else e->curstate.renderamt = 255;
-		}
-		blend = e->curstate.renderamt;
-		break;
-	case kRenderFxStrobeSlow:
-		blend = 20 * sin( gpGlobals->time * 4 + offset );
-		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
-		break;
-	case kRenderFxStrobeFast:
-		blend = 20 * sin( gpGlobals->time * 16 + offset );
-		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
-		break;
-	case kRenderFxStrobeFaster:
-		blend = 20 * sin( gpGlobals->time * 36 + offset );
-		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
-		break;
-	case kRenderFxFlickerSlow:
-		blend = 20 * (sin( gpGlobals->time * 2 ) + sin( gpGlobals->time * 17 + offset ));
-		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
-		break;
-	case kRenderFxFlickerFast:
-		blend = 20 * (sin( gpGlobals->time * 16 ) + sin( gpGlobals->time * 23 + offset ));
-		if( blend < 0 ) blend = 0;
-		else blend = e->curstate.renderamt;
-		break;
-	case kRenderFxHologram:
-	case kRenderFxDistort:
-		VectorCopy( e->origin, tmp );
-		VectorSubtract( tmp, g_camera.vieworg, tmp );
-		dist = DotProduct( tmp, g_camera.vforward );
-
-		// turn off distance fade
-		if( e->curstate.renderfx == kRenderFxDistort )
-			dist = 1;
-
-		if( dist <= 0 )
-		{
-			blend = 0;
-		}
-		else
-		{
-			e->curstate.renderamt = 180;
-			if( dist <= 100 ) blend = e->curstate.renderamt;
-			else blend = (int) ((1.0f - ( dist - 100 ) * ( 1.0f / 400.0f )) * e->curstate.renderamt );
-			blend += gEngine.COM_RandomLong( -32, 31 );
-		}
-		break;
-	default:
-		blend = e->curstate.renderamt;
-		break;
-	}
-
-	blend = bound( 0, blend, 255 );
-
-	return blend;
-}
-
 static void drawEntity( cl_entity_t *ent, int render_mode )
 {
 	const model_t *mod = ent->model;
@@ -785,4 +719,28 @@ void CL_DrawBeams( int fTrans, BEAM *active_beams )
 
 		R_BeamDraw( pBeam, g_frametime );
 	}
+}
+
+static qboolean Impl_Init( void ) {
+	PROFILER_SCOPES(APROF_SCOPE_INIT);
+
+	XRVkModule_OnInitStart( g_module_scene );
+
+	g_lists.draw_list = g_lists.draw_stack;
+	g_lists.draw_stack_pos = 0;
+
+	if (vk_core.rtx) {
+		gEngine.Cmd_AddCommand("rt_debug_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
+	}
+
+	XRVkModule_OnInitEnd( g_module_scene );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_scene );
+
+	// Nothing to clear for now.
+
+	XRVkModule_OnShutdownEnd( g_module_scene );
 }

@@ -9,19 +9,7 @@
 
 #include "unordered_roadmap.h"
 
-// -- Module API implementation START --
 extern RVkModule g_module_textures;
-
-typedef enum {
-	RVkModuleTexturesResult_Success = RVkModuleResult_Success,
-	RVkModuleTexturesResult_DefaultSamplerCreationError,
-	RVkModuleTexturesResult_DefaultImageViewAcquireError
-} RVkModuleTexturesResult;
-
-static RVkModuleResult Impl_Init( RVkModuleLogLevels log_levels, RVkModuleArgs args );
-static    const char * Impl_GetResultName( RVkModuleResult result );
-static            void Impl_Shutdown( qboolean forced );
-// -- Module API implementation END --
 
 typedef struct vk_texture_s
 {
@@ -46,9 +34,6 @@ typedef struct vk_texture_s
 } vk_texture_t;
 
 #define TEX_NAME(tex) ((tex)->hdr_.key)
-
-qboolean R_VkTexturesInit( void );
-void R_VkTexturesShutdown( void );
 
 qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, qboolean placeholder);
 void R_VkTexturesSkyboxUnload(void);

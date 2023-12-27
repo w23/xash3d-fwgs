@@ -1,8 +1,11 @@
 #pragma once
 
 #include "vk_core.h"
+#include "vk_module.h"
 
 #include "vk_const.h"
+
+extern RVkModule g_module_descriptor;
 
 // Only used for traditional renderer
 typedef struct descriptor_pool_s
@@ -19,9 +22,6 @@ typedef struct descriptor_pool_s
 
 // FIXME: move to traditional renderer
 extern descriptor_pool_t vk_desc_fixme;
-
-qboolean VK_DescriptorInit( void );
-void VK_DescriptorShutdown( void );
 
 struct xvk_image_s;
 typedef union {

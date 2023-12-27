@@ -19,6 +19,47 @@
 
 #include <string.h>
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// R_BeginFrame: R_VkSwapchainAcquire
+	// submit: R_VkSwapchainPresent
+	// Impl_Init: R_VkSwapchainSetRenderPassAndDepthFormat_FIXME -- @RenderpassOwnershipMess
+	&g_module_swapchain,
+
+	// R_BeginFrame: R_VkCombufScopesGet, R_VkCombufBegin
+	// submit: R_VkCombufEnd
+	// Impl_Init: R_VkCombufOpen
+	// Impl_Shutdown: R_VkCombufClose
+	&g_module_combuf,
+
+	// R_BeginFrame: R_VkStagingFrameBegin
+	// submit: R_VkStagingFrameEnd
+	&g_module_staging,
+
+	// R_BeginFrame: VK_RenderBegin
+	// enqueueRendering: VK_Render_FIXME_Barrier, VK_RenderEndRTX
+	&g_module_render,
+
+	// VK_RenderFrame: VK_SceneRender
+	&g_module_scene,
+
+	// enqueueRendering: R_VkOverlay_DrawAndFlip
+	&g_module_overlay,
+
+	// R_VkReadPixels: R_VkImageCreate, R_VkImageDestroy
+	&g_module_image
+};
+
+RVkModule g_module_framectl = {
+	.name = "framectl",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 extern ref_globals_t *gpGlobals;
 
 vk_framectl_t vk_frame = {0};
@@ -417,73 +458,6 @@ void R_EndFrame( void )
 	APROF_SCOPE_END(frame);
 }
 
-qboolean VK_FrameCtlInit( void )
-{
-	PROFILER_SCOPES(APROF_SCOPE_INIT_EX);
-
-	const VkFormat depth_format = findSupportedImageFormat(depth_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-	// FIXME move this out to renderers
-	vk_frame.render_pass.raster = createRenderPass(depth_format, false);
-	if (vk_core.rtx)
-		vk_frame.render_pass.after_ray_tracing = createRenderPass(depth_format, true);
-
-	if (!R_VkSwapchainInit(vk_frame.render_pass.raster, depth_format))
-		return false;
-
-	for (int i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
-		vk_framectl_frame_t *const frame = g_frame.frames + i;
-		frame->combuf = R_VkCombufOpen();
-
-		frame->sem_framebuffer_ready = R_VkSemaphoreCreate();
-		SET_DEBUG_NAMEF(frame->sem_framebuffer_ready, VK_OBJECT_TYPE_SEMAPHORE, "framebuffer_ready[%d]", i);
-		frame->sem_done = R_VkSemaphoreCreate();
-		SET_DEBUG_NAMEF(frame->sem_done, VK_OBJECT_TYPE_SEMAPHORE, "done[%d]", i);
-		frame->sem_done2 = R_VkSemaphoreCreate();
-		SET_DEBUG_NAMEF(frame->sem_done2, VK_OBJECT_TYPE_SEMAPHORE, "done2[%d]", i);
-		frame->fence_done = R_VkFenceCreate(true);
-		SET_DEBUG_NAMEF(frame->fence_done, VK_OBJECT_TYPE_FENCE, "done[%d]", i);
-	}
-
-	// Signal first frame semaphore as done
-	{
-		const VkPipelineStageFlags stageflags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		const VkSubmitInfo subinfo = {
-			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-			.pNext = NULL,
-			.commandBufferCount = 0,
-			.pCommandBuffers = NULL,
-			.waitSemaphoreCount = 0,
-			.pWaitSemaphores = NULL,
-			.pWaitDstStageMask = &stageflags,
-			.signalSemaphoreCount = 1,
-			.pSignalSemaphores = &g_frame.frames[0].sem_done2,
-		};
-		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, VK_NULL_HANDLE));
-	}
-
-	vk_frame.rtx_enabled = vk_core.rtx;
-
-	return true;
-}
-
-void VK_FrameCtlShutdown( void ) {
-	for (int i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
-		vk_framectl_frame_t *const frame = g_frame.frames + i;
-		R_VkCombufClose(frame->combuf);
-		R_VkSemaphoreDestroy(frame->sem_framebuffer_ready);
-		R_VkSemaphoreDestroy(frame->sem_done);
-		R_VkSemaphoreDestroy(frame->sem_done2);
-		R_VkFenceDestroy(frame->fence_done);
-	}
-
-	R_VkSwapchainShutdown();
-
-	vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.raster, NULL);
-	if (vk_core.rtx)
-		vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.after_ray_tracing, NULL);
-}
-
 static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 	VkFormatProperties props;
 
@@ -761,4 +735,84 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	gEngine.Con_Printf("Wrote screenshot %s. Saving file: %.03fms, total: %.03fms\n",
 		filename, (save_end_ns - save_begin_ns) / 1e6, (end_ns - start_ns) / 1e6);
 	return result;
+}
+
+static qboolean Impl_Init( void ) {
+	// Remove this double check when we figure out @RenderpassOwnershipMess
+	// because this check is already inside `XRVkModule_OnInitStart`.
+	if ( g_module_framectl.state == RVkModuleState_Initialized )
+		return true;
+
+	const VkFormat depth_format = findSupportedImageFormat(depth_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	
+	// FIXME move this out to renderers
+	vk_frame.render_pass.raster = createRenderPass(depth_format, false);
+	if (vk_core.rtx)
+		vk_frame.render_pass.after_ray_tracing = createRenderPass(depth_format, true);
+
+	// Render pass and depth format have to be set before we begin to init swapchain.
+	// (Swapchain will be initialized as a dependency/required module)
+	R_VkSwapchainSetRenderPassAndDepthFormat_FIXME( vk_frame.render_pass.raster, depth_format ); // -- @RenderpassOwnershipMess
+
+	XRVkModule_OnInitStart( g_module_framectl );
+
+	PROFILER_SCOPES(APROF_SCOPE_INIT_EX);
+
+	for (int i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+		vk_framectl_frame_t *const frame = g_frame.frames + i;
+		frame->combuf = R_VkCombufOpen();
+
+		frame->sem_framebuffer_ready = R_VkSemaphoreCreate();
+		SET_DEBUG_NAMEF(frame->sem_framebuffer_ready, VK_OBJECT_TYPE_SEMAPHORE, "framebuffer_ready[%d]", i);
+		frame->sem_done = R_VkSemaphoreCreate();
+		SET_DEBUG_NAMEF(frame->sem_done, VK_OBJECT_TYPE_SEMAPHORE, "done[%d]", i);
+		frame->sem_done2 = R_VkSemaphoreCreate();
+		SET_DEBUG_NAMEF(frame->sem_done2, VK_OBJECT_TYPE_SEMAPHORE, "done2[%d]", i);
+		frame->fence_done = R_VkFenceCreate(true);
+		SET_DEBUG_NAMEF(frame->fence_done, VK_OBJECT_TYPE_FENCE, "done[%d]", i);
+	}
+
+	// Signal first frame semaphore as done
+	{
+		const VkPipelineStageFlags stageflags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		const VkSubmitInfo subinfo = {
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.pNext = NULL,
+			.commandBufferCount = 0,
+			.pCommandBuffers = NULL,
+			.waitSemaphoreCount = 0,
+			.pWaitSemaphores = NULL,
+			.pWaitDstStageMask = &stageflags,
+			.signalSemaphoreCount = 1,
+			.pSignalSemaphores = &g_frame.frames[0].sem_done2,
+		};
+		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, VK_NULL_HANDLE));
+	}
+
+	vk_frame.rtx_enabled = vk_core.rtx;
+
+	XRVkModule_OnInitEnd( g_module_framectl );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_framectl );
+
+	for (int i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
+		vk_framectl_frame_t *const frame = g_frame.frames + i;
+		R_VkCombufClose(frame->combuf);
+		R_VkSemaphoreDestroy(frame->sem_framebuffer_ready);
+		R_VkSemaphoreDestroy(frame->sem_done);
+		R_VkSemaphoreDestroy(frame->sem_done2);
+		R_VkFenceDestroy(frame->fence_done);
+	}
+
+	// R_VkSwapchainShutdown();
+	// Do we need explicit shutdown?
+
+	vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.raster, NULL);
+	if (vk_core.rtx)
+		vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.after_ray_tracing, NULL);
+
+	XRVkModule_OnShutdownEnd( g_module_framectl );
 }

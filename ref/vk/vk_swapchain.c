@@ -4,6 +4,23 @@
 
 #include "eiface.h" // ARRAYSIZE
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// createDepthImage: R_VkImageCreate
+	// destroySwapchainAndFramebuffers: R_VkImageDestroy
+	&g_module_image
+};
+
+RVkModule g_module_swapchain = {
+	.name = "swapchain",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 extern ref_globals_t *gpGlobals;
 
 static struct {
@@ -181,28 +198,6 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 	return true;
 }
 
-qboolean R_VkSwapchainInit( VkRenderPass render_pass, VkFormat depth_format ) {
-	const uint32_t prev_num_images = g_swapchain.num_images;
-
-	VkSurfaceCapabilitiesKHR surface_caps;
-	XVK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_core.physical_device.device, vk_core.surface.surface, &surface_caps));
-
-/*
-[2023:10:09|13:03:52] Error: Validation: Validation Error: [ VUID-VkSwapchainCreateInfoKHR-imageFormat-01778 ] Object 0: handle = 0x555556af6a00, type = VK_OBJECT_TYPE_DEVICE; | MessageID = 0xc036022f | vkCreateSwapchainKHR(): pCreateInfo->imageFormat VK_FORMAT_B8G8R8A8_SRGB with tiling VK_IMAGE_TILING_OPTIMAL does not support usage that includes VK_IMAGE_USAGE_STORAGE_BIT. The Vulkan spec states: The implied image creation parameters of the swapchain must be supported as reported by vkGetPhysicalDeviceImageFormatProperties (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkSwapchainCreateInfoKHR-imageFormat-01778)
-*/
-	//g_swapchain.image_format = VK_FORMAT_B8G8R8A8_SRGB;
-
-	g_swapchain.image_format = VK_FORMAT_B8G8R8A8_UNORM; // TODO get from surface_formats
-	g_swapchain.render_pass = render_pass;
-	g_swapchain.depth_format = depth_format;
-
-	return recreateSwapchainIfNeeded( true );
-}
-
-void R_VkSwapchainShutdown( void ) {
-	destroySwapchainAndFramebuffers( g_swapchain.swapchain );
-}
-
 r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_available ) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
@@ -295,4 +290,46 @@ void R_VkSwapchainPresent( uint32_t index, VkSemaphore done ) {
 		default:
 			XVK_CHECK(present_result);
 	}
+}
+
+void R_VkSwapchainSetRenderPassAndDepthFormat_FIXME( VkRenderPass render_pass, VkFormat depth_format ) { // -- @RenderpassOwnershipMess
+	g_swapchain.render_pass = render_pass;
+	g_swapchain.depth_format = depth_format;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_swapchain );
+
+	const uint32_t prev_num_images = g_swapchain.num_images;
+
+	VkSurfaceCapabilitiesKHR surface_caps;
+	XVK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_core.physical_device.device, vk_core.surface.surface, &surface_caps));
+
+/*
+[2023:10:09|13:03:52] Error: Validation: Validation Error: [ VUID-VkSwapchainCreateInfoKHR-imageFormat-01778 ] Object 0: handle = 0x555556af6a00, type = VK_OBJECT_TYPE_DEVICE; | MessageID = 0xc036022f | vkCreateSwapchainKHR(): pCreateInfo->imageFormat VK_FORMAT_B8G8R8A8_SRGB with tiling VK_IMAGE_TILING_OPTIMAL does not support usage that includes VK_IMAGE_USAGE_STORAGE_BIT. The Vulkan spec states: The implied image creation parameters of the swapchain must be supported as reported by vkGetPhysicalDeviceImageFormatProperties (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkSwapchainCreateInfoKHR-imageFormat-01778)
+*/
+	//g_swapchain.image_format = VK_FORMAT_B8G8R8A8_SRGB;
+
+	g_swapchain.image_format = VK_FORMAT_B8G8R8A8_UNORM; // TODO get from surface_formats
+
+	// These are set by R_VkSwapchainSetRenderPassAndDepthFormat_FIXME -- @RenderpassOwnershipMess
+	// g_swapchain.render_pass = render_pass;
+	// g_swapchain.depth_format = depth_format;
+
+	if ( !recreateSwapchainIfNeeded( true ) ) {
+		gEngine.Host_Error( S_ERROR "Couldn't create swapchain.\n" );
+		g_module_swapchain.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	XRVkModule_OnInitEnd( g_module_swapchain );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_swapchain );
+
+	destroySwapchainAndFramebuffers( g_swapchain.swapchain );
+
+	XRVkModule_OnShutdownEnd( g_module_swapchain );
 }

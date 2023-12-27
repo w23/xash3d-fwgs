@@ -9,6 +9,21 @@
 #define MAX_TRIAPI_VERTICES 1024
 #define MAX_TRIAPI_INDICES 4096
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	&g_module_sprite
+};
+
+RVkModule g_module_triapi = {
+	.name = "triapi",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 static struct {
 	vk_vertex_t vertices[MAX_TRIAPI_VERTICES];
 	uint16_t indices[MAX_TRIAPI_INDICES];
@@ -18,8 +33,6 @@ static struct {
 	int texture_index;
 
 	vk_render_type_e render_type;
-
-	qboolean initialized;
 } g_triapi = {0};
 
 void TriSetTexture( int texture_index ) {
@@ -74,11 +87,6 @@ void TriBegin( int primitive_mode ) {
 	vk_vertex_t *const ve = g_triapi.vertices + 0;
 	if (g_triapi.num_vertices > 1)
 		*ve = g_triapi.vertices[g_triapi.num_vertices-1];
-
-	if (!g_triapi.initialized) {
-		Vector4Set(ve->color, 255, 255, 255, 255);
-		g_triapi.initialized = true;
-	}
 
 	g_triapi.primitive_mode = primitive_mode + 1;
 	g_triapi.num_vertices = 0;
@@ -221,4 +229,22 @@ void TriNormal3fv( const float *v ) {
 void TriNormal3f( float x, float y, float z ) {
 	vk_vertex_t *const ve = g_triapi.vertices + g_triapi.num_vertices;
 	VectorSet(ve->normal, x, y, z);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_triapi );
+
+	vk_vertex_t *const ve = g_triapi.vertices + 0;
+	Vector4Set(ve->color, 255, 255, 255, 255);
+
+	XRVkModule_OnInitEnd( g_module_triapi );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_triapi );
+
+	// Nothing to clear for now.
+
+	XRVkModule_OnShutdownEnd( g_module_triapi );
 }

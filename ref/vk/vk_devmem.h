@@ -1,8 +1,9 @@
 #pragma once
-#include "vk_core.h"
 
-qboolean VK_DevMemInit( void );
-void VK_DevMemDestroy( void );
+#include "vk_core.h"
+#include "vk_module.h"
+
+extern RVkModule g_module_devmem;
 
 typedef struct vk_devmem_s {
 	VkDeviceMemory device_memory;

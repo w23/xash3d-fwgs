@@ -28,6 +28,60 @@
 #define MODULE_NAME "brush"
 #define LOG_MODULE brush
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// brushComputeWaterPolys: R_VkMaterialGetForTexture
+	// R_BrushModelDraw: R_VkMaterialGetForTexture
+	// fillBrushSurfaces: R_VkMaterialGetForRef, R_VkMaterialGetEx, R_VkMaterialGetForTexture
+	&g_module_materials,
+
+	// brushComputeWaterPolys: RT_GetEmissiveForTexture
+	// R_BrushModelDraw: RT_LightAddPolygon, RT_GetEmissiveForTexture, T_LightAddPolygon
+	// R_VkBrushModelCollectEmissiveSurfaces: RT_GetEmissiveForTexture, RT_LightAddPolygon
+	&g_module_light,
+
+	// fillWaterSurfaces: R_GeometryRangeLock, R_GeometryRangeUnlock
+	// brushCreateWaterModel: R_GeometryRangeAlloc
+	// R_BrushModelDraw: R_GeometryRangeLockSubrange, R_GeometryRangeUnlock
+	// createRenderModel: R_GeometryRangeAlloc, R_GeometryRangeLock, R_GeometryRangeUnlock
+	// R_BrushModelDestroy: R_GeometryRangeFree
+	&g_module_geometry,
+
+	// brushCreateWaterModel: R_RenderModelCreate
+	// brushDrawWater: R_RenderModelUpdate, R_RenderModelDraw
+	// R_BrushModelDraw: R_RenderModelUpdateMaterials, R_RenderModelDraw
+	// createRenderModel: R_RenderModelCreate
+	// R_BrushModelDestroy: R_RenderModelDestroy
+	// R_BrushModelDestroyAll: R_BrushModelDestroy
+	// R_VkBrushModelCollectEmissiveSurfaces: R_RenderModelUpdateMaterials
+	&g_module_render,
+
+	// fillBrushSurfaces: R_TexturesGetParm
+	// R_BrushUnloadTextures: R_TextureFree
+	&g_module_textures_api,
+
+	// R_VkBrushModelCollectEmissiveSurfaces: R_VkStagingFlushSync
+	&g_module_staging
+
+	// mapents
+	// getSurfaceType: R_VkPatchGetSurface
+	// fillBrushSurfaces: R_VkPatchGetSurface
+	// R_VkBrushModelCollectEmissiveSurfaces: R_VkPatchGetSurface
+
+	// lightmap
+	// fillBrushSurfaces: VK_CreateSurfaceLightmap
+};
+
+RVkModule g_module_brush = {
+	.name = "brush",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	int surfaces_count;
 	const int *surfaces_indices;
@@ -149,22 +203,6 @@ void VK_InitRandomTable( void )
 	}
 
 	gEngine.COM_SetRandomSeed( 0 );
-}
-
-qboolean R_BrushInit( void )
-{
-	VK_InitRandomTable ();
-
-	R_SPEEDS_COUNTER(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
-
-	return true;
-}
-
-void R_BrushShutdown( void ) {
-	if (g_brush.conn.edges)
-		Mem_Free(g_brush.conn.edges);
 }
 
 // speed up sin calculations
@@ -1908,4 +1946,26 @@ void R_BrushUnloadTextures( model_t *mod )
 		R_TextureFree( tx->gl_texturenum );    // main texture
 		R_TextureFree( tx->fb_texturenum );    // luma texture
 	}
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_brush );
+	
+	VK_InitRandomTable();
+
+	R_SPEEDS_COUNTER(g_brush.stat.models_drawn, "drawn", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_surfaces_drawn, "water.surfaces", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_brush.stat.water_polys_drawn, "water.polys", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_brush );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_brush );
+	
+	if (g_brush.conn.edges)
+		Mem_Free(g_brush.conn.edges);
+	
+	XRVkModule_OnShutdownEnd( g_module_brush );
 }

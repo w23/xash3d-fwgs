@@ -1,7 +1,11 @@
 #pragma once
 
-#include "vk_geometry.h"
 #include "vk_core.h"
+#include "vk_module.h"
+
+#include "vk_geometry.h"
+
+extern RVkModule g_module_rtx;
 
 void VK_RayFrameBegin( void );
 
@@ -29,9 +33,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args);
 
 void VK_RayNewMapBegin( void );
 void VK_RayNewMapEnd( void );
-
-qboolean VK_RayInit( void );
-void VK_RayShutdown( void );
 
 struct vk_render_geometry_s;
 struct rt_model_s;

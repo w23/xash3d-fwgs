@@ -18,6 +18,42 @@
 #define NOISE_DIVISIONS	64	// don't touch - many tripmines cause the crash when it equal 128
 #define MODULE_NAME "beams"
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// TriBrightness: TriColor4f
+	// R_DrawSegs: TriBegin, TriTexCoord2f, TriNormal3fv, TriVertex3fv, TriEndEx
+	// R_DrawTorus: TriBegin, TriTexCoord2f, TriVertex3fv, TriEndEx
+	// R_DrawDisk: TriBegin, TriTexCoord2f, TriVertex3fv, TriEndEx
+	// R_DrawCylinder: TriBegin, TriTexCoord2f, TriVertex3fv, TriEndEx
+	// R_DrawBeamFollow: TriBegin, TriTexCoord2f, TriVertex3fv, TriEndEx
+	// R_DrawRing: TriBegin, TriTexCoord2f, TriVertex3fv, TriEndEx
+	// R_BeamDraw: TriSetTexture, TriRenderMode, TriColor4f
+	&g_module_triapi,
+
+	// R_BeamDraw: R_GetSpriteTexture
+	&g_module_sprite,
+
+	// R_BeamDraw: VK_RenderDebugLabelBegin, VK_RenderDebugLabelEnd
+	&g_module_render
+
+	// camera
+	// R_DrawTorus: TriWorldToScreen
+	// R_DrawBeamFollow: TriWorldToScreen
+	// R_DrawRing: TriWorldToScreen
+	// R_BeamDraw: CL_FxBlend
+	// R_BeamDrawCustomEntity: CL_FxBlend
+};
+
+RVkModule g_module_beams = {
+	.name = "beams",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct
 {
 	vec3_t	pos;
@@ -30,11 +66,6 @@ static struct {
 		int beams;
 	} stats;
 } g_beam;
-
-qboolean R_BeamInit(void) {
-	R_SPEEDS_COUNTER(g_beam.stats.beams, "count", kSpeedsMetricCount);
-	return true;
-}
 
 /*
 ==============================================================
@@ -1223,3 +1254,19 @@ void R_BeamDrawCustomEntity( cl_entity_t *ent, float frametime )
 	R_BeamDraw( &beam, frametime );
 }
 
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_beams );
+
+	R_SPEEDS_COUNTER(g_beam.stats.beams, "count", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_beams );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_beams );
+
+	// Nothing to clear for now.
+
+	XRVkModule_OnShutdownEnd( g_module_beams );
+}

@@ -1,5 +1,8 @@
 #include "vk_combuf.h"
+#include "vk_module.h"
+
 #include "vk_commandpool.h"
+#include "vk_logs.h"
 
 #include "profiler.h"
 
@@ -7,6 +10,17 @@
 #define MAX_QUERY_COUNT 128
 
 #define BEGIN_INDEX_TAG 0x10000000
+
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+RVkModule g_module_combuf = {
+	.name = "combuf",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_Empty,
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
 
 typedef struct {
 	vk_combuf_t public;
@@ -32,44 +46,6 @@ static struct {
 
 	int entire_combuf_scope_id;
 } g_combuf;
-
-qboolean R_VkCombuf_Init( void ) {
-	g_combuf.pool = R_VkCommandPoolCreate(MAX_COMMANDBUFFERS);
-	if (!g_combuf.pool.pool)
-		return false;
-
-	const VkQueryPoolCreateInfo qpci = {
-		.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
-		.pNext = NULL,
-		.queryType = VK_QUERY_TYPE_TIMESTAMP,
-		.queryCount = COUNTOF(g_combuf.timestamp.values),
-		.flags = 0,
-	};
-
-	XVK_CHECK(vkCreateQueryPool(vk_core.device, &qpci, NULL, &g_combuf.timestamp.pool));
-
-	for (int i = 0; i < MAX_COMMANDBUFFERS; ++i) {
-		vk_combuf_impl_t *const cb = g_combuf.combufs + i;
-
-		cb->public.cmdbuf = g_combuf.pool.buffers[i];
-		SET_DEBUG_NAMEF(cb->public.cmdbuf, VK_OBJECT_TYPE_COMMAND_BUFFER, "cmdbuf[%d]", i);
-
-		cb->profiler.timestamps_offset = i * MAX_QUERY_COUNT;
-	}
-
-	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
-
-	return true;
-}
-
-void R_VkCombuf_Destroy( void ) {
-	vkDestroyQueryPool(vk_core.device, g_combuf.timestamp.pool, NULL);
-	R_VkCommandPoolDestroy(&g_combuf.pool);
-
-	for (int i = 0; i < g_combuf.scopes_count; ++i) {
-		Mem_Free((char*)g_combuf.scopes[i].name);
-	}
-}
 
 vk_combuf_t* R_VkCombufOpen( void ) {
 	for (int i = 0; i < MAX_COMMANDBUFFERS; ++i) {
@@ -229,4 +205,52 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 		.entries = cb->profiler.scopes,
 		.entries_count = cb->profiler.scopes_count,
 	};
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_combuf );
+
+	g_combuf.pool = R_VkCommandPoolCreate(MAX_COMMANDBUFFERS);
+	if (!g_combuf.pool.pool) {
+		ERR( "Couldn't create Vulkan command pool." );
+		g_module_combuf.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	const VkQueryPoolCreateInfo qpci = {
+		.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+		.pNext = NULL,
+		.queryType = VK_QUERY_TYPE_TIMESTAMP,
+		.queryCount = COUNTOF(g_combuf.timestamp.values),
+		.flags = 0,
+	};
+
+	XVK_CHECK(vkCreateQueryPool(vk_core.device, &qpci, NULL, &g_combuf.timestamp.pool));
+
+	for (int i = 0; i < MAX_COMMANDBUFFERS; ++i) {
+		vk_combuf_impl_t *const cb = g_combuf.combufs + i;
+
+		cb->public.cmdbuf = g_combuf.pool.buffers[i];
+		SET_DEBUG_NAMEF(cb->public.cmdbuf, VK_OBJECT_TYPE_COMMAND_BUFFER, "cmdbuf[%d]", i);
+
+		cb->profiler.timestamps_offset = i * MAX_QUERY_COUNT;
+	}
+
+	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
+
+	XRVkModule_OnInitEnd( g_module_combuf );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_combuf );
+
+	vkDestroyQueryPool(vk_core.device, g_combuf.timestamp.pool, NULL);
+	R_VkCommandPoolDestroy(&g_combuf.pool);
+
+	for (int i = 0; i < g_combuf.scopes_count; ++i) {
+		Mem_Free((char*)g_combuf.scopes[i].name);
+	}
+
+	XRVkModule_OnShutdownEnd( g_module_combuf );
 }

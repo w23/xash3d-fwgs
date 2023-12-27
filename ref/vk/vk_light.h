@@ -2,8 +2,11 @@
 
 #include "vk_const.h"
 #include "vk_core.h"
+#include "vk_module.h"
 
 #include "xash3d_types.h"
+
+extern RVkModule g_module_light;
 
 typedef struct {
 	uint8_t num_point_lights;
@@ -62,9 +65,6 @@ typedef struct {
 } vk_lights_t;
 
 extern vk_lights_t g_lights;
-
-qboolean VK_LightsInit( void );
-void VK_LightsShutdown( void );
 
 // Allocate clusters and vis data for the new map
 struct model_s;

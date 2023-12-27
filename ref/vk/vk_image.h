@@ -1,6 +1,11 @@
 #pragma once
+
 #include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_devmem.h"
+
+extern RVkModule g_module_image;
 
 typedef struct r_vk_image_s {
 	vk_devmem_t devmem;

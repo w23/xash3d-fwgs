@@ -158,3 +158,120 @@ int TriWorldToScreen( const float *world, float *screen )
 	return retval;
 }
 
+// NOTE(nilsoncore): Moved from `vk_beams.c`.
+// It uses global `g_camera` and comment suggests to use `R_SetupFrustum` -- a function inside `camera.c` -- so probably it is a good place.
+#define RP_NORMALPASS() true // FIXME ???
+int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
+{
+	int	blend = 0;
+	float	offset, dist;
+	vec3_t	tmp;
+
+	offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
+
+	switch( e->curstate.renderfx )
+	{
+	case kRenderFxPulseSlowWide:
+		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 2 + offset );
+		break;
+	case kRenderFxPulseFastWide:
+		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 8 + offset );
+		break;
+	case kRenderFxPulseSlow:
+		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 2 + offset );
+		break;
+	case kRenderFxPulseFast:
+		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 8 + offset );
+		break;
+	case kRenderFxFadeSlow:
+		if( RP_NORMALPASS( ))
+		{
+			if( e->curstate.renderamt > 0 )
+				e->curstate.renderamt -= 1;
+			else e->curstate.renderamt = 0;
+		}
+		blend = e->curstate.renderamt;
+		break;
+	case kRenderFxFadeFast:
+		if( RP_NORMALPASS( ))
+		{
+			if( e->curstate.renderamt > 3 )
+				e->curstate.renderamt -= 4;
+			else e->curstate.renderamt = 0;
+		}
+		blend = e->curstate.renderamt;
+		break;
+	case kRenderFxSolidSlow:
+		if( RP_NORMALPASS( ))
+		{
+			if( e->curstate.renderamt < 255 )
+				e->curstate.renderamt += 1;
+			else e->curstate.renderamt = 255;
+		}
+		blend = e->curstate.renderamt;
+		break;
+	case kRenderFxSolidFast:
+		if( RP_NORMALPASS( ))
+		{
+			if( e->curstate.renderamt < 252 )
+				e->curstate.renderamt += 4;
+			else e->curstate.renderamt = 255;
+		}
+		blend = e->curstate.renderamt;
+		break;
+	case kRenderFxStrobeSlow:
+		blend = 20 * sin( gpGlobals->time * 4 + offset );
+		if( blend < 0 ) blend = 0;
+		else blend = e->curstate.renderamt;
+		break;
+	case kRenderFxStrobeFast:
+		blend = 20 * sin( gpGlobals->time * 16 + offset );
+		if( blend < 0 ) blend = 0;
+		else blend = e->curstate.renderamt;
+		break;
+	case kRenderFxStrobeFaster:
+		blend = 20 * sin( gpGlobals->time * 36 + offset );
+		if( blend < 0 ) blend = 0;
+		else blend = e->curstate.renderamt;
+		break;
+	case kRenderFxFlickerSlow:
+		blend = 20 * (sin( gpGlobals->time * 2 ) + sin( gpGlobals->time * 17 + offset ));
+		if( blend < 0 ) blend = 0;
+		else blend = e->curstate.renderamt;
+		break;
+	case kRenderFxFlickerFast:
+		blend = 20 * (sin( gpGlobals->time * 16 ) + sin( gpGlobals->time * 23 + offset ));
+		if( blend < 0 ) blend = 0;
+		else blend = e->curstate.renderamt;
+		break;
+	case kRenderFxHologram:
+	case kRenderFxDistort:
+		VectorCopy( e->origin, tmp );
+		VectorSubtract( tmp, g_camera.vieworg, tmp );
+		dist = DotProduct( tmp, g_camera.vforward );
+
+		// turn off distance fade
+		if( e->curstate.renderfx == kRenderFxDistort )
+			dist = 1;
+
+		if( dist <= 0 )
+		{
+			blend = 0;
+		}
+		else
+		{
+			e->curstate.renderamt = 180;
+			if( dist <= 100 ) blend = e->curstate.renderamt;
+			else blend = (int) ((1.0f - ( dist - 100 ) * ( 1.0f / 400.0f )) * e->curstate.renderamt );
+			blend += gEngine.COM_RandomLong( -32, 31 );
+		}
+		break;
+	default:
+		blend = e->curstate.renderamt;
+		break;
+	}
+
+	blend = bound( 0, blend, 255 );
+
+	return blend;
+}

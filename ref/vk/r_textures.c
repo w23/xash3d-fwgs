@@ -22,6 +22,30 @@
 #define MODULE_NAME "textures"
 #define LOG_MODULE tex
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+/*
+static RVkModule *required_modules[] = {
+	// createDefaultTextures: R_VkTexturesSkyboxUpload
+	// loadTextureInternalFromFile: R_VkTextureUpload
+	// destroyTexture: R_VkTextureDestroy
+	// R_TextureUploadFromBuffer: R_VkTextureUpload
+	// skyboxLoadF: R_VkTexturesSkyboxUpload
+	// skyboxUnload: R_VkTexturesSkyboxUnload
+	// &g_module_textures // vk_textures -- @TexturesInitHardcode
+};
+*/
+
+RVkModule g_module_textures_api = {
+	.name = "textures_api",
+	.state = RVkModuleState_NotInitialized,
+	// .dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.dependencies = RVkModuleDependencies_Empty,
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 vk_textures_global_t tglob = {0};
 
 static struct {
@@ -41,93 +65,6 @@ static void destroyDefaultTextures( void );
 static void destroyTexture( uint texnum );
 
 #define R_TextureUploadFromBufferNew(name, pic, flags) R_TextureUploadFromBuffer(name, pic, flags, /*update_only=*/false)
-
-qboolean R_TexturesInit( void ) {
-	g_textures.mempool = Mem_AllocPool( "vktextures" );
-
-	g_textures.all_desc = (urmom_desc_t){
-		.array = g_textures.all,
-		.count = COUNTOF(g_textures.all),
-		.item_size = sizeof(g_textures.all[0]),
-		.type = kUrmomStringInsensitive,
-	};
-
-	urmomInit(&g_textures.all_desc);
-
-	// Mark index 0 as occupied to have a special "no texture" value
-	g_textures.all[0].hdr_.hash = 0x7fffffff;
-	g_textures.all[0].hdr_.state = 1;
-	Q_strncpy( g_textures.all[0].hdr_.key, "*unused*", sizeof(g_textures.all[0].hdr_.key));
-
-	createDefaultTextures();
-
-	if (!R_VkTexturesInit())
-		return false;
-
-	return true;
-}
-
-void R_TexturesShutdown( void )
-{
-	destroyDefaultTextures();
-
-	// By this point ideally all texture should have been destroyed.
-	// However, there are two possible ways some texture could have been left over:
-	// 1. Our coding mistakes, not releasing textures when done
-	// 2. Engine and other external things not cleaning up (e.g. mainui is known to leave textures)
-	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
-		const vk_texture_t *const tex = g_textures.all + i;
-		if (!URMOM_IS_OCCUPIED(tex->hdr_))
-			continue;
-
-		// Try to free external textures
-		R_TextureFree( i );
-
-		// If it is still not deleted, complain loudly
-		if (URMOM_IS_OCCUPIED(tex->hdr_)) {
-			// TODO consider ASSERT, as this is a coding mistake
-			ERR("stale texture[%d] '%s' refcount=%d", i, TEX_NAME(tex), tex->refcount);
-			destroyTexture( i );
-		}
-	}
-
-	int is_deleted_count = 0;
-	int clusters[16] = {0};
-	int current_cluster_begin = -1;
-	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
-		const vk_texture_t *const tex = g_textures.all + i;
-
-		if (URMOM_IS_EMPTY(tex->hdr_)) {
-			if (current_cluster_begin >= 0) {
-				const int cluster_length = i - current_cluster_begin;
-				clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
-			}
-			current_cluster_begin = -1;
-		} else {
-			if (current_cluster_begin < 0)
-				current_cluster_begin = i;
-		}
-
-		if (URMOM_IS_DELETED(tex->hdr_))
-			++is_deleted_count;
-
-		ASSERT(!URMOM_IS_OCCUPIED(tex->hdr_));
-	}
-
-	// TODO handle wraparound clusters
-	if (current_cluster_begin >= 0) {
-		const int cluster_length = COUNTOF(g_textures.all) - current_cluster_begin;
-		clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
-	}
-
-	DEBUG("Deleted slots in texture hash table: %d", is_deleted_count);
-	for (int i = 1; i < COUNTOF(clusters); ++i)
-		DEBUG("Texture hash table cluster[%d] = %d", i, clusters[i]);
-
-	DEBUG("Clusters longer than %d: %d", (int)COUNTOF(clusters)-1, clusters[0]);
-
-	R_VkTexturesShutdown();
-}
 
 static qboolean checkTextureName( const char *name )
 {
@@ -985,4 +922,106 @@ void R_TextureAcquire( unsigned int texnum ) {
 void R_TextureRelease( unsigned int texnum ) {
 	const qboolean ref_interface = false;
 	releaseTexture( texnum, ref_interface );
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_textures_api );
+
+	g_textures.mempool = Mem_AllocPool( "vktextures" );
+
+	g_textures.all_desc = (urmom_desc_t){
+		.array = g_textures.all,
+		.count = COUNTOF(g_textures.all),
+		.item_size = sizeof(g_textures.all[0]),
+		.type = kUrmomStringInsensitive,
+	};
+
+	urmomInit(&g_textures.all_desc);
+
+	// Mark index 0 as occupied to have a special "no texture" value
+	g_textures.all[0].hdr_.hash = 0x7fffffff;
+	g_textures.all[0].hdr_.state = 1;
+	Q_strncpy( g_textures.all[0].hdr_.key, "*unused*", sizeof(g_textures.all[0].hdr_.key));
+
+	createDefaultTextures();
+
+	// NOTE(nilsoncore): This has to be hardcoded in a current approach. -- @TexturesInitHardcode
+	// They use each other's functions, so it will be a circular dependency if we include them in a normal way.
+	// We could instead not turn `textures` (vk_textures{h,c}) into a whole module and leave it as it is, 
+	// but it has `Init` and `Shutdown` functions like in a normal module, so it's bad either way.
+	// This probably needs some reorganization / change of logic.
+	g_module_textures.init_caller = &g_module_textures_api;
+	if ( !g_module_textures.Init() ) {
+		ERR( "Couldn't initialize '%s' submodule.", g_module_textures );
+		g_module_textures_api.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	XRVkModule_OnInitEnd( g_module_textures_api );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_textures_api );
+
+	destroyDefaultTextures();
+
+	// By this point ideally all texture should have been destroyed.
+	// However, there are two possible ways some texture could have been left over:
+	// 1. Our coding mistakes, not releasing textures when done
+	// 2. Engine and other external things not cleaning up (e.g. mainui is known to leave textures)
+	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
+		const vk_texture_t *const tex = g_textures.all + i;
+		if (!URMOM_IS_OCCUPIED(tex->hdr_))
+			continue;
+
+		// Try to free external textures
+		R_TextureFree( i );
+
+		// If it is still not deleted, complain loudly
+		if (URMOM_IS_OCCUPIED(tex->hdr_)) {
+			// TODO consider ASSERT, as this is a coding mistake
+			ERR("stale texture[%d] '%s' refcount=%d", i, TEX_NAME(tex), tex->refcount);
+			destroyTexture( i );
+		}
+	}
+
+	int is_deleted_count = 0;
+	int clusters[16] = {0};
+	int current_cluster_begin = -1;
+	for( int i = 1; i < COUNTOF(g_textures.all); i++ ) {
+		const vk_texture_t *const tex = g_textures.all + i;
+
+		if (URMOM_IS_EMPTY(tex->hdr_)) {
+			if (current_cluster_begin >= 0) {
+				const int cluster_length = i - current_cluster_begin;
+				clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
+			}
+			current_cluster_begin = -1;
+		} else {
+			if (current_cluster_begin < 0)
+				current_cluster_begin = i;
+		}
+
+		if (URMOM_IS_DELETED(tex->hdr_))
+			++is_deleted_count;
+
+		ASSERT(!URMOM_IS_OCCUPIED(tex->hdr_));
+	}
+
+	// TODO handle wraparound clusters
+	if (current_cluster_begin >= 0) {
+		const int cluster_length = COUNTOF(g_textures.all) - current_cluster_begin;
+		clusters[cluster_length >= COUNTOF(clusters) ? 0 : cluster_length]++;
+	}
+
+	DEBUG("Deleted slots in texture hash table: %d", is_deleted_count);
+	for (int i = 1; i < COUNTOF(clusters); ++i)
+		DEBUG("Texture hash table cluster[%d] = %d", i, clusters[i]);
+
+	DEBUG("Clusters longer than %d: %d", (int)COUNTOF(clusters)-1, clusters[0]);
+
+	g_module_textures.Shutdown(); // -- @TexturesInitHardcode
+
+	XRVkModule_OnShutdownEnd( g_module_textures_api );
 }

@@ -1,13 +1,15 @@
 #include "vk_core.h"
+#include "vk_module.h"
 
 // TODO this needs to be negotiated by swapchain creation
 // however, currently render pass also needs it so ugh
 #define SWAPCHAIN_FORMAT VK_FORMAT_B8G8R8A8_UNORM //SRGB
 //#define SWAPCHAIN_FORMAT VK_FORMAT_B8G8R8A8_SRGB
 
+extern RVkModule g_module_swapchain;
+
 // TODO: move render pass and depth format away from this
-qboolean R_VkSwapchainInit( VkRenderPass pass, VkFormat depth_format );
-void R_VkSwapchainShutdown( void );
+void R_VkSwapchainSetRenderPassAndDepthFormat_FIXME( VkRenderPass render_pass, VkFormat depth_format ); // -- @RenderpassOwnershipMess
 
 typedef struct {
 	uint32_t index;

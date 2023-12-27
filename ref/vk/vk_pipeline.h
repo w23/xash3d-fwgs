@@ -1,7 +1,13 @@
 #pragma once
 
 #include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_buffer.h"
+
+extern RVkModule g_module_pipeline;
+
+extern VkPipelineCache g_pipeline_cache;
 
 VkShaderModule R_VkShaderLoadFromMem(const void *ptr, uint32_t size, const char *name);
 void R_VkShaderDestroy(VkShaderModule module);
@@ -83,9 +89,3 @@ vk_pipeline_ray_t VK_PipelineRayTracingCreate(const vk_pipeline_ray_create_info_
 struct vk_combuf_s;
 void VK_PipelineRayTracingTrace(struct vk_combuf_s *combuf, const vk_pipeline_ray_t *pipeline, uint32_t width, uint32_t height, int scope_id);
 void VK_PipelineRayTracingDestroy(vk_pipeline_ray_t* pipeline);
-
-
-qboolean VK_PipelineInit( void );
-void VK_PipelineShutdown( void );
-
-extern VkPipelineCache g_pipeline_cache;

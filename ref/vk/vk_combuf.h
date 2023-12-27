@@ -4,12 +4,11 @@
 
 #define MAX_GPU_SCOPES 64
 
+extern RVkModule g_module_combuf;
+
 typedef struct vk_combuf_s {
 	VkCommandBuffer cmdbuf;
 } vk_combuf_t;
-
-qboolean R_VkCombuf_Init( void );
-void R_VkCombuf_Destroy( void );
 
 vk_combuf_t* R_VkCombufOpen( void );
 void R_VkCombufClose( vk_combuf_t* );

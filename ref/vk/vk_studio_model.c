@@ -8,6 +8,25 @@
 #define MODULE_NAME "studio"
 #define LOG_MODULE studio
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// studioRenderSubmodelDestroy: R_GeometryRangeFree
+	&g_module_geometry,
+
+	// studioRenderSubmodelDestroy: R_RenderModelDestroy
+	&g_module_render
+};
+
+RVkModule g_module_studio_model = {
+	.name = "studio_model",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	const studiohdr_t *studio_header_key;
 	r_studio_model_info_t info;
@@ -253,11 +272,6 @@ const r_studio_model_info_t *getStudioModelInfo(model_t *model) {
 	return R_StudioModelPreload(model);
 }
 
-void VK_StudioModelInit(void) {
-	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_static, "submodels_cached_static", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_dynamic, "submodels_cached_dynamic", kSpeedsMetricCount);
-}
-
 r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *subinfo) {
 	const char *mode = "";
 
@@ -306,4 +320,22 @@ void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submode
 
 	render_submodel->_.next = render_submodel->_.info->cached_head;
 	render_submodel->_.info->cached_head = render_submodel;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_studio_model );
+
+	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_static, "submodels_cached_static", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_studio_cache.submodels_cached_dynamic, "submodels_cached_dynamic", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_studio_model );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_studio_model );
+
+	R_StudioCacheClear();
+
+	XRVkModule_OnShutdownEnd( g_module_studio_model );
 }

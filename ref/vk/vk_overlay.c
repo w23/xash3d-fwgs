@@ -13,6 +13,32 @@
 #include "com_strings.h"
 #include "eiface.h"
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// drawFill: R_TextureFindByName
+	// R_DrawTileClear: R_TextureGetNameByIndex
+	&g_module_textures_api,
+
+	// drawOverlay: R_VkTextureGetDescriptorUnorm
+	// &g_module_textures, -- @TexturesInitHardcode
+
+	// createPipelines: VK_PipelineGraphicsCreate
+	&g_module_pipeline
+};
+
+RVkModule g_module_overlay = {
+	.name = "overlay",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
 
 typedef struct vertex_2d_s {
 	float x, y;
@@ -231,29 +257,6 @@ static qboolean createPipelines( void )
 	return true;
 }
 
-qboolean R_VkOverlay_Init( void ) {
-	if (!createPipelines())
-		return false;
-
-	// TODO this doesn't need to be host visible, could use staging too
-	if (!VK_BufferCreate("2d pics_buffer", &g2d.pics_buffer, sizeof(vertex_2d_t) * MAX_VERTICES,
-				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ))
-		// FIXME cleanup
-		return false;
-
-	R_FlippingBuffer_Init(&g2d.pics_buffer_alloc, MAX_VERTICES);
-
-	return true;
-}
-
-void R_VkOverlay_Shutdown( void ) {
-	VK_BufferDestroy(&g2d.pics_buffer);
-	for (int i = 0; i < ARRAYSIZE(g2d.pipelines); ++i)
-		vkDestroyPipeline(vk_core.device, g2d.pipelines[i], NULL);
-
-	vkDestroyPipelineLayout(vk_core.device, g2d.pipeline_layout, NULL);
-}
-
 static void drawOverlay( VkCommandBuffer cmdbuf ) {
 	DEBUG_BEGIN(cmdbuf, "2d overlay");
 
@@ -302,4 +305,39 @@ void CL_FillRGBA( float x, float y, float w, float h, int r, int g, int b, int a
 void CL_FillRGBABlend( float x, float y, float w, float h, int r, int g, int b, int a )
 {
 	drawFill(x, y, w, h, r, g, b, a, kRenderTransColor);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_overlay );
+
+	if (!createPipelines()) {
+		g_module_overlay.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	// TODO this doesn't need to be host visible, could use staging too
+	if (!VK_BufferCreate("2d pics_buffer", &g2d.pics_buffer, sizeof(vertex_2d_t) * MAX_VERTICES,
+				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT )) {
+		// FIXME cleanup -- NOTE(nilsoncore): Is it done?
+		gEngine.Con_Printf(S_ERROR "Couldn't create 2D pictures buffer.\n");
+		g_module_overlay.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	R_FlippingBuffer_Init(&g2d.pics_buffer_alloc, MAX_VERTICES);
+
+	XRVkModule_OnInitEnd( g_module_overlay );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_overlay );
+
+	VK_BufferDestroy(&g2d.pics_buffer);
+	for (int i = 0; i < ARRAYSIZE(g2d.pipelines); ++i)
+		vkDestroyPipeline(vk_core.device, g2d.pipelines[i], NULL);
+
+	vkDestroyPipelineLayout(vk_core.device, g2d.pipeline_layout, NULL);
+
+	XRVkModule_OnShutdownEnd( g_module_overlay );
 }

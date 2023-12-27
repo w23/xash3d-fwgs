@@ -1,5 +1,22 @@
 #include "vk_buffer.h"
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// VK_BufferCreate: VK_DevMemAllocate
+	// VK_BufferDestroy: VK_DevMemFree
+	&g_module_devmem
+};
+
+RVkModule g_module_buffer = {
+	.name = "buffer",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags)
 {
 	VkBufferCreateInfo bci = {
@@ -17,6 +34,8 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 	if (usage & VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR) {
 		memreq.alignment = ALIGN_UP(memreq.alignment, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 	}
+
+	ASSERT( g_module_devmem.state == RVkModuleState_Initialized && "VK_BufferCreate: 'devmem' is not initialized." );
 	buf->devmem = VK_DevMemAllocate(debug_name, memreq, flags, usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0);
 	XVK_CHECK(vkBindBufferMemory(vk_core.device, buf->buffer, buf->devmem.device_memory, buf->devmem.offset));
 
@@ -108,4 +127,21 @@ uint32_t R_DEBuffer_Alloc(r_debuffer_t* debuf, r_lifetime_t lifetime, uint32_t s
 
 void R_DEBuffer_Flip(r_debuffer_t* debuf) {
 	R_FlippingBuffer_Flip(&debuf->dynamic);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_buffer );
+
+	// Nothing to init for now.
+
+	XRVkModule_OnInitEnd( g_module_buffer );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_buffer );
+
+	// Nothing to clear for now.
+
+	XRVkModule_OnShutdownEnd( g_module_buffer );
 }
