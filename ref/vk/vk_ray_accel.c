@@ -674,7 +674,7 @@ static qboolean Impl_Init( void ) {
 		gEngine.Con_Printf( S_NOTE "Module '%s' is initialized with enabled functionality.\n", g_module_ray_accel.name );
 	} else {
 		gEngine.Con_Printf( S_WARN "Module '%s' is initialized with disabled functionality.\n", g_module_ray_accel.name );
-		gEngine.Con_Printf( S_WARN "Switch to Ray Tracing renderer to enable it. (It must be supported on your graphics device)\n", g_module_ray_model.name );
+		gEngine.Con_Printf( S_WARN "Switch to Ray Tracing renderer to enable it. (It must be supported on your graphics device)\n" );
 	}
 
 	XRVkModule_OnInitEnd( g_module_ray_accel );
