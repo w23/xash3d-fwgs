@@ -952,7 +952,7 @@ static qboolean Impl_Init( void ) {
 	// This probably needs some reorganization / change of logic.
 	g_module_textures.init_caller = &g_module_textures_api;
 	if ( !g_module_textures.Init() ) {
-		ERR( "Couldn't initialize '%s' submodule.", g_module_textures );
+		ERR( "Couldn't initialize '%s' submodule.", g_module_textures.name );
 		g_module_textures_api.state = RVkModuleState_NotInitialized;
 		return false;
 	}
