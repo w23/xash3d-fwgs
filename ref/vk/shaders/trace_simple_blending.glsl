@@ -32,8 +32,14 @@ void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout
 		const Kusok kusok = getKusok(geom.kusok_index);
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 		const float overshoot = hit_t - L;
+
+// Use soft alpha depth effect globally, not only for glow
+#define GLOBAL_SOFT_DEPTH
+#ifndef GLOBAL_SOFT_DEPTH
 		if (overshoot > 0. && model.mode != MATERIAL_MODE_BLEND_GLOW)
 			continue;
+#endif
+
 
 //#define DEBUG_BLEND_MODES
 #ifdef DEBUG_BLEND_MODES
@@ -55,10 +61,17 @@ void traceSimpleBlending(vec3 pos, vec3 dir, float L, inout vec3 emissive, inout
 		float alpha = mm_color.a * texture_color.a * geom.vertex_color.a;
 		vec3 color = mm_color.rgb * texture_color.rgb * geom.vertex_color.rgb * alpha;
 
+#ifdef GLOBAL_SOFT_DEPTH
+		const float overshoot_factor = smoothstep(glow_soft_overshoot, 0., overshoot);
+		color *= overshoot_factor;
+#endif
+
 		if (model.mode == MATERIAL_MODE_BLEND_GLOW) {
 			// Glow is additive + small overshoot
+#ifndef GLOBAL_SOFT_DEPTH
 			const float overshoot_factor = smoothstep(glow_soft_overshoot, 0., overshoot);
 			color *= overshoot_factor;
+#endif
 			alpha = 0.;
 		} else if (model.mode == MATERIAL_MODE_BLEND_ADD) {
 			// Additive doesn't attenuate what's behind

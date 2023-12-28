@@ -1,6 +1,6 @@
 # 2023-12-28 E353
 - [x] track color spaces when passing colors into shaders
-- [ ] validation failure at startup, #723
+- [ ] validation failure at startup, #723 -- seems like memory corruption
 
 Longer-term agenda for current season:
 - [ ] Better PBR math, e.g.:
