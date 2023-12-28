@@ -68,32 +68,33 @@ init_dependencies:
 		RVkModule *const dep_module = module->dependencies.modules[dep_module_index];
 
 		if ( dep_module == module ) {
-			gEngine.Host_Error( "RVkModule: Failed to load dependencies for '%s' - module depends on itself.\n", module->name );
-			debug_break();
+			// NOTE(nilsoncore): Just exit with error because module dependencies are
+			// set statically, so this must be fixed in source code.
+			gEngine.Host_Error( "RVkModule: Failed to init dependencies for '%s' - module depends on itself.\n", module->name );
 		}
 
 		if ( dep_module->state == RVkModuleState_IsInitializing ) {
 			if ( second_try ) {
 				RVkModule_PrintDependencyList( module, true );
 				RVkModule_PrintDependencyList( dep_module, true );
-				gEngine.Host_Error( "RVkModule: Failed to load dependencies for '%s' - module is stuck on '%s' (it is a circular dependency chain).\n", module->name, dep_module->name );
-				debug_break();
+				// NOTE(nilsoncore): Just exit with error because module dependencies are
+				// set statically, so this must be fixed in source code.
+				gEngine.Host_Error( "RVkModule: Failed to init dependencies for '%s' - module is stuck on '%s' (it is a circular dependency chain).\n", module->name, dep_module->name );
 			} else {
 				deps_in_progress_count += 1;
 				continue;
 			}
-		} 
+		}
 
-		if ( dep_module->init_caller == NULL ) {
-			if ( dep_module->state != RVkModuleState_Initialized || dep_module->state != RVkModuleState_IsInitializing ) {
-				dep_module->init_caller = module;
-			} else {
-				gEngine.Con_Printf( S_WARN "Module '%s' is initializing '%s' but init caller is already set: '%s'.\n", module->name, dep_module->name, dep_module->init_caller->name );
-			}
+		if ( dep_module->init_caller == NULL &&
+			 dep_module->state != RVkModuleState_Initialized &&
+			 dep_module->state != RVkModuleState_IsInitializing )
+		{
+			dep_module->init_caller = module;
 		}
 
 		if ( !dep_module->Init() ) {
-			gEngine.Con_Printf( S_ERROR "Module '%s' failed to load dependency '%s'.\n", module->name, dep_module->name );
+			gEngine.Con_Printf( S_ERROR "Module '%s' failed to init dependency '%s'.\n", module->name, dep_module->name );
 			return false;
 		}
 	}
