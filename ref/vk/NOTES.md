@@ -1087,3 +1087,32 @@ Original:
 Our:
     `color = sqrt(a*a + b*b)`
 There's nothing we can to do `a` only that would make it fake the "original" mixing result.
+
+# 2023-12-28 E353
+## Passing colors from all over the place into `trace_simple_blending.glsl`
+- color = mm_color * texture_color * geom.vertex_color * alpha
+	- alpha = mm_color.a * texture_color.a * geom.vertex_color.a
+	- mm_color = model.color * kusok.material.base_color
+		- model.color -- already linearized
+		- kusok.material.base_color = mat->base_color * override_color
+			- mat->base_color -- specified in .mat files by hand
+				- [x] Which colorspace should it be specified in?
+				      Currently it is passed in as is, which means that it's accidentally linear.
+			- override_color -- passed from the engine through `R_RenderDrawOnce()`, called from triapi
+				- [x] sRGB-γ, should linearize
+	- texture_color -- just texture sampled color. sRGB-γ vs linear is specified at VkImageView level at loading time
+	- geom.vertex_color -- barycentric-lerped from vk_vertex[].color
+		- vk_vertex[].color -- rgba8
+			- [x] which colorspace? Should be sRGB-γ originally
+		- [x] Do we need to linearize it? YES
+			- [x] Before lerping or after? BEFORE -- already done
+
+- Should α be converted from gamma to linear?
+	- Doing so:
+		- seems kinda logical -- everything is gamma-space in engine, so it probably should be.
+		- fixes some 'background' sprites transparency
+		- makes too-brighs c0a0c beams darker (but kinda too dark imo)
+		- breaks sprite animation lerping -- now we need 2 native gamma-to-linear functions, wich alpha conv and w/o
+
+As usual -- original sRGB-specialized game art is painfully incompatible with modern linear PBR.
+The best way to address it (hopefully w/o breaking too much linear rendering math) remains to be discovered.

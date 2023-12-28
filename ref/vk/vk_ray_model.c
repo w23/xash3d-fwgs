@@ -337,6 +337,15 @@ static void sRGBtoLinearVec4(const vec4_t in, vec4_t out) {
 	out[3] = in[3];
 }
 
+static void sRGBAtoLinearVec4(const vec4_t in, vec4_t out) {
+	out[0] = sRGBtoLinearScalar(in[0]);
+	out[1] = sRGBtoLinearScalar(in[1]);
+	out[2] = sRGBtoLinearScalar(in[2]);
+
+	// α also needs to be linearized.
+	out[3] = sRGBtoLinearScalar(in[3]);
+}
+
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
 		return;
@@ -476,7 +485,7 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 			break;
 		}
 
-		Vector4Copy(*args.color, dyn->colors[dyn->geometries_count]);
+		sRGBAtoLinearVec4(*args.color_srgb, dyn->colors[dyn->geometries_count]);
 		dyn->geometries[dyn->geometries_count++] = args.geometries[i];
 	}
 }

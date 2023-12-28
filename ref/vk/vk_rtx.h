@@ -78,7 +78,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args );
 typedef struct {
 	const char *debug_name;
 	const struct vk_render_geometry_s *geometries;
-	const vec4_t *color;
+	const vec4_t *color_srgb;
 	int geometries_count;
 	int render_type;
 } rt_frame_add_once_t;

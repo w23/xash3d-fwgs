@@ -844,7 +844,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 		RT_FrameAddOnce((rt_frame_add_once_t){
 			.debug_name = args.name,
 			.geometries = &geometry,
-			.color = args.color,
+			.color_srgb = args.color,
 			.geometries_count = 1,
 			.render_type = args.render_type,
 		});
