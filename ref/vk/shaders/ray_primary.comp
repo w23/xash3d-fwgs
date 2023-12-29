@@ -23,6 +23,7 @@ layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_normals_gs;
 layout(set = 0, binding = 13, rgba8) uniform writeonly image2D out_material_rmxx;
 layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_emissive;
 layout(set = 0, binding = 15, rgba32f) uniform writeonly image2D out_geometry_prev_position;
+layout(set = 0, binding = 16, rgba16f) uniform writeonly image2D out_legacy_blend;
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -118,7 +119,8 @@ void main() {
 		payload.emissive.rgb = texture(skybox, ray.direction).rgb * ubo.ubo.skybox_exposure;
 	}
 
-	traceSimpleBlending(ray.origin, ray.direction, L, payload.emissive.rgb, payload.base_color_a.rgb);
+	const vec4 blend = traceLegacyBlending(ray.origin, ray.direction, L);
+	imageStore(out_legacy_blend, pix, blend);
 
 	imageStore(out_position_t, pix, payload.hit_t);
 	imageStore(out_base_color_a, pix, LINEARtoSRGB(payload.base_color_a));

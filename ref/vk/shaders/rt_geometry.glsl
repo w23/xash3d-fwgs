@@ -134,7 +134,7 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 struct MiniGeometry {
 	vec2 uv;
 	uint kusok_index;
-	vec4 vertex_color;
+	vec4 vertex_color_srgb;
 };
 
 MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
@@ -156,16 +156,23 @@ MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
 		const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, false);
 		const vec2 uv = baryMix(uvs[0], uvs[1], uvs[2], bary);
 
+		/*
 		const vec4 colors[3] = {
 			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi1).color)),
 			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi2).color)),
 			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi3).color)),
 		};
+		*/
+		const vec4 colors_srgb[3] = {
+			unpackUnorm4x8(GET_VERTEX(vi1).color),
+			unpackUnorm4x8(GET_VERTEX(vi2).color),
+			unpackUnorm4x8(GET_VERTEX(vi3).color),
+		};
 
 		MiniGeometry ret;
 		ret.uv = uv;
 		ret.kusok_index = kusok_index;
-		ret.vertex_color = baryMix(colors[0], colors[1], colors[2], bary);
+		ret.vertex_color_srgb = baryMix(colors_srgb[0], colors_srgb[1], colors_srgb[2], bary);
 		return ret;
 }
 #endif // #ifdef RAY_QUERY

@@ -323,6 +323,17 @@ rt_draw_instance_t *getDrawInstance(void) {
 	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
 }
 
+static qboolean isLegacyBlendingMode(int material_mode) {
+	switch (material_mode) {
+		case MATERIAL_MODE_BLEND_ADD:
+		case MATERIAL_MODE_BLEND_MIX:
+		case MATERIAL_MODE_BLEND_GLOW:
+			return true;
+		default:
+			return false;
+	}
+}
+
 static float sRGBtoLinearScalar(const float sRGB) {
 	// IEC 61966-2-1:1999
 	const float linearLow = sRGB / 12.92f;
@@ -334,17 +345,23 @@ static void sRGBtoLinearVec4(const vec4_t in, vec4_t out) {
 	out[0] = sRGBtoLinearScalar(in[0]);
 	out[1] = sRGBtoLinearScalar(in[1]);
 	out[2] = sRGBtoLinearScalar(in[2]);
+
+	// Historically: sprite animation lerping is linear
+	// To-linear conversion should not be done on anything with blending, therefore
+	// it's irrelevant really.
 	out[3] = in[3];
 }
 
+/*
 static void sRGBAtoLinearVec4(const vec4_t in, vec4_t out) {
 	out[0] = sRGBtoLinearScalar(in[0]);
 	out[1] = sRGBtoLinearScalar(in[1]);
 	out[2] = sRGBtoLinearScalar(in[2]);
 
-	// α also needs to be linearized.
+	// α also needs to be linearized for tau-cannon hit position sprite to look okay
 	out[3] = sRGBtoLinearScalar(in[3]);
 }
+*/
 
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
@@ -371,7 +388,13 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	draw_instance->kusochki_offset = kusochki_offset;
 	draw_instance->material_mode = args.material_mode;
 	draw_instance->material_flags = args.material_flags;
-	sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
+
+	// Legacy blending is done in sRGB-γ space
+	if (isLegacyBlendingMode(args.material_mode))
+		Vector4Copy(*args.color_srgb, draw_instance->color);
+	else
+		sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
+
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
 }
@@ -445,7 +468,6 @@ void RT_DynamicModelProcessFrame(void) {
 			goto tail;
 		}
 
-		// FIXME override color
 		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
@@ -485,7 +507,12 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 			break;
 		}
 
-		sRGBAtoLinearVec4(*args.color_srgb, dyn->colors[dyn->geometries_count]);
+		// Legacy blending is done in sRGB-γ space
+		if (isLegacyBlendingMode(material_mode))
+			Vector4Copy(*args.color_srgb, dyn->colors[dyn->geometries_count]);
+		else
+			sRGBtoLinearVec4(*args.color_srgb, dyn->colors[dyn->geometries_count]);
+
 		dyn->geometries[dyn->geometries_count++] = args.geometries[i];
 	}
 }

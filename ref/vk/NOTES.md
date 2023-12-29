@@ -1116,3 +1116,41 @@ There's nothing we can to do `a` only that would make it fake the "original" mix
 
 As usual -- original sRGB-specialized game art is painfully incompatible with modern linear PBR.
 The best way to address it (hopefully w/o breaking too much linear rendering math) remains to be discovered.
+
+# 2023-12-29 E354
+## Sprite animation lerping woes
+Problem: converting alpha from sRGB to linear fixes various blending glitches, but makes animation blink.
+
+Possible approaches:
+1. Original math: pass and compute colors and alphas for simple blending in the original (sRGB-γ) colorspace. PBR-incorrect, but should give the original look.
+Pro:
+- original look
+- should solve a whole class of issues.
+- Relatively separate from physically-correct math, doesn't interfere that much.
+	Except for background + emissive part.
+- Individual PRB-ized parts of blending could be extracted out from legacy mode gradually.
+Cons:
+- special legacy blending code.
+- Passing these things around is obnoxious: needs lots of special code for model passing.
+- Large amount of work.
+
+Possible implementation plan:
+- `vk_ray_model.c`: sRGB-to-linear colorspace conversion should be made based on `material_mode`:
+  do not convert for legacy blending modes
+	- what to do with `mat->base_color`, which is assumed linear? Leaving it as-is for now.
+- sRGB-γ-ize linear texture color (still a bit different from legacy. alt: specifically for sprites and beams textures mark them as UNORM)
+- keep/lerp vertex colors in sRGB space
+
+2. Special code for sprite lerping: add second texture channel, add lerp parameter, etc.
+Pro: should be relatively easy to do.
+Cons: Fragile special code for special case.
+
+3. Track alpha channel with animation lerping in mind: only linearize it for no-animation case.
+Pro: no additional parameters to pass to shaders.
+Cons: math might not converge on a good solution.
+
+4. Generate intermediate textures.
+Pro: no special code for shaders/model passing.
+Cons: ridiculous texture explosion
+
+5. Hand-patch things that look weird. E.g. for known sprite/beam textures specify how their alphas should be mapped.

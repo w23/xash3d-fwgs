@@ -178,9 +178,8 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		vec3 background = payload.base_color_a.rgb * ldiffuse;
 		background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
 
-		vec3 emissive = vec3(0.);
-		traceSimpleBlending(pos, bounce_direction, payload.hit_t.w, emissive, background);
-		lighting = emissive + background;
+		const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
+		lighting = SRGBtoLINEAR(blend.rgb) + background * blend.a;
 	} else {
 		lighting = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
 		//payload.emissive.rgb = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
