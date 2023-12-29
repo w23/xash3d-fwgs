@@ -270,13 +270,16 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				.instanceShaderBindingTableRecordOffset = 0,
 				.accelerationStructureReference = instance->blas_addr,
 			};
+
+			const VkGeometryInstanceFlagsKHR flags = (instance->material_flags & kMaterialFlag_CullBackFace_Bit) ? 0 : VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+
 			switch (instance->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
 					// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
 					break;
 				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
 					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
@@ -287,7 +290,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
 					break;
 				case MATERIAL_MODE_BLEND_ADD:
 				case MATERIAL_MODE_BLEND_MIX:
@@ -295,7 +298,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 					inst[i].mask = GEOMETRY_BIT_BLEND;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
 					// Force no-culling because these should be visible from any angle
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | flags;
 					break;
 				default:
 					gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);

@@ -58,6 +58,8 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 
 typedef struct {
 	int material_mode;
+	uint32_t material_flags;
+
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color_srgb;
 
@@ -76,7 +78,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args );
 typedef struct {
 	const char *debug_name;
 	const struct vk_render_geometry_s *geometries;
-	const vec4_t *color;
+	const vec4_t *color_srgb;
 	int geometries_count;
 	int render_type;
 } rt_frame_add_once_t;

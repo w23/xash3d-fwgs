@@ -1079,3 +1079,78 @@ xash   vk (remapped)
 +Y = -X
 +X = +Z
 +Z = +Y
+
+# 2023-12-22 E352
+## sRGB vs γ blending
+Original:
+    `color = a + b`
+Our:
+    `color = sqrt(a*a + b*b)`
+There's nothing we can to do `a` only that would make it fake the "original" mixing result.
+
+# 2023-12-28 E353
+## Passing colors from all over the place into `trace_simple_blending.glsl`
+- color = mm_color * texture_color * geom.vertex_color * alpha
+	- alpha = mm_color.a * texture_color.a * geom.vertex_color.a
+	- mm_color = model.color * kusok.material.base_color
+		- model.color -- already linearized
+		- kusok.material.base_color = mat->base_color * override_color
+			- mat->base_color -- specified in .mat files by hand
+				- [x] Which colorspace should it be specified in?
+				      Currently it is passed in as is, which means that it's accidentally linear.
+			- override_color -- passed from the engine through `R_RenderDrawOnce()`, called from triapi
+				- [x] sRGB-γ, should linearize
+	- texture_color -- just texture sampled color. sRGB-γ vs linear is specified at VkImageView level at loading time
+	- geom.vertex_color -- barycentric-lerped from vk_vertex[].color
+		- vk_vertex[].color -- rgba8
+			- [x] which colorspace? Should be sRGB-γ originally
+		- [x] Do we need to linearize it? YES
+			- [x] Before lerping or after? BEFORE -- already done
+
+- Should α be converted from gamma to linear?
+	- Doing so:
+		- seems kinda logical -- everything is gamma-space in engine, so it probably should be.
+		- fixes some 'background' sprites transparency
+		- makes too-brighs c0a0c beams darker (but kinda too dark imo)
+		- breaks sprite animation lerping -- now we need 2 native gamma-to-linear functions, wich alpha conv and w/o
+
+As usual -- original sRGB-specialized game art is painfully incompatible with modern linear PBR.
+The best way to address it (hopefully w/o breaking too much linear rendering math) remains to be discovered.
+
+# 2023-12-29 E354
+## Sprite animation lerping woes
+Problem: converting alpha from sRGB to linear fixes various blending glitches, but makes animation blink.
+
+Possible approaches:
+1. Original math: pass and compute colors and alphas for simple blending in the original (sRGB-γ) colorspace. PBR-incorrect, but should give the original look.
+Pro:
+- original look
+- should solve a whole class of issues.
+- Relatively separate from physically-correct math, doesn't interfere that much.
+	Except for background + emissive part.
+- Individual PRB-ized parts of blending could be extracted out from legacy mode gradually.
+Cons:
+- special legacy blending code.
+- Passing these things around is obnoxious: needs lots of special code for model passing.
+- Large amount of work.
+
+Possible implementation plan:
+- `vk_ray_model.c`: sRGB-to-linear colorspace conversion should be made based on `material_mode`:
+  do not convert for legacy blending modes
+	- what to do with `mat->base_color`, which is assumed linear? Leaving it as-is for now.
+- sRGB-γ-ize linear texture color (still a bit different from legacy. alt: specifically for sprites and beams textures mark them as UNORM)
+- keep/lerp vertex colors in sRGB space
+
+2. Special code for sprite lerping: add second texture channel, add lerp parameter, etc.
+Pro: should be relatively easy to do.
+Cons: Fragile special code for special case.
+
+3. Track alpha channel with animation lerping in mind: only linearize it for no-animation case.
+Pro: no additional parameters to pass to shaders.
+Cons: math might not converge on a good solution.
+
+4. Generate intermediate textures.
+Pro: no special code for shaders/model passing.
+Cons: ridiculous texture explosion
+
+5. Hand-patch things that look weird. E.g. for known sprite/beam textures specify how their alphas should be mapped.

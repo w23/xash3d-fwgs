@@ -123,9 +123,15 @@ void R_RenderModelDestroy( vk_render_model_t* model );
 qboolean R_RenderModelUpdate( const vk_render_model_t *model );
 qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count);
 
+typedef enum {
+	kMaterialFlag_None = 0,
+	kMaterialFlag_CullBackFace_Bit = (1<<0),
+} material_flag_bits_e;
+
 typedef struct {
 	vk_render_type_e render_type; // TODO rename legacy
 	material_mode_e material_mode;
+	uint32_t material_flags; // material_flag_bits_e
 
 	// These are "consumed": copied into internal storage and can be pointers to stack vars
 	const vec4_t *color;

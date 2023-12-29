@@ -42,7 +42,9 @@ layout(set = 0, binding = 18) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-//layout(set = 0, binding = 19) uniform sampler2D textures[MAX_TEXTURES];
+layout(set = 0, binding = 19, rgba16f) uniform readonly image2D legacy_blend;
+
+//layout(set = 0, binding = 20) uniform sampler2D textures[MAX_TEXTURES];
 
 
 const int INDIRECT_SCALE = 2;
@@ -306,8 +308,19 @@ void main() {
 		colour = diffuse + specular;
 	}
 
+	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
+
 	colour += imageLoad(emissive, pix).rgb;
+	// Revealage. TODO: which colorspace?
+	colour *= legacy_blend.a;
+
 	colour = LINEARtoSRGB(colour);
+
+// See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
+// Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
+// it look much more like the original. Adding emissive in the *correct* linear space differs
+// from the original a lot, and looks perceptively worse.
+	colour += legacy_blend.rgb;
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }

@@ -791,6 +791,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 		ASSERT(model->rt_model);
 		RT_FrameAddModel(model->rt_model, (rt_frame_add_model_t){
 			.material_mode = args.material_mode,
+			.material_flags = args.material_flags,
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color_srgb = args.color,
@@ -843,7 +844,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 		RT_FrameAddOnce((rt_frame_add_once_t){
 			.debug_name = args.name,
 			.geometries = &geometry,
-			.color = args.color,
+			.color_srgb = args.color,
 			.geometries_count = 1,
 			.render_type = args.render_type,
 		});

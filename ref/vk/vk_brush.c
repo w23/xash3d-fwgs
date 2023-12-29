@@ -700,6 +700,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = (const matrix4x4*)prev_transform,
@@ -829,6 +830,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 
 	vec4_t color = {1, 1, 1, 1};
 	vk_render_type_e render_type = kVkRenderTypeSolid;
+	uint32_t material_flags = kMaterialFlag_None;
 	switch (render_mode) {
 		case kRenderNormal:
 			Vector4Set(color, 1.f, 1.f, 1.f, 1.f);
@@ -845,6 +847,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		case kRenderTransAdd:
 			Vector4Set(color, blend, blend, blend, 1.f);
 			render_type = kVkRenderType_A_1_R;
+			material_flags |= kMaterialFlag_CullBackFace_Bit;
 			break;
 		case kRenderTransAlpha:
 			if( gEngine.EngineGetParm( PARM_QUAKE_COMPATIBLE, 0 ))
@@ -949,6 +952,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	R_RenderModelDraw(&bmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = material_flags,
 		.color = &color,
 		.transform = &transform,
 		.prev_transform = &bmodel->prev_transform,

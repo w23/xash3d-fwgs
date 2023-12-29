@@ -808,6 +808,7 @@ static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *fram
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
