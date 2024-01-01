@@ -104,6 +104,12 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;
 
+	// α-masked materials leak non-1 alpha values to bounces, leading to weird translucent edges, see
+	// https://github.com/w23/xash3d-fwgs/issues/721
+	// Non-translucent materials should be fully opaque
+	if (model.mode != MATERIAL_MODE_TRANSLUCENT)
+		payload.base_color_a.a = 1.;
+
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Nop
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
