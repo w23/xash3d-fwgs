@@ -164,9 +164,11 @@ static void parseDebugDisplayValue( void ) {
 	X(SURFHASH) \
 	X(TRIHASH) \
 	X(DIRECT) \
+	X(DIRECT_DIFF) \
+	X(DIRECT_SPEC) \
 	X(INDIRECT) \
-	X(INDIRECT_SPEC) \
 	X(INDIRECT_DIFF) \
+	X(INDIRECT_SPEC) \
 
 #define X(suffix) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \

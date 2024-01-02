@@ -234,6 +234,12 @@ void main() {
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT) {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
 		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_DIFF) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse), 0.)); return;
+		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_SPEC) {
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_specular), 0.)); return;
+		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT) {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.indirect_specular), 0.)); return;
 		return;
