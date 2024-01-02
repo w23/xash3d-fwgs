@@ -2,6 +2,7 @@
 #include "noise.glsl"
 
 #include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
 
 #include "light.glsl"
 
@@ -35,10 +36,11 @@ void main() {
 	const vec4 material_data = imageLoad(material_rmxx, pix);
 
 	MaterialProperties material;
-	material.baseColor = vec3(1.);
-	material.emissive = vec3(0.f);
+	material.base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
+
+	//g_mat_gltf2 = pix.y > ubo.ubo.res.y / 2.;
 
 	const vec4 pos_t = imageLoad(position_t, pix);
 

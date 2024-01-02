@@ -94,33 +94,13 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 }
 const int INDIRECT_SCALE = 2;
 
-void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specular) {
-	diffuse = vec3(0.);
-	specular = vec3(0.);
-
-	const vec4 pos_t = imageLoad(position_t, pix);
-	if (pos_t.w <= 0.)
-		return;
-
-	const vec4 material_data = imageLoad(material_rmxx, pix);
-	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
-
-	MaterialProperties material;
-	material.baseColor = vec3(1.f);
-	material.emissive = vec3(0.f);
-	material.metalness = material_data.g;
-	material.roughness = material_data.r;
-
-	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
-
-	const float ray_normal_fudge = .01;
-	vec3 throughput = vec3(1.);
-
-	// 1. Make a "random" material-based ray for diffuse lighting
-	vec3 bounce_direction = vec3(0.);
+bool pickBounceDirection(MaterialProperties material, float alpha, out vec3 direction, inout vec3 throughput) {
+#if 1
+	// TODO implement
+	return false;
+#else
 	int brdf_type = DIFFUSE_TYPE;
-
+	// FIXME address translucency properly
 	const float alpha = (base_a.a);
 	if (1. > alpha && rand01() > alpha) {
 		brdf_type = SPECULAR_TYPE;
@@ -144,12 +124,43 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		const vec2 u = vec2(rand01(), rand01());
 		vec3 brdf_weight = vec3(0.);
 		if (!evalIndirectCombinedBRDF(u, shading_normal, geometry_normal, -direction, material, brdf_type, bounce_direction, brdf_weight))
-			return;
+			return false;
 		throughput *= brdf_weight;
 	}
 
 	const float throughput_threshold = 1e-3;
 	if (dot(throughput, throughput) < throughput_threshold)
+		return false;
+
+	return true;
+#endif
+}
+
+void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specular) {
+	diffuse = vec3(0.);
+	specular = vec3(0.);
+
+#if 0
+	const vec4 pos_t = imageLoad(position_t, pix);
+	if (pos_t.w <= 0.)
+		return;
+
+	const vec4 material_data = imageLoad(material_rmxx, pix);
+	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
+
+	vec3 geometry_normal, shading_normal;
+	readNormals(pix, geometry_normal, shading_normal);
+
+	const float ray_normal_fudge = .01;
+	vec3 throughput = vec3(1.);
+	vec3 bounce_direction = vec3(0.);
+
+	MaterialProperties material;
+	material.base_color = base_a.rgb;
+	material.metalness = material_data.g;
+	material.roughness = material_data.r;
+
+	if (!pickBounceDirection(material, base_a.a, bounce_direction, throughput))
 		return;
 
 	// 2. Rake yuri it, get hit
@@ -169,8 +180,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		vec3 ldiffuse = vec3(0.);
 		vec3 lspecular = vec3(0.);
 		MaterialProperties hit_material;
-		hit_material.baseColor = vec3(1.);
-		hit_material.emissive = vec3(0.f);
+		hit_material.base_color = payload.base_color_a.rgb;
 		hit_material.metalness = payload.material_rmxx.g;
 		hit_material.roughness = payload.material_rmxx.r;
 		computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
@@ -189,6 +199,7 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		diffuse += lighting;
 	else
 		specular += lighting + payload.emissive.rgb;
+#endif
 }
 
 

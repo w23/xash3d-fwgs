@@ -3,7 +3,7 @@
 const float color_culling_threshold = 0;//600./color_factor;
 const float shadow_offset_fudge = .1;
 
-#include "brdf.h"
+#include "brdf.glsl"
 #include "light_common.glsl"
 
 #if LIGHT_POLYGON
