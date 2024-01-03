@@ -1,13 +1,13 @@
 #pragma once
 
+#include "vk_module.h"
 #include "vk_common.h"
+
+extern RVkModule g_module_studio;
 
 struct ref_viewpass_s;
 struct draw_list_s;
 struct model_s;
-
-void VK_StudioInit( void );
-void VK_StudioShutdown( void );
 
 void Mod_StudioLoadTextures( model_t *mod, void *data );
 void Mod_StudioUnloadTextures( void *data );

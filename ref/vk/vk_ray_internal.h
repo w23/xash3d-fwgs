@@ -1,6 +1,8 @@
 #pragma once
 
 #include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_buffer.h"
 #include "vk_const.h"
 #include "vk_rtx.h"
@@ -10,6 +12,8 @@
 #define MODEL_CACHE_SIZE 2048
 
 #include "shaders/ray_interop.h"
+
+extern RVkModule g_module_ray_model;
 
 typedef struct Kusok vk_kusok_data_t;
 
@@ -104,8 +108,5 @@ void RT_KusochkiFree(const rt_kusochki_t*);
 
 //struct vk_render_geometry_s;
 //qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_color);
-
-qboolean RT_DynamicModelInit(void);
-void RT_DynamicModelShutdown(void);
 
 void RT_DynamicModelProcessFrame(void);

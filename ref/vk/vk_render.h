@@ -1,11 +1,13 @@
 #pragma once
+
+#include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_materials.h"
 #include "vk_common.h"
 #include "vk_const.h"
-#include "vk_core.h"
 
-qboolean VK_RenderInit( void );
-void VK_RenderShutdown( void );
+extern RVkModule g_module_render;
 
 struct ref_viewpass_s;
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );

@@ -1,6 +1,10 @@
 #pragma once
 
+#include "vk_module.h"
+
 #include "xash3d_types.h"
+
+extern RVkModule g_module_materials;
 
 /* TODO
 #define MATERIAL_FIELDS_LIST(X) \
@@ -33,8 +37,6 @@ typedef struct { int index; } r_vk_material_ref_t;
 // Note: invalidates all previously issued material refs
 // TODO: track "version" in high bits?
 void R_VkMaterialsReload( void );
-
-void R_VkMaterialsShutdown( void );
 
 struct model_s;
 void R_VkMaterialsLoadForModel( const struct model_s* mod );

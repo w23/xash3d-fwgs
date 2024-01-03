@@ -2,6 +2,7 @@
 
 #include "vk_common.h"
 #include "r_textures.h"
+#include "vk_textures.h"
 #include "vk_overlay.h"
 #include "vk_renderstate.h"
 #include "vk_staging.h"
@@ -677,35 +678,6 @@ static qboolean initSurface( void )
 	return true;
 }
 
-// TODO modules
-/*
-typedef struct r_vk_module_s {
-	qboolean (*init)(void);
-	void (*destroy)(void);
-
-	// TODO next: dependecies, refcounts, ...
-} r_vk_module_t;
-
-#define LIST_MODULES(X) ...
-
-=>
-extern const r_vk_module_t vk_instance_module;
-...
-extern const r_vk_module_t vk_rtx_module;
-...
-
-=>
-static const r_vk_module_t *const modules[] = {
-	&vk_instance_module,
-	&vk_device_module,
-	&vk_aftermath_module,
-	&vk_texture_module,
-	...
-	&vk_rtx_module,
-	...
-};
-*/
-
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
@@ -762,70 +734,67 @@ qboolean R_VkInit( void )
 		return false;
 	}
 
-#if USE_AFTERMATH
-	if (!VK_AftermathInit()) {
-		gEngine.Con_Printf( S_ERROR "Cannot initialize Nvidia Nsight Aftermath SDK\n" );
-	}
-#endif
-
 	if (!createDevice())
 		return false;
 
 	VK_LoadCvarsAfterInit();
 
-	if (!R_VkCombuf_Init())
-		return false;
-
 	if (!initSurface())
 		return false;
 
-	if (!VK_DevMemInit())
-		return false;
+	/* Print all modules with their dependencies (not printing states) */
 
-	if (!R_VkStagingInit())
-		return false;
+	RVkModule_PrintDependencyList( &g_module_combuf, false );
+	RVkModule_PrintDependencyList( &g_module_buffer, false );
+	RVkModule_PrintDependencyList( &g_module_devmem, false );
+	RVkModule_PrintDependencyList( &g_module_nv_aftermath, false );
+	RVkModule_PrintDependencyList( &g_module_staging, false );
+	RVkModule_PrintDependencyList( &g_module_image, false );
+	RVkModule_PrintDependencyList( &g_module_pipeline, false );
+	RVkModule_PrintDependencyList( &g_module_descriptor, false );
+	RVkModule_PrintDependencyList( &g_module_framectl, false );
+	RVkModule_PrintDependencyList( &g_module_geometry, false );
+	RVkModule_PrintDependencyList( &g_module_render, false );
+	RVkModule_PrintDependencyList( &g_module_studio, false );
+	RVkModule_PrintDependencyList( &g_module_scene, false );
+	RVkModule_PrintDependencyList( &g_module_textures_api, false );
+	RVkModule_PrintDependencyList( &g_module_textures, false );
+	RVkModule_PrintDependencyList( &g_module_overlay, false );
+	RVkModule_PrintDependencyList( &g_module_brush, false );
+	RVkModule_PrintDependencyList( &g_module_rtx, false );
+	RVkModule_PrintDependencyList( &g_module_light, false );
+	RVkModule_PrintDependencyList( &g_module_sprite, false );
+	RVkModule_PrintDependencyList( &g_module_beams, false );
 
-	if (!VK_PipelineInit())
-		return false;
+	/* Modules without dependencies */
 
-	// TODO ...
-	if (!VK_DescriptorInit())
-		return false;
+	if ( !g_module_combuf.Init() )  return false;
+	if ( !g_module_devmem.Init() )  return false;
+	if ( !g_module_descriptor.Init() )  return false;
+	if ( !g_module_nv_aftermath.Init() )  return false;
 
-	if (!VK_FrameCtlInit())
-		return false;
+	/* Modules with dependencies */
 
-	if (!R_GeometryBuffer_Init())
-		return false;
+	if ( !g_module_buffer.Init() )  return false;
+	if ( !g_module_staging.Init() )  return false;
+	if ( !g_module_image.Init() )  return false;
+	if ( !g_module_pipeline.Init() )  return false;
+	if ( !g_module_framectl.Init() )  return false;
+	if ( !g_module_geometry.Init() )  return false;
+	if ( !g_module_render.Init() )  return false;
+	if ( !g_module_studio.Init() )  return false;
+	if ( !g_module_scene.Init() )  return false;
+	if ( !g_module_textures_api.Init() )  return false; // +g_module_textures (hardcoded) -- @TexturesInitHardcode
+	if ( !g_module_overlay.Init() )  return false;
+	if ( !g_module_brush.Init() )  return false;
 
-	if (!VK_RenderInit())
-		return false;
-
-	VK_StudioInit();
-
-	VK_SceneInit();
-
-	R_TexturesInit();
-
-	// All below need render_pass
-
-	if (!R_VkOverlay_Init())
-		return false;
-
-	if (!R_BrushInit())
-		return false;
-
-	if (vk_core.rtx)
-	{
-		if (!VK_RayInit())
-			return false;
-
-		// FIXME move all this to rt-specific modules
-		VK_LightsInit();
+	if ( vk_core.rtx ) {
+		if ( !g_module_rtx.Init() )  return false;
+		if ( !g_module_light.Init() )  return false;
 	}
 
-	R_SpriteInit();
-	R_BeamInit();
+	if ( !g_module_sprite.Init() )  return false;
+	if ( !g_module_beams.Init() )  return false;
 
 	return true;
 }
@@ -835,42 +804,33 @@ void R_VkShutdown( void ) {
 
 	VK_EntityDataClear();
 
-	R_SpriteShutdown();
-
-	if (vk_core.rtx)
-	{
-		VK_LightsShutdown();
-		VK_RayShutdown();
+	g_module_beams.Shutdown();
+	g_module_sprite.Shutdown();
+	
+	if ( vk_core.rtx ) {
+		g_module_light.Shutdown();
+		g_module_rtx.Shutdown();
 	}
 
-	R_BrushShutdown();
-	VK_StudioShutdown();
-	R_VkOverlay_Shutdown();
+	g_module_brush.Shutdown();
+	g_module_overlay.Shutdown();
+	g_module_textures_api.Shutdown();
+	g_module_textures.Shutdown();
+	g_module_scene.Shutdown();
+	g_module_studio.Shutdown();
+	g_module_render.Shutdown();
+	g_module_geometry.Shutdown();
+	g_module_framectl.Shutdown();
+	g_module_pipeline.Shutdown();
+	g_module_staging.Shutdown();
+	g_module_buffer.Shutdown();
 
-	VK_RenderShutdown();
-	R_GeometryBuffer_Shutdown();
-
-	VK_FrameCtlShutdown();
-
-	R_VkMaterialsShutdown();
-
-	R_TexturesShutdown();
-
-	VK_PipelineShutdown();
-
-	VK_DescriptorShutdown();
-
-	R_VkStagingShutdown();
-
-	R_VkCombuf_Destroy();
-
-	VK_DevMemDestroy();
+	g_module_nv_aftermath.Shutdown();
+	g_module_descriptor.Shutdown();
+	g_module_devmem.Shutdown();
+	g_module_combuf.Shutdown();
 
 	vkDestroyDevice(vk_core.device, NULL);
-
-#if USE_AFTERMATH
-	VK_AftermathShutdown();
-#endif
 
 	if (vk_core.debug_messenger)
 	{

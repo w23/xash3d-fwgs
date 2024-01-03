@@ -3,8 +3,6 @@
 #include "vk_common.h"
 #include "vk_core.h"
 
-#include "xash3d_types.h"
-
 #ifdef USE_AFTERMATH
 #include "GFSDK_Aftermath.h"
 #include "GFSDK_Aftermath_GpuCrashDump.h"
@@ -14,6 +12,17 @@
 #include <stdio.h>
 
 #define MAX_NV_CHECKPOINTS 2048
+
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+RVkModule g_module_nv_aftermath = {
+	.name = "nv_aftermath",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_Empty,
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
 
 typedef struct {
 	unsigned sequence;
@@ -118,27 +127,6 @@ static void callbackResolveMarkers(const void* pMarker, void* pUserData, void** 
 	*markerSize = strlen(msg);
 }
 
-static qboolean initialized = false;
-qboolean VK_AftermathInit() {
-	AM_CHECK(GFSDK_Aftermath_EnableGpuCrashDumps(
-		GFSDK_Aftermath_Version_API,
-		GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
-		GFSDK_Aftermath_GpuCrashDumpFeatureFlags_DeferDebugInfoCallbacks,
-		callbackGpuCrashDump,
-		callbackShaderDebugInfo,
-		callbackGpuCrashDumpDescription,
-		callbackResolveMarkers,
-		NULL));
-
-	initialized = true;
-	return true;
-}
-
-void VK_AftermathShutdown() {
-	if (initialized) {
-		GFSDK_Aftermath_DisableGpuCrashDumps();
-	}
-}
 #endif //ifdef USE_AFTERMATH
 
 void R_Vk_NV_CheckpointF(VkCommandBuffer cmdbuf, const char *fmt, ...) {
@@ -184,3 +172,35 @@ void R_Vk_NV_Checkpoint_Dump(void) {
 	}
 }
 
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_nv_aftermath );
+
+#ifdef USE_AFTERMATH
+	AM_CHECK(GFSDK_Aftermath_EnableGpuCrashDumps(
+		GFSDK_Aftermath_Version_API,
+		GFSDK_Aftermath_GpuCrashDumpWatchedApiFlags_Vulkan,
+		GFSDK_Aftermath_GpuCrashDumpFeatureFlags_DeferDebugInfoCallbacks,
+		callbackGpuCrashDump,
+		callbackShaderDebugInfo,
+		callbackGpuCrashDumpDescription,
+		callbackResolveMarkers,
+		NULL));
+	gEngine.Con_Printf( S_NOTE "Module '%s' is initialized with enabled functionality.\n", g_module_nv_aftermath.name );
+#else /* USE_AFTERMATH */
+	gEngine.Con_Printf( S_WARN "Module '%s' is initialized with disabled functionality.\n", g_module_nv_aftermath.name );
+	gEngine.Con_Printf( S_WARN "Define  USE_AFTERMATH  macro to enable it.\n" );
+#endif /* USE_AFTERMATH */
+
+	XRVkModule_OnInitEnd( g_module_nv_aftermath );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_nv_aftermath );
+
+#ifdef USE_AFTERMATH
+	GFSDK_Aftermath_DisableGpuCrashDumps();
+#endif
+
+	XRVkModule_OnShutdownEnd( g_module_nv_aftermath );
+}

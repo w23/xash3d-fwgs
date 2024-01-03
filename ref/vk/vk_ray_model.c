@@ -12,10 +12,36 @@
 #include "vk_logs.h"
 #include "profiler.h"
 
+#include "vk_ray_accel.h" // Blas
+
 #include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
+
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// RT_KusochkiUpload: R_VkStagingLockForBuffer, R_VkStagingUnlock
+	&g_module_staging,
+
+	// RT_ModelCreate: RT_BlasCreate, RT_BlasBuild, RT_BlasGetDeviceAddress, RT_BlasDestroy
+	// RT_ModelDestroy: RT_BlasDestroy
+	// RT_ModelUpdate: RT_BlasBuild
+	// RT_DynamicModelProcessFrame: RT_BlasBuild
+	// Impl_Init: RT_BlasCreate, RT_BlasPreallocate, RT_BlasGetDeviceAddress
+	// Impl_Shutdown: RT_BlasDestroy
+	&g_module_ray_accel
+};
+
+RVkModule g_module_ray_model = {
+	.name = "ray_model",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
 
 xvk_ray_model_state_t g_ray_model_state;
 
@@ -422,38 +448,6 @@ static struct {
 	rt_dynamic_t groups[MATERIAL_MODE_COUNT];
 } g_dyn;
 
-qboolean RT_DynamicModelInit(void) {
-	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
-		struct rt_blas_s *blas = RT_BlasCreate(group_names[i], kBlasBuildDynamicFast);
-		if (!blas) {
-			// FIXME destroy allocated
-			gEngine.Con_Printf(S_ERROR "Couldn't create blas for %s\n", group_names[i]);
-			return false;
-		}
-
-		if (!RT_BlasPreallocate(blas, (rt_blas_preallocate_t){
-			// TODO better estimates for these constants
-			.max_geometries = MAX_RT_DYNAMIC_GEOMETRIES,
-			.max_prims_per_geometry = 256,
-			.max_vertex_per_geometry = 256,
-		})) {
-			// FIXME destroy allocated
-			gEngine.Con_Printf(S_ERROR "Couldn't preallocate blas for %s\n", group_names[i]);
-			return false;
-		}
-		g_dyn.groups[i].blas = blas;
-		g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
-	}
-
-	return true;
-}
-
-void RT_DynamicModelShutdown(void) {
-	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
-		RT_BlasDestroy(g_dyn.groups[i].blas);
-	}
-}
-
 void RT_DynamicModelProcessFrame(void) {
 	APROF_SCOPE_DECLARE_BEGIN(process, __FUNCTION__);
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
@@ -517,3 +511,52 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 	}
 }
 
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_ray_model );
+
+	if ( vk_core.rtx ) {
+		for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
+			struct rt_blas_s *blas = RT_BlasCreate(group_names[i], kBlasBuildDynamicFast);
+			if (!blas) {
+				// FIXME destroy allocated
+				gEngine.Con_Printf(S_ERROR "Couldn't create BLAS for %s\n", group_names[i]);
+				g_module_ray_model.state = RVkModuleState_NotInitialized;
+				return false;
+			}
+
+			if (!RT_BlasPreallocate(blas, (rt_blas_preallocate_t){
+				// TODO better estimates for these constants
+				.max_geometries = MAX_RT_DYNAMIC_GEOMETRIES,
+				.max_prims_per_geometry = 256,
+				.max_vertex_per_geometry = 256,
+			})) {
+				// FIXME destroy allocated
+				gEngine.Con_Printf(S_ERROR "Couldn't preallocate BLAS for %s\n", group_names[i]);
+				g_module_ray_model.state = RVkModuleState_NotInitialized;
+				return false;
+			}
+			g_dyn.groups[i].blas = blas;
+			g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
+		}
+
+		gEngine.Con_Printf( S_NOTE "Module '%s' is initialized with enabled functionality.\n", g_module_ray_model.name );
+	} else {
+		gEngine.Con_Printf( S_WARN "Module '%s' is initialized with disabled functionality.\n", g_module_ray_model.name );
+		gEngine.Con_Printf( S_WARN "Switch to Ray Tracing renderer to enable it. (It must be supported on your graphics device)\n" );
+	}
+
+	XRVkModule_OnInitEnd( g_module_ray_model );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_ray_model );
+
+	if ( vk_core.rtx ) {
+		for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
+			RT_BlasDestroy(g_dyn.groups[i].blas);
+		}
+	}
+
+	XRVkModule_OnShutdownEnd( g_module_ray_model );
+}

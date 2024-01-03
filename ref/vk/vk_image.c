@@ -8,6 +8,28 @@
 // Long type lists functions
 #include "vk_image_extra.h"
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// R_VkImageCreate: VK_DevMemAllocate
+	// R_VkImageDestroy: VK_DevMemFree
+	&g_module_devmem,
+
+	// R_VkImageUploadBegin: R_VkStagingGetCommandBuffer
+	// R_VkImageUploadSlice: R_VkStagingLockForImage, R_VkStagingUnlock
+	// R_VkImageUploadEnd: R_VkStagingCommit
+	&g_module_staging
+};
+
+RVkModule g_module_image = {
+	.name = "image",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
 	VK_IMAGE_USAGE_STORAGE_BIT |
@@ -320,4 +342,21 @@ void R_VkImageUploadEnd( r_vk_image_t *img ) {
 			// FIXME incorrect, we also use them in compute and potentially ray tracing shaders
 			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 			0, 0, NULL, 0, NULL, 1, &image_barrier);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_image );
+
+	// Nothing to init for now.
+
+	XRVkModule_OnInitEnd( g_module_image );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_image );
+
+	// Nothing to clear for now.
+
+	XRVkModule_OnShutdownEnd( g_module_image );
 }

@@ -38,6 +38,30 @@
 PROFILER_SCOPES(SCOPE_DECLARE)
 #undef SCOPE_DECLARE
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// loadRadData: R_TextureFindByNameF
+	&g_module_textures_api,
+
+	// uploadGridRange: R_VkStagingLockForBuffer, R_VkStagingUnlock
+	// VK_LightsUpload: R_VkStagingLockForBuffer, R_VkStagingUnlock
+	&g_module_staging
+};
+
+RVkModule g_module_light = {
+	.name = "light",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	vec3_t emissive;
 	qboolean set;
@@ -93,40 +117,6 @@ static void debugDumpLights( void ) {
 }
 
 vk_lights_t g_lights = {0};
-
-qboolean VK_LightsInit( void ) {
-	PROFILER_SCOPES(APROF_SCOPE_INIT);
-
-	gEngine.Cmd_AddCommand("rt_debug_lights_dump", debugDumpLights, "Dump all light sources for next frame");
-
-	const int buffer_size = sizeof(struct LightsMetadata) + sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS;
-
-	if (!VK_BufferCreate("rt lights buffer", &g_lights_.buffer, buffer_size,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
-	R_SPEEDS_COUNTER(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
-
-	return true;
-}
-
-void VK_LightsShutdown( void ) {
-	VK_BufferDestroy(&g_lights_.buffer);
-
-	gEngine.Cmd_RemoveCommand("vk_lights_dump");
-	bitArrayDestroy(&g_lights_.visited_cells);
-}
 
 typedef struct {
 	int num;
@@ -1393,4 +1383,47 @@ void RT_LightsFrameEnd( void ) {
 
 	debug_dump_lights.enabled = false;
 	APROF_SCOPE_END(finalize);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_light );
+
+	PROFILER_SCOPES(APROF_SCOPE_INIT);
+
+	gEngine.Cmd_AddCommand("rt_debug_lights_dump", debugDumpLights, "Dump all light sources for next frame");
+
+	const int buffer_size = sizeof(struct LightsMetadata) + sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS;
+
+	if (!VK_BufferCreate("rt lights buffer", &g_lights_.buffer, buffer_size,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle -- NOTE(nilsoncore): Is it done?
+		ERR( "Couldn't create Ray Tracing lights buffer." );
+		g_module_light.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_polygons, "polygons", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.num_point_lights, "points", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_polygons, "polygons_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dynamic_points, "points_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.dlights, "dlights", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_lights_.stats.elights, "elights", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_light );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_light );
+
+	VK_BufferDestroy(&g_lights_.buffer);
+
+	gEngine.Cmd_RemoveCommand("vk_lights_dump");
+	bitArrayDestroy(&g_lights_.visited_cells);
+
+	XRVkModule_OnShutdownEnd( g_module_light );
 }

@@ -4,6 +4,17 @@
 #define MAX_DEVMEM_ALLOCS 32
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+RVkModule g_module_devmem = {
+	.name = "devmem",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_Empty,
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	uint32_t type_index;
 	VkMemoryPropertyFlags property_flags; // device vs host
@@ -180,12 +191,18 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 	}
 }
 
-qboolean VK_DevMemInit( void ) {
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_devmem );
+
 	g_vk_devmem.verbose = !!gEngine.Sys_CheckParm("-vkdebugmem");
+
+	XRVkModule_OnInitEnd( g_module_devmem );
 	return true;
 }
 
-void VK_DevMemDestroy( void ) {
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_devmem );
+
 	for (int i = 0; i < g_vk_devmem.num_allocs; ++i) {
 		const vk_device_memory_t *const device_memory = g_vk_devmem.allocs + i;
 		ASSERT(device_memory->refcount == 0);
@@ -200,4 +217,6 @@ void VK_DevMemDestroy( void ) {
 	}
 
 	g_vk_devmem.num_allocs = 0;
+
+	XRVkModule_OnShutdownEnd( g_module_devmem );
 }

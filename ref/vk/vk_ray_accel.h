@@ -1,12 +1,13 @@
 #pragma once
 
 #include "vk_core.h"
+#include "vk_module.h"
+
 #include "vk_buffer.h"
 #include "vk_math.h"
 #include "ray_resources.h"
 
-qboolean RT_VkAccelInit(void);
-void RT_VkAccelShutdown(void);
+extern RVkModule g_module_ray_accel;
 
 void RT_VkAccelNewMap(void);
 void RT_VkAccelFrameBegin(void);

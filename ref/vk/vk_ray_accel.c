@@ -18,6 +18,34 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// buildAccel: R_VkStagingCommit
+	// RT_VkAccelPrepareTlas: R_VkStagingLockForBuffer, R_VkStagingUnlock
+	&g_module_staging,
+
+	// buildAccel: R_VkGpuScope_Register, R_VkCombufScopeBegin, R_VkCombufScopeEnd
+	&g_module_combuf,
+
+	// createOrUpdateAccelerationStructure: R_GeometryBuffer_Get
+	// RT_BlasBuild: R_GeometryBuffer_Get
+	&g_module_geometry
+};
+
+RVkModule g_module_ray_accel = {
+	.name = "ray_accel",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct rt_blas_s {
 	const char *debug_name;
 	rt_blas_usage_e usage;
@@ -368,54 +396,6 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	};
 }
 
-qboolean RT_VkAccelInit(void) {
-	if (!VK_BufferCreate("ray accels_buffer", &g_accel.accels_buffer, MAX_ACCELS_BUFFER,
-			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		))
-	{
-		return false;
-	}
-	g_accel.accels_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.accels_buffer.buffer);
-
-	if (!VK_BufferCreate("ray scratch_buffer", &g_accel.scratch_buffer, MAX_SCRATCH_BUFFER,
-			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		)) {
-		return false;
-	}
-	g_accel.scratch_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.scratch_buffer.buffer);
-
-	// TODO this doesn't really need to be host visible, use staging
-	if (!VK_BufferCreate("ray tlas_geom_buffer", &g_accel.tlas_geom_buffer, sizeof(VkAccelerationStructureInstanceKHR) * MAX_INSTANCES * 2,
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-	g_accel.tlas_geom_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.tlas_geom_buffer.buffer);
-	R_FlippingBuffer_Init(&g_accel.tlas_geom_buffer_alloc, MAX_INSTANCES * 2);
-
-	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, MAX_INSTANCES, /* why */ 256);
-
-	R_SPEEDS_COUNTER(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
-
-	return true;
-}
-
-void RT_VkAccelShutdown(void) {
-	if (g_accel.tlas != VK_NULL_HANDLE)
-		vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas, NULL);
-
-	VK_BufferDestroy(&g_accel.scratch_buffer);
-	VK_BufferDestroy(&g_accel.accels_buffer);
-	VK_BufferDestroy(&g_accel.tlas_geom_buffer);
-	if (g_accel.accels_buffer_alloc)
-		aloPoolDestroy(g_accel.accels_buffer_alloc);
-}
-
 void RT_VkAccelNewMap(void) {
 	const int expected_accels = 512; // TODO actually get this from playing the game
 	const int accels_alignment = 256; // TODO where does this come from?
@@ -649,4 +629,74 @@ finalize:
 	Mem_Free(max_prim_counts);
 	Mem_Free(build_ranges);
 	return retval;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_ray_accel );
+
+	if ( vk_core.rtx ) {
+		if (!VK_BufferCreate("ray accels_buffer", &g_accel.accels_buffer, MAX_ACCELS_BUFFER,
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
+			ERR( "Couldn't create Ray accelerations buffer." );
+			g_module_ray_accel.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+		g_accel.accels_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.accels_buffer.buffer);
+
+		if (!VK_BufferCreate("ray scratch_buffer", &g_accel.scratch_buffer, MAX_SCRATCH_BUFFER,
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
+			ERR( "Couldn't create Ray scratch buffer." );
+			g_module_ray_accel.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+		g_accel.scratch_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.scratch_buffer.buffer);
+
+		// TODO this doesn't really need to be host visible, use staging
+		if (!VK_BufferCreate("ray tlas_geom_buffer", &g_accel.tlas_geom_buffer, sizeof(VkAccelerationStructureInstanceKHR) * MAX_INSTANCES * 2,
+				VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+		{
+			// FIXME complain, handle -- NOTE(nilsoncore): Is it done?
+			ERR( "Couldn't create Ray TLAS geometry buffer." );
+			g_module_ray_accel.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+		g_accel.tlas_geom_buffer_addr = R_VkBufferGetDeviceAddress(g_accel.tlas_geom_buffer.buffer);
+		R_FlippingBuffer_Init(&g_accel.tlas_geom_buffer_alloc, MAX_INSTANCES * 2);
+
+		g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, MAX_INSTANCES, /* why */ 256);
+
+		R_SPEEDS_COUNTER(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
+		R_SPEEDS_COUNTER(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
+
+		gEngine.Con_Printf( S_NOTE "Module '%s' is initialized with enabled functionality.\n", g_module_ray_accel.name );
+	} else {
+		gEngine.Con_Printf( S_WARN "Module '%s' is initialized with disabled functionality.\n", g_module_ray_accel.name );
+		gEngine.Con_Printf( S_WARN "Switch to Ray Tracing renderer to enable it. (It must be supported on your graphics device)\n" );
+	}
+
+	XRVkModule_OnInitEnd( g_module_ray_accel );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_ray_accel );
+
+	if ( vk_core.rtx ) {
+		if (g_accel.tlas != VK_NULL_HANDLE)
+			vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas, NULL);
+
+		VK_BufferDestroy(&g_accel.scratch_buffer);
+		VK_BufferDestroy(&g_accel.accels_buffer);
+		VK_BufferDestroy(&g_accel.tlas_geom_buffer);
+		if (g_accel.accels_buffer_alloc)
+			aloPoolDestroy(g_accel.accels_buffer_alloc);
+	}
+
+	XRVkModule_OnShutdownEnd( g_module_ray_accel );
 }

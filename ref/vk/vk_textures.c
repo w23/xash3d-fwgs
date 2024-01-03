@@ -24,6 +24,32 @@
 
 #define MAX_SAMPLERS 8 // TF_NEAREST x 2 * TF_BORDER x 2 * TF_CLAMP x 2
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// setDescriptorSet: R_TextureGetByIndex
+	// R_VkTextureGetDescriptorUnorm: R_TextureGetByIndex
+	// Impl_Init: R_TextureGetByIndex
+	// &g_module_textures_api, -- @TexturesInitHardcode
+
+	// R_VkTextureDestroy: R_VkStagingFlushSync
+	&g_module_staging,
+
+	// uploadRawKtx2: R_VkImageCreate, R_VkImageUploadBegin, R_VkImageUploadSlice, R_VkImageUploadEnd
+	// uploadTexture: R_VkImageCreate, R_VkImageUploadBegin, R_VkImageUploadSlice, R_VkImageUploadEnd
+	// R_VkTextureDestroy: R_VkImageDestroy
+	&g_module_image
+};
+
+RVkModule g_module_textures = {
+	.name = "textures",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 static struct {
 	struct {
 		int count;
@@ -49,13 +75,15 @@ static struct {
 	vk_texture_t blue_noise;
 } g_vktextures;
 
+static VkSampler pickSamplerForFlags( texFlags_t flags );
+static qboolean uploadTexture( int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint );
+static void textureDestroy( unsigned int index );
+static void loadBlueNoiseTextures( void );
+
 // Exported from r_textures.h
 size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
 int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
 void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
-
-static VkSampler pickSamplerForFlags( texFlags_t flags );
-static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
 
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
@@ -138,62 +166,6 @@ static void loadBlueNoiseTextures(void) {
 	g_vktextures.blue_noise.flags = TF_NOMIPMAP;
 	ASSERT(uploadTexture(-1, &g_vktextures.blue_noise, &pic, kColorspaceLinear));
 	Mem_Free(scratch);
-}
-
-qboolean R_VkTexturesInit( void ) {
-	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
-	R_SPEEDS_METRIC(g_vktextures.stats.size_total, "size_total", kSpeedsMetricBytes);
-
-	// TODO really check device caps for this
-	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
-
-	g_vktextures.default_sampler = pickSamplerForFlags(0);
-	ASSERT(g_vktextures.default_sampler != VK_NULL_HANDLE);
-
-	/* FIXME
-	// validate cvars
-	R_SetTextureParameters();
-	*/
-
-	/* FIXME
-	gEngine.Cmd_AddCommand( "texturelist", R_TextureList_f, "display loaded textures list" );
-	*/
-
-	// Fill empty texture with references to the default texture
-	{
-		const VkImageView default_view = R_TextureGetByIndex(tglob.defaultTexture)->vk.image.view;
-		ASSERT(default_view != VK_NULL_HANDLE);
-		for (int i = 0; i < MAX_TEXTURES; ++i) {
-			const vk_texture_t *const tex = R_TextureGetByIndex(i);
-			if (tex->vk.image.view)
-				continue;
-
-			g_vktextures.dii_all_textures[i] = (VkDescriptorImageInfo){
-				.imageView =  default_view,
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.sampler = g_vktextures.default_sampler,
-			};
-		}
-	}
-
-	if (vk_core.rtx)
-		loadBlueNoiseTextures();
-	
-	return true;
-}
-
-static void textureDestroy( unsigned int index );
-
-void R_VkTexturesShutdown( void ) {
-	R_VkTexturesSkyboxUnload();
-	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
-	if (vk_core.rtx)
-		R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
-	
-	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
-		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
-			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
-	}
 }
 
 static VkFormat VK_GetFormat(pixformat_t format, colorspace_hint_e colorspace_hint ) {
@@ -676,3 +648,85 @@ VkDescriptorImageInfo R_VkTexturesGetBlueNoiseImageInfo( void ) {
 		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 	};
 }
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_textures );
+
+	// NOTE(nilsoncore): We are expecting to be initialized only by main module. See @TexturesInitHardcode
+	if ( g_module_textures.init_caller != &g_module_textures_api ) {
+		ERR( "'%s' submodule can only be initialized by '%s'.", g_module_textures.name, g_module_textures_api.name );
+		g_module_textures.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
+	R_SPEEDS_METRIC(g_vktextures.stats.size_total, "size_total", kSpeedsMetricBytes);
+
+	// TODO really check device caps for this
+	gEngine.Image_AddCmdFlags( IL_DDS_HARDWARE | IL_KTX2_RAW );
+
+	g_vktextures.default_sampler = pickSamplerForFlags(0);
+	if ( g_vktextures.default_sampler == VK_NULL_HANDLE ) {
+		ERR( "Couldn't create default sampler." );
+		g_module_textures.state = RVkModuleState_NotInitialized;
+	 	return false;
+	}
+
+	/* FIXME
+	// validate cvars
+	R_SetTextureParameters();
+	*/
+
+	/* FIXME
+	gEngine.Cmd_AddCommand( "texturelist", R_TextureList_f, "display loaded textures list" );
+	*/
+
+	// Fill empty texture with references to the default texture
+	{
+		const VkImageView default_view = R_TextureGetByIndex(tglob.defaultTexture)->vk.image.view;
+		if ( default_view == VK_NULL_HANDLE ) {
+			ERR( "Couldn't acquire default image view." );
+			g_module_textures.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+
+		for (int i = 0; i < MAX_TEXTURES; ++i) {
+			const vk_texture_t *const tex = R_TextureGetByIndex(i);
+			if (tex->vk.image.view)
+				continue;
+
+			g_vktextures.dii_all_textures[i] = (VkDescriptorImageInfo){
+				.imageView =  default_view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.sampler = g_vktextures.default_sampler,
+			};
+		}
+	}
+
+	if (vk_core.rtx)
+		loadBlueNoiseTextures();
+	
+	XRVkModule_OnInitEnd( g_module_textures );
+	return true;
+};
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_textures );
+
+	// NOTE(nilsoncore): We are expecting to be shut down only by main module. See @TexturesInitHardcode
+	if ( g_module_textures.init_caller != &g_module_textures_api ) {
+		ERR( "'%s' submodule can only be shut down by '%s'.", g_module_textures.name, g_module_textures_api.name );
+	}
+
+	R_VkTexturesSkyboxUnload();
+	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
+	if (vk_core.rtx)
+		R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
+	
+	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
+		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
+			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
+	}
+
+	XRVkModule_OnShutdownEnd( g_module_textures );
+};

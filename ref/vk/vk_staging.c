@@ -15,6 +15,34 @@
 #define MAX_CONCURRENT_FRAMES 2
 #define COMMAND_BUFFER_COUNT (MAX_CONCURRENT_FRAMES + 1) // to accommodate two frames in flight plus something trying to upload data before waiting for the next frame to complete
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: R_VkCombufOpen, R_VkGpuScope_Register
+	// R_VkStagingFlushSync: R_VkCombufEnd
+	// commitBuffers: R_VkCombufScopeBegin, R_VkCombufScopeEnd
+	// commitImages: R_VkCombufScopeBegin, R_VkCombufScopeEnd
+	// getCurrentCombuf: R_VkCombufBegin
+	// R_VkStagingFrameEnd: R_VkCombufEnd
+	&g_module_combuf,
+
+	// commitBuffers: DEBUG_NV_CHECKPOINTF
+	&g_module_nv_aftermath,
+
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer
+};
+
+RVkModule g_module_staging = {
+	.name = "staging",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	VkImage image;
 	VkImageLayout layout;
@@ -53,33 +81,6 @@ static struct {
 	int buffer_upload_scope_id;
 	int image_upload_scope_id;
 } g_staging = {0};
-
-qboolean R_VkStagingInit(void) {
-	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
-		return false;
-
-	g_staging.combuf[0] = R_VkCombufOpen();
-	g_staging.combuf[1] = R_VkCombufOpen();
-	g_staging.combuf[2] = R_VkCombufOpen();
-
-	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
-
-	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
-	R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
-	R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
-
-	R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
-
-	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
-	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
-
-	return true;
-}
-
-void R_VkStagingShutdown(void) {
-	VK_BufferDestroy(&g_staging.buffer);
-}
 
 // FIXME There's a severe race condition here. Submitting things manually and prematurely (before framectl had a chance to synchronize with the previous frame)
 // may lead to data races and memory corruption (e.g. writing into memory that's being read in some pipeline stage still going)
@@ -308,4 +309,41 @@ vk_combuf_t *R_VkStagingFrameEnd(void) {
 	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
 
 	return current;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_staging );
+
+	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+		gEngine.Con_Printf( S_ERROR "Couldn't create staging buffer.\n" );
+		g_module_staging.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	g_staging.combuf[0] = R_VkCombufOpen();
+	g_staging.combuf[1] = R_VkCombufOpen();
+	g_staging.combuf[2] = R_VkCombufOpen();
+
+	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
+
+	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
+
+	R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
+
+	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
+	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
+
+	XRVkModule_OnInitEnd( g_module_staging );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_staging );
+
+	VK_BufferDestroy(&g_staging.buffer);
+
+	XRVkModule_OnShutdownEnd( g_module_staging );
 }

@@ -15,6 +15,30 @@
 
 #define GEOMETRY_BUFFER_SIZE (GEOMETRY_BUFFER_STATIC_SIZE + GEOMETRY_BUFFER_DYNAMIC_SIZE)
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// R_GeometryRangeLock: R_VkStagingLockForBuffer
+	// R_GeometryRangeLockSubrange: R_VkStagingLockForBuffer
+	// R_GeometryRangeUnlock: R_VkStagingUnlock
+	// R_GeometryBufferAllocOnceAndLock: R_VkStagingLockForBuffer
+	// R_GeometryBufferUnlock: R_VkStagingUnlock
+	&g_module_staging
+};
+
+RVkModule g_module_geometry = {
+	.name = "geometry",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 // TODO profiler counters
 
 static struct {
@@ -175,13 +199,27 @@ void R_GeometryBuffer_MapClear( void ) {
 	// allocated blocks count remains constant and doesn't grow between maps
 }
 
-qboolean R_GeometryBuffer_Init(void) {
+void R_GeometryBuffer_Flip(void) {
+	R_BlocksClearOnce(&g_geom.alloc);
+}
+
+VkBuffer R_GeometryBuffer_Get(void) {
+	return g_geom.buffer.buffer;
+}
+
+qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_geometry );
+
 	// TODO device memory and friends (e.g. handle mobile memory ...)
 
 	if (!VK_BufferCreate("geometry buffer", &g_geom.buffer, GEOMETRY_BUFFER_SIZE,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | (vk_core.rtx ? VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR : 0),
 		(vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
+	{
+		gEngine.Con_Printf( S_ERROR "Couldn't create geometry buffer.\n" );
+		g_module_geometry.state = RVkModuleState_NotInitialized;
 		return false;
+	}
 
 #define EXPECTED_ALLOCS 1024
 	R_BlocksCreate(&g_geom.alloc, GEOMETRY_BUFFER_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE, EXPECTED_ALLOCS);
@@ -191,18 +229,16 @@ qboolean R_GeometryBuffer_Init(void) {
 	R_SPEEDS_METRIC(g_geom.stats.indices, "indices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_vertices, "dyn_vertices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_indices, "dyn_indices", kSpeedsMetricCount);
+	
+	XRVkModule_OnInitEnd( g_module_geometry );
 	return true;
 }
 
-void R_GeometryBuffer_Shutdown(void) {
+void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_geometry );
+
 	R_BlocksDestroy(&g_geom.alloc);
 	VK_BufferDestroy( &g_geom.buffer );
-}
 
-void R_GeometryBuffer_Flip(void) {
-	R_BlocksClearOnce(&g_geom.alloc);
-}
-
-VkBuffer R_GeometryBuffer_Get(void) {
-	return g_geom.buffer.buffer;
+	XRVkModule_OnShutdownEnd( g_module_geometry );
 }

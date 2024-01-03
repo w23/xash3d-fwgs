@@ -36,6 +36,48 @@
 PROFILER_SCOPES(SCOPE_DECLARE)
 #undef SCOPE_DECLARE
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// createPipelines: VK_PipelineGraphicsCreate
+	&g_module_pipeline,
+
+	// VK_RenderBegin: VK_RayFrameBegin
+	// VK_RenderEndRTX: VK_RayFrameEnd
+	&g_module_rtx,
+
+	// R_RenderModelCreate: RT_ModelCreate
+	// R_RenderModelDestroy: RT_ModelDestroy
+	// R_RenderModelUpdate: RT_ModelUpdate
+	// R_RenderModelUpdateMaterials: RT_ModelUpdateMaterials
+	// R_RenderModelDraw: RT_FrameAddModel
+	// R_RenderDrawOnce: RT_FrameAddOnce
+	// &g_module_ray_model, -- NOTE(nilsoncore): For some reason we don't see this module although we use its functions?? Whatever, it's inside rtx anyway.
+
+	// VK_Render_FIXME_Barrier: R_GeometryBuffer_Get
+	// VK_RenderEnd: R_GeometryBuffer_Get
+	// VK_RenderEndRTX: R_GeometryBuffer_Get
+	// R_RenderDrawOnce: R_GeometryBufferAllocOnceAndLock, R_GeometryBufferUnlock
+	&g_module_geometry,
+
+	// VK_RenderEnd: R_VkTextureGetDescriptorUnorm
+	&g_module_textures_api, // It has to be loaded first
+	// &g_module_textures -- @TexturesInitHardcode
+};
+
+RVkModule g_module_render = {
+	.name = "render",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 	matrix4x4 mvp;
 	vec4_t color;
@@ -293,70 +335,6 @@ static struct {
 
 	qboolean current_frame_is_ray_traced;
 } g_render_state;
-
-qboolean VK_RenderInit( void ) {
-	PROFILER_SCOPES(APROF_SCOPE_INIT);
-
-	g_render.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
-
-	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
-
-	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
-	const uint32_t uniform_buffer_size = uniform_unit_size * MAX_UNIFORM_SLOTS;
-	R_FlippingBuffer_Init(&g_render_state.uniform_alloc, uniform_buffer_size);
-
-	if (!VK_BufferCreate("render uniform_buffer", &g_render.uniform_buffer, uniform_buffer_size,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | (vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
-		return false;
-
-	{
-		VkDescriptorBufferInfo dbi_uniform_data = {
-			.buffer = g_render.uniform_buffer.buffer,
-			.offset = 0,
-			.range = sizeof(uniform_data_t),
-		};
-		VkDescriptorBufferInfo dbi_uniform_lights = {
-			.buffer = g_render.uniform_buffer.buffer,
-			.offset = 0,
-			.range = sizeof(vk_ubo_lights_t),
-		};
-		VkWriteDescriptorSet wds[] = {{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-				.pBufferInfo = &dbi_uniform_data,
-				.dstSet = vk_desc_fixme.ubo_sets[0], // FIXME
-			}, {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-				.pBufferInfo = &dbi_uniform_lights,
-				.dstSet = vk_desc_fixme.ubo_sets[1], // FIXME
-			}};
-		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
-	}
-
-	if (!createPipelines())
-		return false;
-
-	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
-	return true;
-}
-
-void VK_RenderShutdown( void )
-{
-	for (int i = 0; i < ARRAYSIZE(g_render.pipelines); ++i)
-		vkDestroyPipeline(vk_core.device, g_render.pipelines[i], NULL);
-	vkDestroyPipelineLayout( vk_core.device, g_render.pipeline_layout, NULL );
-
-	VK_BufferDestroy( &g_render.uniform_buffer );
-}
 
 enum {
 	UNIFORM_UNSET = 0,
@@ -862,4 +840,82 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	}
 
 	g_render.stats.dynamic_model_count++;
+}
+
+static qboolean Impl_Init( void ) {
+	PROFILER_SCOPES(APROF_SCOPE_INIT);
+	
+	XRVkModule_OnInitStart( g_module_render );
+
+	g_render.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
+
+	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+
+	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
+	const uint32_t uniform_buffer_size = uniform_unit_size * MAX_UNIFORM_SLOTS;
+	R_FlippingBuffer_Init(&g_render_state.uniform_alloc, uniform_buffer_size);
+
+	if (!VK_BufferCreate("render uniform_buffer", &g_render.uniform_buffer, uniform_buffer_size,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | (vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0))) {
+		gEngine.Con_Printf( S_ERROR "Couldn't create uniform render buffer.\n" );
+		g_module_render.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	{
+		VkDescriptorBufferInfo dbi_uniform_data = {
+			.buffer = g_render.uniform_buffer.buffer,
+			.offset = 0,
+			.range = sizeof(uniform_data_t),
+		};
+		VkDescriptorBufferInfo dbi_uniform_lights = {
+			.buffer = g_render.uniform_buffer.buffer,
+			.offset = 0,
+			.range = sizeof(vk_ubo_lights_t),
+		};
+		VkWriteDescriptorSet wds[] = {{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.pBufferInfo = &dbi_uniform_data,
+				.dstSet = vk_desc_fixme.ubo_sets[0], // FIXME
+			}, {
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstBinding = 0,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+				.pBufferInfo = &dbi_uniform_lights,
+				.dstSet = vk_desc_fixme.ubo_sets[1], // FIXME
+			}};
+		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+	}
+
+	if (!createPipelines()) {
+		gEngine.Con_Printf( S_ERROR "Couldn't create render pipelines.\n" );
+		g_module_render.state = RVkModuleState_NotInitialized;
+		return false;
+	}
+
+	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
+
+	XRVkModule_OnInitEnd( g_module_render );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_render );
+
+	for (int i = 0; i < ARRAYSIZE(g_render.pipelines); ++i)
+		vkDestroyPipeline(vk_core.device, g_render.pipelines[i], NULL);
+
+	vkDestroyPipelineLayout( vk_core.device, g_render.pipeline_layout, NULL );
+
+	VK_BufferDestroy( &g_render.uniform_buffer );
+
+	XRVkModule_OnShutdownEnd( g_module_render );
 }

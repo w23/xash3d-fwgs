@@ -38,6 +38,41 @@
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
 #define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// R_StudioDrawPoints: studioSubmodelRenderModelAcquire, studioSubmodelRenderModelRelease
+	// studioEntityModelDestroy: studioSubmodelRenderModelRelease
+	// studioEntityModelCreate: getStudioModelInfo
+	&g_module_studio_model,
+
+	// buildStudioSubmodelGeometry: R_GeometryRangeLock, R_GeometryRangeUnlock
+	// studioSubmodelRenderInit: R_GeometryRangeAlloc
+	&g_module_geometry,
+	
+	// studioSubmodelRenderInit: R_RenderModelCreate
+	// studioSubmodelRenderUpdate: R_RenderModelUpdate
+	// R_StudioDrawPoints: R_RenderModelDraw
+	// R_StudioRenderFinal: VK_RenderDebugLabelBegin, VK_RenderDebugLabelEnd
+	// R_StudioDrawModelInternal: VK_RenderDebugLabelBegin, VK_RenderDebugLabelEnd
+	&g_module_render,
+
+	// buildSubmodelMeshGeometry: R_VkMaterialGetForTextureWithFlags
+	&g_module_materials,
+
+	// R_StudioLoadTexture: R_TextureUploadFromFile
+	&g_module_textures_api
+};
+
+RVkModule g_module_studio = {
+	.name = "studio",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 // FIXME VK should not be declared here
 colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
 
@@ -1576,9 +1611,6 @@ mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 
 	return ptexture;
 }
-
-// TODO where does this need to be declared and defined? currently it's in vk_scene.c
-extern int CL_FxBlend( cl_entity_t *e );
 
 void R_StudioSetRenderamt( int iRenderamt )
 {
@@ -3612,8 +3644,23 @@ void CL_InitStudioAPI( void )
 	pStudioDraw = &gStudioDraw;
 }
 
-void VK_StudioInit( void )
+void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
 {
+	RI.currententity = ent;
+	RI.currentmodel = ent->model;
+	RI.drawWorld = true;
+
+	g_studio.blend = blend;
+
+	R_DrawStudioModel( ent );
+
+	RI.currentmodel = NULL;
+	RI.currententity = NULL;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_studio );
+
 	Matrix3x4_LoadIdentity( g_studio.rotationmatrix );
 
 	// g-cont. cvar disabled by Valve
@@ -3628,24 +3675,14 @@ void VK_StudioInit( void )
 	R_SPEEDS_COUNTER(g_studio_stats.submodels_static, "submodels_static", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_studio_stats.submodels_dynamic, "submodels_dynamic", kSpeedsMetricCount);
 
-	VK_StudioModelInit();
+	XRVkModule_OnInitEnd( g_module_studio );
+	return true;
 }
 
-void VK_StudioShutdown( void )
-{
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_studio );
+
 	R_StudioCacheClear();
-}
 
-void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
-{
-	RI.currententity = ent;
-	RI.currentmodel = ent->model;
-	RI.drawWorld = true;
-
-	g_studio.blend = blend;
-
-	R_DrawStudioModel( ent );
-
-	RI.currentmodel = NULL;
-	RI.currententity = NULL;
+	XRVkModule_OnShutdownEnd( g_module_studio );
 }

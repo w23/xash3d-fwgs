@@ -1,11 +1,15 @@
 #pragma once
 
+#include "vk_module.h"
+
 #include "const.h" // required for com_model.h, ref_api.h
 #include "cvardef.h" // required for ref_api.h
 #include "com_model.h" // required for ref_api.h
 #include "ref_api.h" // texFlags_t
 
 #define MAX_LIGHTMAPS 256
+
+extern RVkModule g_module_textures_api;
 
 typedef struct vk_textures_global_s
 {
@@ -29,9 +33,6 @@ typedef struct vk_textures_global_s
 
 // TODO rename this consistently
 extern vk_textures_global_t tglob;
-
-qboolean R_TexturesInit( void );
-void R_TexturesShutdown( void );
 
 ////////////////////////////////////////////////////////////
 // Ref interface functions, exported

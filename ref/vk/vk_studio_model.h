@@ -1,7 +1,11 @@
 #pragma once
 
+#include "vk_module.h"
+
 #include "vk_render.h"
 #include "vk_geometry.h"
+
+extern RVkModule g_module_studio_model;
 
 struct r_studio_submodel_info_s;
 
@@ -63,6 +67,3 @@ typedef struct {
 	int bodyparts_count;
 	r_studio_submodel_render_t **bodyparts;
 } r_studio_entity_model_t;
-
-void VK_StudioModelInit(void);
-//void VK_StudioModelShutdown(void);

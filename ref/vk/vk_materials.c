@@ -15,6 +15,28 @@
 #define MAX_MATERIALS 2048
 #define MAX_NEW_MATERIALS 128
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// loadTexture: R_TextureUploadFromFileExAcquire
+	// acquireTexturesForMaterial: R_TextureAcquire
+	// releaseTexturesForMaterialPtr: R_TextureRelease
+	// assignMaterialForTexture: R_TextureGetNameByIndex
+	// loadMaterialsFromFile: R_TextureAcquire, R_TextureGetNameByIndex
+	// R_VkMaterialGetForTextureWithFlags: R_TextureGetNameByIndex
+	// R_VkMaterialGetForName: R_TextureFindByNameLike
+	&g_module_textures_api
+};
+
+RVkModule g_module_materials = {
+	.name = "materials",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 static r_vk_material_t k_default_material = {
 	.tex_base_color = -1,
 	.tex_metalness = 0,
@@ -634,7 +656,19 @@ qboolean R_VkMaterialGetEx( int tex_id, int rendermode, r_vk_material_t *out_mat
 	return false;
 }
 
-void R_VkMaterialsShutdown( void ) {
-	materialsReleaseTextures();
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_materials );
+
+	// Nothing to init for now.
+
+	XRVkModule_OnInitEnd( g_module_materials );
+	return true;
 }
 
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_materials );
+
+	materialsReleaseTextures();
+
+	XRVkModule_OnShutdownEnd( g_module_materials );
+}

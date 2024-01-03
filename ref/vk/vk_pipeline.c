@@ -1,30 +1,39 @@
 #include "vk_pipeline.h"
 
-#include "vk_framectl.h" // VkRenderPass
+#include "vk_framectl.h" // VkRenderPass -- @RenderpassOwnershipMess
 #include "vk_combuf.h"
 
 #include "eiface.h"
 
 #define MAX_STAGES 2
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// VK_PipelineRayTracingTrace: R_VkCombufScopeBegin, R_VkCombufScopeEnd
+	&g_module_combuf,
+
+	// VK_PipelineRayTracingCreate: VK_BufferCreate
+	// VK_PipelineRayTracingDestroy: VK_BufferDestroy
+	&g_module_buffer,
+
+	// VK_PipelineGraphicsCreate: `.renderPass = vk_frame.render_pass.raster` -- @RenderpassOwnershipMess
+	// NOTE(nilsoncore): Because of this we can't include `framectl` as a dependency
+	// as it will create circular dependency chain: `render` -> `pipeline` -> `framectl` -> `render`.
+	// We have to assume that `framectl` is initialized by someone. Ugh.
+	// &g_module_framectl
+};
+
+RVkModule g_module_pipeline = {
+	.name = "pipeline",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 VkPipelineCache g_pipeline_cache;
-
-qboolean VK_PipelineInit( void )
-{
-	VkPipelineCacheCreateInfo pcci = {
-		.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
-		.initialDataSize = 0,
-		.pInitialData = NULL,
-	};
-
-	XVK_CHECK(vkCreatePipelineCache(vk_core.device, &pcci, NULL, &g_pipeline_cache));
-	return true;
-}
-
-void VK_PipelineShutdown( void )
-{
-	vkDestroyPipelineCache(vk_core.device, g_pipeline_cache, NULL);
-}
 
 VkShaderModule R_VkShaderLoadFromMem(const void *ptr, uint32_t size, const char *name) {
 	if ((size % 4 != 0) || (((uintptr_t)ptr & 3) != 0)) {
@@ -159,7 +168,7 @@ VkPipeline VK_PipelineGraphicsCreate(const vk_pipeline_graphics_create_info_t *c
 		.pColorBlendState = &color_blend,
 		.pDepthStencilState = &depth,
 		.layout = ci->layout,
-		.renderPass = vk_frame.render_pass.raster,
+		.renderPass = vk_frame.render_pass.raster, // -- @RenderpassOwnershipMess
 		.pDynamicState = &dynamic_state_create_info,
 		.subpass = 0,
 	};
@@ -375,4 +384,27 @@ void VK_PipelineRayTracingTrace(vk_combuf_t *combuf, const vk_pipeline_ray_t *pi
 		const int begin_id = R_VkCombufScopeBegin(combuf, scope_id);
 		vkCmdTraceRaysKHR(combuf->cmdbuf, &pipeline->sbt.raygen, &pipeline->sbt.miss, &pipeline->sbt.hit, &pipeline->sbt.callable, width, height, 1 );
 		R_VkCombufScopeEnd(combuf, begin_id, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_pipeline );
+
+	VkPipelineCacheCreateInfo pcci = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+		.initialDataSize = 0,
+		.pInitialData = NULL,
+	};
+
+	XVK_CHECK(vkCreatePipelineCache(vk_core.device, &pcci, NULL, &g_pipeline_cache));
+	
+	XRVkModule_OnInitEnd( g_module_pipeline );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_pipeline );
+
+	vkDestroyPipelineCache(vk_core.device, g_pipeline_cache, NULL);
+
+	XRVkModule_OnShutdownEnd( g_module_pipeline );
 }

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "vk_core.h"
+#include "vk_module.h"
 
-qboolean R_VkStagingInit(void);
-void R_VkStagingShutdown(void);
+extern RVkModule g_module_staging;
 
 typedef int staging_handle_t;
 

@@ -1,9 +1,13 @@
 #pragma once
+
 #include "vk_core.h"
+#include "vk_module.h"
 
 #include "xash3d_types.h"
 
 #define MAX_CONCURRENT_FRAMES 2
+
+extern RVkModule g_module_framectl;
 
 // TODO most of the things below should not be global. Instead, they should be passed as an argument/context to all the drawing functions that want this info
 typedef struct vk_framectl_s {
@@ -25,9 +29,6 @@ typedef struct vk_framectl_s {
 } vk_framectl_t;
 
 extern vk_framectl_t vk_frame;
-
-qboolean VK_FrameCtlInit( void );
-void VK_FrameCtlShutdown( void );
 
 void R_BeginFrame( qboolean clearScene );
 void VK_RenderFrame( const struct ref_viewpass_s *rvp );

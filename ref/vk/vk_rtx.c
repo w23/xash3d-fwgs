@@ -56,6 +56,50 @@ enum {
 
 #define MAX_RESOURCES 32
 
+static qboolean Impl_Init( void );
+static     void Impl_Shutdown( void );
+
+static RVkModule *required_modules[] = {
+	// Impl_Init: VK_BufferCreate
+	// Impl_Shutdown: VK_BufferDestroy
+	&g_module_buffer,
+
+	// VK_RayNewMapBegin: RT_VkAccelNewMap
+	// VK_RayFrameBegin: RT_VkAccelFrameBegin
+	// performTracing: RT_VkAccelPrepareTlas
+	&g_module_ray_accel,
+
+	// VK_RayNewMapBegin: RT_RayModel_Clear
+	// VK_RayFrameBegin: XVK_RayModel_ClearForNextFrame
+	// VK_RayFrameEnd: RT_DynamicModelProcessFrame
+	// Impl_Init: RT_RayModel_Clear
+	&g_module_ray_model,
+
+	// VK_RayNewMapEnd: R_VkTexturesGetSkyboxDescriptorImageInfo, R_VkTexturesGetBlueNoiseImageInfo
+	// prepareUniformBuffer: R_TexturesGetSkyboxInfo
+	// Impl_Init: R_VkTexturesGetAllDescriptorsArray
+	&g_module_textures_api,
+	// &g_module_textures, -- @TexturesInitHardcode
+
+	// VK_RayFrameBegin: RT_LightsFrameBegin
+	// VK_RayFrameEnd: RT_LightsFrameEnd, VK_LightsUpload
+	&g_module_light,
+
+	// performTracing: R_VkImageBlit, R_VkImageClear
+	// cleanupResources: R_VkImageDestroy
+	// reloadMainpipe: R_VkImageDestroy, R_VkImageCreate
+	// VK_RayFrameEnd: R_VkImageClear, R_VkImageBlit
+	&g_module_image
+};
+
+RVkModule g_module_rtx = {
+	.name = "rtx",
+	.state = RVkModuleState_NotInitialized,
+	.dependencies = RVkModuleDependencies_FromStaticArray( required_modules ),
+	.Init = Impl_Init,
+	.Shutdown = Impl_Shutdown
+};
+
 typedef struct {
 		char name[64];
 		vk_resource_t resource;
@@ -700,91 +744,104 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
-qboolean VK_RayInit( void )
-{
-	ASSERT(vk_core.rtx);
-	// TODO complain and cleanup on failure
-
-	g_rtx.max_frame_width = MIN_FRAME_WIDTH;
-	g_rtx.max_frame_height = MIN_FRAME_HEIGHT;
-
-	if (!RT_VkAccelInit())
-		return false;
-
-	// FIXME shutdown accel
-	if (!RT_DynamicModelInit())
-		return false;
-
-#define REGISTER_EXTERNAL(type, name_) \
-	Q_strncpy(g_rtx.res[ExternalResource_##name_].name, #name_, sizeof(g_rtx.res[0].name)); \
-	g_rtx.res[ExternalResource_##name_].refcount = 1;
-	EXTERNAL_RESOUCES(REGISTER_EXTERNAL)
-#undef REGISTER_EXTERNAL
-
-	g_rtx.res[ExternalResource_textures].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image_array = R_VkTexturesGetAllDescriptorsArray(),
-		}
-	};
-	g_rtx.res[ExternalResource_textures].refcount = 1;
-
-	reloadMainpipe();
-	if (!g_rtx.mainpipe)
-		return false;
-
-	g_rtx.uniform_unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
-
-	if (!VK_BufferCreate("ray uniform_buffer", &g_rtx.uniform_buffer, g_rtx.uniform_unit_size * MAX_FRAMES_IN_FLIGHT,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
-	{
-		return false;
-	}
-
-	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	RT_RayModel_Clear();
-
-	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
-
-#define X(name) #name ", "
-	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
-		"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
-#undef X
-
-	g_rtx.debug.rt_debug_fixed_random_seed = gEngine.Cvar_Get("rt_debug_fixed_random_seed", "", FCVAR_GLCONFIG,
-		"Fix random seed value for RT monte carlo sampling. Used for reproducible regression testing");
-
-	return true;
-}
-
-void VK_RayShutdown( void ) {
-	ASSERT(vk_core.rtx);
-
-	destroyMainpipe();
-
-	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
-	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
-	VK_BufferDestroy(&g_rtx.uniform_buffer);
-
-	RT_VkAccelShutdown();
-	RT_DynamicModelShutdown();
-}
-
 void RT_FrameDiscontinuity( void ) {
 	DEBUG("%s", __FUNCTION__);
 	g_rtx.discontinuity = true;
+}
+
+static qboolean Impl_Init( void ) {
+	XRVkModule_OnInitStart( g_module_rtx );
+
+	// TODO complain and cleanup on failure
+	if ( vk_core.rtx ) {
+
+		g_rtx.max_frame_width = MIN_FRAME_WIDTH;
+		g_rtx.max_frame_height = MIN_FRAME_HEIGHT;
+
+#define REGISTER_EXTERNAL(type, name_) \
+		Q_strncpy(g_rtx.res[ExternalResource_##name_].name, #name_, sizeof(g_rtx.res[0].name)); \
+		g_rtx.res[ExternalResource_##name_].refcount = 1;
+		EXTERNAL_RESOUCES(REGISTER_EXTERNAL)
+#undef REGISTER_EXTERNAL
+
+		g_rtx.res[ExternalResource_textures].resource = (vk_resource_t){
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.value = (vk_descriptor_value_t){
+				.image_array = R_VkTexturesGetAllDescriptorsArray(),
+			}
+		};
+		g_rtx.res[ExternalResource_textures].refcount = 1;
+
+		reloadMainpipe();
+		if (!g_rtx.mainpipe) {
+			ERR( "Couldn't reload Ray Tracing mainpipe." );
+			g_module_rtx.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+
+		g_rtx.uniform_unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+
+		if (!VK_BufferCreate("ray uniform_buffer", &g_rtx.uniform_buffer, g_rtx.uniform_unit_size * MAX_FRAMES_IN_FLIGHT,
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
+			ERR( "Couldn't create Ray Tracing uniform buffer." );
+			g_module_rtx.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+
+		if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
+			// FIXME complain, handle
+			ERR( "Couldn't create Ray Tracing kusochki buffer." );
+			g_module_rtx.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+
+		if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+		{
+			// FIXME complain, handle
+			ERR( "Couldn't create Ray Tracing model headers buffer." );
+			g_module_rtx.state = RVkModuleState_NotInitialized;
+			return false;
+		}
+
+		RT_RayModel_Clear();
+
+		gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
+
+#define X(name) #name ", "
+		g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
+			"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
+#undef X
+
+		g_rtx.debug.rt_debug_fixed_random_seed = gEngine.Cvar_Get("rt_debug_fixed_random_seed", "", FCVAR_GLCONFIG,
+			"Fix random seed value for RT monte carlo sampling. Used for reproducible regression testing");
+
+		gEngine.Con_Printf( S_NOTE "Module '%s' is initialized with enabled functionality.\n", g_module_rtx.name );
+	} else {
+		gEngine.Con_Printf( S_WARN "Module '%s' is initialized with disabled functionality.\n", g_module_rtx.name );
+		gEngine.Con_Printf( S_WARN "Switch to Ray Tracing renderer to enable it. (It must be supported on your graphics device)\n" );
+	}
+
+	XRVkModule_OnInitEnd( g_module_rtx );
+	return true;
+}
+
+static void Impl_Shutdown( void ) {
+	XRVkModule_OnShutdownStart( g_module_rtx );
+	
+	if ( vk_core.rtx ) {
+		destroyMainpipe();
+
+		VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
+		VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
+		VK_BufferDestroy(&g_rtx.uniform_buffer);
+	}
+
+	XRVkModule_OnShutdownEnd( g_module_rtx );
 }

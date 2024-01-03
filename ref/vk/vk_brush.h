@@ -1,15 +1,16 @@
 #pragma once
 
+#include "vk_module.h"
+
 #include "xash3d_types.h"
 #include "vk_render.h" // cl_entity_t
+
+extern RVkModule g_module_brush;
 
 struct ref_viewpass_s;
 struct draw_list_s;
 struct model_s;
 struct cl_entity_s;
-
-qboolean R_BrushInit( void );
-void R_BrushShutdown( void );
 
 qboolean R_BrushModelLoad(struct model_s *mod, qboolean is_worldmodel);
 void R_BrushModelDestroyAll( void );
