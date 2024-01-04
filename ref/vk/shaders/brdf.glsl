@@ -6,7 +6,7 @@
 const float kPi = 3.1415926;
 const float kOneOverPi = 1. / kPi;
 
-#define BRDF_COMPARE
+//#define BRDF_COMPARE
 #ifdef BRDF_COMPARE
 bool g_mat_gltf2 = true;
 #endif

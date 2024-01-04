@@ -95,12 +95,14 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 }
 const int INDIRECT_SCALE = 2;
 
-#define NONE_TYPE 0
+#define BRDF_TYPE_NONE 0
+#define BRDF_TYPE_DIFFUSE 1
+#define BRDF_TYPE_SPECULAR 2
 int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, /*float alpha, */out vec3 out_direction, inout vec3 inout_throughput) {
 #if 1
 	// Idiotic sampling, super noisy, bad distribution, etc etc
 	// But we need to start somewhere
-	const int brdf_type = DIFFUSE_TYPE;// (rand01() > .5) ? DIFFUSE_TYPE : SPECULAR_TYPE;
+	const int brdf_type = (rand01() > .5) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
 
 	if (any(isnan(geometry_normal))) {
 		inout_throughput = vec3(1.,0.,1.);
@@ -112,7 +114,7 @@ int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_no
 	out_direction *= sign(dot(out_direction, shading_normal));
 
 	if (dot(out_direction, out_direction) < 1e-5 || dot(out_direction, geometry_normal) <= 0.)
-		return NONE_TYPE;
+		return BRDF_TYPE_NONE;
 	//out_direction = reflect(-view, shading_normal);
 	out_direction = normalize(out_direction);
 
@@ -126,20 +128,20 @@ int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_no
 	}
 	*/
 
-	inout_throughput *= (brdf_type == DIFFUSE_TYPE) ? diffuse : specular;
+	inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? diffuse : specular;
 
 	const float throughput_threshold = 1e-3;
 	if (dot(inout_throughput, inout_throughput) < throughput_threshold)
-		return NONE_TYPE;
+		return BRDF_TYPE_NONE;
 
 	// FIXME better sampling
 	return brdf_type;
 #else
-	int brdf_type = DIFFUSE_TYPE;
+	int brdf_type = BRDF_TYPE_DIFFUSE;
 	// FIXME address translucency properly
 	const float alpha = (base_a.a);
 	if (1. > alpha && rand01() > alpha) {
-		brdf_type = SPECULAR_TYPE;
+		brdf_type = BRDF_TYPE_SPECULAR;
 		// TODO: when not sampling randomly: throughput *= (1. - base_a.a);
 		bounce_direction = normalize(refract(direction, geometry_normal, .95));
 		geometry_normal = -geometry_normal;
@@ -147,12 +149,12 @@ int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_no
 	} else {
 		if (material.metalness == 1.0f && material.roughness == 0.0f) {
 			// Fast path for mirrors
-			brdf_type = SPECULAR_TYPE;
+			brdf_type = BRDF_TYPE_SPECULAR;
 		} else {
 			// Decide whether to sample diffuse or specular BRDF (based on Fresnel term)
 			const float brdf_probability = getBrdfProbability(material, -direction, shading_normal);
 			if (rand01() < brdf_probability) {
-				brdf_type = SPECULAR_TYPE;
+				brdf_type = BRDF_TYPE_SPECULAR;
 				throughput /= brdf_probability;
 			}
 		}
@@ -189,7 +191,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 	for (int i = 0; i < max_bounces; ++i) {
 		const int brdf_type = pickBounceDirection(mat.prop, -direction, mat.geometry_normal, mat.shading_normal/* TODO, mat.base_color_a.a*/, bounce_direction, throughput);
 
-		if (brdf_type == NONE_TYPE)
+		if (brdf_type == BRDF_TYPE_NONE)
 			return;
 
 		RayPayloadPrimary payload;
@@ -214,10 +216,11 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			hit_material.roughness = payload.material_rmxx.r;
 			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
-			//lighting = mixFinalColor(payload.base_color_a.rgb,
+			const vec3 background = mixFinalColor(payload.base_color_a.rgb, ldiffuse, lspecular, hit_material.metalness);
+			// OLD
+			//vec3 background = payload.base_color_a.rgb * ldiffuse;
+			//background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
 
-			vec3 background = payload.base_color_a.rgb * ldiffuse;
-			background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
 			const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
 			lighting = SRGBtoLINEAR(blend.rgb) + background * blend.a;
 
@@ -239,7 +242,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		if (hit_skybox)
 			lighting += payload.emissive.rgb;
 
-		if (brdf_type == DIFFUSE_TYPE)
+		if (brdf_type == BRDF_TYPE_DIFFUSE)
 			diffuse += throughput * lighting;
 		else
 			specular += throughput * lighting;

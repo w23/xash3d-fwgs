@@ -2,13 +2,14 @@
 - [x] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
     - [x] fix missing dot(N,L) term
 - [x] try bespoke diffuse term -- yes, mine seems to be more correct
+    - [ ] PR against glTF
 - [ ] Bounces
     - [x] idiotic sampling
     - [ ] sampling functions
         - [ ] diffuse
         - [ ] specular
     - [ ] how to mix properly with brdf itself
-    - [ ] find and fix NaNs
+    - [x] find and fix NaNs
 - [ ] Better PBR math, e.g.:
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct
