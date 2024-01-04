@@ -1,3 +1,12 @@
+# 2024-01-04 E357
+- [x] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
+    - [x] fix missing dot(N,L) term
+- [x] try bespoke diffuse term -- yes, mine seems to be more correct
+- [ ] Bounces
+- [ ] Better PBR math, e.g.:
+	- [ ] Fresnel issues (esp. with skybox)
+	- [ ] Just make sure that all the BRDF math is correct
+
 # 2023-12-29 E354
 - [x] Figure out why additive transparency differs visibly from raster
 - [x] Implement special legacy-blending in sRGB-γ colorspace
@@ -7,10 +16,6 @@
 - [-] validation failure at startup, #723 -- seems like memory corruption
 
 Longer-term agenda for current season:
-- [ ] Better PBR math, e.g.:
-	- [ ] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
-	- [ ] Fresnel issues (esp. with skybox)
-	- [ ] Just make sure that all the BRDF math is correct
 - [ ] Transparency/translucency:
 	- [ ] Proper material mode for translucency, with reflections, refraction (index), fresnel, etc.
 	- [ ] Extract and specialize effects, e.g.

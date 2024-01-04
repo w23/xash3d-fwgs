@@ -127,7 +127,7 @@ if (g_mat_gltf2) {
 	const vec3 fresnel = f0 + (vec3(1.) - f0) * pow(1. - abs(h_dot_v), 5.);
 	*/
 
-	// Diffuse color compositing happens way later in denoiser/smesitel
+	// Use white for diffuse color here, as compositing happens way later in denoiser/smesitel
 	const vec3 diffuse_color = mix(vec3(1.), vec3(0.), material.metalness);
 
 	// Specular does get the real color, as its contribution is light-direction-dependent
@@ -135,8 +135,16 @@ if (g_mat_gltf2) {
 	const float fresnel_factor = pow(1. - abs(h_dot_v), 5.);
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 
-	out_diffuse = (vec3(1.) - fresnel) * kOneOverPi * diffuse_color * l_dot_n;
-	out_specular = fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v) * l_dot_n;
+	// This is taken directly from glTF 2.0 spec. It seems incorrect to me: it should not include the base_color twice.
+	// Note: here diffuse_color doesn't include base_color as it is mixed later, but we can clearly see that
+	// base_color is still visible in the direct_diff term, which it shouldn't be. See E357 ~37:00
+	// TODO make a PR against glTF spec with the correct derivation.
+	//out_diffuse = (vec3(1.) - fresnel) * kOneOverPi * diffuse_color * l_dot_n;
+
+	// This is the correctly derived diffuse term that doesn't include the base_color twice
+	out_diffuse = l_dot_n * diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
+
+	out_specular = l_dot_n * fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
 #ifdef BRDF_COMPARE
 } else {
 	// Prepare data needed for BRDF evaluation - unpack material properties and evaluate commonly used terms (e.g. Fresnel, NdotL, ...)
