@@ -6,11 +6,12 @@
 const float kPi = 3.1415926;
 const float kOneOverPi = 1. / kPi;
 
-// bool g_mat_gltf2 = true;
+#define BRDF_COMPARE
+#ifdef BRDF_COMPARE
+bool g_mat_gltf2 = true;
+#endif
 
-#define BRDF_GLTF2
-
-#ifndef BRDF_GLTF2
+#ifdef BRDF_COMPARE
 #include "brdf.h"
 #else
 struct MaterialProperties {
@@ -108,8 +109,9 @@ material = f_diffuse + f_specular
 	out_diffuse = vec3(0.);
 	out_specular = vec3(0.);
 
-//if (g_mat_gltf2) {
-#ifdef BRDF_GLTF2
+#ifdef BRDF_COMPARE
+if (g_mat_gltf2) {
+#endif
 	const float alpha = material.roughness * material.roughness;
 	const float a2 = alpha * alpha;
 	const vec3 H = normalize(L + V);
@@ -133,18 +135,21 @@ material = f_diffuse + f_specular
 	const float fresnel_factor = pow(1. - abs(h_dot_v), 5.);
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 
-	out_diffuse = (vec3(1.) - fresnel) * kOneOverPi * diffuse_color;
-	out_specular = fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
-//} else {
-#else
+	out_diffuse = (vec3(1.) - fresnel) * kOneOverPi * diffuse_color * l_dot_n;
+	out_specular = fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v) * l_dot_n;
+#ifdef BRDF_COMPARE
+} else {
 	// Prepare data needed for BRDF evaluation - unpack material properties and evaluate commonly used terms (e.g. Fresnel, NdotL, ...)
-	const BrdfData data = prepareBRDFData(N, L, V, material);
+	BrdfData data = prepareBRDFData(N, L, V, material);
 
 	// Ignore V and L rays "below" the hemisphere
 	//if (data.Vbackfacing || data.Lbackfacing) return vec3(0.0f, 0.0f, 0.0f);
 
 	// Eval specular and diffuse BRDFs
 	out_specular = evalSpecular(data);
+
+	// Our renderer mixes base_color into diffuse component later in denoiser/smesitel
+	data.diffuseReflectance = baseColorToDiffuseReflectance(vec3(1.), material.metalness);
 	out_diffuse = evalDiffuse(data);
 
 	// Combine specular and diffuse layers
@@ -152,7 +157,7 @@ material = f_diffuse + f_specular
 	// Specular is already multiplied by F, just attenuate diffuse
 	out_diffuse *= vec3(1.) - data.F;
 #endif
-//}
+}
 #endif
 }
 

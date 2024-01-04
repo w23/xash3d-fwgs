@@ -40,7 +40,9 @@ void main() {
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
 
-	//g_mat_gltf2 = pix.y > ubo.ubo.res.y / 2.;
+#ifdef BRDF_COMPARE
+	g_mat_gltf2 = pix.x > ubo.ubo.res.x / 2.;
+#endif
 
 	const vec4 pos_t = imageLoad(position_t, pix);
 
