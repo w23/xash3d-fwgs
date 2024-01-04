@@ -308,16 +308,8 @@ void main() {
 
 	if (ubo.ubo.debug_display_only != DEBUG_DISPLAY_LIGHTING) {
 		const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
-
 		const float metalness = imageLoad(material_rmxx, pix).g;
-
-		// Late base_color compositing with diffuse lighting
-		// see brdf.glsl
-		const vec3 diffuse_color = mix(base_color, vec3(0.), metalness);
-		colour = diffuse * diffuse_color;
-
-		// Specular color is already computed-in as it is both view and light-source-direction dependent
-		colour += specular;
+		colour = mixFinalColor(base_color, diffuse, specular, metalness);
 	} else {
 		colour = diffuse + specular;
 	}

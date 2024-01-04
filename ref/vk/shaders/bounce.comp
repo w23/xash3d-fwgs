@@ -96,27 +96,40 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 const int INDIRECT_SCALE = 2;
 
 #define NONE_TYPE 0
-int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, float alpha, out vec3 out_direction, inout vec3 out_throughput) {
+int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, /*float alpha, */out vec3 out_direction, inout vec3 inout_throughput) {
 #if 1
 	// Idiotic sampling, super noisy, bad distribution, etc etc
 	// But we need to start somewhere
-	const int brdf_type = (rand01() > .5) ? DIFFUSE_TYPE : SPECULAR_TYPE;
+	const int brdf_type = DIFFUSE_TYPE;// (rand01() > .5) ? DIFFUSE_TYPE : SPECULAR_TYPE;
+
+	if (any(isnan(geometry_normal))) {
+		inout_throughput = vec3(1.,0.,1.);
+		return brdf_type;
+	}
 
 	// Very bad distribution, don't do this.
 	out_direction = vec3(rand01(), rand01(), rand01()) * 2. - 1.;
 	out_direction *= sign(dot(out_direction, shading_normal));
-	out_direction = normalize(out_direction);
 
-	if (dot(out_direction, geometry_normal) <= 0.)
+	if (dot(out_direction, out_direction) < 1e-5 || dot(out_direction, geometry_normal) <= 0.)
 		return NONE_TYPE;
+	//out_direction = reflect(-view, shading_normal);
+	out_direction = normalize(out_direction);
 
 	vec3 diffuse, specular;
 	evalSplitBRDF(shading_normal, out_direction, view, material, diffuse, specular);
 
-	out_throughput = (brdf_type == DIFFUSE_TYPE) ? diffuse : specular;
+	/*
+	if (any(isnan(diffuse))) {
+		inout_throughput = vec3(0., 1., 0.);
+		return brdf_type;
+	}
+	*/
+
+	inout_throughput *= (brdf_type == DIFFUSE_TYPE) ? diffuse : specular;
 
 	const float throughput_threshold = 1e-3;
-	if (dot(out_throughput, out_throughput) < throughput_threshold)
+	if (dot(inout_throughput, inout_throughput) < throughput_threshold)
 		return NONE_TYPE;
 
 	// FIXME better sampling
@@ -159,78 +172,98 @@ int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_no
 #endif
 }
 
-void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specular) {
-	diffuse = vec3(0.);
-	specular = vec3(0.);
-
-	const vec4 pos_t = imageLoad(position_t, pix);
-	if (pos_t.w <= 0.)
-		return;
-
-	const vec4 material_data = imageLoad(material_rmxx, pix);
-	const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix));
-
+struct MaterialEx {
+	MaterialProperties prop;
 	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
+	//TODO float alpha;
+};
 
+int max_bounces = 2;
+
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse, inout vec3 specular) {
 	const float ray_normal_fudge = .01;
 	vec3 throughput = vec3(1.);
-	vec3 bounce_direction = vec3(0.);
+	vec3 bounce_direction;
 
-	MaterialProperties material;
-	material.base_color = base_a.rgb;
-	material.metalness = material_data.g;
-	material.roughness = material_data.r;
+	//const int max_bounces = 2;
+	for (int i = 0; i < max_bounces; ++i) {
+		const int brdf_type = pickBounceDirection(mat.prop, -direction, mat.geometry_normal, mat.shading_normal/* TODO, mat.base_color_a.a*/, bounce_direction, throughput);
 
-	const int brdf_type = pickBounceDirection(material, -direction, geometry_normal, shading_normal, base_a.a, bounce_direction, throughput);
+		if (brdf_type == NONE_TYPE)
+			return;
 
-	if (brdf_type == NONE_TYPE)
-		return;
+		RayPayloadPrimary payload;
+		payload.base_color_a = vec4(0.);
+		payload.emissive = vec4(0.);
+		payload.material_rmxx = vec4(0.);
+		payload.normals_gs = vec4(0.);
 
-	// 2. Rake yuri it, get hit
-	// 3. Get relevant Geometry data
-	RayPayloadPrimary payload;
-	payload.base_color_a = vec4(0.);
-	payload.emissive = vec4(0.);
-	payload.material_rmxx = vec4(0.);
+		vec3 lighting = vec3(0.);
+		pos += mat.geometry_normal * ray_normal_fudge;
+		const bool did_hit = getHit(pos, bounce_direction, payload);
+		bool hit_skybox = false;
+		if (did_hit) {
+			const vec3 hit_pos = payload.hit_t.xyz;
+			const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
 
-	vec3 lighting = vec3(0.);
-	const vec3 pos = pos_t.xyz + geometry_normal * ray_normal_fudge;
-	if (getHit(pos, bounce_direction, payload)) {
-		// 4. Sample light sources
-		const vec3 hit_pos = payload.hit_t.xyz;
-		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
+			vec3 ldiffuse = vec3(0.);
+			vec3 lspecular = vec3(0.);
+			MaterialProperties hit_material;
+			hit_material.base_color = payload.base_color_a.rgb;
+			hit_material.metalness = payload.material_rmxx.g;
+			hit_material.roughness = payload.material_rmxx.r;
+			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
-		vec3 ldiffuse = vec3(0.);
-		vec3 lspecular = vec3(0.);
-		MaterialProperties hit_material;
-		hit_material.base_color = payload.base_color_a.rgb;
-		hit_material.metalness = payload.material_rmxx.g;
-		hit_material.roughness = payload.material_rmxx.r;
-		computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
+			//lighting = mixFinalColor(payload.base_color_a.rgb,
 
-		vec3 background = payload.base_color_a.rgb * ldiffuse;
-		background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
+			vec3 background = payload.base_color_a.rgb * ldiffuse;
+			background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
+			const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
+			lighting = SRGBtoLINEAR(blend.rgb) + background * blend.a;
 
-		const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
-		lighting = SRGBtoLINEAR(blend.rgb) + background * blend.a;
-	} else {
-		lighting = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
-		//payload.emissive.rgb = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
-	}
+			// Prepare next bounce state
+			pos = hit_pos;
+			direction = bounce_direction;
+			mat.prop = hit_material;
+			mat.geometry_normal = normalDecode(payload.normals_gs.xy);
+			mat.shading_normal = hit_shading_normal;
 
-	const bool should_include_emissive =
-		/* if last bounce (i.e. w/o direct light sampling) or */
-		/* skybox */ payload.hit_t.w < 0.;
+			hit_skybox = payload.hit_t.w < 0.;
+		} else {
+			lighting = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
+			hit_skybox = true;
+		} // not hit
 
-	if (should_include_emissive) {
-		lighting += payload.emissive.rgb;
-	}
 
-	if (brdf_type == DIFFUSE_TYPE)
-		diffuse += throughput * lighting;
-	else
-		specular += throughput * lighting;
+		/* TODO: also if last bounce (i.e. w/o direct light sampling) or */
+		if (hit_skybox)
+			lighting += payload.emissive.rgb;
+
+		if (brdf_type == DIFFUSE_TYPE)
+			diffuse += throughput * lighting;
+		else
+			specular += throughput * lighting;
+
+		if (any(isnan(throughput))) {
+			diffuse = vec3(1., 0., 0.);
+			specular = vec3(0., 0., 1.);
+		} else {
+			//diffuse = throughput;
+		}
+
+		if (hit_skybox) {
+			//diffuse = vec3(1.,1.,0.);
+			break;
+		} else {
+			//diffuse = vec3(0.,1.,1.);
+		}
+
+		//if (should_include_emissive)
+			//diffuse = lighting;// payload.emissive.rgb;
+		//diffuse = bounce_direction * .5 + .5;
+		//diffuse = throughput;
+
+	} // for bounces
 }
 
 
@@ -242,14 +275,33 @@ void main() {
 	}
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
 
-	const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
-	const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
-	const vec3 direction = normalize((ubo.ubo.inv_view * vec4(target.xyz, 0)).xyz);
-
-	rand01_state = ubo.ubo.random_seed + pix.x * 1833 + pix.y * 31337 + 12;
-
+	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	computeBounce(pix * INDIRECT_SCALE, direction, diffuse, specular);
+	if (pos_t.w > 0.) {
+		const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
+		const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
+		const vec3 direction = normalize((ubo.ubo.inv_view * vec4(target.xyz, 0)).xyz);
+
+		rand01_state = ubo.ubo.random_seed + pix.x * 1833 + pix.y * 31337 + 12;
+
+		const vec4 material_data = imageLoad(material_rmxx, pix * INDIRECT_SCALE);
+		const vec4 base_a = SRGBtoLINEAR(imageLoad(base_color_a, pix * INDIRECT_SCALE));
+
+		vec3 geometry_normal, shading_normal;
+		readNormals(pix * INDIRECT_SCALE, geometry_normal, shading_normal);
+
+		MaterialEx mat;
+		mat.prop.base_color = base_a.rgb;
+		mat.prop.metalness = material_data.g;
+		mat.prop.roughness = material_data.r;
+		mat.geometry_normal = geometry_normal;
+		mat.shading_normal = shading_normal;
+
+		max_bounces = (pix.x > res.x / 2.) ? 2 : 1;
+
+		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
+	}
+
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
 }

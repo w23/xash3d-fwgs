@@ -26,6 +26,7 @@ float ggxD(float a2, float h_dot_n) {
 	if (h_dot_n <= 0.)
 		return 0.;
 
+	h_dot_n = max(1e-4, h_dot_n);
 	const float denom = h_dot_n * h_dot_n * (a2 - 1.) + 1.;
 
 	// Need to make alpha^2 non-zero to make sure that smooth surfaces get at least some specular reflections
@@ -37,6 +38,8 @@ float ggxG(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
+	l_dot_n = max(1e-4, l_dot_n);
+	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);
 	return 4. * abs(l_dot_n) * abs(n_dot_v) / (denom1 * denom2);
@@ -46,6 +49,8 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
+	l_dot_n = max(1e-4, l_dot_n);
+	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);
 	return 1. / (denom1 * denom2);
@@ -142,6 +147,10 @@ if (g_mat_gltf2) {
 
 	// This is the correctly derived diffuse term that doesn't include the base_color twice
 	out_diffuse = l_dot_n * diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
+
+	//if (isnan(l_dot_n))
+	if (any(isnan(N)))
+		out_diffuse = 10.*vec3(1., 1., 0.);
 
 	out_specular = l_dot_n * fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
 #ifdef BRDF_COMPARE
