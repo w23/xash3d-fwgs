@@ -65,6 +65,8 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 //}
 
 void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular) {
+	out_diffuse = vec3(0.);
+	out_specular = vec3(0.);
 
 /* glTF 2.0 BRDF mixing model
 https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#appendix-b-brdf-implementation
@@ -105,9 +107,6 @@ f_specular = F * D(α) * G(α) / (4 * abs(VdotN) * abs(LdotN))
 
 material = f_diffuse + f_specular
  */
-
-	out_diffuse = vec3(0.);
-	out_specular = vec3(0.);
 
 #ifdef BRDF_COMPARE
 if (g_mat_gltf2) {

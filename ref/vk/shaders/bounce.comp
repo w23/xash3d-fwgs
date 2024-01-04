@@ -39,6 +39,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "ray_primary_common.glsl"
 #include "ray_primary_hit.glsl"
 #include "noise.glsl"
+#include "brdf.glsl"
 
 #define LIGHT_POLYGON 1
 #define LIGHT_POINT 1
@@ -76,7 +77,7 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		// 2. Same as the above, but also with a completely independent TLAS. Why: no need to mask-check geometry for opaque-vs-alpha
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const uint tex_base_color = getKusok(geom.kusok_index).material.tex_base_color;
-		// Should never happen: skybox is opaque if (tex_base_color == TEX_BASE_SKYBOX)
+		// tex_base_color cannot be TEX_BASE_SKYBOX, as skybox is opaque
 		const vec4 texture_color = texture(textures[nonuniformEXT(tex_base_color)], geom.uv);
 
 		const float alpha_mask_threshold = .1f;
@@ -94,10 +95,32 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 }
 const int INDIRECT_SCALE = 2;
 
-bool pickBounceDirection(MaterialProperties material, float alpha, out vec3 direction, inout vec3 throughput) {
+#define NONE_TYPE 0
+int pickBounceDirection(MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, float alpha, out vec3 out_direction, inout vec3 out_throughput) {
 #if 1
-	// TODO implement
-	return false;
+	// Idiotic sampling, super noisy, bad distribution, etc etc
+	// But we need to start somewhere
+	const int brdf_type = (rand01() > .5) ? DIFFUSE_TYPE : SPECULAR_TYPE;
+
+	// Very bad distribution, don't do this.
+	out_direction = vec3(rand01(), rand01(), rand01()) * 2. - 1.;
+	out_direction *= sign(dot(out_direction, shading_normal));
+	out_direction = normalize(out_direction);
+
+	if (dot(out_direction, geometry_normal) <= 0.)
+		return NONE_TYPE;
+
+	vec3 diffuse, specular;
+	evalSplitBRDF(shading_normal, out_direction, view, material, diffuse, specular);
+
+	out_throughput = (brdf_type == DIFFUSE_TYPE) ? diffuse : specular;
+
+	const float throughput_threshold = 1e-3;
+	if (dot(out_throughput, out_throughput) < throughput_threshold)
+		return NONE_TYPE;
+
+	// FIXME better sampling
+	return brdf_type;
 #else
 	int brdf_type = DIFFUSE_TYPE;
 	// FIXME address translucency properly
@@ -140,7 +163,6 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	diffuse = vec3(0.);
 	specular = vec3(0.);
 
-#if 0
 	const vec4 pos_t = imageLoad(position_t, pix);
 	if (pos_t.w <= 0.)
 		return;
@@ -160,7 +182,9 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
 
-	if (!pickBounceDirection(material, base_a.a, bounce_direction, throughput))
+	const int brdf_type = pickBounceDirection(material, -direction, geometry_normal, shading_normal, base_a.a, bounce_direction, throughput);
+
+	if (brdf_type == NONE_TYPE)
 		return;
 
 	// 2. Rake yuri it, get hit
@@ -195,11 +219,18 @@ void computeBounce(ivec2 pix, vec3 direction, out vec3 diffuse, out vec3 specula
 		//payload.emissive.rgb = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
 	}
 
+	const bool should_include_emissive =
+		/* if last bounce (i.e. w/o direct light sampling) or */
+		/* skybox */ payload.hit_t.w < 0.;
+
+	if (should_include_emissive) {
+		lighting += payload.emissive.rgb;
+	}
+
 	if (brdf_type == DIFFUSE_TYPE)
-		diffuse += lighting;
+		diffuse += throughput * lighting;
 	else
-		specular += lighting + payload.emissive.rgb;
-#endif
+		specular += throughput * lighting;
 }
 
 

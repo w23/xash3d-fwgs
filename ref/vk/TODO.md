@@ -3,6 +3,12 @@
     - [x] fix missing dot(N,L) term
 - [x] try bespoke diffuse term -- yes, mine seems to be more correct
 - [ ] Bounces
+    - [x] idiotic sampling
+    - [ ] sampling functions
+        - [ ] diffuse
+        - [ ] specular
+    - [ ] how to mix properly with brdf itself
+    - [ ] find and fix NaNs
 - [ ] Better PBR math, e.g.:
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct
