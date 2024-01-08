@@ -143,14 +143,18 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
 			if (IS_INVALID3(ldiffuse)) {
+#ifdef SHADER_DEBUG_ENABLE
 				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) ldiffuse=invalid",
 					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+#endif
 				ldiffuse = vec3(0.);
 			}
 
 			if (IS_INVALID3(lspecular)) {
+#ifdef SHADER_DEBUG_ENABLE
 				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) lspecular=invalid",
 					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+#endif
 				lspecular = vec3(0.);
 			}
 
@@ -185,8 +189,10 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			specular += throughput * lighting;
 
 		if (IS_INVALID3(throughput)) {
+#ifdef SHADER_DEBUG_ENABLE
 			debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) throughput=invalid",
 				pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+#endif
 			throughput = vec3(0.);
 			//diffuse = 10.*vec3(1., 0., 0.);
 			//specular = 10.*vec3(0., 0., 1.);
@@ -196,10 +202,12 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 
 /*
 		if (any(lessThan(throughput, vec3(0.)))) {
+#ifdef SHADER_DEBUG_ENABLE
 			debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) throughput=(%f, %f, %f)",
 				pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z,
 				throughput.r, throughput.g, throughput.b
 				);
+#endif
 		}
 */
 
@@ -255,12 +263,16 @@ void main() {
 	}
 
 	if (IS_INVALID3(specular)) {
+#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("pix=(%d,%d) specular=inv", pix.x, pix.y);
+#endif
 		specular = vec3(0.);
 	}
 
 	if (IS_INVALID3(diffuse)) {
+#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("pix=(%d,%d) diffuse=inv", pix.x, pix.y);
+#endif
 		diffuse = vec3(0.);
 	}
 

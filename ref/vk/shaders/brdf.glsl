@@ -102,8 +102,10 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
 
 	if (fresnel_factor < .0 || fresnel_factor > 1. || IS_INVALID(fresnel_factor)) {
+#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) H=(%f,%f,%f) h_dot_v=%f INVALID fresnel_factor=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), PRIVEC3(H), h_dot_v, fresnel_factor);
+#endif
 		fresnel_factor = clamp(fresnel_factor, 0., 1.);
 	}
 
@@ -118,16 +120,22 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	// This is the correctly derived diffuse term that doesn't include the base_color twice
 	out_diffuse = diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
 
-	const float ggxd = ggxD(a2, h_dot_n);
+	float ggxd = ggxD(a2, h_dot_n);
 	if (IS_INVALID(ggxd) || ggxd < 0. /* || ggxd > 1.*/) {
+#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxd=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxd);
+#endif
+		ggxd = 0.;
 	}
 
-	const float ggxv = ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
+	float ggxv = ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
 	if (IS_INVALID(ggxv) || ggxv < 0. /*|| ggxv > 1.*/) {
+#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxv=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxv);
+#endif
+		ggxv = 0.;
 	}
 
 	out_specular = fresnel * ggxd * ggxv;
