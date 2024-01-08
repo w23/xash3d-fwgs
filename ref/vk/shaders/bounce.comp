@@ -4,6 +4,8 @@
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_ray_query: require
 
+#include "debug.glsl"
+
 #define GLSL
 #include "ray_interop.h"
 #undef GLSL
@@ -103,6 +105,7 @@ struct MaterialEx {
 
 int max_bounces = 1;
 
+ivec2 pix;
 void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse, inout vec3 specular) {
 	const float ray_normal_fudge = .01;
 	vec3 throughput = vec3(1.);
@@ -139,6 +142,18 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			hit_material.roughness = payload.material_rmxx.r;
 			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
+			if (IS_INVALID3(ldiffuse)) {
+				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) ldiffuse=invalid",
+					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+				ldiffuse = vec3(0.);
+			}
+
+			if (IS_INVALID3(lspecular)) {
+				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) lspecular=invalid",
+					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+				lspecular = vec3(0.);
+			}
+
 			const vec3 background = mixFinalColor(payload.base_color_a.rgb, ldiffuse, lspecular, hit_material.metalness);
 			// OLD
 			//vec3 background = payload.base_color_a.rgb * ldiffuse;
@@ -160,7 +175,6 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			hit_skybox = true;
 		} // not hit
 
-
 		/* TODO: also if last bounce (i.e. w/o direct light sampling) or */
 		if (hit_skybox)
 			lighting += payload.emissive.rgb;
@@ -170,12 +184,24 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		else
 			specular += throughput * lighting;
 
-		if (any(isnan(throughput))) {
-			diffuse = 10.*vec3(1., 0., 0.);
-			specular = 10.*vec3(0., 0., 1.);
+		if (IS_INVALID3(throughput)) {
+			debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) throughput=invalid",
+				pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
+			throughput = vec3(0.);
+			//diffuse = 10.*vec3(1., 0., 0.);
+			//specular = 10.*vec3(0., 0., 1.);
 		} else {
 			//diffuse = throughput;
 		}
+
+/*
+		if (any(lessThan(throughput, vec3(0.)))) {
+			debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) throughput=(%f, %f, %f)",
+				pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z,
+				throughput.r, throughput.g, throughput.b
+				);
+		}
+*/
 
 		if (hit_skybox) {
 			//diffuse = vec3(1.,1.,0.);
@@ -194,7 +220,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 
 
 void main() {
-	const ivec2 pix = ivec2(gl_GlobalInvocationID);
+	pix = ivec2(gl_GlobalInvocationID);
 	const ivec2 res = ubo.ubo.res / INDIRECT_SCALE;
 	if (any(greaterThanEqual(pix, res))) {
 		return;
@@ -226,6 +252,16 @@ void main() {
 		//max_bounces = (pix.x > res.x / 2.) ? 2 : 1;
 
 		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
+	}
+
+	if (IS_INVALID3(specular)) {
+		debugPrintfEXT("pix=(%d,%d) specular=inv", pix.x, pix.y);
+		specular = vec3(0.);
+	}
+
+	if (IS_INVALID3(diffuse)) {
+		debugPrintfEXT("pix=(%d,%d) diffuse=inv", pix.x, pix.y);
+		diffuse = vec3(0.);
 	}
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));

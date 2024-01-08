@@ -1,5 +1,5 @@
 #version 460
-
+#include "debug.glsl"
 #include "utils.glsl"
 #include "color_spaces.glsl"
 
@@ -162,7 +162,10 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				direct_specular_total += specular_scale;
 
 				c.direct_specular += imageLoad(light_poly_specular, p).rgb * specular_scale;
+				VALIDATE_VEC3(c.direct_specular, "%d c.direct_specular=(%f,%f,%f) poly");
+
 				c.direct_specular += imageLoad(light_point_specular, p).rgb * specular_scale;
+				VALIDATE_VEC3(c.direct_specular, "%d c.direct_specular=(%f,%f,%f) point");
 			}
 
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_SPECULAR_KERNEL)))) {
@@ -184,11 +187,26 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 	if (indirect_diffuse_total > 0.)
 		c.indirect_diffuse *= indirect_diffuse_total;
 
+	if (IS_INVALID3(c.direct_specular)) {
+		debugPrintfEXT("c.direct_specular=(%f,%f,%f)", PRIVEC3(c.direct_specular));
+		c.direct_specular = vec3(0.);
+	}
+
+	if (IS_INVALID(direct_specular_total)) {
+		debugPrintfEXT("direct_specular_total=%f", direct_specular_total);
+		direct_specular_total = 0.;
+	}
+
 	if (direct_specular_total > 0.)
 		c.direct_specular *= direct_specular_total;
 
 	if (indirect_specular_total > 0.)
 		c.indirect_specular *= indirect_specular_total;
+
+	if (IS_INVALID3(c.indirect_specular)) {
+		debugPrintfEXT("c.indirect_specular=(%f,%f,%f)", PRIVEC3(c.indirect_specular));
+		c.indirect_specular = vec3(0.);
+	}
 
 	return c;
 }
@@ -294,10 +312,37 @@ void main() {
 				}
 			}
 		}
+
+		if (IS_INVALID3(history_specular)) {
+			debugPrintfEXT("PRE pix=(%d,%d) history_specular=inv", pix.x, pix.y);
+			history_specular = vec3(0.);
+		}
+
+		if (IS_INVALID3(specular)) {
+			debugPrintfEXT("PRE pix=(%d,%d) specular=(%f,%f,%f)", pix.x, pix.y, PRIVEC3(specular));
+			specular = vec3(0.);
+		}
+
+		vec3 new_specular = vec3(0.);
 		if (better_depth_offset < depth_treshold) {
 			diffuse = mix(diffuse, history_diffuse, 0.8);
-			specular = mix(specular, history_specular, 0.3);
+			new_specular = mix(specular, history_specular, 0.3);
 		}
+
+		if (IS_INVALID3(diffuse)) {
+			debugPrintfEXT("pix=(%d,%d) diffuse=inv", pix.x, pix.y);
+			diffuse = vec3(0.);
+		}
+
+		if (IS_INVALID3(new_specular)) {
+			debugPrintfEXT("pix=(%d,%d) new_specular=inv, specular=(%f, %f, %f) history_specular=(%f, %f, %f)",
+				pix.x, pix.y,
+				specular.r, specular.g, specular.b,
+				history_specular.r, history_specular.g, history_specular.b
+				);
+			new_specular = vec3(0.);
+		}
+		specular = new_specular;
 
 		imageStore(out_temporal_diffuse, pix, vec4(diffuse, depth));
 		imageStore(out_temporal_specular, pix, vec4(specular, 0./*unused*/));

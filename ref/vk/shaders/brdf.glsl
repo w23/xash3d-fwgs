@@ -1,6 +1,7 @@
 #ifndef BRDF_GLSL_INCLUDED
 #define BRDF_GLSL_INCLUDED
 
+#include "debug.glsl"
 
 // TODO math|common.glsl
 const float kPi = 3.1415926;
@@ -26,12 +27,13 @@ float ggxD(float a2, float h_dot_n) {
 	if (h_dot_n <= 0.)
 		return 0.;
 
-	h_dot_n = max(1e-4, h_dot_n);
-	const float denom = h_dot_n * h_dot_n * (a2 - 1.) + 1.;
-
 	// Need to make alpha^2 non-zero to make sure that smooth surfaces get at least some specular reflections
 	// Otherwise it will just multiply by zero.
-	return max(1e-5, a2) * kOneOverPi / (denom * denom);
+	a2 = max(1e-5, a2);
+	h_dot_n = max(1e-5, h_dot_n);
+
+	const float denom = h_dot_n * h_dot_n * (a2 - 1.) + 1.;
+	return a2 * kOneOverPi / (denom * denom);
 }
 
 float ggxG(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v) {
@@ -102,11 +104,19 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	// This is the correctly derived diffuse term that doesn't include the base_color twice
 	out_diffuse = diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
 
-	//if (isnan(l_dot_n))
-	if (any(isnan(N)))
-		out_diffuse = 10.*vec3(1., 1., 0.);
+	const float ggxd = ggxD(a2, h_dot_n);
+	if (IS_INVALID(ggxd)) {
+		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f ggxd=%f",
+			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxd);
+	}
 
-	out_specular = fresnel * ggxD(a2, h_dot_n) * ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
+	const float ggxv = ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
+	if (IS_INVALID(ggxv)) {
+		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) ggxv=%f",
+			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), ggxv);
+	}
+
+	out_specular = fresnel * ggxd * ggxv;
 }
 
 void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular) {

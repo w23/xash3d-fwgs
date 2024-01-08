@@ -6,10 +6,15 @@
 - [ ] Bounces
     - [x] idiotic sampling
     - [ ] sampling functions
-        - [ ] diffuse
+        - [x] diffuse
         - [ ] specular
     - [ ] how to mix properly with brdf itself
     - [x] find and fix NaNs
+	- [ ] find and fix MORE NaNs
+		- [x] add debugPrintfEXT to shaders
+		- [x] fix black dots on glass surfaces
+		- [ ] fix polygon light nans in logs
+		- [ ] magenta gliches
 - [ ] Better PBR math, e.g.:
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct
