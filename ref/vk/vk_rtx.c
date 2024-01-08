@@ -13,12 +13,10 @@
 #include "vk_meatpipe.h"
 #include "vk_pipeline.h"
 #include "vk_ray_internal.h"
-#include "vk_staging.h"
 #include "vk_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
 
-#include "alolcator.h"
 #include "profiler.h"
 
 #include "eiface.h"

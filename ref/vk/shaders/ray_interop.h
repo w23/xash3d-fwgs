@@ -169,16 +169,6 @@ struct LightCluster {
 
 #define PUSH_FLAG_LIGHTMAP_ONLY 0x01
 
-struct PushConstants {
-	float time;
-	uint random_seed;
-	int bounces;
-	float prev_frame_blend_factor;
-	float pixel_cone_spread_angle;
-	uint debug_light_index_begin, debug_light_index_end;
-	uint flags;
-};
-
 #define DEBUG_DISPLAY_DISABLED 0
 #define DEBUG_DISPLAY_BASECOLOR 1
 #define DEBUG_DISPLAY_BASEALPHA 2
