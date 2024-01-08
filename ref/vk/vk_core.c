@@ -137,7 +137,11 @@ VkBool32 VKAPI_PTR debugCallback(
 		debug_break();
 #endif
 	} else {
-		gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
+			gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+		} else {
+			gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+		}
 	}
 
 	return VK_FALSE;
