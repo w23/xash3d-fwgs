@@ -333,7 +333,7 @@ void main() {
 			specular = vec3(0.);
 		}
 
-		vec3 new_specular = vec3(0.);
+		vec3 new_specular = specular;
 		if (better_depth_offset < depth_treshold) {
 			diffuse = mix(diffuse, history_diffuse, 0.8);
 			new_specular = mix(specular, history_specular, 0.3);
