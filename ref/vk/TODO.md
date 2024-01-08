@@ -14,7 +14,9 @@
 		- [x] add debugPrintfEXT to shaders
 		- [x] fix black dots on glass surfaces
 		- [ ] fix polygon light nans in logs
-		- [ ] magenta gliches
+		- [x] magenta gliches -- dot(N,L) < 0.
+		- [ ] validate all intermediate and final outputs against invalid values, complain into log
+		- [ ] disableable NaN debugging
 - [ ] Better PBR math, e.g.:
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct

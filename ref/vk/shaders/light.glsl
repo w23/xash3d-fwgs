@@ -1,4 +1,5 @@
 #extension GL_EXT_control_flow_attributes : require
+#include "debug.glsl"
 
 const float color_culling_threshold = 0;//600./color_factor;
 const float shadow_offset_fudge = .1;
@@ -155,18 +156,15 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	specular += lspecular;
 #endif
 
-	if (any(isnan(diffuse)))
-		diffuse = vec3(1.,0.,0.);
+	if (IS_INVALID3(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
+		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID diffuse=(%f,%f,%f)",
+			PRIVEC3(P), PRIVEC3(N), PRIVEC3(diffuse));
+		diffuse = vec3(0.);
+	}
 
-	if (any(isnan(specular)))
-		specular = vec3(0.,1.,0.);
-
-	if (any(lessThan(diffuse,vec3(0.))))
-			diffuse = vec3(1., 0., 1.);
-
-	if (any(lessThan(specular,vec3(0.))))
-			specular = vec3(0., 1., 1.);
-
-	//specular = vec3(0.,1.,0.);
-	//diffuse = vec3(0.);
+	if (IS_INVALID3(specular) || any(lessThan(specular,vec3(0.)))) {
+		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID specular=(%f,%f,%f)",
+			PRIVEC3(P), PRIVEC3(N), PRIVEC3(specular));
+		specular = vec3(0.);
+	}
 }

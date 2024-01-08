@@ -71,13 +71,20 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 //  return mix(base, layer, fr)
 //}
 
-void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular) {
+void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, out float l_dot_n, out vec3 out_diffuse, out vec3 out_specular) {
+	l_dot_n = max(0., dot(L, N));
+
+	if (l_dot_n == 0.) {
+		out_diffuse = vec3(0.);
+		out_specular = vec3(0.);
+		return;
+	}
+
 	const float alpha = material.roughness * material.roughness;
 	const float a2 = alpha * alpha;
 	const vec3 H = normalize(L + V);
 	const float h_dot_v = dot(H, V);
 	const float h_dot_n = dot(H, N);
-	const float l_dot_n = dot(L, N);
 	const float h_dot_l = dot(H, L);
 	const float n_dot_v = dot(N, V);
 
@@ -92,7 +99,14 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 
 	// Specular does get the real color, as its contribution is light-direction-dependent
 	const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
-	const float fresnel_factor = pow(1. - abs(h_dot_v), 5.);
+	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+
+	if (fresnel_factor < .0 || fresnel_factor > 1. || IS_INVALID(fresnel_factor)) {
+		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) H=(%f,%f,%f) h_dot_v=%f INVALID fresnel_factor=%f",
+			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), PRIVEC3(H), h_dot_v, fresnel_factor);
+		fresnel_factor = clamp(fresnel_factor, 0., 1.);
+	}
+
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 
 	// This is taken directly from glTF 2.0 spec. It seems incorrect to me: it should not include the base_color twice.
@@ -105,15 +119,15 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	out_diffuse = diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
 
 	const float ggxd = ggxD(a2, h_dot_n);
-	if (IS_INVALID(ggxd)) {
-		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f ggxd=%f",
+	if (IS_INVALID(ggxd) || ggxd < 0. /* || ggxd > 1.*/) {
+		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxd=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxd);
 	}
 
 	const float ggxv = ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
-	if (IS_INVALID(ggxv)) {
-		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) ggxv=%f",
-			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), ggxv);
+	if (IS_INVALID(ggxv) || ggxv < 0. /*|| ggxv > 1.*/) {
+		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxv=%f",
+			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxv);
 	}
 
 	out_specular = fresnel * ggxd * ggxv;
@@ -166,8 +180,8 @@ material = f_diffuse + f_specular
 #ifdef BRDF_COMPARE
 if (g_mat_gltf2) {
 #endif
-	brdfComputeGltfModel(N, L, V, material, out_diffuse, out_specular);
-	const float l_dot_n = dot(L, N);
+	float l_dot_n;
+	brdfComputeGltfModel(N, L, V, material, l_dot_n, out_diffuse, out_specular);
 	out_diffuse *= l_dot_n;
 	out_specular *= l_dot_n;
 #ifdef BRDF_COMPARE
@@ -268,7 +282,8 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 	out_direction = normalize(out_direction);
 
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	brdfComputeGltfModel(shading_normal, out_direction, view, material, diffuse, specular);
+	float l_dot_n;
+	brdfComputeGltfModel(shading_normal, out_direction, view, material, l_dot_n, diffuse, specular);
 
 	/*
 	if (any(isnan(diffuse))) {

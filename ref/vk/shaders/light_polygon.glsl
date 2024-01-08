@@ -225,6 +225,9 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 	const uint num_polygons = uint(light_grid.clusters_[cluster_index].num_polygons);
 	for (uint i = 0; i < num_polygons; ++i) {
 		const uint index = uint(light_grid.clusters_[cluster_index].polygons[i]);
+
+		//if (index != 5) // < 6 || index >= 8)
+		//	continue;
 #else
 	for (uint index = 0; index < lights.m.num_polygons; ++index) {
 #endif
@@ -260,8 +263,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 			diffuse += emissive * estimate * poly_diffuse;
 			specular += emissive * estimate * poly_specular;
 
-			if (IS_INVALID3(specular)) {
-				debugPrintfEXT("%d specular=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_specular=(%f,%f,%f)",
+			if (IS_INVALID3(specular) || any(lessThan(specular,vec3(0.)))) {
+				debugPrintfEXT("%d INVALID specular=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_specular=(%f,%f,%f)",
 					__LINE__, PRIVEC3(specular), index, PRIVEC3(emissive), estimate, PRIVEC3(poly_specular));
 				specular = vec3(0.);
 			}
