@@ -156,19 +156,17 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	specular += lspecular;
 #endif
 
+#ifdef DEBUG_VALIDATE_EXTRA
 	if (IS_INVALID3(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
-#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID diffuse=(%f,%f,%f)",
 			PRIVEC3(P), PRIVEC3(N), PRIVEC3(diffuse));
-#endif
 		diffuse = vec3(0.);
 	}
 
 	if (IS_INVALID3(specular) || any(lessThan(specular,vec3(0.)))) {
-#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID specular=(%f,%f,%f)",
 			PRIVEC3(P), PRIVEC3(N), PRIVEC3(specular));
-#endif
 		specular = vec3(0.);
 	}
+#endif
 }

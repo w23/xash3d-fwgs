@@ -1,3 +1,18 @@
+# 2024-01-09 E360
+- [x] validate all intermediate and final outputs against invalid values, complain into log
+- [ ] brdf math surprising edge cases
+    - [ ] alpha^2 == 0 ???
+    - [ ] various N,L,V collinearities, zero denoms and infinities
+
+# 2024-01-08 E359
+- [-] find and fix MORE NaNs
+    - [x] add debugPrintfEXT to shaders
+    - [x] fix black dots on glass surfaces
+    - [ ] fix polygon light nans in logs
+    - [x] magenta gliches -- dot(N,L) < 0.
+    - [x] disableable NaN debugging with macro
+    - [ ] enable NaN debugging with -vkvalidate
+
 # 2024-01-04 E357
 - [x] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
     - [x] fix missing dot(N,L) term
@@ -10,13 +25,6 @@
         - [ ] specular
     - [ ] how to mix properly with brdf itself
     - [x] find and fix NaNs
-	- [ ] find and fix MORE NaNs
-		- [x] add debugPrintfEXT to shaders
-		- [x] fix black dots on glass surfaces
-		- [ ] fix polygon light nans in logs
-		- [x] magenta gliches -- dot(N,L) < 0.
-		- [ ] validate all intermediate and final outputs against invalid values, complain into log
-		- [ ] disableable NaN debugging
 - [ ] Better PBR math, e.g.:
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct

@@ -226,7 +226,6 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 	} // for bounces
 }
 
-
 void main() {
 	pix = ivec2(gl_GlobalInvocationID);
 	const ivec2 res = ubo.ubo.res / INDIRECT_SCALE;
@@ -262,19 +261,20 @@ void main() {
 		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
 	}
 
+#ifdef DEBUG_VALIDATE_EXTRA
 	if (IS_INVALID3(specular)) {
-#ifdef SHADER_DEBUG_ENABLE
-		debugPrintfEXT("pix=(%d,%d) specular=inv", pix.x, pix.y);
-#endif
+		debugPrintfEXT("pix=(%d,%d) specular=(%f, %f, %f)", pix.x, pix.y, specular.r, specular.g, specular.b);
 		specular = vec3(0.);
 	}
 
 	if (IS_INVALID3(diffuse)) {
-#ifdef SHADER_DEBUG_ENABLE
-		debugPrintfEXT("pix=(%d,%d) diffuse=inv", pix.x, pix.y);
-#endif
+		debugPrintfEXT("pix=(%d,%d) diffuse=(%f, %f, %f)", pix.x, pix.y, diffuse.r, diffuse.g, diffuse.b);
 		diffuse = vec3(0.);
 	}
+#else
+	DEBUG_VALIDATE_RANGE_VEC3(diffuse, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3(specular, 0., 1e6);
+#endif
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));

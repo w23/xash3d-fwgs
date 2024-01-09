@@ -1,6 +1,8 @@
 #ifndef TRACE_SIMPLE_BLENDING_GLSL_INCLUDED
 #define TRACE_SIMPLE_BLENDING_GLSL_INCLUDED
 
+#include "debug.glsl"
+
 // Traces geometry with simple blending. Simple means that it's only additive or mix/coverage, and it doesn't participate in lighting, and it doesn't reflect/refract rays.
 // Done in sRGB-γ space for legacy-look reasons.
 // Returns vec4(emissive_srgb.rgb, revealage)
@@ -126,6 +128,9 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
 			revealage *= 1. - entries[i].blend;
 		}
 	}
+
+	DEBUG_VALIDATE_RANGE_VEC3(emissive, 0., 1e6);
+	DEBUG_VALIDATE_RANGE(revealage, 0., 1.);
 
 	return vec4(emissive, revealage);
 }
