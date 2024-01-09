@@ -3,6 +3,7 @@
 - [ ] brdf math surprising edge cases
     - [ ] alpha^2 == 0 ???
     - [ ] various N,L,V collinearities, zero denoms and infinities
+        - [ ] h_dot_l | h_dot_v < .0 because of numerical precision
 
 # 2024-01-08 E359
 - [-] find and fix MORE NaNs

@@ -29,8 +29,10 @@ float ggxD(float a2, float h_dot_n) {
 
 	// Need to make alpha^2 non-zero to make sure that smooth surfaces get at least some specular reflections
 	// Otherwise it will just multiply by zero.
+	// This also helps with limiting denom to 1e-5
 	a2 = max(1e-5, a2);
-	h_dot_n = max(1e-5, h_dot_n);
+	// Limit in case H is "random" due to L~=-V
+	h_dot_n = clamp(h_dot_n, 1e-5, 1.);
 
 	const float denom = h_dot_n * h_dot_n * (a2 - 1.) + 1.;
 	return a2 * kOneOverPi / (denom * denom);
@@ -40,7 +42,7 @@ float ggxG(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
-	l_dot_n = max(1e-4, l_dot_n);
+	//l_dot_n = max(1e-4, l_dot_n);
 	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);
@@ -51,7 +53,7 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
-	l_dot_n = max(1e-4, l_dot_n);
+	//l_dot_n = max(1e-4, l_dot_n);
 	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);
@@ -72,8 +74,8 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 //}
 
 void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, out float l_dot_n, out vec3 out_diffuse, out vec3 out_specular) {
+	// L facing away from N can happen fairly often, exit early if so.
 	l_dot_n = max(0., dot(L, N));
-
 	if (l_dot_n == 0.) {
 		out_diffuse = vec3(0.);
 		out_specular = vec3(0.);
@@ -82,11 +84,30 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 
 	const float alpha = material.roughness * material.roughness;
 	const float a2 = alpha * alpha;
+
+	// If L ~= -V, then H will be roughly random, maybe mostly orthogonal to both. See ~03:00:00 E360
+	// If L == V, then H will be NaN.
 	const vec3 H = normalize(L + V);
-	const float h_dot_v = dot(H, V);
+
 	const float h_dot_n = dot(H, N);
-	const float h_dot_l = dot(H, L);
 	const float n_dot_v = dot(N, V);
+
+	const float h_dot_v = max(0., dot(H, V));
+	const float h_dot_l = max(0., dot(H, L));
+
+/*
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALID(h_dot_v) || h_dot_v < 0.) {
+		debugPrintfEXT("INVALID h_dot_v=%f, L=(%f,%f,%f) V=(%f,%f,%f) N=(%f, %f, %f)",
+			h_dot_v, PRIVEC3(L), PRIVEC3(V), PRIVEC3(N));
+	}
+
+	if (IS_INVALID(h_dot_l) || h_dot_l < 0.) {
+		debugPrintfEXT("INVALID h_dot_l=%f, L=(%f,%f,%f) V=(%f,%f,%f) N=(%f, %f, %f)",
+			h_dot_l, PRIVEC3(L), PRIVEC3(V), PRIVEC3(N));
+	}
+#endif
+*/
 
 	/* Original for when the color is known already.
 	const vec3 diffuse_color = mix(material.base_color, vec3(0.), material.metalness);
