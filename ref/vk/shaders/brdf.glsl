@@ -100,15 +100,6 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	// Specular does get the real color, as its contribution is light-direction-dependent
 	const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
 	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
-
-	if (fresnel_factor < .0 || fresnel_factor > 1. || IS_INVALID(fresnel_factor)) {
-#ifdef SHADER_DEBUG_ENABLE
-		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) H=(%f,%f,%f) h_dot_v=%f INVALID fresnel_factor=%f",
-			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), PRIVEC3(H), h_dot_v, fresnel_factor);
-#endif
-		fresnel_factor = clamp(fresnel_factor, 0., 1.);
-	}
-
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 
 	// This is taken directly from glTF 2.0 spec. It seems incorrect to me: it should not include the base_color twice.
@@ -121,22 +112,22 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 	out_diffuse = diffuse_color * kOneOverPi * .96 * (1. - fresnel_factor);
 
 	float ggxd = ggxD(a2, h_dot_n);
+#ifdef DEBUG_VALIDATE_EXTRA
 	if (IS_INVALID(ggxd) || ggxd < 0. /* || ggxd > 1.*/) {
-#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxd=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxd);
-#endif
 		ggxd = 0.;
 	}
+#endif
 
 	float ggxv = ggxV(a2, l_dot_n, h_dot_l, n_dot_v, h_dot_v);
+#ifdef DEBUG_VALIDATE_EXTRA
 	if (IS_INVALID(ggxv) || ggxv < 0. /*|| ggxv > 1.*/) {
-#ifdef SHADER_DEBUG_ENABLE
 		debugPrintfEXT("N=(%f,%f,%f) L=(%f,%f,%f) V=(%f,%f,%f) a2=%f h_dot_n=%f INVALID ggxv=%f",
 			PRIVEC3(N), PRIVEC3(L), PRIVEC3(V), a2, h_dot_n, ggxv);
-#endif
 		ggxv = 0.;
 	}
+#endif
 
 	out_specular = fresnel * ggxd * ggxv;
 }
@@ -216,16 +207,9 @@ if (g_mat_gltf2) {
 #endif
 }
 
-vec3 sampleCosineHemisphereAroundVectorUnnormalized(vec2 rnd, vec3 n) {
-	// Ray Tracing Gems, §16.6.2
-	const float a = 1. - 2. * rnd.x;
-	const float b = sqrt(1. - a * a);
-	const float phi = 2. * kPi * rnd.y;
-
-	// TODO const float pdf = a / kPi;
-	return n + vec3(b * cos(phi), b * sin(phi), a);
-}
-
+//#define TEST_LOCAL_FRAME
+#ifdef TEST_LOCAL_FRAME
+#ifndef BRDF_H_INCLUDED
 // brdf.h
 // Calculates rotation quaternion from input vector to the vector (0, 0, 1)
 // Input vector must be normalized!
@@ -261,10 +245,23 @@ vec3 sampleHemisphere(vec2 u, out float pdf) {
 
 	return result;
 }
-vec3 sampleCosineHemisphereAroundVectorUnnormalized2(vec2 rnd, vec3 n) {
+#endif // #ifndef BRDF_H_INCLUDED
+
+vec3 sampleCosineHemisphereAroundVectorUnnormalizedLocalFrame(vec2 rnd, vec3 n) {
 	const vec4 qRotationToZ = getRotationToZAxis(n);
 	float pdf;
 	return rotatePoint(invertRotation(qRotationToZ), sampleHemisphere(rnd, pdf));
+}
+#endif // #ifdef TEST_LOCAL_FRAME
+
+vec3 sampleCosineHemisphereAroundVectorUnnormalized(vec2 rnd, vec3 n) {
+	// Ray Tracing Gems, §16.6.2
+	const float a = 1. - 2. * rnd.x;
+	const float b = sqrt(1. - a * a);
+	const float phi = 2. * kPi * rnd.y;
+
+	// TODO const float pdf = a / kPi;
+	return n + vec3(b * cos(phi), b * sin(phi), a);
 }
 
 #define BRDF_TYPE_NONE 0
@@ -283,7 +280,17 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 		return brdf_type;
 	}
 
-	out_direction = sampleCosineHemisphereAroundVectorUnnormalized2(rnd, shading_normal);
+#if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)
+if (g_mat_gltf2) {
+#endif
+	out_direction = sampleCosineHemisphereAroundVectorUnnormalized(rnd, shading_normal);
+	//out_direction = reflect(shading_normal, -view);
+#if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)
+} else {
+	out_direction = sampleCosineHemisphereAroundVectorUnnormalizedLocalFrame(rnd, shading_normal);
+}
+#endif
+
 	if (dot(out_direction, out_direction) < 1e-5 || dot(out_direction, geometry_normal) <= 0.)
 		return BRDF_TYPE_NONE;
 

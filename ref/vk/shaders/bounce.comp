@@ -234,6 +234,10 @@ void main() {
 	}
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
 
+#ifdef BRDF_COMPARE
+	g_mat_gltf2 = pix.x > ubo.ubo.res.x / INDIRECT_SCALE / 2.;
+#endif
+
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	if (pos_t.w > 0.) {
