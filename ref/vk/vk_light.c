@@ -1110,6 +1110,11 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		}
 
 		poly->area = VectorLength(normal);
+		if (poly->area <= 0) {
+			ERR("%s: Polygon light has zero area", __FUNCTION__);
+			return -1;
+		}
+
 		VectorM(1.f / poly->area, normal, poly->plane);
 		poly->plane[3] = -DotProduct(vertices[0], poly->plane);
 

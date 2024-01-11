@@ -484,7 +484,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 	R_GeometryRangeUnlock( &geom_lock );
 }
 
-static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
+static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
 
 static qboolean doesTextureChainChange( const texture_t *const base ) {
 	const texture_t *cur = base;
@@ -904,10 +904,12 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 			// but there's no easy way to do it for now.
 			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
 			if (RT_GetEmissiveForTexture(*emissive, new_tex_id)) {
-				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
-				polylight.dynamic = true;
-				polylight.transform_row = (const matrix3x4*)&transform;
-				RT_LightAddPolygon(&polylight);
+				rt_light_add_polygon_t polylight;
+				if (loadPolyLight(&polylight, mod, surface_index, geom->surf_deprecate, *emissive)) {
+					polylight.dynamic = true;
+					polylight.transform_row = (const matrix3x4*)&transform;
+					RT_LightAddPolygon(&polylight);
+				}
 			}
 
 			if (new_tex_id == geom->ye_olde_texture)
@@ -1723,25 +1725,45 @@ void R_BrushModelDestroyAll( void ) {
 	memset(g_brush.conn.vertices, 0, sizeof(*g_brush.conn.vertices) * g_brush.conn.vertices_capacity);
 }
 
-static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
-	rt_light_add_polygon_t lpoly = {0};
-	lpoly.num_vertices = Q_min(7, surf->numedges);
+static float computeArea(vec3_t *vertices, int vertices_count) {
+		vec3_t normal = {0, 0, 0};
+
+		for (int i = 2; i < vertices_count; ++i) {
+			vec3_t e[2], lnormal;
+			VectorSubtract(vertices[i-0], vertices[0], e[0]);
+			VectorSubtract(vertices[i-1], vertices[0], e[1]);
+			CrossProduct(e[0], e[1], lnormal);
+			VectorAdd(lnormal, normal, normal);
+		}
+
+		return VectorLength(normal);
+}
+
+static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
+	(*out_polygon) = (rt_light_add_polygon_t){0};
+	out_polygon->num_vertices = Q_min(7, surf->numedges);
 
 	// TODO split, don't clip
 	if (surf->numedges > 7)
 		WARN_THROTTLED(10, "emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
 
-	VectorCopy(emissive, lpoly.emissive);
+	VectorCopy(emissive, out_polygon->emissive);
 
-	for (int i = 0; i < lpoly.num_vertices; ++i) {
+	for (int i = 0; i < out_polygon->num_vertices; ++i) {
 		const int iedge = mod->surfedges[surf->firstedge + i];
 		const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
 		const mvertex_t *vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
-		VectorCopy(vertex->position, lpoly.vertices[i]);
+		VectorCopy(vertex->position, out_polygon->vertices[i]);
 	}
 
-	lpoly.surface = surf;
-	return lpoly;
+	const float area = computeArea(out_polygon->vertices, out_polygon->num_vertices);
+	if (area <= 0) {
+		ERR("%s: emissive surface=%d has area=%f, skipping", __FUNCTION__, surface_index, area);
+		return false;
+	}
+
+	out_polygon->surface = surf;
+	return true;
 }
 
 void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel ) {
@@ -1821,7 +1843,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	if (!is_static) {
 		if (bmodel->dynamic_polylights)
 			Mem_Free(bmodel->dynamic_polylights);
-		bmodel->dynamic_polylights_count = emissive_surfaces_count;
+		bmodel->dynamic_polylights_count = 0;
 		bmodel->dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->dynamic_polylights[0]) * emissive_surfaces_count);
 	}
 
@@ -1829,8 +1851,9 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	int geom_indices_count = 0;
 	for (int i = 0; i < emissive_surfaces_count; ++i) {
 		const emissive_surface_t* const s = emissive_surfaces + i;
-
-		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
+		rt_light_add_polygon_t polylight;
+		if (!loadPolyLight(&polylight, mod, s->surface_index, s->surf, s->emissive))
+			continue;
 
 		// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
 		// for lights visibility calculation directly.
@@ -1863,7 +1886,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			}
 			*/
 		} else {
-			bmodel->dynamic_polylights[i] = polylight;
+			ASSERT(bmodel->dynamic_polylights_count < emissive_surfaces_count);
+			bmodel->dynamic_polylights[bmodel->dynamic_polylights_count++] = polylight;
 		}
 
 		// Assign the emissive value to the right geometry

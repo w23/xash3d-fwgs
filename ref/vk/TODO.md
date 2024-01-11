@@ -1,3 +1,6 @@
+# 2024-01-11 E361
+- [x] fix zero-area polygon lights nanites, fixes #461
+
 # 2024-01-09 E360
 - [x] validate all intermediate and final outputs against invalid values, complain into log
 - [ ] brdf math surprising edge cases
