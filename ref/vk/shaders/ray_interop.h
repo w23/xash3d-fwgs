@@ -184,6 +184,7 @@ struct LightCluster {
 #define DEBUG_DISPLAY_INDIRECT_DIFF 12
 #define DEBUG_DISPLAY_INDIRECT_SPEC 13
 #define DEBUG_DISPLAY_TRIHASH 14
+#define DEBUG_DISPLAY_MATERIAL 15
 // add more when needed
 
 struct UniformBuffer {

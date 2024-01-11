@@ -153,22 +153,23 @@ static void parseDebugDisplayValue( void ) {
 
 	const char *cvalue = g_rtx.debug.rt_debug_display_only->string;
 #define LIST_DISPLAYS(X) \
-	X(BASECOLOR) \
-	X(BASEALPHA) \
-	X(EMISSIVE) \
-	X(NSHADE) \
-	X(NGEOM) \
-	X(LIGHTING) \
-	X(SURFHASH) \
-	X(TRIHASH) \
-	X(DIRECT) \
-	X(DIRECT_DIFF) \
-	X(DIRECT_SPEC) \
-	X(INDIRECT) \
-	X(INDIRECT_DIFF) \
-	X(INDIRECT_SPEC) \
+	X(BASECOLOR, "material base_color value") \
+	X(BASEALPHA, "material alpha value") \
+	X(EMISSIVE, "emissive color") \
+	X(NSHADE, "shading normal") \
+	X(NGEOM, "geometry normal") \
+	X(LIGHTING, "all lighting, direct and indirect, w/o base_color") \
+	X(SURFHASH, "each surface has random color") \
+	X(DIRECT, "direct lighting only, both diffuse and specular") \
+	X(DIRECT_DIFF, "direct diffuse lighting only") \
+	X(DIRECT_SPEC, "direct specular lighting only") \
+	X(INDIRECT, "indirect lighting only (bounced), diffuse and specular together") \
+	X(INDIRECT_DIFF, "indirect diffuse only") \
+	X(INDIRECT_SPEC, "indirect specular only") \
+	X(TRIHASH, "each triangle is drawn with random color") \
+	X(MATERIAL, "red = roughness, green = metalness") \
 
-#define X(suffix) \
+#define X(suffix, info) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
 		WARN("setting debug display to %s", "DEBUG_DISPLAY_"#suffix); \
 		g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_##suffix; \
@@ -179,7 +180,7 @@ LIST_DISPLAYS(X)
 
 	if (Q_strlen(cvalue) > 0) {
 		gEngine.Con_Printf("Invalid rt_debug_display_only mode %s. Valid modes are:\n", cvalue);
-#define X(suffix) gEngine.Con_Printf("\t%s\n", #suffix);
+#define X(suffix, info) gEngine.Con_Printf("\t%s -- %s\n", #suffix, info);
 LIST_DISPLAYS(X)
 #undef X
 	}
@@ -760,7 +761,7 @@ qboolean VK_RayInit( void )
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
 
-#define X(name) #name ", "
+#define X(name, info) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
 		"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
 #undef X

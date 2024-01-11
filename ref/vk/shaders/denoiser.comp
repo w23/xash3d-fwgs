@@ -234,6 +234,9 @@ void main() {
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_EMISSIVE) {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(imageLoad(emissive, pix).rgb), 0.)); return;
 		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_MATERIAL) {
+		imageStore(out_dest, pix, vec4(imageLoad(material_rmxx, pix).rg, 0., 0.)); return;
+		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NSHADE) {
 		vec3 geometry_normal, shading_normal;
 		readNormals(pix, geometry_normal, shading_normal);
@@ -377,7 +380,7 @@ void main() {
 	colour = LINEARtoSRGB(colour);
 
 // See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
-// Adding emissive_blend to the final color in the *incorrect* sRGB-Î³ space. It makes
+// Adding emissive_blend to the final color in the *incorrect* sRGB-¿ space. It makes
 // it look much more like the original. Adding emissive in the *correct* linear space differs
 // from the original a lot, and looks perceptively worse.
 	colour += legacy_blend.rgb;
