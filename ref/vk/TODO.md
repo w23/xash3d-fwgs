@@ -1,5 +1,9 @@
 # 2024-01-11 E361
 - [x] fix zero-area polygon lights nanites, fixes #461
+- [x] fix point light computation instabilites
+	- [ ] need proper sampling asap, as different instabilities approaches are visually different, and it's impossible to reason which one is preferable
+- [x] add material debug display mode
+- [ ] vulkan validation layers crashes on too many `debugPrintfEXT` messages
 
 # 2024-01-09 E360
 - [x] validate all intermediate and final outputs against invalid values, complain into log
