@@ -23,7 +23,7 @@ void R_VkSemaphoreDestroy(VkSemaphore sema);
 VkFence R_VkFenceCreate( qboolean signaled );
 void R_VkFenceDestroy(VkFence fence);
 
-void setSurfaceFormat( qboolean hdr_output_enabled )
+void setSurfaceFormat( qboolean hdr_output_enabled );
 void getSupportedHDRformats( void );
 
 // TODO move all these to vk_device.{h,c} or something
