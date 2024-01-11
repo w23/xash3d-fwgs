@@ -41,6 +41,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 		if (light_dot < 1e-5)
 			continue;
 
+		// TODO split into separate spotlihgts and point lights arrays
 		const float spot_dot = -dot(light_dir_norm, dir);
 		const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
 		if (spot_dot < stopdot2)
@@ -57,8 +58,8 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 					__LINE__, spot_dot, stopdot, stopdot2, spot_attenuation);
 			}
 #endif
-			const float kSpotAttenuationThreshold = 1e-3;
-			if (spot_attenuation < kSpotAttenuationThreshold)
+			// Skip the rest of the computation for points completely outside of the light cone
+			if (spot_attenuation <= 0.)
 				continue;
 		}
 
@@ -93,14 +94,15 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			// d2=4489108.500000 r2=1.000000 dist=2118.751465 spot_attenuation=0.092902 INVALID pdf=-316492608.000000
 			// Therefore, need to clamp denom with max
-			const float pdf = 1. / (max(1e-4, 1. - sqrt(d2 - r2) / dist) * spot_attenuation);
+			// TODO need better sampling right nao
+			const float one_over_pdf = max(0., 1. - sqrt(d2 - r2) / dist) * spot_attenuation;
 #ifdef DEBUG_VALIDATE_EXTRA
-			if (IS_INVALID(pdf) || pdf <= 0.) {
-				debugPrintfEXT("light.glsl:%d d2=%f r2=%f dist=%f spot_attenuation=%f INVALID pdf=%f",
-					__LINE__, d2, r2, dist, spot_attenuation, pdf);
+			if (IS_INVALID(one_over_pdf) || one_over_pdf < 0.) {
+				debugPrintfEXT("light.glsl:%d d2=%f r2=%f dist=%f spot_attenuation=%f INVALID one_over_pdf=%f",
+					__LINE__, d2, r2, dist, spot_attenuation, one_over_pdf);
 			}
 #endif
-			color /= pdf;
+			color *= one_over_pdf;
 		}
 
 		// if (dot(color,color) < color_culling_threshold)
