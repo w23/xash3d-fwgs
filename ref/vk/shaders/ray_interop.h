@@ -204,6 +204,8 @@ struct UniformBuffer {
 	float skybox_exposure;
 
 	uint debug_display_only;
+	// LDR/HDR
+	uint vk_display_dr_mode;
 };
 
 #undef PAD

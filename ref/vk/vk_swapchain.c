@@ -95,8 +95,8 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 			.pNext = NULL,
 			.surface = vk_core.surface.surface,
-			.imageFormat = g_swapchain.image_format,
-			.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR, // TODO get from surface_formats
+			.imageFormat = vk_core.output_surface.format,
+			.imageColorSpace = vk_core.output_surface.colorSpace,
 			.imageExtent.width = g_swapchain.width,
 			.imageExtent.height = g_swapchain.height,
 			.imageArrayLayers = 1,
@@ -190,9 +190,7 @@ qboolean R_VkSwapchainInit( VkRenderPass render_pass, VkFormat depth_format ) {
 /*
 [2023:10:09|13:03:52] Error: Validation: Validation Error: [ VUID-VkSwapchainCreateInfoKHR-imageFormat-01778 ] Object 0: handle = 0x555556af6a00, type = VK_OBJECT_TYPE_DEVICE; | MessageID = 0xc036022f | vkCreateSwapchainKHR(): pCreateInfo->imageFormat VK_FORMAT_B8G8R8A8_SRGB with tiling VK_IMAGE_TILING_OPTIMAL does not support usage that includes VK_IMAGE_USAGE_STORAGE_BIT. The Vulkan spec states: The implied image creation parameters of the swapchain must be supported as reported by vkGetPhysicalDeviceImageFormatProperties (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkSwapchainCreateInfoKHR-imageFormat-01778)
 */
-	//g_swapchain.image_format = VK_FORMAT_B8G8R8A8_SRGB;
-
-	g_swapchain.image_format = VK_FORMAT_B8G8R8A8_UNORM; // TODO get from surface_formats
+	g_swapchain.image_format = vk_core.output_surface.format;
 	g_swapchain.render_pass = render_pass;
 	g_swapchain.depth_format = depth_format;
 
@@ -295,4 +293,9 @@ void R_VkSwapchainPresent( uint32_t index, VkSemaphore done ) {
 		default:
 			XVK_CHECK(present_result);
 	}
+}
+
+// FIXME: remove this
+void switchSwapchain( void ) {
+	recreateSwapchainIfNeeded( true );
 }

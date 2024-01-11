@@ -243,6 +243,14 @@ void R_BeginFrame( qboolean clearScene ) {
 	vk_frame.width = g_frame.current.framebuffer.width;
 	vk_frame.height = g_frame.current.framebuffer.height;
 
+	if (vk_core.hdr_output && FBitSet( vk_hdr_output->flags, FCVAR_CHANGED )) {
+		setSurfaceFormat( true );
+		gEngine.Con_Printf("^1RESTART the game to display correctly!!!\n");
+		//switchSwapchain(); // FIXME CRASH
+	}
+	ClearBits( vk_hdr_output->flags, FCVAR_CHANGED );
+
+
 	VK_RenderBegin( vk_frame.rtx_enabled );
 
 	R_VkCombufBegin( frame->combuf );
@@ -261,7 +269,7 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	APROF_SCOPE_DECLARE_BEGIN(enqueue, __FUNCTION__);
 	const VkClearValue clear_value[] = {
-		{.color = {{1., 0., 0., 0.}}},
+		{.color = {{0., 0., 0., 0.}}}, // rasterization (clear) background
 		{.depthStencil = {1., 0.}} // TODO reverse-z
 	};
 

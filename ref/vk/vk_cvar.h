@@ -21,11 +21,16 @@ void VK_LoadCvarsAfterInit( void );
 	X(r_lightmap) \
 	X(r_infotool) \
 	X(vk_device_target_id) \
+	X(vk_hdr_output_format_target_id) \
+	X(vk_show_supported_HDR_formats) \
 	X(vk_debug_log) \
 	X(rt_capable) \
 	X(rt_force_disable) \
 	X(rt_enable) \
 	X(rt_bounces) \
+	X(vk_hdr_output_capable) \
+	X(vk_hdr_output) \
+	X(vk_debug_switch_swapchain_format) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

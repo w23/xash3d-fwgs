@@ -109,6 +109,19 @@ static const char* device_extensions_extra[] = {
 	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 };
 
+static const VkSurfaceFormatKHR supported_HDR_formats[] = {
+	{ VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_HDR10_ST2084_EXT },
+	{ VK_FORMAT_R16G16B16A16_SFLOAT, VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT },
+};
+static const VkSurfaceFormatKHR supported_LDR_formats[] = {
+	{ VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+	//{ VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+	//{ VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+	//{ VK_FORMAT_R8G8B8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+	//{ VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+};
+
+
 VkBool32 VKAPI_PTR debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
@@ -650,6 +663,36 @@ static qboolean createDevice( void ) {
 	gEngine.Con_Printf( S_ERROR "No compatibe Vulkan devices found. Vulkan render will not be available\n" );
 	return false;
 }
+
+
+void setSurfaceFormat( qboolean hdr_output_enabled )
+{
+	// TODO: add LDR formats too
+	vk_core.output_surface.format = supported_LDR_formats[0].format;
+	vk_core.output_surface.colorSpace = supported_LDR_formats[0].colorSpace;
+
+	uint32_t vk_display_dr_mode = (uint32_t)vk_hdr_output->value-1;
+
+	if (hdr_output_enabled && vk_display_dr_mode <= ARRAYSIZE(supported_HDR_formats)) {
+		for (int i = 0; i < vk_core.surface.num_surface_formats; ++i) {
+			uint32_t format = vk_core.surface.surface_formats[i].format;
+			uint32_t colorSpace = vk_core.surface.surface_formats[i].colorSpace;
+			if (format == supported_HDR_formats[vk_display_dr_mode].format 
+			&& colorSpace == supported_HDR_formats[vk_display_dr_mode].colorSpace) {
+				vk_core.output_surface.format = format;
+				vk_core.output_surface.colorSpace = colorSpace;
+				break;
+			}
+		}
+	}
+	gEngine.Con_Reportf("Selected surface format:\n");
+	gEngine.Con_Reportf("\t%s(%u) %s(%u)\n",
+		R_VkFormatName(vk_core.output_surface.format), vk_core.output_surface.format,
+		R_VkColorSpaceName(vk_core.output_surface.colorSpace), vk_core.output_surface.colorSpace
+	);
+}
+
+
 static qboolean initSurface( void )
 {
 	XVK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(vk_core.physical_device.device, vk_core.surface.surface, &vk_core.surface.num_present_modes, vk_core.surface.present_modes));
@@ -674,8 +717,22 @@ static qboolean initSurface( void )
 			R_VkColorSpaceName(vk_core.surface.surface_formats[i].colorSpace), vk_core.surface.surface_formats[i].colorSpace);
 	}
 
+	// check support HDR
+	for (int32_t i = 0; i < vk_core.surface.num_surface_formats; ++i) {
+		for (int32_t ii = 0; ii < ARRAYSIZE(supported_HDR_formats); ++ii) {
+			if (vk_core.surface.surface_formats[i].format == supported_HDR_formats[ii].format 
+			&&  vk_core.surface.surface_formats[i].colorSpace == supported_HDR_formats[ii].colorSpace) {
+				vk_core.hdr_output = true;
+				break;
+			}
+		}
+	}
+
+	setSurfaceFormat(CVAR_TO_BOOL(vk_hdr_output));
+
 	return true;
 }
+
 
 // TODO modules
 /*
@@ -713,6 +770,7 @@ qboolean R_VkInit( void )
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
+	vk_core.hdr_output = false;
 
 	VK_LoadCvars();
 
@@ -771,13 +829,13 @@ qboolean R_VkInit( void )
 	if (!createDevice())
 		return false;
 
-	VK_LoadCvarsAfterInit();
-
 	if (!R_VkCombuf_Init())
 		return false;
 
 	if (!initSurface())
 		return false;
+
+	VK_LoadCvarsAfterInit();
 
 	if (!VK_DevMemInit())
 		return false;
@@ -912,4 +970,32 @@ VkFence R_VkFenceCreate( qboolean signaled ) {
 
 void R_VkFenceDestroy(VkFence fence) {
 	vkDestroyFence(vk_core.device, fence, NULL);
+}
+
+
+void getSupportedHDRformats( void ) {
+	// TODO: better formating
+	gEngine.Con_Printf( "------------------------------------------------\n" );
+	gEngine.Con_Printf("Selected surface format:\n");
+	gEngine.Con_Printf("%s+%s\n",
+		R_VkFormatName(vk_core.output_surface.format),
+		R_VkColorSpaceName(vk_core.output_surface.colorSpace)
+	);
+	gEngine.Con_Printf( "------------------------------------------------\n" );
+	gEngine.Con_Printf("Supported HDR formats:\n");
+	gEngine.Con_Printf( "ID Format\n" );
+	gEngine.Con_Printf( "------------------------------------------------\n" );
+	for (int32_t i = 0; i < vk_core.surface.num_surface_formats; ++i) {
+		for (int32_t ii = 0; ii < ARRAYSIZE(supported_HDR_formats); ++ii) {
+			if (vk_core.surface.surface_formats[i].format == supported_HDR_formats[ii].format 
+			&& vk_core.surface.surface_formats[i].colorSpace == supported_HDR_formats[ii].colorSpace) {
+				gEngine.Con_Printf("%u %s+%s\n",
+					ii+1,
+					R_VkFormatName(vk_core.surface.surface_formats[i].format),
+					R_VkColorSpaceName(vk_core.surface.surface_formats[i].colorSpace)
+				);
+				break;
+			}
+		}
+	}
 }

@@ -2,6 +2,7 @@
 
 #include "utils.glsl"
 #include "color_spaces.glsl"
+#include "tonemapping.glsl"
 
 #define GLSL
 #include "ray_interop.h"
@@ -49,32 +50,6 @@ layout(set = 0, binding = 19, rgba16f) uniform readonly image2D legacy_blend;
 
 const int INDIRECT_SCALE = 2;
 
-// Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
-vec3 aces_tonemap(vec3 color){
-	mat3 m1 = mat3(
-		0.59719, 0.07600, 0.02840,
-		0.35458, 0.90834, 0.13383,
-		0.04823, 0.01566, 0.83777
-	);
-	mat3 m2 = mat3(
-		1.60475, -0.10208, -0.00327,
-		-0.53108,  1.10813, -0.07276,
-		-0.07367, -0.00605,  1.07602
-	);
-	vec3 v = m1 * color;
-	vec3 a = v * (v + 0.0245786) - 0.000090537;
-	vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
-	//return pow(clamp(m2 * (a / b), 0.0, 1.0), vec3(1.0 / 2.2));
-	return clamp(m2 * (a / b), 0.0, 1.0);
-}
-
-vec3 reinhard(vec3 color){
-	return color / (color + 1.0);
-}
-
-vec3 reinhard02(vec3 c, vec3 Cwhite2) {
-	return c * (1. + c / Cwhite2) / (1. + c);
-}
 
 float normpdf2(in float x2, in float sigma) { return 0.39894*exp(-0.5*x2/(sigma*sigma))/sigma; }
 float normpdf(in float x, in float sigma) { return normpdf2(x*x, sigma); }
@@ -313,14 +288,35 @@ void main() {
 	colour += imageLoad(emissive, pix).rgb;
 	// Revealage. TODO: which colorspace?
 	colour *= legacy_blend.a;
-
-	colour = LINEARtoSRGB(colour);
-
 // See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
 // Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
 // it look much more like the original. Adding emissive in the *correct* linear space differs
 // from the original a lot, and looks perceptively worse.
-	colour += legacy_blend.rgb;
+
+	switch (ubo.ubo.vk_display_dr_mode) {
+		// LDR: VK_FORMAT_B8G8R8A8_UNORM(44) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		case LDR_B8G8R8A8_UNORM_SRGB_NONLINEAR:
+			colour = LINEARtoSRGB(colour);
+			colour += legacy_blend.rgb;
+			break;
+
+		// LDR: VK_FORMAT_R8G8B8A8_SRGB(43) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_R8G8B8A8_UNORM(37) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_B8G8R8A8_SRGB(50) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_A2B10G10R10_UNORM_PACK32(64) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+
+		// HDR: VK_FORMAT_R16G16B16A16_SFLOAT(97) VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT(1000104002)
+		case HDR_R16G16B16A16_SFLOAT_EXTENDED_SRGB_LINEAR:
+			colour += SRGBtoLINEAR(legacy_blend.rgb*5); // hack
+			break;
+
+		// HDR: VK_FORMAT_A2B10G10R10_UNORM_PACK32(64) VK_COLOR_SPACE_HDR10_ST2084_EXT(1000104008)
+		case HDR_A2B10G10R10_UNORM_PACK32_HDR10_ST2084:
+			colour = linearToPQ(colour, 100);
+			colour += agx(SRGBtoLINEAR(legacy_blend.rgb)*0.5); // hack
+			break;
+	}
+
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
