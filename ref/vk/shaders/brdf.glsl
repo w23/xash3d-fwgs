@@ -151,6 +151,15 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 #endif
 
 	out_specular = fresnel * ggxd * ggxv;
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALID3(out_diffuse) || any(lessThan(out_diffuse, vec3(0.)))) {
+		debugPrintfEXT("%s:%d INVALID out_diffuse=(%f,%f,%f)", __FILE__, __LINE__, PRIVEC3(out_diffuse));
+	}
+	if (IS_INVALID3(out_specular) || any(lessThan(out_specular, vec3(0.)))) {
+		debugPrintfEXT("%s:%d INVALID out_specular=(%f,%f,%f)", __FILE__, __LINE__, PRIVEC3(out_specular));
+	}
+#endif
 }
 
 void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular) {

@@ -30,9 +30,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			continue;
 
 		const vec4 origin_r = lights.m.point_lights[i].origin_r;
-		const float stopdot = lights.m.point_lights[i].color_stopdot.a;
 		const vec3 dir = lights.m.point_lights[i].dir_stopdot2.xyz;
-		const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
 		const bool is_environment = (lights.m.point_lights[i].environment != 0);
 
 		const vec3 light_dir = is_environment ? -dir : (origin_r.xyz - P); // TODO need to randomize sampling direction for environment soft shadow
@@ -44,19 +42,34 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			continue;
 
 		const float spot_dot = -dot(light_dir_norm, dir);
+		const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
 		if (spot_dot < stopdot2)
 			continue;
 
-		float spot_attenuation = 1.f;
-		if (spot_dot < stopdot)
+		const float stopdot = lights.m.point_lights[i].color_stopdot.a;
+		float spot_attenuation = 1.;
+		// For non-spotlighths stopdot will be -1.. spot_dot can never be less than that
+		if (spot_dot < stopdot) {
 			spot_attenuation = (spot_dot - stopdot2) / (stopdot - stopdot2);
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALID(spot_attenuation)) {
+				debugPrintfEXT("light.glsl:%d spot_dot=%f stopdot=%f stopdot2=%f INVALID spot_attenuation=%f",
+					__LINE__, spot_dot, stopdot, stopdot2, spot_attenuation);
+			}
+#endif
+			const float kSpotAttenuationThreshold = 1e-3;
+			if (spot_attenuation < kSpotAttenuationThreshold)
+				continue;
+		}
 
 		//float fdist = 1.f;
 		float light_dist = 1e5; // TODO this is supposedly not the right way to do shadows for environment lights.m. qrad checks for hitting SURF_SKY, and maybe we should too?
 		const float d2 = dot(light_dir, light_dir);
 		const float r2 = origin_r.w * origin_r.w;
 		if (is_environment) {
-			color *= 2; // TODO WHY?
+			// Empirical? TODO WHY?
+			// TODO move to native code
+			color *= 2;
 		} else {
 			if (radius < 1e-3)
 				continue;
@@ -77,7 +90,16 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			//const float pdf = 1.f / (fdist * light_dot * spot_attenuation);
 			//const float pdf = TWO_PI / asin(radius / dist);
-			const float pdf = 1. / ((1. - sqrt(d2 - r2) / dist) * spot_attenuation);
+
+			// d2=4489108.500000 r2=1.000000 dist=2118.751465 spot_attenuation=0.092902 INVALID pdf=-316492608.000000
+			// Therefore, need to clamp denom with max
+			const float pdf = 1. / (max(1e-4, 1. - sqrt(d2 - r2) / dist) * spot_attenuation);
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALID(pdf) || pdf <= 0.) {
+				debugPrintfEXT("light.glsl:%d d2=%f r2=%f dist=%f spot_attenuation=%f INVALID pdf=%f",
+					__LINE__, d2, r2, dist, spot_attenuation, pdf);
+			}
+#endif
 			color /= pdf;
 		}
 
@@ -141,6 +163,7 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 #if LIGHT_POLYGON
 	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular);
 	// These constants are empirical. There's no known math reason behind them
+	// TODO move to native code
 	diffuse /= 25.0;
 	specular /= 25.0;
 #endif
@@ -149,6 +172,7 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
 	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular);
 	// These constants are empirical. There's no known math reason behind them
+	// TODO move to native code
 	ldiffuse /= 4.;
 	lspecular /= 4.;
 
