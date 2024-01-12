@@ -52,9 +52,16 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			const vec3 dir_sample_z = sampleConeZ(rnd, cos_theta_max);
 			light_dir = normalize(orthonormalBasisZ(-spotlight_dir) * dir_sample_z);
+
+			// If light sample is below horizon, skip
+			const float light_dot = dot(light_dir, N);
+			if (light_dot < 1e-5)
+				continue;
 		} else {
 			// Spherical lights
 			const vec3 light_pos = lights.m.point_lights[i].origin_r.xyz;
+
+			// TODO store r^2 in the native code
 			const float light_r = lights.m.point_lights[i].origin_r.w;
 			const float light_r2 = light_r * light_r;
 
@@ -62,14 +69,24 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			light_dir = light_pos - P;
 			const float light_dist2 = dot(light_dir, light_dir);
 
-			// Light is too close
-			if (light_r2 >= light_dist2)
+			// Light is too close, skip
+			const float d2_minus_r2 = light_dist2 - light_r2;
+			if (d2_minus_r2 <= 0.)
 				continue;
 
 			light_dist = sqrt(light_dist2);
 
 			// Sample on the visible disc
-			const float cos_theta_max = sqrt(light_dist2 - light_r2) / light_dist;
+			const float cos_theta_max = sqrt(d2_minus_r2) / light_dist;
+
+#ifdef DEBUG_VALIDATE_EXTRA
+		if (IS_INVALID(cos_theta_max) || cos_theta_max < 0. || cos_theta_max > 1.) {
+			debugPrintfEXT("light.glsl:%d P=(%f,%f,%f) light_pos=(%f,%f,%f) light_dist2=%f light_r2=%f INVALID cos_theta_max=%f",
+				__LINE__, PRIVEC3(P), PRIVEC3(light_pos), light_dist2, light_r2, cos_theta_max);
+			continue;
+		}
+#endif
+
 			const vec3 dir_sample_z = sampleConeZ(rnd, cos_theta_max);
 			const mat3 basis = orthonormalBasisZ(light_dir / light_dist);
 			light_dir = normalize(basis * dir_sample_z);
@@ -88,6 +105,11 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 					__LINE__, cos_theta_max, light_dist, PRIVEC3(dir_sample_z), PRIVEC3(light_dir));
 			}
 #endif
+
+			// If light sample is below horizon, skip
+			const float light_dot = dot(light_dir, N);
+			if (light_dot < 1e-5)
+				continue;
 
 			float spot_attenuation = 1.;
 			// Spotlights
@@ -127,15 +149,6 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			color *= one_over_pdf;
 		} // Sphere/spot lights
-
-		// If light sample is below horizon, skip
-		const float light_dot = dot(light_dir, N);
-		if (light_dot < 1e-5)
-			continue;
-
-		// TODO this doesn't make any sense, we should just filter out lights that are too dark in the native code
-		if (dot(color,color) < color_culling_threshold)
-			continue;
 
 		vec3 ldiffuse, lspecular;
 		evalSplitBRDF(N, light_dir, view_dir, material, ldiffuse, lspecular);
