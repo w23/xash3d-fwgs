@@ -54,8 +54,8 @@ void main() {
 		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
 	}
 
-	DEBUG_VALIDATE_RANGE_VEC3(diffuse, 0., 1e6);
-	DEBUG_VALIDATE_RANGE_VEC3(specular, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));

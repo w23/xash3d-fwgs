@@ -1,3 +1,10 @@
+# 2024-01-12 E362
+- [ ] point→spherical light sampling
+	- [x] 1/pdf → pdf *= 2π
+	- [x] disk sampling
+	- [ ] modify radius in entity patches
+	- [ ] adjust brightness based on radius?
+
 # 2024-01-11 E361
 - [x] fix zero-area polygon lights nanites, fixes #461
 	- [x] c1a1a NaNs are still there

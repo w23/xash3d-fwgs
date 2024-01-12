@@ -1,6 +1,7 @@
 #ifndef UTILS_GLSL_INCLUDED
 #define UTILS_GLSL_INCLUDED
 
+// Compared to builtin GLSL sign() will be 1.0 if v == 0.
 float signP(float v) { return v >= 0.f ? 1.f : -1.f; }
 vec2 signP(vec2 v) { return vec2(signP(v.x), signP(v.y)); }
 

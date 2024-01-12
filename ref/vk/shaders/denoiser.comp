@@ -353,8 +353,8 @@ void main() {
 		}
 #endif
 
-		DEBUG_VALIDATE_RANGE_VEC3(diffuse, 0., 1e6);
-		DEBUG_VALIDATE_RANGE_VEC3(specular, 0., 1e6);
+		DEBUG_VALIDATE_RANGE_VEC3("denoiser.diffuse", diffuse, 0., 1e6);
+		DEBUG_VALIDATE_RANGE_VEC3("denoiser.specular", specular, 0., 1e6);
 
 		imageStore(out_temporal_diffuse, pix, vec4(diffuse, depth));
 		imageStore(out_temporal_specular, pix, vec4(specular, 0./*unused*/));
@@ -385,7 +385,7 @@ void main() {
 // from the original a lot, and looks perceptively worse.
 	colour += legacy_blend.rgb;
 
-	DEBUG_VALIDATE_RANGE_VEC3(colour, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("denoiser.colour", colour, 0., 1e6);
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }

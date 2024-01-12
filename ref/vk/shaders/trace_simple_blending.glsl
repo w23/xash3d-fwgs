@@ -129,7 +129,7 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
 		}
 	}
 
-	DEBUG_VALIDATE_RANGE_VEC3(emissive, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("blend.emissive", emissive, 0., 1e6);
 	DEBUG_VALIDATE_RANGE(revealage, 0., 1.);
 
 	return vec4(emissive, revealage);

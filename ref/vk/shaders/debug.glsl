@@ -44,7 +44,7 @@
 #define DEBUG_VALIDATE_VEC3(v, msg)
 #elif !defined(DEBUG_VALIDATE_PRINT) // #indef DEBUG_VALIDATE
 // DEBUG_VALIDATE is defined, DEBUG_VALIDATE_PRINT are not
-#define DEBUG_VALIDATE_RANGE_VEC3(v, min_v, max_v) \
+#define DEBUG_VALIDATE_RANGE_VEC3(s, v, min_v, max_v) \
 	if (IS_INVALID3(v) || any(lessThan(v,vec3(min_v))) || any(greaterThan(v,vec3(max_v)))) { \
 		v = clamp(v, vec3(min_v), vec3(max_v)); \
 	}
@@ -58,14 +58,14 @@
 	}
 #else // #ifndef DEBUG_VALIDATE_PRINT
 // Both DEBUG_VALIDATE and DEBUG_VALIDATE_PRINT are defined
-#define DEBUG_VALIDATE_RANGE_VEC3(v, min_v, max_v) \
+#define DEBUG_VALIDATE_RANGE_VEC3(s, v, min_v, max_v) \
 	if (IS_INVALID3(v) || any(lessThan(v,vec3(min_v))) || any(greaterThan(v,vec3(max_v)))) { \
-		debugPrintfEXT("%s:%d INVALID vec3=(%f, %f, %f)", __FILE__, __LINE__, PRIVEC3(v)); \
+		debugPrintfEXT("%d INVALID vec3=(%f, %f, %f)", __LINE__, PRIVEC3(v)); \
 		v = clamp(v, vec3(min_v), vec3(max_v)); \
 	}
 #define DEBUG_VALIDATE_RANGE(v, min_v, max_v) \
 	if (IS_INVALID(v) || v < min_v || v > max_v) { \
-		debugPrintfEXT("%s:%d INVALID %f", __FILE__, __LINE__, v); \
+		debugPrintfEXT("%d INVALID %f", __LINE__, v); \
 		v = clamp(v, min_v, max_v); \
 	}
 // msg should begin with "%d" for __LINE__

@@ -23,6 +23,28 @@ struct MaterialProperties {
 };
 #endif
 
+// Ray Tracing Gems, §16.6.3
+// Sample cone oriented in Z+ direction
+vec3 sampleConeZ(vec2 rnd, float cos_theta_max) {
+	const float cos_theta = (1. - rnd.x) + rnd.x * cos_theta_max;
+	const float sin_theta = sqrt(1. - clamp(cos_theta * cos_theta, 0., 1.));
+	const float phi = rnd.y * 2. * kPi;
+	return vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+}
+
+// Building an Orthonormal Basis, Revisited
+// https://jcgt.org/published/0006/01/01/
+mat3 orthonormalBasisZ(vec3 z) {
+	const float s = signP(z.z);
+	const float a = -1. / (s + z.z);
+	const float b = z.x * z.y * a;
+	return mat3(
+		vec3(1. + s * z.x * z.x * a, s * b, -s * z.x),
+		vec3(b, s + z.y * z.y * a, -z.y),
+		z
+	);
+}
+
 float ggxD(float a2, float h_dot_n) {
 	if (h_dot_n <= 0.)
 		return 0.;
@@ -262,7 +284,7 @@ vec3 rotatePoint(vec4 q, vec3 v) {
 }
 // Samples a direction within a hemisphere oriented along +Z axis with a cosine-weighted distribution
 // Source: "Sampling Transformations Zoo" in Ray Tracing Gems by Shirley et al.
-vec3 sampleHemisphere(vec2 u, out float pdf) {
+vec3 sampleHemisphereCosine(vec2 u, out float pdf) {
 	float a = sqrt(u.x);
 	float b = 2. * kPi * u.y;
 
@@ -280,7 +302,7 @@ vec3 sampleHemisphere(vec2 u, out float pdf) {
 vec3 sampleCosineHemisphereAroundVectorUnnormalizedLocalFrame(vec2 rnd, vec3 n) {
 	const vec4 qRotationToZ = getRotationToZAxis(n);
 	float pdf;
-	return rotatePoint(invertRotation(qRotationToZ), sampleHemisphere(rnd, pdf));
+	return rotatePoint(invertRotation(qRotationToZ), sampleHemisphereCosine(rnd, pdf));
 }
 #endif // #ifdef TEST_LOCAL_FRAME
 
