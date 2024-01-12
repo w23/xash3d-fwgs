@@ -276,8 +276,8 @@ void main() {
 		diffuse = vec3(0.);
 	}
 #else
-	DEBUG_VALIDATE_RANGE_VEC3(diffuse, 0., 1e6);
-	DEBUG_VALIDATE_RANGE_VEC3(specular, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("bounce.diffuse", diffuse, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("bounce.specular", specular, 0., 1e6);
 #endif
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));

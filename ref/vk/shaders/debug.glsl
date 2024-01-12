@@ -39,7 +39,7 @@
 
 #ifndef DEBUG_VALIDATE
 // Dummy for no validation
-#define DEBUG_VALIDATE_RANGE_VEC3(v, min_v, max_v)
+#define DEBUG_VALIDATE_RANGE_VEC3(s, v, min_v, max_v)
 #define DEBUG_VALIDATE_RANGE(v, min_v, max_v)
 #define DEBUG_VALIDATE_VEC3(v, msg)
 #elif !defined(DEBUG_VALIDATE_PRINT) // #indef DEBUG_VALIDATE
