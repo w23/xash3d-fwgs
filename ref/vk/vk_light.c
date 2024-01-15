@@ -1254,8 +1254,8 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 		vk_point_light_t *const src = g_lights_.point_lights + i;
 		struct PointLight *const dst = metadata->point_lights + i;
 
-		VectorCopy(src->origin, dst->origin_r);
-		dst->origin_r[3] = src->radius;
+		VectorCopy(src->origin, dst->origin_r2);
+		dst->origin_r2[3] = src->radius * src->radius;
 
 		VectorCopy(src->color, dst->color_stopdot);
 		dst->color_stopdot[3] = src->stopdot;

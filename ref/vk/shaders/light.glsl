@@ -64,18 +64,14 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 				continue;
 		} else {
 			// Spherical lights
-			const vec3 light_pos = lights.m.point_lights[i].origin_r.xyz;
-
-			// TODO store r^2 in the native code
-			const float light_r = lights.m.point_lights[i].origin_r.w;
+			const vec3 light_pos = lights.m.point_lights[i].origin_r2.xyz;
+			const float light_r2 = lights.m.point_lights[i].origin_r2.w;
 
 #ifdef DEBUG_VALIDATE_EXTRA
-			if (IS_INVALID(light_r) || light_r <= 0.) {
-				debugPrintfEXT("light %d INVALID light_r = %f", i, light_r);
+			if (IS_INVALID(light_r2) || light_r2 <= 0.) {
+				debugPrintfEXT("light %d INVALID light_r2 = %f", i, light_r2);
 			}
 #endif
-
-			const float light_r2 = light_r * light_r;
 
 			//const vec3 ld = light_pos - P;
 			light_dir = light_pos - P;
