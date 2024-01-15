@@ -868,6 +868,9 @@ static qboolean addDlight( const dlight_t *dlight ) {
 
 	scaler = k_threshold / (max_comp * sphereSolidAngleFromDistDiv2Pi(k_light_radius, dlight->radius));
 
+	// These constants are empirical. There's no known math reason behind them
+	scaler /= 25.;
+
 	VectorSet(
 		color,
 		dlight->color.r * scaler,
@@ -887,11 +890,13 @@ static void processStaticPointLights( void ) {
 	for (int i = 0; i < g_map_entities.num_lights; ++i) {
 		const vk_light_entity_t *le = g_map_entities.lights + i;
 		const float default_radius = 2.f; // FIXME tune
-		const float hack_attenuation = .1f; // FIXME tune
-		const float hack_attenuation_spot = .1f; // FIXME tune
 		const float radius = le->radius > 0.f ? le->radius : default_radius;
-		int index;
 
+		// These constants are empirical. There's no known math reason behind them
+		const float hack_attenuation = .1f / 25.f; // FIXME tune
+		const float hack_attenuation_spot = .1f / 25.f; // FIXME tune
+
+		int index;
 		switch (le->type) {
 			case LightTypePoint:
 				index = addPointLight(le->origin, le->color, radius, le->style, hack_attenuation);
@@ -1089,7 +1094,12 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		poly->vertices.offset = g_lights_.num_polygon_vertices;
 		poly->vertices.count = addpoly->num_vertices;
 
-		VectorCopy(addpoly->emissive, poly->emissive);
+		{
+			// These constants are empirical. There's no known math reason behind them
+			const float hack_attenuation_poly = 1.f / 25.f;
+			VectorScale(addpoly->emissive, hack_attenuation_poly, poly->emissive);
+		}
+
 		VectorSet(poly->center, 0, 0, 0);
 		VectorSet(normal, 0, 0, 0);
 

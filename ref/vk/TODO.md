@@ -2,12 +2,14 @@
 - [x] filter out invalid (r=0, etc) lights in native
 	- [-] already do; it seems that clusters are not getting updates → see #730
 - [x] pass point lights r² directly?
-- [ ] move empirical scaling to native code
+- [x] move empirical scaling to native code
 - [ ] modify point light radius in entity patches
-- [ ] adjust brightness based on radius?
+	- [ ] adjust brightness based on radius?
 - [ ] P NaNs
 - [ ] patchable sun angle
 - [ ] common intersection-local-normal-oriented basis
+- [ ] add direct_{diff,spec} to rendertests
+	- [ ] and rerun tests for vulkan to get new gold images
 
 # 2024-01-12 E362
 - [ ] point→spherical light sampling

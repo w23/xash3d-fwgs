@@ -207,20 +207,11 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 
 #if LIGHT_POLYGON
 	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular);
-	// These constants are empirical. There's no known math reason behind them
-	// TODO move to native code
-	diffuse /= 25.0;
-	specular /= 25.0;
 #endif
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
 	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular);
-	// These constants are empirical. There's no known math reason behind them
-	// TODO move to native code
-	ldiffuse /= 25.;
-	lspecular /= 25.;
-
 	diffuse += ldiffuse;
 	specular += lspecular;
 #endif
