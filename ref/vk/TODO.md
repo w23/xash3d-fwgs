@@ -3,8 +3,8 @@
 	- [-] already do; it seems that clusters are not getting updates → see #730
 - [x] pass point lights r² directly?
 - [x] move empirical scaling to native code
-- [ ] modify point light radius in entity patches
-	- [ ] adjust brightness based on radius?
+- [x] modify point light radius in entity patches → already done
+	- [x] adjust brightness based on radius? → already done
 - [ ] P NaNs
 - [ ] patchable sun angle
 - [ ] common intersection-local-normal-oriented basis

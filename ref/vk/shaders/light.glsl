@@ -85,7 +85,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			light_dist = sqrt(light_dist2);
 
 			// Sample on the visible disc
-			const float cos_theta_max = sqrt(d2_minus_r2) / light_dist;
+			const float cos_theta_max = min(1., sqrt(d2_minus_r2) / light_dist);
 
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALID(cos_theta_max) || cos_theta_max < 0. || cos_theta_max > 1.) {
