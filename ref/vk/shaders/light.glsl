@@ -25,6 +25,11 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 	const uint num_point_lights = uint(light_grid.clusters_[cluster_index].num_point_lights);
 	for (uint j = 0; j < num_point_lights; ++j) {
 		const uint i = uint(light_grid.clusters_[cluster_index].point_lights[j]);
+
+		// HACK: work around corrupted/stale cluster indexes
+		// See https://github.com/w23/xash3d-fwgs/issues/730
+		if (i >= lights.m.num_point_lights)
+			continue;
 #else
 	for (uint i = 0; i < lights.m.num_point_lights; ++i) {
 #endif
@@ -63,6 +68,13 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			// TODO store r^2 in the native code
 			const float light_r = lights.m.point_lights[i].origin_r.w;
+
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALID(light_r) || light_r <= 0.) {
+				debugPrintfEXT("light %d INVALID light_r = %f", i, light_r);
+			}
+#endif
+
 			const float light_r2 = light_r * light_r;
 
 			//const vec3 ld = light_pos - P;
