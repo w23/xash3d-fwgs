@@ -189,12 +189,13 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	const uint cluster_index = uint(dot(light_cell, ivec3(1, lights.m.grid_size.x, lights.m.grid_size.x * lights.m.grid_size.y)));
 
 #ifdef USE_CLUSTERS
-	if (any(greaterThanEqual(light_cell, lights.m.grid_size)) || cluster_index >= MAX_LIGHT_CLUSTERS)
-		return; // vec3(1., 0., 0.);
+	if (any(greaterThanEqual(light_cell, lights.m.grid_size)) || cluster_index >= MAX_LIGHT_CLUSTERS) {
+#ifdef DEBUG_VALIDATE_EXTRA
+		debugPrintfEXT("light_cell=(%d,%d,%d) OOB size=(%d, %d, %d)", PRIVEC3(light_cell), PRIVEC3(lights.m.grid_size));
 #endif
-
-	//diffuse = specular = vec3(1.);
-	//return;
+		return; // vec3(1., 0., 0.);
+	}
+#endif
 
 	// const uint cluster_offset = cluster_index * LIGHT_CLUSTER_SIZE + HACK_OFFSET;
 	// const int num_dlights = int(light_grid.clusters_data[cluster_offset + LIGHT_CLUSTER_NUM_DLIGHTS_OFFSET]);
