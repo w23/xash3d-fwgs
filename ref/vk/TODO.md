@@ -1,9 +1,18 @@
+# 2024-01-15 E365
+- [x] filter out invalid (r=0, etc) lights in native
+	- [-] already do; it seems that clusters are not getting updates → see #730
+- [ ] pass point lights r² directly?
+- [ ] move empirical scaling to native code
+- [ ] modify point light radius in entity patches
+- [ ] adjust brightness based on radius?
+- [ ] P NaNs
+- [ ] patchable sun angle
+- [ ] common intersection-local-normal-oriented basis
+
 # 2024-01-12 E362
 - [ ] point→spherical light sampling
 	- [x] 1/pdf → pdf *= 2π
 	- [x] disk sampling
-	- [ ] modify radius in entity patches
-	- [ ] adjust brightness based on radius?
 
 # 2024-01-11 E361
 - [x] fix zero-area polygon lights nanites, fixes #461
