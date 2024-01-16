@@ -147,6 +147,7 @@ VkBool32 VKAPI_PTR debugCallback(
 		debug_break();
 #endif
 	}
+
 	return VK_FALSE;
 }
 
@@ -451,7 +452,7 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 	}
 
 	Mem_Free(physical_devices);
-	
+
 	if (!has_rt) {
 		gEngine.Con_Printf( "^6===================================================^7\n" );
 		gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");
@@ -685,6 +686,39 @@ void setSurfaceFormat( qboolean hdr_output_enabled )
 			}
 		}
 	}
+
+	if (vk_core.hdr_output) { // update vk_hdr_output description cvar
+		char vk_hdr_output_description[4096];
+		char vk_hdr_output_description_format_list[3840];
+		vk_hdr_output_description[0] = 0;
+		vk_hdr_output_description_format_list[0] = 0;
+		for (int32_t i = 0; i < vk_core.surface.num_surface_formats; ++i) {
+			for (int32_t ii = 0; ii < ARRAYSIZE(supported_HDR_formats); ++ii) {
+				if (vk_core.surface.surface_formats[i].format == supported_HDR_formats[ii].format 
+				&& vk_core.surface.surface_formats[i].colorSpace == supported_HDR_formats[ii].colorSpace) {
+					char vk_hdr_output_format[196];
+					vk_hdr_output_format[0] = 0;
+					Q_snprintf(vk_hdr_output_format, sizeof(vk_hdr_output_format), "\t ^2%u^7, ^5%s+%s^7\n",
+						ii+1,
+						R_VkFormatName(vk_core.surface.surface_formats[i].format),
+						R_VkColorSpaceName(vk_core.surface.surface_formats[i].colorSpace)
+					);
+					Q_strncat(vk_hdr_output_description_format_list, vk_hdr_output_format, sizeof(vk_hdr_output_description_format_list));
+					break;
+				}
+			}
+		}
+		Q_snprintf(vk_hdr_output_description, sizeof(vk_hdr_output_description), 
+			"EXPERIMENTAL: High Dynamic Range output mode (Warning: ^1You must enable HDR in the OS settings beforehand^3)\n\tSelected surface format (^2mode^7, ^5format^7):\n\t^2%s^7, ^5%s+%s^7\n\tSupported HDR formats (^2mode^7, ^5format^7):\n",
+			vk_hdr_output->string,
+			R_VkFormatName(vk_core.output_surface.format),
+			R_VkColorSpaceName(vk_core.output_surface.colorSpace)
+		);
+		Q_strncat(vk_hdr_output_description, vk_hdr_output_description_format_list, sizeof(vk_hdr_output_description));
+		vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", vk_hdr_output->string, FCVAR_GLCONFIG, vk_hdr_output_description);
+		ClearBits(vk_hdr_output->flags, FCVAR_CHANGED);
+	}
+
 	gEngine.Con_Reportf("Selected surface format:\n");
 	gEngine.Con_Reportf("\t%s(%u) %s(%u)\n",
 		R_VkFormatName(vk_core.output_surface.format), vk_core.output_surface.format,
@@ -970,32 +1004,4 @@ VkFence R_VkFenceCreate( qboolean signaled ) {
 
 void R_VkFenceDestroy(VkFence fence) {
 	vkDestroyFence(vk_core.device, fence, NULL);
-}
-
-
-void getSupportedHDRformats( void ) {
-	// TODO: better formating
-	gEngine.Con_Printf( "------------------------------------------------\n" );
-	gEngine.Con_Printf("Selected surface format:\n");
-	gEngine.Con_Printf("%s+%s\n",
-		R_VkFormatName(vk_core.output_surface.format),
-		R_VkColorSpaceName(vk_core.output_surface.colorSpace)
-	);
-	gEngine.Con_Printf( "------------------------------------------------\n" );
-	gEngine.Con_Printf("Supported HDR formats:\n");
-	gEngine.Con_Printf( "ID Format\n" );
-	gEngine.Con_Printf( "------------------------------------------------\n" );
-	for (int32_t i = 0; i < vk_core.surface.num_surface_formats; ++i) {
-		for (int32_t ii = 0; ii < ARRAYSIZE(supported_HDR_formats); ++ii) {
-			if (vk_core.surface.surface_formats[i].format == supported_HDR_formats[ii].format 
-			&& vk_core.surface.surface_formats[i].colorSpace == supported_HDR_formats[ii].colorSpace) {
-				gEngine.Con_Printf("%u %s+%s\n",
-					ii+1,
-					R_VkFormatName(vk_core.surface.surface_formats[i].format),
-					R_VkColorSpaceName(vk_core.surface.surface_formats[i].colorSpace)
-				);
-				break;
-			}
-		}
-	}
 }

@@ -29,7 +29,6 @@ void VK_LoadCvars( void )
 	rt_force_disable = gEngine.Cvar_Get( "rt_force_disable", "0", FCVAR_GLCONFIG, "Force disable Ray Tracing" );
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
 
-	gEngine.Cmd_AddCommand( "vk_show_supported_HDR_formats", getSupportedHDRformats, "Print all available supported HDR formats" );
 	vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", "0", FCVAR_GLCONFIG, "" ); // TODO: refactoring
 
 
@@ -42,9 +41,7 @@ void VK_LoadCvarsAfterInit( void )
 {
 	rt_capable = gEngine.Cvar_Get( "rt_capable", vk_core.rtx ? "1" : "0", FCVAR_READ_ONLY, "" );
 	vk_hdr_output_capable = gEngine.Cvar_Get( "vk_hdr_output_capable", vk_core.hdr_output ? "1" : "0", FCVAR_READ_ONLY, "" );
-	if (vk_core.hdr_output) {
-		vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", "0", FCVAR_GLCONFIG, "EXPERIMENTAL: High Dynamic Range output mode (Warning: ^1You must enable HDR in the OS settings beforehand^3)\n\tEnter ^2vk_show_supported_HDR_formats ^3for show available modes (ids)" );
-	} else {
+	if (!vk_core.hdr_output) {
 		vk_hdr_output = gEngine.Cvar_Get( "vk_hdr_output", "0", FCVAR_READ_ONLY, "DISABLED: not supported by your hardware/software/drivers" );
 	}
 	ClearBits( vk_hdr_output->flags, FCVAR_CHANGED );
