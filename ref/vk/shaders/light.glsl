@@ -43,13 +43,10 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 		vec3 light_dir;
 		vec3 color = lights.m.point_lights[i].color_stopdot.rgb;
 		float light_dist = 0.;
+		float one_over_pdf = 1.;
 		if (is_environment) {
 			// Environment/directional light
-			// FIXME extract, it is very different from other point/sphere/spotlights
-
-			// Empirical? TODO WHY?
-			// TODO move to native code
-			color *= 2.;
+			// FIXME extract, it is rather different from other point/sphere/spotlights
 
 			// TODO parametrize externally, via entity patches, etc
 			const float sun_solid_angle = 6.794e-5; // Wikipedia
@@ -62,7 +59,9 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			const float light_dot = dot(light_dir, N);
 			if (light_dot < 1e-5)
 				continue;
-		} else {
+
+			one_over_pdf = 2. * kPi * max(0., 1. - cos_theta_max);
+		} /* is_environment */ else {
 			// Spherical lights
 			const vec3 light_pos = lights.m.point_lights[i].origin_r2.xyz;
 			const float light_r2 = lights.m.point_lights[i].origin_r2.w;
@@ -154,16 +153,16 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			// d2=4489108.500000 r2=1.000000 dist=2118.751465 spot_attenuation=0.092902 INVALID pdf=-316492608.000000
 			// Therefore, need to clamp denom with max
 			// TODO need better sampling right nao
-			const float one_over_pdf = 2. * kPi * max(0., 1. - cos_theta_max) * spot_attenuation;
+			one_over_pdf = 2. * kPi * max(0., 1. - cos_theta_max) * spot_attenuation;
 #ifdef DEBUG_VALIDATE_EXTRA
 			if (IS_INVALID(one_over_pdf) || one_over_pdf < 0.) {
 				debugPrintfEXT("light.glsl:%d light_dist2=%f light_r2=%f light_dist=%f spot_attenuation=%f INVALID one_over_pdf=%f",
 					__LINE__, light_dist2, light_r2, light_dist, spot_attenuation, one_over_pdf);
 			}
 #endif
-
-			color *= one_over_pdf;
 		} // Sphere/spot lights
+
+		color *= one_over_pdf;
 
 		vec3 ldiffuse, lspecular;
 		evalSplitBRDF(N, light_dir, view_dir, material, ldiffuse, lspecular);

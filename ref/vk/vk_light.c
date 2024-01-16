@@ -893,8 +893,9 @@ static void processStaticPointLights( void ) {
 		const float radius = le->radius > 0.f ? le->radius : default_radius;
 
 		// These constants are empirical. There's no known math reason behind them
-		const float hack_attenuation = .1f / 25.f; // FIXME tune
-		const float hack_attenuation_spot = .1f / 25.f; // FIXME tune
+		const float hack_attenuation = (le->type == LightTypeEnvironment)
+			? 700.f // FIXME why?
+			: .1f / 25.f; // FIXME why?
 
 		int index;
 		switch (le->type) {
@@ -902,9 +903,9 @@ static void processStaticPointLights( void ) {
 				index = addPointLight(le->origin, le->color, radius, le->style, hack_attenuation);
 				break;
 
-			case LightTypeSpot:
 			case LightTypeEnvironment:
-				index = addSpotLight(le, radius, le->style, hack_attenuation_spot, i == g_map_entities.single_environment_index);
+			case LightTypeSpot:
+				index = addSpotLight(le, radius, le->style, hack_attenuation, i == g_map_entities.single_environment_index);
 				break;
 
 			default:
