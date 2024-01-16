@@ -283,12 +283,12 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 			specular += emissive * estimate * poly_specular;
 
 #ifdef DEBUG_VALIDATE_EXTRA
-			if (IS_INVALID3(specular) || any(lessThan(specular,vec3(0.)))) {
+			if (IS_INVALIDV(specular) || any(lessThan(specular,vec3(0.)))) {
 				debugPrintfEXT("%d INVALID specular=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_specular=(%f,%f,%f)",
 					__LINE__, PRIVEC3(specular), index, PRIVEC3(emissive), estimate, PRIVEC3(poly_specular));
 				specular = vec3(0.);
 			}
-			if (IS_INVALID3(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
+			if (IS_INVALIDV(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
 				debugPrintfEXT("%d INVALID diffuse=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_diffuse=(%f,%f,%f)",
 					__LINE__, PRIVEC3(diffuse), index, PRIVEC3(emissive), estimate, PRIVEC3(poly_diffuse));
 				diffuse = vec3(0.);

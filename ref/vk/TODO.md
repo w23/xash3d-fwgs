@@ -1,15 +1,19 @@
-# 2024-01-15 E365
+# 2024-01-16 E364
+- [x] P NaNs
+	- [x] need to remove degenerate triangles
+- [ ] add direct_{diff,spec} to rendertests
+	- [ ] and rerun tests for vulkan to get new gold images
+- [ ] light_environment is too dark
+- [ ] patchable sun angle
+
+# 2024-01-15 E363
 - [x] filter out invalid (r=0, etc) lights in native
 	- [-] already do; it seems that clusters are not getting updates → see #730
 - [x] pass point lights r² directly?
 - [x] move empirical scaling to native code
 - [x] modify point light radius in entity patches → already done
 	- [x] adjust brightness based on radius? → already done
-- [ ] P NaNs
-- [ ] patchable sun angle
-- [ ] common intersection-local-normal-oriented basis
-- [ ] add direct_{diff,spec} to rendertests
-	- [ ] and rerun tests for vulkan to get new gold images
+- [ ] ~~common intersection-local-normal-oriented basis~~ → point light construct light-oriented frames, not reusable
 
 # 2024-01-12 E362
 - [ ] point→spherical light sampling

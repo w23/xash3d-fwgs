@@ -140,9 +140,17 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			hit_material.base_color = payload.base_color_a.rgb;
 			hit_material.metalness = payload.material_rmxx.g;
 			hit_material.roughness = payload.material_rmxx.r;
+
+#ifdef DEBUG_VALIDATE_EXTRA
+		if (IS_INVALIDV(hit_pos)) {
+			debugPrintfEXT("bounce.comp:%d INVALID hit_pos=(%f,%f,%f)",
+				__LINE__, PRIVEC3(hit_pos));
+			break;
+		}
+#endif
 			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
-			if (IS_INVALID3(ldiffuse)) {
+			if (IS_INVALIDV(ldiffuse)) {
 #ifdef SHADER_DEBUG_ENABLE
 				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) ldiffuse=invalid",
 					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
@@ -150,7 +158,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 				ldiffuse = vec3(0.);
 			}
 
-			if (IS_INVALID3(lspecular)) {
+			if (IS_INVALIDV(lspecular)) {
 #ifdef SHADER_DEBUG_ENABLE
 				debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) lspecular=invalid",
 					pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
@@ -188,7 +196,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		else
 			specular += throughput * lighting;
 
-		if (IS_INVALID3(throughput)) {
+		if (IS_INVALIDV(throughput)) {
 #ifdef SHADER_DEBUG_ENABLE
 			debugPrintfEXT("pix=(%d,%d) pos=(%f,%f,%f) dir=(%f,%f,%f) throughput=invalid",
 				pix.x, pix.y, pos.x, pos.y, pos.z, direction.x, direction.y, direction.z);
@@ -266,12 +274,12 @@ void main() {
 	}
 
 #ifdef DEBUG_VALIDATE_EXTRA
-	if (IS_INVALID3(specular)) {
+	if (IS_INVALIDV(specular)) {
 		debugPrintfEXT("pix=(%d,%d) specular=(%f, %f, %f)", pix.x, pix.y, specular.r, specular.g, specular.b);
 		specular = vec3(0.);
 	}
 
-	if (IS_INVALID3(diffuse)) {
+	if (IS_INVALIDV(diffuse)) {
 		debugPrintfEXT("pix=(%d,%d) diffuse=(%f, %f, %f)", pix.x, pix.y, diffuse.r, diffuse.g, diffuse.b);
 		diffuse = vec3(0.);
 	}

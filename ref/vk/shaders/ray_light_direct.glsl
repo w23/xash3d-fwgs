@@ -49,8 +49,15 @@ void main() {
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 
 	if (pos_t.w > 0.) {
-		vec3 geometry_normal, shading_normal;
-		readNormals(pix, geometry_normal, shading_normal);
+		const vec4 packed_normal = imageLoad(normals_gs, pix);
+		const vec3 geometry_normal = normalDecode(packed_normal.xy);
+		const vec3 shading_normal = normalDecode(packed_normal.zw);
+#ifdef DEBUG_VALIDATE_EXTRA
+		if (IS_INVALIDV(pos_t.xyz) || IS_INVALIDV(geometry_normal)) {
+			debugPrintfEXT("ray_light_direct.glsl:%d INVALID pos_t.xyz=(%f,%f,%f) geometry_normal=(%f,%f,%f) packed_normal=(%f,%f,%f,%f)",
+				__LINE__, PRIVEC3(pos_t.xyz), PRIVEC3(geometry_normal), PRIVEC4(packed_normal));
+		} else
+#endif
 		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
 	}
 

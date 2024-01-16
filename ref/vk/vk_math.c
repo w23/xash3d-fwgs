@@ -314,3 +314,10 @@ void Matrix4x4_CreateFromVectors(matrix4x4 out, const vec3_t right, const vec3_t
 	out[2][3] = translate[2];
 	out[3][3] = 1;
 }
+
+void computeNormal(vec3_t p0, vec3_t p1, vec3_t p2, vec3_t out_normal) {
+	vec3_t e0, e1;
+	VectorSubtract(p2, p0, e0);
+	VectorSubtract(p1, p0, e1);
+	CrossProduct(e0, e1, out_normal);
+}

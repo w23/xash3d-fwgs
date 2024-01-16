@@ -84,6 +84,13 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 			light_dist = sqrt(light_dist2);
 
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALID(light_dist)) {
+				debugPrintfEXT("light.glsl:%d P=(%f,%f,%f) light_pos=(%f,%f,%f) light_dist2=%f light_r2=%f INVALID light_dist=%f",
+					__LINE__, PRIVEC3(P), PRIVEC3(light_pos), light_dist2, light_r2, light_dist);
+			}
+#endif
+
 			// Sample on the visible disc
 			const float cos_theta_max = min(1., sqrt(d2_minus_r2) / light_dist);
 
@@ -102,7 +109,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 #ifdef DEBUG_VALIDATE_EXTRA
 			//DEBUG_VALIDATE_RANGE_VEC3("light.glsl", light_dir, -1., 1.);
-			if (IS_INVALID3(light_dir) || any(lessThan(light_dir,vec3(-1.))) || any(greaterThan(light_dir,vec3(1.)))) { \
+			if (IS_INVALIDV(light_dir) || any(lessThan(light_dir,vec3(-1.))) || any(greaterThan(light_dir,vec3(1.)))) { \
 				/*debugPrintfEXT("ld=(%f,%f,%f), ldn=(%f,%f,%f); basis=((%f,%f,%f), (%f,%f,%f), (%f,%f,%f))",
 					PRIVEC3(ld),
 					PRIVEC3(normalize(ld)),
@@ -185,6 +192,14 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(P) || IS_INVALIDV(N) || IS_INVALIDV(view_dir)) {
+		debugPrintfEXT("INVALID computeLighting(P=(%f,%f,%f), N=(%f,%f,%f), view_dir=(%f,%f,%f))",
+			PRIVEC3(P), PRIVEC3(N), PRIVEC3(view_dir));
+		return;
+	}
+#endif
+
 	const ivec3 light_cell = ivec3(floor(P / LIGHT_GRID_CELL_SIZE)) - lights.m.grid_min_cell;
 	const uint cluster_index = uint(dot(light_cell, ivec3(1, lights.m.grid_size.x, lights.m.grid_size.x * lights.m.grid_size.y)));
 
@@ -218,13 +233,13 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 #endif
 
 #ifdef DEBUG_VALIDATE_EXTRA
-	if (IS_INVALID3(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
+	if (IS_INVALIDV(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
 		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID diffuse=(%f,%f,%f)",
 			PRIVEC3(P), PRIVEC3(N), PRIVEC3(diffuse));
 		diffuse = vec3(0.);
 	}
 
-	if (IS_INVALID3(specular) || any(lessThan(specular,vec3(0.)))) {
+	if (IS_INVALIDV(specular) || any(lessThan(specular,vec3(0.)))) {
 		debugPrintfEXT("P=(%f,%f,%f) N=(%f,%f,%f) INVALID specular=(%f,%f,%f)",
 			PRIVEC3(P), PRIVEC3(N), PRIVEC3(specular));
 		specular = vec3(0.);

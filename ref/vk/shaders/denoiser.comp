@@ -188,7 +188,7 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 		c.indirect_diffuse *= indirect_diffuse_total;
 
 #ifdef DEBUG_VALIDATE_EXTRA
-	if (IS_INVALID3(c.direct_specular)) {
+	if (IS_INVALIDV(c.direct_specular)) {
 		debugPrintfEXT("c.direct_specular=(%f,%f,%f)", PRIVEC3(c.direct_specular));
 		c.direct_specular = vec3(0.);
 	}
@@ -206,7 +206,7 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 		c.indirect_specular *= indirect_specular_total;
 
 #ifdef DEBUG_VALIDATE_EXTRA
-	if (IS_INVALID3(c.indirect_specular)) {
+	if (IS_INVALIDV(c.indirect_specular)) {
 		debugPrintfEXT("c.indirect_specular=(%f,%f,%f)", PRIVEC3(c.indirect_specular));
 		c.indirect_specular = vec3(0.);
 	}
@@ -321,12 +321,12 @@ void main() {
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
-		if (IS_INVALID3(history_specular)) {
+		if (IS_INVALIDV(history_specular)) {
 			debugPrintfEXT("PRE pix=(%d,%d) history_specular=inv", pix.x, pix.y);
 			history_specular = vec3(0.);
 		}
 
-		if (IS_INVALID3(specular)) {
+		if (IS_INVALIDV(specular)) {
 			debugPrintfEXT("PRE pix=(%d,%d) specular=(%f,%f,%f)", pix.x, pix.y, PRIVEC3(specular));
 			specular = vec3(0.);
 		}
@@ -338,12 +338,12 @@ void main() {
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
-		if (IS_INVALID3(diffuse)) {
+		if (IS_INVALIDV(diffuse)) {
 			debugPrintfEXT("pix=(%d,%d) diffuse=inv", pix.x, pix.y);
 			diffuse = vec3(0.);
 		}
 
-		if (IS_INVALID3(specular)) {
+		if (IS_INVALIDV(specular)) {
 			debugPrintfEXT("pix=(%d,%d) new_specular=inv, specular=(%f, %f, %f) history_specular=(%f, %f, %f)",
 				pix.x, pix.y,
 				specular.r, specular.g, specular.b,

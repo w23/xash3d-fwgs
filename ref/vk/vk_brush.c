@@ -1113,7 +1113,7 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_ent
 	getSurfaceNormal(mod->surfaces + surf2, n2);
 
 	const float dot = DotProduct(n1, n2);
-	DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing.threshold);
+	// TODO smooth verbose group DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing.threshold);
 
 	return dot >= g_map_entities.smoothing.threshold;
 }
@@ -1157,7 +1157,7 @@ static void linkSmoothSurfaces(const model_t* mod, int surf1, int surf2, int ver
 	int i1 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf1);
 	int i2 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf2);
 
-	DEBUG("Link %d(%d)<->%d(%d) v=%d", surf1, i1, surf2, i2, vertex_index);
+	// TODO smooth_verbose DEBUG("Link %d(%d)<->%d(%d) v=%d", surf1, i1, surf2, i2, vertex_index);
 
 	if (i1 < 0 || i2 < 0) {
 		ERR("Model %s cannot smooth link surf %d<->%d for vertex %d", mod->name, surf1, surf2, vertex_index);
@@ -1240,9 +1240,11 @@ static void connectVertices( const model_t *mod, qboolean smooth_entire_model ) 
 #endif
 	}
 
+	/* TODO smooth_debug
 	for (int i = 0; i < COUNTOF(hist); ++i) {
 		DEBUG("VTX hist[%d] = %d", i, hist[i]);
 	}
+	*/
 }
 
 static qboolean getSmoothedNormalFor(const model_t* mod, int vertex_index, int surface_index, vec3_t out_normal) {
@@ -1428,8 +1430,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
 
-
 			vk_vertex_t *const pvert_begin = p_vert;
+			vec3_t p[3];
 			for( int k = 0; k < surf->numedges; k++ )
 			{
 				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
@@ -1438,8 +1440,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
 				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
 
+
 				vk_vertex_t vertex = {
-					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
+					.pos = {in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
 				};
 
 				vertex.prev_pos[0] = in_vertex->position[0];
@@ -1517,16 +1520,52 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					args.bmodel->conveyors_vertices[vertex_index] = vertex;
 				}
 
+				//DEBUG(" p[%d]=(%f,%f,%f)", k, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
+
 				*(p_vert++) = vertex;
+
+				// Write vertex window: p[0] = first, p[1] = prev, p[2] = current
+				VectorCopy(in_vertex->position, p[Q_min(k, 2)]);
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
 				if (k > 1) {
-					*(p_ind++) = (uint16_t)(vertex_offset + 0);
-					*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
-					*(p_ind++) = (uint16_t)(vertex_offset + k);
-					index_count += 3;
-					index_offset += 3;
-				}
+					// Check for collinear points/degenerate triangles
+					vec3_t tri_normal;
+					computeNormal(p[0], p[1], p[2], tri_normal);
+					const float area2 = VectorLength2(tri_normal);
+
+					if (area2 <= 0.) {
+						// Do not produce triangle if it has zero area
+						// NOTE: this is suboptimal in the sense that points that might be necessary for proper
+						// normal smoothing might be skippedk. In case that this causes undesirable rendering
+						// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
+						// be needed. E.g. ear clipping.
+						WARN("surface=%d numedges=%d triangle=%d has degenerate normal, area2=%f",
+							surface_index, surf->numedges, index_count / 3, area2);
+						DEBUG("  p[0]=(%f,%f,%f)", p[0][0], p[0][1], p[0][2]);
+						DEBUG("  p[%d]=(%f,%f,%f)", k - 1, p[1][0], p[1][1], p[1][2]);
+						DEBUG("  p[%d]=(%f,%f,%f)", k, p[2][0], p[2][1], p[2][2]);
+					} else {
+						*(p_ind++) = (uint16_t)(vertex_offset + 0);
+						*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
+						*(p_ind++) = (uint16_t)(vertex_offset + k);
+						index_count += 3;
+						index_offset += 3;
+
+						const float dot = DotProduct(tri_normal, surf_normal) / sqrt(area2);
+						if (fabs(dot-1.) > 1e-2) {
+							WARN("surface=%d triangle=%d tri_normal=(%f,%f,%f) sn=(%f,%f,%f) dot=%f",
+								surface_index, index_count / 3,
+								tri_normal[0], tri_normal[1], tri_normal[2],
+								surf_normal[0], surf_normal[1], surf_normal[2],
+								dot
+							);
+						}
+					} // valid triangle
+
+					// Move current vertex to prev
+					VectorCopy(p[2], p[1]);
+				} // if (k > 1)
 			} // for surf->numedges
 
 			model_geometry->element_count = index_count;

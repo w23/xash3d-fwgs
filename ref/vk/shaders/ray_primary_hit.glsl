@@ -2,6 +2,7 @@
 #define RAY_PRIMARY_HIT_GLSL_INCLUDED
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "debug.glsl"
 #include "utils.glsl"
 #include "ray_primary_common.glsl"
 #include "ray_kusochki.glsl"
@@ -82,6 +83,15 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 
 	payload.normals_gs.xy = normalEncode(geom.normal_geometry);
 	payload.normals_gs.zw = normalEncode(geom.normal_shading);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(payload.normals_gs)) {
+		debugPrintfEXT("ngeom=(%f,%f,%f) nshade=(%f,%f,%f) INVALID normals_gs=(%f,%f,%f,%f)",
+			PRIVEC3(geom.normal_geometry),
+			PRIVEC3(geom.normal_shading),
+			PRIVEC4(payload.normals_gs));
+	}
+#endif
 
 #if 1
 	// Real correct emissive color
