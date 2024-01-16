@@ -14,6 +14,7 @@
 
 #include "profiler.h"
 #include "r_speeds.h"
+#include "xash3d_mathlib.h"
 
 #include "eiface.h" // ARRAYSIZE
 
@@ -510,6 +511,37 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 	return true;
 }
 
+// https://github.com/res2k/Q2RTX/blob/d393d74a1ddfb3f2db98b942389f240af30c0fa6/src/refresh/vkpt/conversion.h#L36
+/*
+  Float -> Half converter functions, adapted from
+  https://stackoverflow.com/questions/1659440/32-bit-to-16-bit-floating-point-conversion
+*/
+typedef union {
+	float f;
+	int32_t si;
+	uint32_t ui;
+} f2hBits;
+
+static inline float halfToFloat(uint16_t value) {
+	static int const shift = 13;
+	static int const shiftSign = 16;
+
+	static uint32_t const inf = 0x7c00;
+	static uint32_t const signC = 0x8000; // flt16 sign bit
+	static int32_t const infN = 0x7F800000; // flt32 infinity
+
+	f2hBits v, s;
+	v.ui = value;
+	s.ui = v.ui & signC;
+	v.ui ^= s.ui;
+	int32_t is_norm = v.ui < inf;
+	v.ui = (s.ui << shiftSign) | (v.ui << shift);
+	s.ui = 0x77800000; // bias_mul
+	v.f *= s.f;
+	v.ui |= -!is_norm & infN;
+	return v.f;
+}
+
 static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
 	r_vk_image_t dest_image;
@@ -683,7 +715,45 @@ static rgbdata_t *R_VkReadPixels( void ) {
 				if (dest_format != VK_FORMAT_R8G8B8A8_UNORM || SWAPCHAIN_FORMAT != VK_FORMAT_B8G8R8A8_UNORM) {
 					gEngine.Con_Printf(S_WARN "Don't have a blit function for this format pair, will save as-is without conversion; expect image to look wrong\n");
 					blit = true;
-				} else {
+				} else if (vk_core.output_surface.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) {
+					byte *dst = r_shot->buffer;
+					const float RGB_max = 1.0f / 1023.0f; // Max color value for 10 bit
+					const float Alpha_max = 1.0f / 3.0f;  // Max alpha value for 2 bit
+					for (int y = 0; y < vk_frame.height; ++y, mapped += layout.rowPitch) {
+						const uint32_t *src = (uint32_t*)(byte*)mapped;
+						for (int x = 0; x < vk_frame.width; ++x, dst += 4, src += 1) {
+							const float R = ((src[0] >>  0) & 1023) * RGB_max;
+							const float G = ((src[0] >> 10) & 1023) * RGB_max;
+							const float B = ((src[0] >> 20) & 1023) * RGB_max;
+							const float A = ((src[0] >> 30) & 3) * Alpha_max;
+							// FIXME: better color mapping
+							dst[0] = R * 255;
+							dst[1] = G * 255;
+							dst[2] = B * 255;
+							dst[3] = A * 255;
+						}
+					}
+				} else if (vk_core.output_surface.format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+					byte *dst = r_shot->buffer;
+					for (int y = 0; y < vk_frame.height; ++y, mapped += layout.rowPitch) {
+						const uint16_t *src = (uint16_t*)(byte*)mapped;
+						for (int x = 0; x < vk_frame.width; ++x, dst += 4, src += 2) {
+							// TODO: separate pipeline for screenshot (preprocessing tonemapping and gamma-correction)
+							// FIXME: BROKEN BLUE CHANNEL, RED = MAGENTA, WTF!?
+							const float R = pow(halfToFloat(src[0]), 1.0/2.2);
+							const float G = pow(halfToFloat(src[1]), 1.0/2.2);
+							const float B = pow(halfToFloat(src[2]), 1.0/2.2);
+							const float A = pow(halfToFloat(src[0]), 1.0/2.2);
+							// clamp
+							float maxVal = Q_max(Q_max(R, G), B);
+							maxVal = (maxVal > 1.0f) ? maxVal : 1.0f;
+							dst[0] = (R / maxVal) * 255;
+							dst[1] = (G / maxVal) * 255;
+							dst[2] = (B / maxVal) * 255;
+							dst[3] = A * 255;
+						}
+					}
+				} else { // TODO: other LDR formats
 					byte *dst = r_shot->buffer;
 					for (int y = 0; y < vk_frame.height; ++y, mapped += layout.rowPitch) {
 						const byte *src = (const byte*)mapped;
