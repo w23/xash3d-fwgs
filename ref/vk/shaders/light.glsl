@@ -95,6 +95,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			// Meh precision (for small r and big light dist):
 			const float cos_theta_max = min(1., sqrt(d2_minus_r2 / light_dist2));
 			// Worse precision: const float cos_theta_max = min(1., sqrt(1. - light_r2 / light_dist2));
+			// Possible TODO: dither cos_theta_max for large distances a bit
 
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALID(cos_theta_max) || cos_theta_max < 0. || cos_theta_max > 1.) {
