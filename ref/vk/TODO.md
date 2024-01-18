@@ -1,20 +1,23 @@
-# 2024-01-18 E365
+## Next
+- [ ] bounce diffuse is still way darker than before
+
+# Previously
+## 2024-01-18 E365
 - [-] flashlight far circular glitches
 	- This is due to f32 precision not being enough when working with small (light radius ~=1) and large (light
 	  distance ~=1e4) numbers.
 - [x] patchable sun angle
 	- [ ] :x: does qrad already have something for that? → no it doesn't
 - [x] cleanup this TODO
-- [ ] diffuse is still way darker than before
 
-# 2024-01-16 E364
+## 2024-01-16 E364
 - [x] P NaNs
 	- [x] need to remove degenerate triangles
 - [x] light_environment is too dark
 - [ ] add direct_{diff,spec} to rendertests → only can do for this handmade-brdfs branch
 	- [ ] :x: and rerun tests for vulkan to get new gold images → imuposshiburu, see above
 
-# 2024-01-15 E363
+## 2024-01-15 E363
 - [x] filter out invalid (r=0, etc) lights in native
 	- [-] :o: already do; it seems that clusters are not getting updates → see #730
 - [x] pass point lights r² directly?
@@ -23,12 +26,12 @@
 	- [x] adjust brightness based on radius? → already done
 - [ ] :x: ~~common intersection-local-normal-oriented basis~~ → point light construct light-oriented frames, not reusable
 
-# 2024-01-12 E362
+## 2024-01-12 E362
 - [x] point→spherical light sampling
 	- [x] 1/pdf → pdf *= 2π
 	- [x] disk sampling
 
-# 2024-01-11 E361
+## 2024-01-11 E361
 - [x] fix zero-area polygon lights nanites, fixes #461
 	- [x] c1a1a NaNs are still there
 - [x] fix point light computation instabilites
@@ -36,7 +39,7 @@
 - [x] add material debug display mode
 - [ ] vulkan validation layers crashes on too many `debugPrintfEXT` messages
 
-# 2024-01-09 E360
+## 2024-01-09 E360
 - [x] validate all intermediate and final outputs against invalid values, complain into log
 - [ ] brdf math surprising edge cases
     - [ ] alpha^2 == 0 ???
@@ -44,7 +47,7 @@
         - [ ] h_dot_l | h_dot_v < .0 because of numerical precision
         - [ ] ggxV|ggxG denoms->0
 
-# 2024-01-08 E359
+## 2024-01-08 E359
 - [-] find and fix MORE NaNs
     - [x] add debugPrintfEXT to shaders
     - [x] fix black dots on glass surfaces
@@ -53,7 +56,7 @@
     - [x] disableable NaN debugging with macro
     - [ ] enable NaN debugging with -vkvalidate
 
-# 2024-01-04 E357
+## 2024-01-04 E357
 - [x] Black metals: https://github.com/w23/xash3d-fwgs/issues/666
     - [x] fix missing dot(N,L) term
 - [x] try bespoke diffuse term -- yes, mine seems to be more correct
@@ -69,11 +72,11 @@
 	- [ ] Fresnel issues (esp. with skybox)
 	- [ ] Just make sure that all the BRDF math is correct
 
-# 2023-12-29 E354
+## 2023-12-29 E354
 - [x] Figure out why additive transparency differs visibly from raster
 - [x] Implement special legacy-blending in sRGB-γ colorspace
 
-# 2023-12-28 E353
+## 2023-12-28 E353
 - [x] track color spaces when passing colors into shaders
 - [-] validation failure at startup, #723 -- seems like memory corruption
 
@@ -106,19 +109,19 @@ Longer-term agenda for current season:
 	- [ ] Cache directions for strong indirect light
 
 
-# 2023-12-19 E350
+## 2023-12-19 E350
 - [x] fixup skybox reflections
 - [x] improve logs "vk/tex: Loaded skybox pbr/env/%.*s"
 - [x] add skybox test
 
-# 2023-12-18 E349
+## 2023-12-18 E349
 - [x] KTX2 cubemaps
 - [x] variable cubemap exposure (in .mat file)
 
-# 2023-12-15 E348
+## 2023-12-15 E348
 - [x] fix ktx2 sides corruption
 
-# 2023-12-14 E346-E347
+## 2023-12-14 E346-E347
 - [x] Optimize skybox loading, #706
     - [x] Do not load skybox when there are no SURF_DRAWSKY, #579
     - [x] Do not reload the same skybox
@@ -133,14 +136,14 @@ Longer-term agenda for current season:
     - [x] used incorrectly when loading blue noise textures
     - [x] what about regular usage?
 
-# 2023-12-11 E345
+## 2023-12-11 E345
 - [x] fix black dielectrics, #666
     - [x] fix incorrect basecolor brdf multiplication, #666
     - [x] fixup skybox glitches caused by #666 fix
 - [ ] Patch overlay textures (#696) → turned out to be much more difficult than expected.
 - [x] Do not patch sprite textures for traditional raster, #695
 
-# 2023-12-05 E342
+## 2023-12-05 E342
 - [x] tone down the specular indirect blur
 - [-] try func_wall static light opt, #687
 	→ decided to postpone, a lot more logic changes are needed
@@ -149,7 +152,7 @@ Longer-term agenda for current season:
 - [x] Discuss shader profiling
 - [-] Discuss Env-based verbose log control
 
-# 2023-12-04 E341
+## 2023-12-04 E341
 - [-] investigate envlight missing #680
 	- couldn't reproduce more than once
 - [x] add more logs for the above
@@ -157,11 +160,11 @@ Longer-term agenda for current season:
 
 -- season cut --
 
-# 2023-12-01 E340
+## 2023-12-01 E340
 - [x] Better resolution changes:
     - [x] Dynamic max resolution (start with current one, then grow by some growth factor)
 
-# 2023-11-30 E339
+## 2023-11-30 E339
 - [x] rendermode patch
 	- [x] track patch by boolean, not another field
 - [x] missing polylight on c2a1b
@@ -171,12 +174,12 @@ Longer-term agenda for current season:
 - [x] Support changing screen resolution up to UHD
     - [x] Increase devmem count.
 
-# 2023-11-28 E338
+## 2023-11-28 E338
 - [x] rendertest
     - [x] read imagecompare results
     - [x] html report
 
-# 2023-11-27 E337
+## 2023-11-27 E337
 - [x] make rendetest.py the central script
     - [x] parallelize/make gifs
     - [x] diff/convert in parallel
@@ -186,13 +189,13 @@ Longer-term agenda for current season:
 - [x] fix per-entity material mapping, #669
     - [x] add to rendertest
 
-# 2023-11-24 E336
+## 2023-11-24 E336
 - reproducible rendering:
     - [x] make sure it's reproducible -- given carefully spaced `wait N`s and `playersonly` it gets pretty reproducible
     - [x] difference heatmap
     - [x] contemplate infrastructure: scripts, repo, etc.
 
-# 2023-11-23 E335
+## 2023-11-23 E335
 - [x] spec for profiler dumper
 - reproducible rendering:
     - [ ] write fixed resolution internal images -- only need this because i'm stupid and using tiling window manager
@@ -207,14 +210,14 @@ Longer-term agenda for current season:
         - [ ] summary html
 - [x] consolidate all binding in shaders
 
-# 2023-11-21 E334
+## 2023-11-21 E334
 - [ ] reproducible rendering
     - [ ] dump all components
         - [x] script
         - [-] ~~try also dumping in native code~~ -- no need, it's fast enough
     - [x] command for random seed fixation
 
-# 2023-11-20 E333
+## 2023-11-20 E333
 - [ ] contemplate testing rendered images
     - [x] try making a rendertest script: load multiple save, make multiple screenshots
     - [x] compare screenshots
@@ -222,13 +225,13 @@ Longer-term agenda for current season:
         - tracking golden states
         - testing script
 
-# 2023-11-17 E332
+## 2023-11-17 E332
 - [-] backside emissive water polygons:
     - adding them makes things worse in other parts of the level
 - [x] water normalmap support -- added missing tangents
 - [x] discuss integration test strategies
 
-# 2023-11-16 E331
+## 2023-11-16 E331
 - [x] Emissive waters
     - [x] add emissive water surface to polygon lights
     - [x] update emissive color for water surfaces
@@ -237,7 +240,7 @@ Longer-term agenda for current season:
     - [x] update UVs for conveyors
     - [ ] pls don't aggravate validation on changelevel -- cannot reproduce
 
-# 2023-11-14 E330
+## 2023-11-14 E330
 - [x] culling worldmodel waters
      - [-] try simple flag culling (probably won't work)
      - [-] try detecting glpoly normals -> consistent with SURF_PLANEBACK, doesn't help
@@ -248,13 +251,13 @@ Longer-term agenda for current season:
         - [x] glpoly_t winding order is reversed when camera origin is opposite to (SURF_PLANEBACK-aware) surface normal
 - [x] discuss culling transparent surfaces strategies
 
-# 2023-11-13 E329
+## 2023-11-13 E329
 - [-] culling -> need to cull everything except opaque and blend. Alpha-mask is culled.
 - [-] waters:
      - [-] No water surface visible from underneath -- hidden by enabling culling
      - [-] No coplanar issues visible? -- hidden by culling. Disabling culling makes glitches reappear
 
-# 2023-11-10 E328
+## 2023-11-10 E328
 - [ ] woditschka
      - [-] potentially collinear planes vs ray tracing #264
          - not super clear how exactly it works, and what it does. And how to cull things
@@ -263,13 +266,13 @@ Longer-term agenda for current season:
          - [x] (C) print out all surfaces and polys to see where are they looking
          - [-] (B) try filtering surfaces looking down
 
-# 2023-11-09 E327
+## 2023-11-09 E327
 - [x] update animated textures is now super slow: some static map surfaces have alternate anims (e.g. light post on c2a5)
 - [-] woditschka
      - [x] height not switching to negative underwater -- decided that we don't need it for now
      - [x] do not draw water sides when not requested.
 
-# 2023-11-07 E326
+## 2023-11-07 E326
 - [x] list supported arguments for `rt_debug_display_only` cvar
 - [x] make vk_debug_log a command
 - [x] remove stvecs from patches -- not used, inconvenient
@@ -277,13 +280,13 @@ Longer-term agenda for current season:
 - [x] add `_xvk_tex_rotate`
 - [x] ASSERT in c2a5 -- skybox sentinel
 
-# 2023-11-06 E325
+## 2023-11-06 E325
 - [x] fix material asserts and inherit
 - [x] fixup -vkverboselogs
 - [x] changing textures on buttons, etc
 - [x] fix unpatched chrome surfaces brightness glitches
 
-# 2023-11-03 E324
+## 2023-11-03 E324
 - [x] add cvar for displaying only specified channel
 - [x] r_lightmap
 - [x] highlight all surfaces with random colors
@@ -293,13 +296,13 @@ Longer-term agenda for current season:
 - [ ] kusochki-vs-materials structures
 - [x] -vkverbose arg for turning all debug logs before detailed cvars are read
 
-# 2023-11-02 E323
+## 2023-11-02 E323
 - [x] lol meta: read and sort issues
 - [x] merge from upstream
 - [x] hevsuit glitches
 - [x] inverted normal map orientation
 
-# 2023-10-31 E322
+## 2023-10-31 E322
 - [x] load png blue noise files
 - [-] translucent animated thing -> needs shader rework
 - [x] massage texture code
@@ -310,7 +313,7 @@ Longer-term agenda for current season:
 - [x] studio gibs translucency
 - [x] smoothing exclusion
 
-# 2023-10-30 E321
+## 2023-10-30 E321
 - [x] missing skybox
 - [x] explicitly free default textures; and complain about any leftovers
 - [x] use the new hash table in materials too, remove dummy textures
@@ -321,7 +324,7 @@ Longer-term agenda for current season:
 	- [x] patch shader function
 	- [ ] load 64xpngs into a single big pic
 
-# 2023-10-27 E320
+## 2023-10-27 E320
 - [x] fix windows build
 - [x] track texture visibility for ref_api via flag and refcounts
 - [ ] devmem assert, not all textures are destroyed in wagonchik
@@ -335,7 +338,7 @@ Longer-term agenda for current season:
     - [x] "found existing texture"
 - [x] check mips
 
-# 2023-10-26 E319
+## 2023-10-26 E319
 - [x] fix pbr materials disappearing
 - [x] fix surface lights
 - [ ] pbr/material refcount leaks
@@ -345,7 +348,7 @@ Longer-term agenda for current season:
     - [x] reuse if possible
 - [x] case insensitive hash table
 
-# 2023-10-24 E318
+## 2023-10-24 E318
 - [ ] use new hashmap for textures
     - [x] use vk_texure array directly as open addressing hash table
         - [x] Completely hide `struct vk_texture`
@@ -461,11 +464,6 @@ Longer-term agenda for current season:
 - [ ] better 2d renderer: fill DRAWQUAD(texture, color, ...) command into storage buffer instead of 4 vertices
 - [ ] brush geometry is not watertight
 - [ ] collect render_draw_t w/o submitting them to cmdbuf, then sort by render_mode, trans depth, and other parameters, trying to batch as much stuff as possible; only then submit
-
-# Previously
-- [x] loading to the same map breaks geometry
-- [x] (helps with RTX?) unified rendering (brush/studio models/...), each model is instance, instance data is read from storage buffers, gives info about vertex format, texture bindings, etc; which are read from another set of storage buffers, ..
-- [x] waf shader build step -- get from upstream
 
 ## 2021-02-06
 - [x] alpha test
@@ -627,7 +625,7 @@ Longer-term agenda for current season:
 ## 2021-05-22, E97
 - [x] add nvidia aftermath sdk
 
-# 2021-05-24, E98
+## 2021-05-24, E98
 - [x] rtx: simplify AS tracking
 
 ## 2021-05-26, E99
@@ -644,11 +642,11 @@ Longer-term agenda for current season:
 ## 2021-06-07, E104..
 - [x] fix CI for vulkan branch
 
-# 2021-06-09..12, E105..106
+## 2021-06-09..12, E105..106
 - [x] c3a2a: no water surfaces in vk (transparent in gl: *45,*24,*19-21)
 - [x] water surfaces
 
-# 2021-06-14, E107
+## 2021-06-14, E107
 - [x] rtx: optimize water normals. now they're very slow because we R/W gpu mem? yes
 - [x] cull bottom water surfaces (they're PLANE_Z looking down)
 - [x] fix water normals
@@ -783,12 +781,12 @@ Longer-term agenda for current season:
 - [x] E215:
 	- [x] serialize binding image format
 
-# 2022-11-26 E216 rake yuri
+## 2022-11-26 E216 rake yuri
 	- [x] validate meatpipe image formats
 	- [x] begin Rake Yuri migration
 		- [x] direct lights
 
-# 2023-01-21 E217-E221
+## 2023-01-21 E217-E221
 - [x] meatpipe resource tracking
 	- [x] name -> index mapping
 	- [x] create images on meatpipe load
@@ -806,11 +804,11 @@ Longer-term agenda for current season:
 	- [x] images
 	- [-] buffers -- no immediate need for that
 
-# 2023-01-22 E222
+## 2023-01-22 E222
 - [x] refcount meatpipe created images
 - [x] rake yuri primary ray
 
-# 2023-01-28 E223
+## 2023-01-28 E223
 - [x] previous frame resources reference
 		- specification:
 			- [x] I: prev_ -> resource flag + pair index
@@ -821,7 +819,7 @@ Longer-term agenda for current season:
 			- [ ] II: create tightly coupled image pair[2], read from [frame%2] write to [frame%2+1]
 			- [ ] III: like (I) but with more general resource management: i.e. resource object for prev_ points to its source
 
-# 2023-01-28-02-08 E224-229
+## 2023-01-28-02-08 E224-229
 - [x] light_grid_buffer (+ small lights_buffer):
   - lifetime: single frame
   - BUT: populated by CPU, needs sync; can't just ring-buffer it
@@ -846,6 +844,9 @@ Longer-term agenda for current season:
 
 # Done somewhen
 - [x] create water surfaces once in vk_brush
+- [x] loading to the same map breaks geometry
+- [x] (helps with RTX?) unified rendering (brush/studio models/...), each model is instance, instance data is read from storage buffers, gives info about vertex format, texture bindings, etc; which are read from another set of storage buffers, ..
+- [x] waf shader build step -- get from upstream
 
 ## Collected on 2024-01-18
 - [x] what if new meatpipe has different image format for a creatable image?
