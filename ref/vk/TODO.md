@@ -95,7 +95,7 @@ Longer-term agenda for current season:
 	- [ ] WIP shader clocks: https://github.com/w23/xash3d-fwgs/pull/692
 	- [ ] WIP perf query: https://github.com/w23/xash3d-fwgs/pull/500
 - [ ] Lighting
-	- [ ] Point spheres sampling
+	- [x] Point spheres sampling
 	- [ ] Increase limits
 	- [ ] s/poly/triangle/ -- simpler sampling, universal
 	- [ ] Better and dynamically sized clusters
@@ -370,7 +370,6 @@ Longer-term agenda for current season:
 		- mass (for single device wait idle)
 
 # Programmable render
-- [ ] what if new meatpipe has different image format for a creatable image?
 - [ ] implicit dependency tracking. pass defines:
 	- [ ] imports: list of things it needs
 	- [ ] exports: list of things it produces. those get created and registered with this pass as a producer
@@ -379,14 +378,6 @@ Longer-term agenda for current season:
 	- [ ] resource automatic resolution: prducing, barriers, etc
 	- [ ] resource destruction
 - [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
-
-# Parallel frames sync
-- [ ] models_cache
-  - lifetimes:
-    - static; entire map
-	- static; single to multiple frames
-	- dynamic; multiple frames
-  - : intra-cmdbuf
 
 # Multipass + Sampling
 - [ ] better simple sampling
@@ -430,69 +421,44 @@ Longer-term agenda for current season:
 			- [ ] "Additive" should just be emissive and not reflective/refractive
 - [ ] rtx: filter things to render, e.g.: some sprites are there to fake bloom, we don't need to draw them in rtx mode
 - [ ] possibly split vk_render into (a) rendering/pipeline, (b) buffer management/allocation, (c) render state
-- [ ] rtx: light styles: need static lights data, not clear how and what to do
 - [ ] studio models: fix lighting: should have white texture instead of lightmap OR we could write nearest surface lightmap coords to fake light
 	- [ ] make it look correct lol
 - [ ] studio model types:
 	- [x] normal
 	- [ ] float
 	- [x] chrome
-- [ ] more beams types
-- [ ] more particle types
-- [ ] sane texture memory management: do not allocate VKDeviceMemory for every texture
-- [ ] rtx: transparency layering issue, possible approaches:
-	- [ ]  trace a special transparent-only ray separately from opaque. This can at least be used to remove black texture areas
 - [ ] rtx: sky light/emissive skybox:
 	- [ ] consider baking it into a single (or a few localized) kusok that has one entry in light cluster
-	- [ ] just ignore sky surfaces and treat not hitting anything as hitting sky. importance-sample by sun direction
+	- [x] just ignore sky surfaces and treat not hitting anything as hitting sky. importance-sample by sun direction
 	- [ ] pre-compute importance sampling direction by searching for ray-miss directions
-- [ ] rtx: better memory handling
-	- [ ] robust tracking of memory hierarchies: global/static, map, frame
-	- or just do a generic allocator with compaction?
-- [ ] rtx: coalesce all these buffers
-- [ ] rtx: entity lights
-- [ ] rtx: do not rebuild static studio models (most of them). BLAS building takes most of the frame time (~12ms where ray tracing itself is just 3ms)
 - [ ] rtx: importance-sample sky light; there are sky surfaces that we can consider light sources
 - [ ] cull water surfaces (see c3a2a)
 - [ ] consider doing per-geometry rendermode: brushes can be built only once; late transparency depth sorting for vk render;
 - [ ] rtx: too many emissive lights in c3a1b
-- [ ] studio models: pre-compute buffer sizes and allocate them at once
 - [ ] rtx: denoise
 	- [ ] non local means ?
 	- [x] reprojection
 	- [ ] SVG+
 	- [ ] ...
 - [ ] rtx: bake light visibility in compute shader
-- [ ] dlight for flashlight seems to be broken
 - [ ] make 2nd commad buffer for resource upload
-- [ ] fix sprite blending; there are commented out functions that we really need (see tunnel before the helicopter in the very beginning)
-- [ ] fix projection matrix differences w/ gl render
-- [ ] bad condition for temp vs map-permanent buffer error message
+- [ ] :x: bad condition for temp vs map-permanent buffer error message
 - [ ] fix brush blending
 - [ ] sprite depth offset
 - [ ] fix incorrect viewport sprite culling
 - [ ] improve g_camera handling; trace SetViewPass vs RenderScene ...
 - [ ] studio model lighting
-- [ ] move all consts to vk_const
-- [ ] what is GL_Backend*/GL_RenderFrame ???
-- [ ] particles
+- [ ] :x: move all consts to vk_const
 - [ ] decals
 - [ ] lightmap dynamic styles
 - [ ] fog
 - [ ] studio models survive NewMap; need to compactify buffers after removing all brushes
 - [ ] sometimes it gets very slow (1fps) when ran under lldb (only on stream?)
-- [ ] optimize perf: cmdbuf managements and semaphores, upload to gpu, ...
-- [ ] ? rtx: studio models should not pre-transform vertices with modelView matrix
 - [ ] rtx: non-realtime unbiased mode: make "ground truth" screenshots that take 1e5 samples per pixels and seconds to produce. what for: semi-interactive material tuning, comparison w/ denoise, etc.
 
 # Someday
 - [ ] more than one lightmap texture. E.g. sponza ends up having 3 lightmaps
-- [ ] start building command buffers in beginframe
-- [ ] cleanup unused stuff in vk_studio.c
-- [ ] stats
 - [ ] better 2d renderer: fill DRAWQUAD(texture, color, ...) command into storage buffer instead of 4 vertices
-- [-] auto-atlas lots of smol textures: most of model texture are tiny (64x64 or less), can we not rebind them all the time? alt: bindless texture array
-- [ ] can we also try to coalesce sprite draw calls?
 - [ ] brush geometry is not watertight
 - [ ] collect render_draw_t w/o submitting them to cmdbuf, then sort by render_mode, trans depth, and other parameters, trying to batch as much stuff as possible; only then submit
 
@@ -880,3 +846,31 @@ Longer-term agenda for current season:
 
 # Done somewhen
 - [x] create water surfaces once in vk_brush
+
+## Collected on 2024-01-18
+- [x] what if new meatpipe has different image format for a creatable image?
+- [x] rtx: light styles: need static lights data, not clear how and what to do
+- [x] more beams types
+- [x] more particle types
+- [x] sane texture memory management: do not allocate VKDeviceMemory for every texture
+- [x] rtx: transparency layering issue, possible approaches:
+	- [x]  trace a special transparent-only ray separately from opaque. This can at least be used to remove black texture areas
+- [x] rtx: better memory handling
+	- [x] robust tracking of memory hierarchies: global/static, map, frame
+	- or just do a generic allocator with compaction?
+- [x] rtx: coalesce all these buffers
+- [x] rtx: entity lights
+- [x] rtx: do not rebuild static studio models (most of them). BLAS building takes most of the frame time (~12ms where ray tracing itself is just 3ms)
+- [x] studio models: pre-compute buffer sizes and allocate them at once
+- [x] dlight for flashlight seems to be broken
+- [x] fix sprite blending; there are commented out functions that we really need (see tunnel before the helicopter in the very beginning)
+- [x] fix projection matrix differences w/ gl render
+- [x] what is GL_Backend*/GL_RenderFrame ???
+- [x] particles
+- [x] optimize perf: cmdbuf managements and semaphores, upload to gpu, ...
+- [x] rtx: studio models should not pre-transform vertices with modelView matrix
+- [x] start building command buffers in beginframe
+- [x] cleanup unused stuff in vk_studio.c
+- [x] stats
+- [-] auto-atlas lots of smol textures: most of model texture are tiny (64x64 or less), can we not rebind them all the time? alt: bindless texture array
+- [x] can we also try to coalesce sprite draw calls?
