@@ -721,6 +721,7 @@ static void skyboxParseInfo( const char *name ) {
 	// Start with default info
 	g_textures.skybox.info = (r_skybox_info_t) {
 		.exposure = 1.f,
+		.sun_solid_angle = 6.794e-5, // Wikipedia
 	};
 
 	char filename[MAX_STRING];
@@ -754,6 +755,15 @@ static void skyboxParseInfo( const char *name ) {
 
 			g_textures.skybox.info.exposure = exposure;
 			DEBUG("Loaded skybox exposure=%f from '%s'", exposure, filename);
+		} else if (Q_strcmp(key, "sun_solid_angle") == 0) {
+			float sun_solid_angle = 0;
+			if (1 != sscanf(value, "%f", &sun_solid_angle)) {
+				ERR("Cannot parse sun_solid_angle '%s' in skybox info '%s'", value, filename);
+				break;
+			}
+
+			g_textures.skybox.info.sun_solid_angle = sun_solid_angle;
+			DEBUG("Loaded skybox sun_solid_angle=%f from '%s'", sun_solid_angle, filename);
 		} else {
 			WARN("Unexpected key '%s' in skybox info '%s'", key, filename);
 			break;

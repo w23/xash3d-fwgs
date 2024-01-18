@@ -47,13 +47,9 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 		if (is_environment) {
 			// Environment/directional light
 			// FIXME extract, it is rather different from other point/sphere/spotlights
-
-			// TODO parametrize externally, via entity patches, etc
-			const float sun_solid_angle = 6.794e-5; // Wikipedia
-			const float cos_theta_max = 1. - sun_solid_angle / (2 * kPi);
-
+			const float cos_theta_max = lights.m.point_lights[i].dir_stopdot2.a;
 			const vec3 dir_sample_z = sampleConeZ(rnd, cos_theta_max);
-			light_dir = normalize(orthonormalBasisZ(-spotlight_dir) * dir_sample_z);
+			light_dir = normalize(orthonormalBasisZ(spotlight_dir) * dir_sample_z);
 
 			// If light sample is below horizon, skip
 			const float light_dot = dot(light_dir, N);
@@ -134,7 +130,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			// Spotlights
 			// Check for angles early
 			// TODO split into separate spotlights and point lights arrays
-			const float spot_dot = -dot(light_dir, spotlight_dir);
+			const float spot_dot = dot(light_dir, spotlight_dir);
 			const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
 			if (spot_dot < stopdot2)
 				continue;

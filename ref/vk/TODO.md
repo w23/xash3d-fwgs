@@ -2,7 +2,9 @@
 - [-] flashlight far circular glitches
 	- This is due to f32 precision not being enough when working with small (light radius ~=1) and large (light
 	  distance ~=1e4) numbers.
-- [ ] patchable sun angle
+- [x] patchable sun angle
+	- [ ] :x: does qrad already have something for that? → no it doesn't
+- [ ] cleanup this TODO
 - [ ] diffuse is still way darker than before
 
 # 2024-01-16 E364

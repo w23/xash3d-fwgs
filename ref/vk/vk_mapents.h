@@ -38,6 +38,7 @@
 	X(26, int_array_t, _xvk_smoothing_excluded, IntArray) \
 	X(27, float, _xvk_tex_rotate, Float) \
 	X(28, int, _xvk_remove_all_sky_surfaces, Int) \
+	X(29, float, _xvk_solid_angle, Float) \
 
 /* NOTE: not used
 	X(23, int, renderamt, Int) \
@@ -88,6 +89,7 @@ typedef struct {
 	vec3_t dir;
 
 	float radius;
+	float solid_angle; // for LightEnvironment
 
 	int style;
 	float stopdot, stopdot2;

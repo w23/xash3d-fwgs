@@ -706,7 +706,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	plight->lightstyle = lightstyle;
 
 	// Omnidirectional light
-	plight->stopdot = plight->stopdot2 = -1.f;
+	plight->stopdot = plight->stopdot2_or_costheta = -1.f;
 	VectorSet(plight->dir, 0, 0, 0);
 
 	addPointLightToClusters( index );
@@ -714,7 +714,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	return index;
 }
 
-static int addSpotLight( const vk_light_entity_t *le, float radius, int lightstyle, float hack_attenuation, qboolean all_clusters ) {
+static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_angle, int lightstyle, float hack_attenuation, qboolean all_clusters ) {
 	const int index = g_lights_.num_point_lights;
 	vk_point_light_t *const plight = g_lights_.point_lights + index;
 
@@ -736,16 +736,30 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, int lightsty
 	VectorCopy(le->origin, plight->origin);
 	plight->radius = radius;
 
-	VectorScale(le->color, hack_attenuation, plight->base_color);
 	VectorCopy(plight->base_color, plight->color);
 	plight->lightstyle = lightstyle;
 
 	VectorCopy(le->dir, plight->dir);
 	plight->stopdot = le->stopdot;
-	plight->stopdot2 = le->stopdot2;
 
-	if (le->type == LightTypeEnvironment)
+	if (le->type == LightTypeEnvironment) {
+		// Baseline values
+		const float kSunSolidAngle = 6.794e-5; // Wikipedia
+		const float kSunCosTheta = 1. - kSunSolidAngle / (2 * M_PI);
+
+		const float cos_theta_max = Q_min(kSunCosTheta, 1. - solid_angle / (2 * M_PI));
+
+		// Make sure that the brightness is preserved
+		// light.glsl will multiply color by one_over_pdf for future MIS reasons
+		hack_attenuation /= (1. - cos_theta_max) / (1. - kSunCosTheta);
+
 		plight->flags = LightFlag_Environment;
+		plight->stopdot2_or_costheta = cos_theta_max;
+	} else {
+		plight->stopdot2_or_costheta = le->stopdot2;
+	}
+
+	VectorScale(le->color, hack_attenuation, plight->base_color);
 
 	if (all_clusters)
 		addPointLightToAllClusters( index );
@@ -848,7 +862,8 @@ void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player 
 		le.dir[0], le.dir[1], le.dir[2]);
 	*/
 
-	addSpotLight(&le, radius, 0, hack_attenuation, false);
+	const float solid_angle_unused = 0.;
+	addSpotLight(&le, radius, 0, solid_angle_unused, hack_attenuation, false);
 }
 
 static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
@@ -892,6 +907,9 @@ static void processStaticPointLights( void ) {
 		const float default_radius = 2.f; // TODO tune
 		const float radius = le->radius > 0.f ? le->radius : default_radius;
 
+		// Expects skybox to be loaded already.
+		const float solid_angle = le->solid_angle > 0.f ? le->solid_angle : R_TexturesGetSkyboxInfo().sun_solid_angle;
+
 		// These constants are empirical. There's no known math reason behind them
 		const float hack_attenuation = (le->type == LightTypeEnvironment)
 			? 700.f // FIXME why?
@@ -905,7 +923,7 @@ static void processStaticPointLights( void ) {
 
 			case LightTypeEnvironment:
 			case LightTypeSpot:
-				index = addSpotLight(le, radius, le->style, hack_attenuation, i == g_map_entities.single_environment_index);
+				index = addSpotLight(le, radius, solid_angle, le->style, hack_attenuation, i == g_map_entities.single_environment_index);
 				break;
 
 			default:
@@ -1271,8 +1289,8 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 		VectorCopy(src->color, dst->color_stopdot);
 		dst->color_stopdot[3] = src->stopdot;
 
-		VectorCopy(src->dir, dst->dir_stopdot2);
-		dst->dir_stopdot2[3] = src->stopdot2;
+		VectorNegate(src->dir, dst->dir_stopdot2);
+		dst->dir_stopdot2[3] = src->stopdot2_or_costheta;
 
 		dst->environment = !!(src->flags & LightFlag_Environment);
 	}
