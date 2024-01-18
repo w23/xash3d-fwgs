@@ -198,6 +198,9 @@ vec3 applyHuePreservingShoulder(vec3 col) {
 	// Hue-preserving range compression requires desaturation in order to achieve a natural look. We adaptively saturate the input based on its luminance.
 	float saturationAmount = pow(smoothstep(1.0, 0.3, ictcp.x), 1.3);
 	col = ICtCpToRGB(ictcp * vec3(1, saturationAmount.xx));
+
+	// TODO: how to do it right for HDR?
+	/*
 	// Only compress luminance starting at a certain point. Dimmer inputs are passed through without modification.
 	float linearSegmentEnd = 0.25;
 	// Hue-preserving mapping
@@ -209,6 +212,8 @@ vec3 applyHuePreservingShoulder(vec3 col) {
 	// Combine hue-preserving and non-hue-preserving colors. Absolute hue preservation looks unnatural, as bright colors *appear* to have been hue shifted.
 	// Actually doing some amount of hue shifting looks more pleasing
 	col = mix(perChannelCompressed, compressedHuePreserving, 0.6);
+	*/
+
 	vec3 ictcpMapped = RGBToICtCp(col);
 	// Smoothly ramp off saturation as brightness increases, but keep some even for very bright input
 	float postCompressionSaturationBoost = 0.3 * smoothstep(1.0, 0.5, ictcp.x);
