@@ -312,7 +312,7 @@ void main() {
 
 		// HDR: VK_FORMAT_A2B10G10R10_UNORM_PACK32(64) VK_COLOR_SPACE_HDR10_ST2084_EXT(1000104008)
 		case HDR_A2B10G10R10_UNORM_PACK32_HDR10_ST2084:
-			colour = linearToPQ(colour, 100);
+			colour = linearToPQ(applyHuePreservingShoulder(colour), 100);
 			colour += agx(SRGBtoLINEAR(legacy_blend.rgb)*0.5); // hack
 			break;
 	}
