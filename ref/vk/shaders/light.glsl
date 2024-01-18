@@ -90,8 +90,11 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			}
 #endif
 
-			// Sample on the visible disc
-			const float cos_theta_max = min(1., sqrt(d2_minus_r2) / light_dist);
+			// Cosine of "solid angle"
+			// Bad precision: const float cos_theta_max = min(1., sqrt(d2_minus_r2) / light_dist);
+			// Meh precision (for small r and big light dist):
+			const float cos_theta_max = min(1., sqrt(d2_minus_r2 / light_dist2));
+			// Worse precision: const float cos_theta_max = min(1., sqrt(1. - light_r2 / light_dist2));
 
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALID(cos_theta_max) || cos_theta_max < 0. || cos_theta_max > 1.) {
@@ -101,6 +104,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 		}
 #endif
 
+			// Sample on the visible disc
 			const vec3 dir_sample_z = sampleConeZ(rnd, cos_theta_max);
 			const mat3 basis = orthonormalBasisZ(light_dir / light_dist);
 			light_dir = normalize(basis * dir_sample_z);

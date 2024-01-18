@@ -1,10 +1,16 @@
+# 2024-01-18 E365
+- [-] flashlight far circular glitches
+	- This is due to f32 precision not being enough when working with small (light radius ~=1) and large (light
+	  distance ~=1e4) numbers.
+- [ ] patchable sun angle
+- [ ] diffuse is still way darker than before
+
 # 2024-01-16 E364
 - [x] P NaNs
 	- [x] need to remove degenerate triangles
 - [x] light_environment is too dark
 - [ ] add direct_{diff,spec} to rendertests → only can do for this handmade-brdfs branch
 	- [ ] :x: and rerun tests for vulkan to get new gold images → imuposshiburu, see above
-- [ ] patchable sun angle
 
 # 2024-01-15 E363
 - [x] filter out invalid (r=0, etc) lights in native
@@ -16,7 +22,7 @@
 - [ ] :x: ~~common intersection-local-normal-oriented basis~~ → point light construct light-oriented frames, not reusable
 
 # 2024-01-12 E362
-- [ ] point→spherical light sampling
+- [x] point→spherical light sampling
 	- [x] 1/pdf → pdf *= 2π
 	- [x] disk sampling
 
@@ -24,10 +30,9 @@
 - [x] fix zero-area polygon lights nanites, fixes #461
 	- [x] c1a1a NaNs are still there
 - [x] fix point light computation instabilites
-	- [ ] need proper sampling asap, as different instabilities approaches are visually different, and it's impossible to reason which one is preferable
+	- [x] need proper sampling asap, as different instabilities approaches are visually different, and it's impossible to reason which one is preferable
 - [x] add material debug display mode
 - [ ] vulkan validation layers crashes on too many `debugPrintfEXT` messages
-- [ ] diffuse is still way darker than before
 
 # 2024-01-09 E360
 - [x] validate all intermediate and final outputs against invalid values, complain into log
