@@ -1540,11 +1540,13 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 						// normal smoothing might be skippedk. In case that this causes undesirable rendering
 						// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
 						// be needed. E.g. ear clipping.
+						/* diagnostics
 						WARN("surface=%d numedges=%d triangle=%d has degenerate normal, area2=%f",
 							surface_index, surf->numedges, index_count / 3, area2);
 						DEBUG("  p[0]=(%f,%f,%f)", p[0][0], p[0][1], p[0][2]);
 						DEBUG("  p[%d]=(%f,%f,%f)", k - 1, p[1][0], p[1][1], p[1][2]);
 						DEBUG("  p[%d]=(%f,%f,%f)", k, p[2][0], p[2][1], p[2][2]);
+						*/
 					} else {
 						*(p_ind++) = (uint16_t)(vertex_offset + 0);
 						*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
@@ -1552,6 +1554,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 						index_count += 3;
 						index_offset += 3;
 
+						/* diagnostics for degenerate triangles
 						const float dot = DotProduct(tri_normal, surf_normal) / sqrt(area2);
 						if (fabs(dot-1.) > 1e-2) {
 							WARN("surface=%d triangle=%d tri_normal=(%f,%f,%f) sn=(%f,%f,%f) dot=%f",
@@ -1561,6 +1564,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 								dot
 							);
 						}
+						*/
 					} // valid triangle
 
 					// Move current vertex to prev
