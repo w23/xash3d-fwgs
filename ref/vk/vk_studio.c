@@ -1719,7 +1719,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 			{
 				const float normal_len2 = DotProduct(g_studio.norms[vi], g_studio.norms[vi]);
 				if (normal_len2 < .9f) {
-					ERR("model=%s bodypart=%d vert=%d+%d=%d vi=%d normal=(%f,%f,%f) INVALID len2=%f",
+					ERROR_THROTTLED(10,
+						"model=%s bodypart=%d vert=%d+%d=%d vi=%d normal=(%f,%f,%f) INVALID len2=%f",
 						g_studio_current.entmodel->studio_header->name,
 						g_studio_current.bodypart_index,
 						j, vertex_offset, j + vertex_offset, vi,
