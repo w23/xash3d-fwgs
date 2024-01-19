@@ -1509,6 +1509,18 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					VectorCopy(surf_normal, vertex.normal);
 				}
 
+				{
+					const float normal_len2 = DotProduct(vertex.normal, vertex.normal);
+					if (normal_len2 < .9f) {
+						ERR("model=%s surf=%d vert=%d surf_normal=(%f, %f, %f) vertex.normal=(%f,%f,%f) INVALID len2=%f",
+							args.mod->name, surface_index, k,
+							surf_normal[0], surf_normal[1], surf_normal[2],
+							vertex.normal[0], vertex.normal[1], vertex.normal[2],
+							normal_len2
+						);
+					}
+				}
+
 				VectorCopy(tangent, vertex.tangent);
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);

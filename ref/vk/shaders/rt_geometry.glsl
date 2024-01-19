@@ -121,6 +121,24 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 		GET_VERTEX(vi2).normal,
 		GET_VERTEX(vi3).normal,
 		bary));
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(geom.normal_shading)) {
+		debugPrintfEXT("rt_geometry.glsl:%d model=%d geom=%d prim=%d v1n=(%f,%f,%f) v2n=(%f,%f,%f) v3n=(%f,%f,%f) nt=(%f,%f,%f;%f,%f,%f;%f,%f,%f) INVALID nshade=(%f,%f,%f)",
+			__LINE__,
+			model_index, geometry_index, primitive_index,
+			PRIVEC3(GET_VERTEX(vi1).normal),
+			PRIVEC3(GET_VERTEX(vi2).normal),
+			PRIVEC3(GET_VERTEX(vi3).normal),
+			PRIVEC3(normalTransform[0]),
+			PRIVEC3(normalTransform[1]),
+			PRIVEC3(normalTransform[2])
+		);
+		// TODO ???
+		geom.normal_shading = geom.normal_geometry;
+	}
+#endif
+
 	geom.tangent = normalize(normalTransform * baryMix(
 		GET_VERTEX(vi1).tangent,
 		GET_VERTEX(vi2).tangent,

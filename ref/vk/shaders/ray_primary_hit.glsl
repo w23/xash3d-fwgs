@@ -77,6 +77,21 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 			tnorm.z = sqrt(max(0., 1. - dot(tnorm.xy, tnorm.xy)));
 
 			geom.normal_shading = normalize(TBN * tnorm);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALIDV(geom.normal_shading)) {
+				debugPrintfEXT("ray_primary_hit.glsl:%d geom.tangent=(%f,%f,%f) T=(%f,%f,%f) nscale=%f tnorm=(%f,%f,%f) INVALID nshade=(%f,%f,%f)",
+					__LINE__,
+					PRIVEC3(geom.tangent),
+					PRIVEC3(T),
+					material.normal_scale,
+					PRIVEC3(tnorm),
+					PRIVEC3(geom.normal_shading)
+				);
+				// TODO ???
+				geom.normal_shading = geom.normal_geometry;
+			}
+#endif
 		}
 #endif
 	}
