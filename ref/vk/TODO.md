@@ -1,12 +1,19 @@
+## Next
+- [ ] specular bounce
+    - [ ] specular-vs-diffuse choice based on metalness+frensel
+    - [ ] VNDF? sampling
+- [ ] performance profiling and comparison
+
+# Previously
 ## 2024-01-19 E366
 - [x] investigate more shading nans
 	- found zero normals in studio models, see #731
 - [x] guns and transparency → added legacy transparency overshoot threshold
 - [x] cvar to force culling
-- [ ] flashlight is too bright
-- [ ] bounce diffuse is still way darker than before
+- [x] flashlight is too bright
+- [x] bounce diffuse is still way darker than before
+    → it shouldn't have been multiplied by diffuse value
 
-# Previously
 ## 2024-01-18 E365
 - [-] flashlight far circular glitches
 	- This is due to f32 precision not being enough when working with small (light radius ~=1) and large (light

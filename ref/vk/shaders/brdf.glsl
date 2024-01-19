@@ -327,11 +327,6 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 	// TODO pick diffuse-vs-specular based on expected contribution
 	const int brdf_type = BRDF_TYPE_DIFFUSE;// (rand01() > .5) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
 
-	if (any(isnan(geometry_normal))) {
-		inout_throughput = 10.*vec3(1.,0.,1.);
-		return brdf_type;
-	}
-
 #if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)
 if (g_mat_gltf2) {
 #endif
@@ -359,7 +354,8 @@ if (g_mat_gltf2) {
 	}
 	*/
 
-	inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? diffuse : specular;
+	const vec3 lambert_diffuse_term = vec3(1.f); // Cosine weight is already "encoded" in cosine hemisphere sampling.
+	inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : specular;
 
 	const float throughput_threshold = 1e-3;
 	if (dot(inout_throughput, inout_throughput) < throughput_threshold)
