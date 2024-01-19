@@ -7,7 +7,7 @@
 // Done in sRGB-γ space for legacy-look reasons.
 // Returns vec4(emissive_srgb.rgb, revealage)
 vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
-	const float glow_soft_overshoot = 16.;
+	const float kGlowSoftOvershoot = 16.;
 	vec3 emissive = vec3(0.);
 
 	// TODO probably a better way would be to sort only MIX entries.
@@ -29,13 +29,21 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		| gl_RayFlagsNoOpaqueEXT // force all to be non-opaque
 		;
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + glow_soft_overshoot);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_BLEND, pos, 0., dir, L + kGlowSoftOvershoot);
 	while (rayQueryProceedEXT(rq)) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, false);
 		const ModelHeader model = getModelHeader(model_index);
 		const Kusok kusok = getKusok(geom.kusok_index);
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
+
+		// Engage soft particles/blending gradually after a certain distance.
+		// Makes see-beams-through-weapons visual glitch mostly disappear.
+		// Engage-vs-Full difference to make soft particles appear gradually, and not pop immediately.
+		const float kOvershootEngageDist = 20.;
+		const float kOvershootFullDist = 40.;
+		const float glow_soft_overshoot = kGlowSoftOvershoot * smoothstep(kOvershootEngageDist, kOvershootFullDist, hit_t);
+
 		const float overshoot = hit_t - L;
 
 // Use soft alpha depth effect globally, not only for glow
