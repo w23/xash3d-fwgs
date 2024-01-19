@@ -772,7 +772,7 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_
 
 void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player ) {
 	// parameters
-	const float hack_attenuation = 0.1;
+	const float hack_attenuation = 0.1f / 25.f;
 	float radius = 1.0;
 	// TODO: better tune it
 	const float _cone = 10.0;
