@@ -1,6 +1,8 @@
 ## 2024-01-19 E366
 - [x] investigate more shading nans
 	- found zero normals in studio models, see #731
+- [ ] guns and transparency
+- [ ] flashlight is too bright
 - [ ] bounce diffuse is still way darker than before
 
 # Previously

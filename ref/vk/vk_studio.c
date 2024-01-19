@@ -1723,9 +1723,9 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 						g_studio_current.entmodel->studio_header->name,
 						g_studio_current.bodypart_index,
 						j, vertex_offset, j + vertex_offset, vi,
-						g_studio.norms[0],
-						g_studio.norms[1],
-						g_studio.norms[2],
+						g_studio.norms[vi][0],
+						g_studio.norms[vi][1],
+						g_studio.norms[vi][2],
 						normal_len2
 					);
 				}
