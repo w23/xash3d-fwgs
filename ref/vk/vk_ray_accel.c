@@ -64,6 +64,8 @@ static struct {
 		int instances_count;
 		int accels_built;
 	} stats;
+
+	cvar_t *cv_force_culling;
 } g_accel;
 
 static VkAccelerationStructureBuildSizesInfoKHR getAccelSizes(const VkAccelerationStructureBuildGeometryInfoKHR *build_info, const uint32_t *max_prim_counts) {
@@ -271,7 +273,10 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				.accelerationStructureReference = instance->blas_addr,
 			};
 
-			const VkGeometryInstanceFlagsKHR flags = (instance->material_flags & kMaterialFlag_CullBackFace_Bit) ? 0 : VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+			const VkGeometryInstanceFlagsKHR flags =
+				(instance->material_flags & kMaterialFlag_CullBackFace_Bit) || g_accel.cv_force_culling->value
+				? 0
+				: VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
 			switch (instance->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
@@ -284,7 +289,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
 					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR;
+					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR; // Alpha test always culls
 					break;
 				case MATERIAL_MODE_TRANSLUCENT:
 					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
@@ -401,6 +406,8 @@ qboolean RT_VkAccelInit(void) {
 
 	R_SPEEDS_COUNTER(g_accel.stats.instances_count, "instances", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
+
+	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
 
 	return true;
 }

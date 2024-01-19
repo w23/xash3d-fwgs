@@ -2,6 +2,7 @@
 - [x] investigate more shading nans
 	- found zero normals in studio models, see #731
 - [x] guns and transparency → added legacy transparency overshoot threshold
+- [x] cvar to force culling
 - [ ] flashlight is too bright
 - [ ] bounce diffuse is still way darker than before
 
