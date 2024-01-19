@@ -2,13 +2,9 @@
 
 #include "vk_core.h"
 #include "vk_const.h"
-#include "vk_buffer.h"
-#include "vk_pipeline.h"
-#include "vk_framectl.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
-#include "vk_scene.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_light.h"
@@ -17,10 +13,6 @@
 #include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
-#include "camera.h"
-
-#include "ref_params.h"
-#include "eiface.h"
 
 #include <math.h>
 #include <memory.h>

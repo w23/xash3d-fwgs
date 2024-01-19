@@ -1,5 +1,4 @@
 #include "vk_logs.h"
-#include "vk_cvar.h"
 #include "stringview.h"
 
 uint32_t g_log_debug_bits = 0;
