@@ -21,6 +21,10 @@ struct MaterialProperties {
 	float metalness;
 	float roughness;
 };
+
+float saturate(float x) { return clamp(x, 0.0f, 1.0f); }
+vec3 saturate(vec3 x) { return clamp(x, vec3(0.0f), vec3(1.0f)); }
+float mad(float a, float b, float c) { return a * b + c; }
 #endif
 
 // Ray Tracing Gems, §16.6.3
@@ -259,7 +263,7 @@ if (g_mat_gltf2) {
 #endif
 }
 
-//#define TEST_LOCAL_FRAME
+#define TEST_LOCAL_FRAME
 #ifdef TEST_LOCAL_FRAME
 #ifndef BRDF_H_INCLUDED
 // brdf.h
@@ -316,6 +320,28 @@ vec3 sampleCosineHemisphereAroundVectorUnnormalized(vec2 rnd, vec3 n) {
 	return n + vec3(b * cos(phi), b * sin(phi), a);
 }
 
+// Bounded VNDF Sampling for Smith–GGX Reflections
+// Kenta Eto and Yusuke Tokuyoshi. SIGGRAPH Asia 2023.
+// https://doi.org/10.1145/3610543.3626163
+vec3 SampleGGXReflection ( vec3 i , vec2 alpha , vec2 rand ) {
+	vec3 i_std = normalize ( vec3 (i. xy * alpha , i.z));
+	// Sample a spherical cap
+	float phi = 2.0 * kPi * rand .x;
+	float a = saturate ( min ( alpha .x , alpha .y)); // Eq . 6
+	float s = 1.0 + length ( vec2 (i.x , i.y)); // Omit sgn for a <=1
+	float a2 = a * a; float s2 = s * s;
+	float k = (1.0 - a2 ) * s2 / ( s2 + a2 * i.z * i.z); // Eq . 5
+	float b = i.z > 0 ? k * i_std .z : i_std .z;
+	float z = mad (1.0 - rand .y , 1.0 + b , -b);
+	float sinTheta = sqrt ( saturate (1.0 - z * z));
+	vec3 o_std = vec3( sinTheta * cos ( phi ) , sinTheta * sin ( phi ) , z );
+	// Compute the microfacet normal m
+	vec3 m_std = i_std + o_std ;
+	vec3 m = normalize ( vec3 ( m_std . xy * alpha , m_std .z));
+	// Return the reflection vector o
+	return 2.0 * dot (i , m) * m - i;
+}
+
 #define BRDF_TYPE_NONE 0
 #define BRDF_TYPE_DIFFUSE 1
 #define BRDF_TYPE_SPECULAR 2
@@ -325,8 +351,12 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 	// Idiotic sampling, super noisy, bad distribution, etc etc
 	// But we need to start somewhere
 	// TODO pick diffuse-vs-specular based on expected contribution
-	const int brdf_type = BRDF_TYPE_DIFFUSE;// (rand01() > .5) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
+	// TODO fresnel factor
+	// TODO base_color also might play a role
+	const float diffuse_threshold = material.metalness;
+	const int brdf_type = (rand01() >= diffuse_threshold) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
 
+	if (brdf_type == BRDF_TYPE_DIFFUSE) {
 #if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)
 if (g_mat_gltf2) {
 #endif
@@ -337,6 +367,18 @@ if (g_mat_gltf2) {
 	out_direction = sampleCosineHemisphereAroundVectorUnnormalizedLocalFrame(rnd, shading_normal);
 }
 #endif
+	} else {
+		// Specular
+
+		// nspace = normal vector is Z
+		const vec4 to_nspace = getRotationToZAxis(shading_normal);
+		const vec3 view_nspace = rotatePoint(to_nspace, view);
+		const vec3 sample_dir = SampleGGXReflection(view_nspace, vec2(material.roughness), rnd);
+		out_direction = rotatePoint(invertRotation(to_nspace), sample_dir);
+
+		// FIXME
+		//out_direction = normalize((vec3(rand01(), rand01(), rand01())*2.-1.)*.01 + reflect(-view, shading_normal));
+	}
 
 	if (dot(out_direction, out_direction) < 1e-5 || dot(out_direction, geometry_normal) <= 0.)
 		return BRDF_TYPE_NONE;
@@ -345,7 +387,7 @@ if (g_mat_gltf2) {
 
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	float l_dot_n;
-	brdfComputeGltfModel(shading_normal, out_direction, view, material, l_dot_n, diffuse, specular);
+	//brdfComputeGltfModel(shading_normal, out_direction, view, material, l_dot_n, diffuse, specular);
 
 	/*
 	if (any(isnan(diffuse))) {
@@ -355,13 +397,16 @@ if (g_mat_gltf2) {
 	*/
 
 	const vec3 lambert_diffuse_term = vec3(1.f); // Cosine weight is already "encoded" in cosine hemisphere sampling.
-	inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : specular;
+	//inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : specular;
+	//inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : vec3(1., 0., 0.);
+
+	// FIXME attenuate based on type and material params
+	inout_throughput = vec3(1.);
 
 	const float throughput_threshold = 1e-3;
 	if (dot(inout_throughput, inout_throughput) < throughput_threshold)
 		return BRDF_TYPE_NONE;
 
-	// FIXME better sampling
 	return brdf_type;
 #else
 	int brdf_type = BRDF_TYPE_DIFFUSE;

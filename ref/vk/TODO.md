@@ -1,8 +1,20 @@
 ## Next
+- [ ] performance profiling and comparison
+
+## 2024-01-22 E367
 - [ ] specular bounce
     - [ ] specular-vs-diffuse choice based on metalness+frensel
+		- [x] simple: metalness only
+		- [ ] better: also include fresnel
+		- [ ] best: see literature
+			- [ ] brdf.h
+			- [ ] rt gems 1/2
+			- [ ] papers please?
     - [ ] VNDF? sampling
-- [ ] performance profiling and comparison
+		- [x] mindlessly copypasted from some paper
+		- [ ] figure out what all of that means
+	- [ ] BRDF material params attenuation
+	- [ ] decide on the diffuse-vs-specular out channel based on the first bounce
 
 # Previously
 ## 2024-01-19 E366

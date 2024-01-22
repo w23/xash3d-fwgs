@@ -103,6 +103,7 @@ struct MaterialEx {
 	//TODO float alpha;
 };
 
+// FIXME bounces >= 2 starts to confuse diffuse vs specular. It should be based only on the first bounce.
 int max_bounces = 1;
 
 ivec2 pix;
