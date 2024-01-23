@@ -10,6 +10,8 @@
 				- [ ] brdf.h
 				- [x] rt gems 1/2
 				- [ ] papers please?
+	- [ ] BRDF material params attenuation
+		- [x] try improving, multiply specular by fresnel
 
 
 ## 2024-01-22 E367

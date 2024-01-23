@@ -365,7 +365,7 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 	const float est_spec = luminance(fresnel);
 	const float est_diff = (1. - fresnel_factor) * (1. - material.metalness);
 
-	const float specular_probability = clamp(est_spec / (est_spec + est_diff), .1, .9);
+	const float specular_probability = clamp(est_spec / (est_spec + est_diff), 0., 1.);
 	const int brdf_type = (rand01() > specular_probability) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
 
 	if (brdf_type == BRDF_TYPE_DIFFUSE) {
@@ -373,12 +373,15 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 if (g_mat_gltf2) {
 #endif
 	out_direction = sampleCosineHemisphereAroundVectorUnnormalized(rnd, shading_normal);
-	//out_direction = reflect(shading_normal, -view);
 #if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)
 } else {
 	out_direction = sampleCosineHemisphereAroundVectorUnnormalizedLocalFrame(rnd, shading_normal);
 }
 #endif
+
+		// Cosine weight is already "encoded" in cosine hemisphere sampling.
+		const vec3 lambert_diffuse_term = vec3(1.f);
+		inout_throughput *= lambert_diffuse_term / (1. - specular_probability);
 	} else {
 		// Specular
 
@@ -388,32 +391,20 @@ if (g_mat_gltf2) {
 		const vec3 sample_dir = SampleGGXReflection(view_nspace, vec2(material.roughness), rnd);
 		out_direction = rotatePoint(invertRotation(to_nspace), sample_dir);
 
-		// FIXME
-		//out_direction = normalize((vec3(rand01(), rand01(), rand01())*2.-1.)*.01 + reflect(-view, shading_normal));
+		const vec3 H = normalize(out_direction + view);
+		const float h_dot_v = max(0., dot(H, view));
+		const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
+		float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+		// TODO use mix(), higher chance for it to be optimized
+		const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
+
+		inout_throughput *= fresnel / specular_probability;
 	}
 
 	if (dot(out_direction, out_direction) < 1e-5 || dot(out_direction, geometry_normal) <= 0.)
 		return BRDF_TYPE_NONE;
 
 	out_direction = normalize(out_direction);
-
-	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	float l_dot_n;
-	//brdfComputeGltfModel(shading_normal, out_direction, view, material, l_dot_n, diffuse, specular);
-
-	/*
-	if (any(isnan(diffuse))) {
-		inout_throughput = vec3(0., 1., 0.);
-		return brdf_type;
-	}
-	*/
-
-	const vec3 lambert_diffuse_term = vec3(1.f); // Cosine weight is already "encoded" in cosine hemisphere sampling.
-	//inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : specular;
-	//inout_throughput *= (brdf_type == BRDF_TYPE_DIFFUSE) ? lambert_diffuse_term : vec3(1., 0., 0.);
-
-	// FIXME attenuate based on type and material params
-	inout_throughput = vec3(1.);
 
 	const float throughput_threshold = 1e-3;
 	if (dot(inout_throughput, inout_throughput) < throughput_threshold)
