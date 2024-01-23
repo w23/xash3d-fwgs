@@ -1,15 +1,21 @@
 ## Next
 - [ ] performance profiling and comparison
 
+## 2024-01-23 E368
+- [ ] specular bounce
+    - [x] specular-vs-diffuse choice based on metalness+frensel
+		- [x] better spec-vs-diff bounce type estimation
+			- [x] better: also include fresnel
+			- [ ] best: see literature
+				- [ ] brdf.h
+				- [x] rt gems 1/2
+				- [ ] papers please?
+
+
 ## 2024-01-22 E367
 - [ ] specular bounce
     - [ ] specular-vs-diffuse choice based on metalness+frensel
 		- [x] simple: metalness only
-		- [ ] better: also include fresnel
-		- [ ] best: see literature
-			- [ ] brdf.h
-			- [ ] rt gems 1/2
-			- [ ] papers please?
     - [ ] VNDF? sampling
 		- [x] mindlessly copypasted from some paper
 		- [ ] figure out what all of that means

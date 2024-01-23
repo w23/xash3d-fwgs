@@ -25,6 +25,7 @@ struct MaterialProperties {
 float saturate(float x) { return clamp(x, 0.0f, 1.0f); }
 vec3 saturate(vec3 x) { return clamp(x, vec3(0.0f), vec3(1.0f)); }
 float mad(float a, float b, float c) { return a * b + c; }
+float luminance(vec3 rgb) { return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f)); }
 #endif
 
 // Ray Tracing Gems, §16.6.3
@@ -353,8 +354,19 @@ int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometr
 	// TODO pick diffuse-vs-specular based on expected contribution
 	// TODO fresnel factor
 	// TODO base_color also might play a role
-	const float diffuse_threshold = material.metalness;
-	const int brdf_type = (rand01() >= diffuse_threshold) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
+
+	// See SELECTING BRDF LOBES in 14.3.6 RT Gems 2
+	// TODO DRY brdfComputeGltfModel
+	// Use shading_normal as H estimate
+	const float h_dot_v = max(0., dot(shading_normal, view));
+	const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
+	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
+	const float est_spec = luminance(fresnel);
+	const float est_diff = (1. - fresnel_factor) * (1. - material.metalness);
+
+	const float specular_probability = clamp(est_spec / (est_spec + est_diff), .1, .9);
+	const int brdf_type = (rand01() > specular_probability) ? BRDF_TYPE_DIFFUSE : BRDF_TYPE_SPECULAR;
 
 	if (brdf_type == BRDF_TYPE_DIFFUSE) {
 #if defined(BRDF_COMPARE) && defined(TEST_LOCAL_FRAME)

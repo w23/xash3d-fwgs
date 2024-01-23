@@ -95,10 +95,17 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 
 	const vec4 center_pos = imageLoad(position_t, pix);
 
+#if 1
 	const int DIRECT_DIFFUSE_KERNEL = 3;
 	const int INDIRECT_DIFFUSE_KERNEL = 5;
 	const int DIRECT_SPECULAR_KERNEL = 2;
 	const int INDIRECT_SPECULAR_KERNEL = 2;
+#else
+	const int DIRECT_DIFFUSE_KERNEL = 1;
+	const int INDIRECT_DIFFUSE_KERNEL = 1;
+	const int DIRECT_SPECULAR_KERNEL = 1;
+	const int INDIRECT_SPECULAR_KERNEL = 1;
+#endif
 	const int KERNEL_SIZE = max(max(max(DIRECT_DIFFUSE_KERNEL, INDIRECT_DIFFUSE_KERNEL), DIRECT_SPECULAR_KERNEL), INDIRECT_SPECULAR_KERNEL);
 
 	const float direct_diffuse_sigma = DIRECT_DIFFUSE_KERNEL / 2.;

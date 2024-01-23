@@ -103,7 +103,6 @@ struct MaterialEx {
 	//TODO float alpha;
 };
 
-// FIXME bounces >= 2 starts to confuse diffuse vs specular. It should be based only on the first bounce.
 int max_bounces = 1;
 
 ivec2 pix;
@@ -113,6 +112,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 	vec3 bounce_direction;
 
 	//const int max_bounces = 2;
+	// TODO split into two distinct passes, see #734
+	int first_brdf_type = BRDF_TYPE_NONE;
+
 	for (int i = 0; i < max_bounces; ++i) {
 		// TODO blue noise
 		const vec2 rnd = vec2(rand01(), rand01());
@@ -120,6 +122,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 
 		if (brdf_type == BRDF_TYPE_NONE)
 			return;
+
+		if (first_brdf_type == BRDF_TYPE_NONE)
+			first_brdf_type = brdf_type;
 
 		RayPayloadPrimary payload;
 		payload.base_color_a = vec4(0.);
@@ -192,7 +197,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		if (hit_skybox)
 			lighting += payload.emissive.rgb;
 
-		if (brdf_type == BRDF_TYPE_DIFFUSE)
+		if (first_brdf_type == BRDF_TYPE_DIFFUSE)
 			diffuse += throughput * lighting;
 		else
 			specular += throughput * lighting;
