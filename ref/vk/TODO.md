@@ -1,4 +1,5 @@
 ## Next
+- [ ] white furnace test
 - [ ] performance profiling and comparison
 
 ## 2024-01-23 E368
