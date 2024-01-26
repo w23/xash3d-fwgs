@@ -1,7 +1,14 @@
 ## Next
-- [ ] white furnace test
+- [ ] fix no-hit bounce absent legacy blending
+- [ ] -vkdbgprintf or something
 - [ ] performance profiling and comparison
 
+## 2024-01-26 E369
+- [ ] white furnace test
+	- [x] do it using display_only mode
+	- [ ] do it via separate flag
+
+# Previously
 ## 2024-01-23 E368
 - [ ] specular bounce
     - [x] specular-vs-diffuse choice based on metalness+frensel
@@ -14,7 +21,6 @@
 	- [ ] BRDF material params attenuation
 		- [x] try improving, multiply specular by fresnel
 
-
 ## 2024-01-22 E367
 - [ ] specular bounce
     - [ ] specular-vs-diffuse choice based on metalness+frensel
@@ -25,7 +31,6 @@
 	- [ ] BRDF material params attenuation
 	- [ ] decide on the diffuse-vs-specular out channel based on the first bounce
 
-# Previously
 ## 2024-01-19 E366
 - [x] investigate more shading nans
 	- found zero normals in studio models, see #731

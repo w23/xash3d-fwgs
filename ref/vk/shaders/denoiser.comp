@@ -263,6 +263,7 @@ void main() {
 	const Components c = blurSamples(res, pix);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+		// Skip
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT) {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
 		return;

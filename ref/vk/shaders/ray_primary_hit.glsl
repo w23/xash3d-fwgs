@@ -8,6 +8,7 @@
 #include "ray_kusochki.glsl"
 #include "rt_geometry.glsl"
 #include "color_spaces.glsl"
+#include "skybox.glsl"
 
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
@@ -32,7 +33,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
 		// Mark as non-geometry
 		payload.hit_t.w = -payload.hit_t.w;
-		payload.emissive.rgb = texture(skybox, rayDirection).rgb * ubo.ubo.skybox_exposure;
+		payload.emissive.rgb = sampleSkybox(rayDirection);
 		return;
 	} else {
 		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
@@ -137,6 +138,11 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Nop
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_WHITE_FURNACE) {
+		// White furnace mode: everything is diffuse and white
+		payload.base_color_a.rgb = vec3(1.);
+		payload.emissive.rgb = vec3(0.);
+		payload.material_rmxx.rg = vec2(1., 0.);
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
 		const uint hash = xxhash32(geom.kusok_index);
 		payload.emissive.rgb = vec3(0xff & (hash>>16), 0xff & (hash>>8), 0xff & hash) / 255.;

@@ -49,6 +49,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "light.glsl"
 
 #include "trace_simple_blending.glsl"
+#include "skybox.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
@@ -189,7 +190,8 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 
 			hit_skybox = payload.hit_t.w < 0.;
 		} else {
-			lighting = texture(skybox, bounce_direction).rgb * ubo.ubo.skybox_exposure;
+			// FIXME this no-hit path should still do traceLegacyBlending()
+			lighting = sampleSkybox(bounce_direction);
 			hit_skybox = true;
 		} // not hit
 

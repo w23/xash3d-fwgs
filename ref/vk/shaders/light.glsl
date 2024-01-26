@@ -192,6 +192,11 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
+	// No direct lighting for white furnace mode. The only light sources is no-hit|SURF_SKY bounce indirect light.
+	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_WHITE_FURNACE) {
+		return;
+	}
+
 #ifdef DEBUG_VALIDATE_EXTRA
 	if (IS_INVALIDV(P) || IS_INVALIDV(N) || IS_INVALIDV(view_dir)) {
 		debugPrintfEXT("INVALID computeLighting(P=(%f,%f,%f), N=(%f,%f,%f), view_dir=(%f,%f,%f))",

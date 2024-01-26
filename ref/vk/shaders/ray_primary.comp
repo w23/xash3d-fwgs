@@ -34,6 +34,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "ray_primary_hit.glsl"
 
 #include "trace_simple_blending.glsl"
+#include "skybox.glsl"
 
 struct Ray {
 	vec3 origin, direction;
@@ -116,7 +117,7 @@ void main() {
 		L = rayQueryGetIntersectionTEXT(rq, true);
 	} else {
 		// Draw skybox when nothing is hit
-		payload.emissive.rgb = texture(skybox, ray.direction).rgb * ubo.ubo.skybox_exposure;
+		payload.emissive.rgb = sampleSkybox(ray.direction);
 	}
 
 	const vec4 blend = traceLegacyBlending(ray.origin, ray.direction, L);
