@@ -10,7 +10,8 @@
 	- [x] too dark indirect: blurSamples() returns values too small (incorrect sigma|scale?)
 		- [x] do a box blur test
 		- [x] do A-trous wavelet denoiser
-	- [ ] diffuse and specular debug display modes
+	- [ ] tune A-Trous step widths for different channels
+	- [x] diffuse and specular debug display modes
 	- [ ] temporal glitches with dontBlurSamples() and ATrous
 
 # Previously

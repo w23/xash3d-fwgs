@@ -171,6 +171,8 @@ static void parseDebugDisplayValue( void ) {
 	X(INDIRECT_SPEC, "indirect specular only") \
 	X(TRIHASH, "each triangle is drawn with random color") \
 	X(MATERIAL, "red = roughness, green = metalness") \
+	X(DIFFUSE, "direct + indirect diffuse, spatially denoised") \
+	X(SPECULAR, "direct + indirect specular, spatially denoised") \
 
 #define X(suffix, info) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
