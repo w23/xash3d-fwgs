@@ -103,11 +103,18 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	return c;
 }
 
-Components blurSamples(const ivec2 res, const ivec2 pix) {
-	Components c;
-	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
-
-	const vec4 center_pos = imageLoad(position_t, pix);
+#define BOX_BLUR(out, tex, res, center, kernel_range) \
+{ \
+	const float scale = 1. / pow(float(kernel_range * 2 + 1), 2.); \
+	for (int x = -kernel_range; x <= kernel_range; ++x) { \
+		for (int y = -kernel_range; y <= kernel_range; ++y) { \
+			const ivec2 p = center + ivec2(x, y); \
+			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) \
+				continue; \
+			out += imageLoad(tex, p).rgb * scale; \
+		} /* for y */ \
+	} /* for x */ \
+}
 
 #if 1
 	const int DIRECT_DIFFUSE_KERNEL = 3;
@@ -120,6 +127,31 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 	const int DIRECT_SPECULAR_KERNEL = 1;
 	const int INDIRECT_SPECULAR_KERNEL = 1;
 #endif
+
+Components boxBlurSamples(ivec2 res, ivec2 pix) {
+	Components c;
+	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+
+	BOX_BLUR(c.direct_diffuse, light_poly_diffuse, res, pix, DIRECT_DIFFUSE_KERNEL);
+	BOX_BLUR(c.direct_diffuse, light_point_diffuse, res, pix, DIRECT_DIFFUSE_KERNEL);
+
+	BOX_BLUR(c.direct_specular, light_poly_specular, res, pix, DIRECT_SPECULAR_KERNEL);
+	BOX_BLUR(c.direct_specular, light_point_specular, res, pix, DIRECT_SPECULAR_KERNEL);
+
+	res /= 2;
+	pix /= 2;
+	BOX_BLUR(c.indirect_diffuse, indirect_diffuse, res, pix, INDIRECT_DIFFUSE_KERNEL);
+	BOX_BLUR(c.indirect_specular, indirect_specular, res, pix, INDIRECT_SPECULAR_KERNEL);
+
+	return c;
+}
+
+Components blurSamples(const ivec2 res, const ivec2 pix) {
+	Components c;
+	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+
+	const vec4 center_pos = imageLoad(position_t, pix);
+
 	const int KERNEL_SIZE = max(max(max(DIRECT_DIFFUSE_KERNEL, INDIRECT_DIFFUSE_KERNEL), DIRECT_SPECULAR_KERNEL), INDIRECT_SPECULAR_KERNEL);
 
 	const float direct_diffuse_sigma = DIRECT_DIFFUSE_KERNEL / 2.;
@@ -274,7 +306,8 @@ void main() {
 	imageStore(out_dest, pix, blueNoise(ivec3(pix.xy, ubo.ubo.frame_counter))); return;
 #endif
 
-	const Components c = blurSamples(res, pix);
+	//const Components c = blurSamples(res, pix);
+	const Components c = boxBlurSamples(res, pix);
 	//const Components c = dontBlurSamples(res, pix);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
