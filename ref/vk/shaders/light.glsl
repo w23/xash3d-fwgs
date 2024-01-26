@@ -193,7 +193,7 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	diffuse = specular = vec3(0.);
 
 	// No direct lighting for white furnace mode. The only light sources is no-hit|SURF_SKY bounce indirect light.
-	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_WHITE_FURNACE) {
+	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
 		return;
 	}
 

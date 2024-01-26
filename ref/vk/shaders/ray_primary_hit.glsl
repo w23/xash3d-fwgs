@@ -136,13 +136,15 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	if (model.mode != MATERIAL_MODE_TRANSLUCENT)
 		payload.base_color_a.a = 1.;
 
-	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
-		// Nop
-	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_WHITE_FURNACE) {
+	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
 		// White furnace mode: everything is diffuse and white
 		payload.base_color_a.rgb = vec3(1.);
 		payload.emissive.rgb = vec3(0.);
 		payload.material_rmxx.rg = vec2(1., 0.);
+	}
+
+	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+		// Nop
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SURFHASH) {
 		const uint hash = xxhash32(geom.kusok_index);
 		payload.emissive.rgb = vec3(0xff & (hash>>16), 0xff & (hash>>8), 0xff & hash) / 255.;

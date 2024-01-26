@@ -187,8 +187,9 @@ struct LightCluster {
 #define DEBUG_DISPLAY_INDIRECT_SPEC 13
 #define DEBUG_DISPLAY_TRIHASH 14
 #define DEBUG_DISPLAY_MATERIAL 15
-#define DEBUG_DISPLAY_WHITE_FURNACE 16
 // add more when needed
+
+#define DEBUG_FLAG_WHITE_FURNACE (1<<0)
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
@@ -200,6 +201,7 @@ struct UniformBuffer {
 	float skybox_exposure;
 
 	uint debug_display_only;
+	uint debug_flags;
 };
 
 #undef PAD
