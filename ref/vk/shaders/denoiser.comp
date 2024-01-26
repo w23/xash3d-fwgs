@@ -118,13 +118,13 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 
 #if 1
 	const int DIRECT_DIFFUSE_KERNEL = 3;
-	const int INDIRECT_DIFFUSE_KERNEL = 5;
 	const int DIRECT_SPECULAR_KERNEL = 2;
+	const int INDIRECT_DIFFUSE_KERNEL = 5;
 	const int INDIRECT_SPECULAR_KERNEL = 2;
 #else
 	const int DIRECT_DIFFUSE_KERNEL = 1;
-	const int INDIRECT_DIFFUSE_KERNEL = 1;
 	const int DIRECT_SPECULAR_KERNEL = 1;
+	const int INDIRECT_DIFFUSE_KERNEL = 1;
 	const int INDIRECT_SPECULAR_KERNEL = 1;
 #endif
 
@@ -143,6 +143,76 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 	BOX_BLUR(c.indirect_diffuse, indirect_diffuse, res, pix, INDIRECT_DIFFUSE_KERNEL);
 	BOX_BLUR(c.indirect_specular, indirect_specular, res, pix, INDIRECT_SPECULAR_KERNEL);
 
+	return c;
+}
+
+// https://jo.dreggn.org/home/2010_atrous.pdf
+// https://www.shadertoy.com/view/ldKBzG
+const int a_trous_width = 2;
+const float kATrousKernel[5] = { 1./16., 1./4., 3./8., 1./4., 1./16. };
+Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal) {
+	Components c;
+	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+
+	const float sn_phi = .5;
+	const float p_phi = 1.;
+	const float step_width = 1.;
+
+	const ivec2 res_scaled = res / INDIRECT_SCALE;
+
+	float weight_total = 0.;
+	for (int x = -a_trous_width; x <= a_trous_width; ++x) {
+		const float x_kernel = kATrousKernel[x+a_trous_width];
+		for (int y = -a_trous_width; y <= a_trous_width; ++y) {
+			const float y_kernel = kATrousKernel[y+a_trous_width];
+			const ivec2 offset = ivec2(x, y);
+			const ivec2 p = pix + offset;
+
+			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
+				continue;
+			}
+
+			// Weight normals
+			vec3 sample_geometry_normal, sample_shading_normal;
+			readNormals(p, sample_geometry_normal, sample_shading_normal);
+			// TODO should we go geometry_normal too?
+			const vec3 sn_diff = sample_shading_normal - shading_normal;
+			const float sn_dist2 = max(dot(sn_diff,sn_diff)/(step_width * step_width), 0.);
+			const float weight_sn = min(exp(-(sn_dist2)/sn_phi), 1.0);
+
+			// Weight positions
+			const vec3 sample_position = imageLoad(position_t, p).xyz;
+			const vec3 p_diff = sample_position - pos;
+			const float p_dist2 = dot(p_diff, p_diff);
+			const float weight_pos = min(exp(-(p_dist2)/p_phi),1.0);
+
+			const float weight = (weight_pos * weight_sn) * x_kernel * y_kernel;
+			weight_total += weight;
+
+			c.direct_diffuse +=
+				(imageLoad(light_poly_diffuse, p).rgb
+				+imageLoad(light_point_diffuse, p).rgb) * weight;
+
+			c.direct_specular +=
+				(imageLoad(light_poly_specular, p).rgb
+				+imageLoad(light_point_specular, p).rgb) * weight;
+
+			const ivec2 p_indirect = p / INDIRECT_SCALE;
+			const bool do_indirect = all(lessThan(p_indirect, res_scaled)) && all(greaterThanEqual(p_indirect, ivec2(0)));
+			if (do_indirect) {
+				c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb * weight;
+				c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb * weight;
+			}
+		} // for y
+	} // for x
+
+	const float one_over_weight = 1. / weight_total;
+	c.direct_diffuse *= one_over_weight;
+	c.direct_diffuse *= one_over_weight;
+	c.indirect_diffuse *= one_over_weight;
+	c.direct_specular *= one_over_weight;
+	c.direct_specular *= one_over_weight;
+	c.indirect_specular *= one_over_weight;
 	return c;
 }
 
@@ -276,6 +346,10 @@ void main() {
 		return;
 	}
 
+	const vec3 position = imageLoad(position_t, pix).xyz;
+	vec3 geometry_normal, shading_normal;
+	readNormals(pix, geometry_normal, shading_normal);
+
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// no-op, just continue
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_BASECOLOR) {
@@ -291,13 +365,9 @@ void main() {
 		imageStore(out_dest, pix, vec4(imageLoad(material_rmxx, pix).rg, 0., 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NSHADE) {
-		vec3 geometry_normal, shading_normal;
-		readNormals(pix, geometry_normal, shading_normal);
 		imageStore(out_dest, pix, vec4(.5 + shading_normal * .5, 0.));
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NGEOM) {
-		vec3 geometry_normal, shading_normal;
-		readNormals(pix, geometry_normal, shading_normal);
 		imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.));
 		return;
 	}
@@ -307,8 +377,9 @@ void main() {
 #endif
 
 	//const Components c = blurSamples(res, pix);
-	const Components c = boxBlurSamples(res, pix);
+	//const Components c = boxBlurSamples(res, pix);
 	//const Components c = dontBlurSamples(res, pix);
+	const Components c = blurATrous(res, pix, position, shading_normal, geometry_normal);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
@@ -339,7 +410,6 @@ void main() {
 #ifndef DISABLE_TEMPORAL_DENOISER
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
-		const vec3 position = imageLoad(position_t, pix).xyz;
 		const float depth = length(origin - position);
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(prev_position, 1.)).xyz, 1.);

@@ -7,9 +7,11 @@
 - [ ] white furnace test
 	- [x] do it using display_only mode
 	- [x] do it via separate flag
-	- [ ] too dark indirect
-		- [ ] blurSamples() returns values too small (incorrect sigma|scale?)
-	- [ ] temporal glitches with dontBlurSamples()
+	- [x] too dark indirect: blurSamples() returns values too small (incorrect sigma|scale?)
+		- [x] do a box blur test
+		- [x] do A-trous wavelet denoiser
+	- [ ] diffuse and specular debug display modes
+	- [ ] temporal glitches with dontBlurSamples() and ATrous
 
 # Previously
 ## 2024-01-23 E368
