@@ -208,9 +208,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 
 	const float one_over_weight = 1. / weight_total;
 	c.direct_diffuse *= one_over_weight;
-	c.direct_diffuse *= one_over_weight;
 	c.indirect_diffuse *= one_over_weight;
-	c.direct_specular *= one_over_weight;
 	c.direct_specular *= one_over_weight;
 	c.indirect_specular *= one_over_weight;
 	return c;

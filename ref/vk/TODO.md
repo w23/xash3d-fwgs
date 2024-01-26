@@ -1,20 +1,22 @@
 ## Next
+- [ ] add white furnace render test
+- [ ] tune A-Trous step widths for different channels
+- [ ] temporal glitches with dontBlurSamples() and ATrous
 - [ ] fix no-hit bounce absent legacy blending
 - [ ] -vkdbgprintf or something
 - [ ] performance profiling and comparison
 
+# Previously
 ## 2024-01-26 E369
-- [ ] white furnace test
+- [x] white furnace test
 	- [x] do it using display_only mode
 	- [x] do it via separate flag
 	- [x] too dark indirect: blurSamples() returns values too small (incorrect sigma|scale?)
 		- [x] do a box blur test
 		- [x] do A-trous wavelet denoiser
-	- [ ] tune A-Trous step widths for different channels
 	- [x] diffuse and specular debug display modes
-	- [ ] temporal glitches with dontBlurSamples() and ATrous
+- [x] why did direct lighting became brighter on c2a5?
 
-# Previously
 ## 2024-01-23 E368
 - [ ] specular bounce
     - [x] specular-vs-diffuse choice based on metalness+frensel
