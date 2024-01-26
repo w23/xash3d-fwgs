@@ -6,7 +6,10 @@
 ## 2024-01-26 E369
 - [ ] white furnace test
 	- [x] do it using display_only mode
-	- [ ] do it via separate flag
+	- [x] do it via separate flag
+	- [ ] too dark indirect
+		- [ ] blurSamples() returns values too small (incorrect sigma|scale?)
+	- [ ] temporal glitches with dontBlurSamples()
 
 # Previously
 ## 2024-01-23 E368

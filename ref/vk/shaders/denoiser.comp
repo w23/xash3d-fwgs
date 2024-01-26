@@ -89,6 +89,20 @@ struct Components {
 	vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
 };
 
+Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
+	Components c;
+	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+	const ivec2 p = pix;
+	const ivec2 p_indirect = pix / INDIRECT_SCALE;
+	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
+	c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb;
+	c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb;
+	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
+	c.direct_specular += imageLoad(light_point_specular, p).rgb;
+	c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb;
+	return c;
+}
+
 Components blurSamples(const ivec2 res, const ivec2 pix) {
 	Components c;
 	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
@@ -261,6 +275,7 @@ void main() {
 #endif
 
 	const Components c = blurSamples(res, pix);
+	//const Components c = dontBlurSamples(res, pix);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
