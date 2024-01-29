@@ -1,6 +1,5 @@
 ## Next
 - [ ] add white furnace render test
-- [ ] tune A-Trous step widths for different channels
 - [ ] temporal glitches with dontBlurSamples() and ATrous
 - [ ] fix no-hit bounce absent legacy blending
 - [ ] -vkdbgprintf or something
@@ -8,6 +7,11 @@
 
 ## 2024-01-29 E370
 - [x] bounce > 1 brighness
+- [ ] tune A-Trous step widths for different channels
+	- [x] tune parameters
+	- [x] "cone width"
+	- [ ] different parameters/radii for different channels
+	- [ ] multiple passes
 
 # Previously
 ## 2024-01-26 E369

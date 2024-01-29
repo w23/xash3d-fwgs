@@ -155,18 +155,18 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
 	const float sn_phi = .5;
-	const float p_phi = 1.;
+	const float p_phi = 10.;
 	const float step_width = 1.;
 
 	const ivec2 res_scaled = res / INDIRECT_SCALE;
 
 	float weight_total = 0.;
+	const int offset_scale = 3;
 	for (int x = -a_trous_width; x <= a_trous_width; ++x) {
 		const float x_kernel = kATrousKernel[x+a_trous_width];
 		for (int y = -a_trous_width; y <= a_trous_width; ++y) {
 			const float y_kernel = kATrousKernel[y+a_trous_width];
-			const ivec2 offset = ivec2(x, y);
-			const ivec2 p = pix + offset;
+			const ivec2 p = pix + ivec2(x, y) * offset_scale;
 
 			if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
 				continue;
