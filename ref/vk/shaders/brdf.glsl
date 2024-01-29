@@ -147,7 +147,7 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 
 	// Specular does get the real color, as its contribution is light-direction-dependent
 	const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
-	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+	const float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 
 	// This is taken directly from glTF 2.0 spec. It seems incorrect to me: it should not include the base_color twice.
@@ -349,18 +349,12 @@ vec3 SampleGGXReflection ( vec3 i , vec2 alpha , vec2 rand ) {
 
 int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, /*float alpha, */out vec3 out_direction, inout vec3 inout_throughput) {
 #if 1
-	// Idiotic sampling, super noisy, bad distribution, etc etc
-	// But we need to start somewhere
-	// TODO pick diffuse-vs-specular based on expected contribution
-	// TODO fresnel factor
-	// TODO base_color also might play a role
-
 	// See SELECTING BRDF LOBES in 14.3.6 RT Gems 2
 	// TODO DRY brdfComputeGltfModel
 	// Use shading_normal as H estimate
 	const float h_dot_v = max(0., dot(shading_normal, view));
 	const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
-	float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+	const float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
 	const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 	const float est_spec = luminance(fresnel);
 	const float est_diff = (1. - fresnel_factor) * (1. - material.metalness);
@@ -393,8 +387,7 @@ if (g_mat_gltf2) {
 
 		const vec3 H = normalize(out_direction + view);
 		const float h_dot_v = max(0., dot(H, view));
-		const vec3 f0 = mix(vec3(.04), material.base_color, material.metalness);
-		float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
+		const float fresnel_factor = max(0., pow(1. - abs(h_dot_v), 5.));
 		// TODO use mix(), higher chance for it to be optimized
 		const vec3 fresnel = vec3(1.) * fresnel_factor + f0 * (1. - fresnel_factor);
 

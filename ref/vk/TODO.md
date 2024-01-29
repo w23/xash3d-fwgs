@@ -6,6 +6,9 @@
 - [ ] -vkdbgprintf or something
 - [ ] performance profiling and comparison
 
+## 2024-01-29 E370
+- [x] bounce > 1 brighness
+
 # Previously
 ## 2024-01-26 E369
 - [x] white furnace test
