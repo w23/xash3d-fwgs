@@ -65,7 +65,8 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		//| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		;
-	const float L = 10000.; // TODO Why 10k?
+
+	const float L = 10000.; // TODO Why 10k? Use the real max distance, as in ray_primary.comp
 	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST, origin, 0., direction, L);
 	while (rayQueryProceedEXT(rq)) {
 		if (0 != (rayQueryGetRayFlagsEXT(rq) & gl_RayFlagsOpaqueEXT))
@@ -89,11 +90,19 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		}
 	}
 
-	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
+	if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+		payload.hit_t.w = L;
+		payload.emissive.rgb = sampleSkybox(direction);
 		return false;
+	}
 
 	primaryRayHit(rq, payload);
-	//L = rayQueryGetIntersectionTEXT(rq, true);
+	const bool hit_skybox = payload.hit_t.w < 0.;
+	if (hit_skybox) {
+		payload.hit_t.w *= -1;
+		return false;
+	}
+
 	return true;
 }
 const int INDIRECT_SCALE = 2;
@@ -104,21 +113,20 @@ struct MaterialEx {
 	//TODO float alpha;
 };
 
-int max_bounces = 1;
-
+const int kMaxBounces = 1;
 const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
+const float kRayNormalOffsetFudge = .01;
 
 ivec2 pix;
 void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse, inout vec3 specular) {
-	const float ray_normal_fudge = .01;
 	vec3 throughput = vec3(1.);
-	vec3 bounce_direction;
 
-	//const int max_bounces = 2;
 	// TODO split into two distinct passes, see #734
 	int first_brdf_type = BRDF_TYPE_NONE;
 
-	for (int i = 0; i < max_bounces; ++i) {
+	for (int i = 0; i < kMaxBounces; ++i) {
+		vec3 bounce_direction;
+
 		// TODO blue noise
 		const vec2 rnd = vec2(rand01(), rand01());
 		const int brdf_type = brdfGetSample(rnd, mat.prop, -direction, mat.geometry_normal, mat.shading_normal/* TODO, mat.base_color_a.a*/, bounce_direction, throughput);
@@ -145,7 +153,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		}
 */
 
-		if (all(lessThan(throughput,kThrougputExtinctionThreshold)))
+		if (all(lessThan(throughput, kThrougputExtinctionThreshold)))
 			return;
 
 		if (first_brdf_type == BRDF_TYPE_NONE)
@@ -158,16 +166,16 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		payload.normals_gs = vec4(0.);
 
 		vec3 contribution = vec3(0.);
-		pos += mat.geometry_normal * ray_normal_fudge;
-		const bool did_hit = getHit(pos, bounce_direction, payload);
-		bool hit_skybox = false;
-		if (did_hit) {
-			const vec3 hit_pos = payload.hit_t.xyz;
-			const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
+		pos += mat.geometry_normal * kRayNormalOffsetFudge;
 
+		vec3 hit_color = vec3(0.);
+		const bool did_hit = getHit(pos, bounce_direction, payload);
+		MaterialProperties hit_material;
+		const vec3 hit_pos = payload.hit_t.xyz;
+		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
+		if (did_hit) {
 			vec3 ldiffuse = vec3(0.);
 			vec3 lspecular = vec3(0.);
-			MaterialProperties hit_material;
 			hit_material.base_color = payload.base_color_a.rgb;
 			hit_material.metalness = payload.material_rmxx.g;
 			hit_material.roughness = payload.material_rmxx.r;
@@ -197,46 +205,34 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 				lspecular = vec3(0.);
 			}
 
-			const vec3 background = mixFinalColor(payload.base_color_a.rgb, ldiffuse, lspecular, hit_material.metalness);
-			// OLD
-			//vec3 background = payload.base_color_a.rgb * ldiffuse;
-			//background += lspecular * mix(vec3(1.), payload.base_color_a.rgb, hit_material.metalness);
+			hit_color = mixFinalColor(payload.base_color_a.rgb, ldiffuse, lspecular, hit_material.metalness);
+		} /* if (did_hit) */ else {
+			// not hit -- hit sky
+			hit_color = payload.emissive.rgb;
+		}
 
-			const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
-			contribution = throughput*(SRGBtoLINEAR(blend.rgb) + background * blend.a);
-
-			// FIXME check this very early before doing any lighting stuff
-			hit_skybox = payload.hit_t.w < 0.;
-			if (hit_skybox)
-				/* FIXME: also if last bounce (i.e. w/o direct light sampling) or */
-				contribution += throughput * payload.emissive.rgb;
-
-			// Prepare next bounce state
-			pos = hit_pos;
-			direction = bounce_direction;
-			mat.prop = hit_material;
-			mat.geometry_normal = normalDecode(payload.normals_gs.xy);
-			mat.shading_normal = hit_shading_normal;
-
-			if (brdf_type == BRDF_TYPE_DIFFUSE) {
-				const vec3 diffuse_color = mix(payload.base_color_a.rgb, vec3(0.), payload.material_rmxx.g);
-				throughput *= diffuse_color;
-			}
-		} else {
-			// FIXME this no-hit path should still do traceLegacyBlending()
-			contribution = throughput * sampleSkybox(bounce_direction);
-			hit_skybox = true;
-		} // not hit
+		const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
+		contribution = throughput * (SRGBtoLINEAR(blend.rgb) + hit_color * blend.a);
 
 		if (first_brdf_type == BRDF_TYPE_DIFFUSE)
 			diffuse += contribution;
 		else
 			specular += contribution;
 
-		if (hit_skybox) {
+		if (!did_hit)
 			break;
-		}
 
+		// Prepare next bounce state
+		pos = hit_pos;
+		direction = bounce_direction;
+		mat.prop = hit_material;
+		mat.geometry_normal = normalDecode(payload.normals_gs.xy);
+		mat.shading_normal = hit_shading_normal;
+
+		if (brdf_type == BRDF_TYPE_DIFFUSE) {
+			const vec3 diffuse_color = mix(payload.base_color_a.rgb, vec3(0.), payload.material_rmxx.g);
+			throughput *= diffuse_color;
+		}
 	} // for bounces
 }
 
@@ -273,8 +269,6 @@ void main() {
 		mat.prop.roughness = material_data.r;
 		mat.geometry_normal = geometry_normal;
 		mat.shading_normal = shading_normal;
-
-		//max_bounces = (pix.x > res.x / 2.) ? 2 : 1;
 
 		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
 	}
