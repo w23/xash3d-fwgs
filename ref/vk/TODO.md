@@ -1,14 +1,15 @@
 ## Next
-- [ ] fix no-hit bounce absent legacy blending
-- [ ] add white furnace render test
-- [ ] add new channels to render tests
-- [ ] temporal glitches with dontBlurSamples() and ATrous
-- [ ] -vkdbgprintf or something for explicitly turning shader debug printfs
 - [ ] performance profiling and comparison
 
 ## 2024-02-01 E371
 - [x] tune A-Trous step widths for different channels
 	- [x] multiple passes -- core of the paper lol
+- [x] fix no-hit bounce absent legacy blending
+- [x] update render tests
+- [x] add new channels to render tests
+- [x] add white furnace render test
+- [ ] :x: temporal glitches with dontBlurSamples() and ATrous → no longer reproduces
+- [x] add `-vkdbg_shaderprintf` arg to explicitly enable shader debug printfs
 
 # Previously
 ## 2024-01-29 E370

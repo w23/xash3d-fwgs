@@ -188,16 +188,20 @@ static qboolean createInstance( void )
 		.pApplicationName = "",
 		.pEngineName = "xash3d-fwgs",
 	};
-	const VkValidationFeatureEnableEXT validation_features[] = {
-		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-		VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT,
-	};
+
+	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8) = {0};
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+
+	if (!!gEngine.Sys_CheckParm("-vkdbg_shaderprintf"))
+		BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+
 	const VkValidationFeaturesEXT validation_ext = {
 		.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-		.pEnabledValidationFeatures = validation_features,
-		.enabledValidationFeatureCount = COUNTOF(validation_features),
+		.pEnabledValidationFeatures = validation_features.items,
+		.enabledValidationFeatureCount = validation_features.count,
 	};
+
 	VkInstanceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
