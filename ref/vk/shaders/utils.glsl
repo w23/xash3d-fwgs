@@ -1,6 +1,7 @@
 #ifndef UTILS_GLSL_INCLUDED
 #define UTILS_GLSL_INCLUDED
 
+// Compared to builtin GLSL sign() will be 1.0 if v == 0.
 float signP(float v) { return v >= 0.f ? 1.f : -1.f; }
 vec2 signP(vec2 v) { return vec2(signP(v.x), signP(v.y)); }
 
@@ -40,5 +41,13 @@ vec3 baryMix(vec3 v1, vec3 v2, vec3 v3, vec2 bary) {
 
 vec4 baryMix(vec4 v1, vec4 v2, vec4 v3, vec2 bary) {
 	return v1 * (1. - bary.x - bary.y) + v2 * bary.x + v3 * bary.y;
+}
+
+vec3 mixFinalColor(vec3 base_color, vec3 diffuse, vec3 specular, float metalness) {
+		// Late base_color compositing with diffuse lighting
+		// see brdf.glsl
+		const vec3 diffuse_color = mix(base_color, vec3(0.), metalness);
+		// Specular color is already computed-in as it is both view and light-source-direction dependent
+		return diffuse * diffuse_color + specular;
 }
 #endif // UTILS_GLSL_INCLUDED

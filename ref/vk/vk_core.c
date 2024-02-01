@@ -98,6 +98,9 @@ static const char* device_extensions_rt[] = {
 	VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 	VK_KHR_RAY_QUERY_EXTENSION_NAME,
+
+	// TODO optional under -vkvalidate
+	VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
 };
 
 static const char* device_extensions_nv_checkpoint[] = {
@@ -127,13 +130,20 @@ VkBool32 VKAPI_PTR debugCallback(
 
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		gEngine.Con_Printf(S_ERROR "Validation: %s\n", pCallbackData->pMessage);
+		gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
 #ifdef _MSC_VER
 		__debugbreak();
 #else
 		debug_break();
 #endif
+	} else {
+		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
+			gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+		} else {
+			gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+		}
 	}
+
 	return VK_FALSE;
 }
 
@@ -178,15 +188,20 @@ static qboolean createInstance( void )
 		.pApplicationName = "",
 		.pEngineName = "xash3d-fwgs",
 	};
-	const VkValidationFeatureEnableEXT validation_features[] = {
-		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-	};
+
+	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8) = {0};
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+
+	if (!!gEngine.Sys_CheckParm("-vkdbg_shaderprintf"))
+		BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+
 	const VkValidationFeaturesEXT validation_ext = {
 		.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-		.pEnabledValidationFeatures = validation_features,
-		.enabledValidationFeatureCount = COUNTOF(validation_features),
+		.pEnabledValidationFeatures = validation_features.items,
+		.enabledValidationFeatureCount = validation_features.count,
 	};
+
 	VkInstanceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
@@ -438,7 +453,7 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 	}
 
 	Mem_Free(physical_devices);
-	
+
 	if (!has_rt) {
 		gEngine.Con_Printf( "^6===================================================^7\n" );
 		gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");

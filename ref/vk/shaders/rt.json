@@ -38,6 +38,9 @@
 	"bounce": {
 		"comp": "bounce"
 	},
+	"indiff_at1": {
+		"comp": "indirect_diffuse_atrous1"
+	},
 	"denoiser": {
 		"comp": "denoiser"
 	},

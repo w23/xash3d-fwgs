@@ -2,11 +2,13 @@
 #define RAY_PRIMARY_HIT_GLSL_INCLUDED
 #extension GL_EXT_nonuniform_qualifier : enable
 
+#include "debug.glsl"
 #include "utils.glsl"
 #include "ray_primary_common.glsl"
 #include "ray_kusochki.glsl"
 #include "rt_geometry.glsl"
 #include "color_spaces.glsl"
+#include "skybox.glsl"
 
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
@@ -31,7 +33,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
 		// Mark as non-geometry
 		payload.hit_t.w = -payload.hit_t.w;
-		payload.emissive.rgb = texture(skybox, rayDirection).rgb * ubo.ubo.skybox_exposure;
+		payload.emissive.rgb = sampleSkybox(rayDirection);
 		return;
 	} else {
 		payload.base_color_a = sampleTexture(material.tex_base_color, geom.uv, geom.uv_lods);
@@ -76,12 +78,36 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 			tnorm.z = sqrt(max(0., 1. - dot(tnorm.xy, tnorm.xy)));
 
 			geom.normal_shading = normalize(TBN * tnorm);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALIDV(geom.normal_shading)) {
+				debugPrintfEXT("ray_primary_hit.glsl:%d geom.tangent=(%f,%f,%f) T=(%f,%f,%f) nscale=%f tnorm=(%f,%f,%f) INVALID nshade=(%f,%f,%f)",
+					__LINE__,
+					PRIVEC3(geom.tangent),
+					PRIVEC3(T),
+					material.normal_scale,
+					PRIVEC3(tnorm),
+					PRIVEC3(geom.normal_shading)
+				);
+				// TODO ???
+				geom.normal_shading = geom.normal_geometry;
+			}
+#endif
 		}
 #endif
 	}
 
 	payload.normals_gs.xy = normalEncode(geom.normal_geometry);
 	payload.normals_gs.zw = normalEncode(geom.normal_shading);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(payload.normals_gs)) {
+		debugPrintfEXT("ngeom=(%f,%f,%f) nshade=(%f,%f,%f) INVALID normals_gs=(%f,%f,%f,%f)",
+			PRIVEC3(geom.normal_geometry),
+			PRIVEC3(geom.normal_shading),
+			PRIVEC4(payload.normals_gs));
+	}
+#endif
 
 #if 1
 	// Real correct emissive color
@@ -109,6 +135,13 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	// Non-translucent materials should be fully opaque
 	if (model.mode != MATERIAL_MODE_TRANSLUCENT)
 		payload.base_color_a.a = 1.;
+
+	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
+		// White furnace mode: everything is diffuse and white
+		payload.base_color_a.rgb = vec3(1.);
+		payload.emissive.rgb = vec3(0.);
+		payload.material_rmxx.rg = vec2(1., 0.);
+	}
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Nop

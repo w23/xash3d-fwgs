@@ -250,7 +250,7 @@ void R_NewMap( void ) {
 	// and this R_NewMap call is from within loading of a saved game.
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
-	INFO( "R_NewMap, loading save: %d", is_save_load );
+	INFO( "R_NewMap(%s) is_save_load=%d", map->name, is_save_load );
 
 	// New map causes entites to be reallocated regardless of whether it was save-load.
 	// This realloc invalidates all previous entity data and pointers.

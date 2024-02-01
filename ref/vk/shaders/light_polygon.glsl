@@ -3,6 +3,7 @@
 #include "peters2021-sampling/polygon_clipping.glsl"
 #include "peters2021-sampling/polygon_sampling.glsl"
 
+#include "debug.glsl"
 #include "noise.glsl"
 #include "utils.glsl"
 
@@ -50,6 +51,16 @@ vec4 getPolygonLightSampleSimple(vec3 P, vec3 view_dir, const PolygonLight poly)
 	const vec3 light_dir = baryMix(v[0], v[1], v[2], rnd) - P;
 	const vec3 light_dir_n = normalize(light_dir);
 	const float contrib = - poly.area * dot(light_dir_n, poly.plane.xyz ) / dot(light_dir, light_dir);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALID(contrib)) {
+		debugPrintfEXT("getPolygonLightSampleSimple: poly.area=%f light_dir=(%f,%f,%f) INVALID contrib=%f",
+			poly.area,
+			PRIVEC3(light_dir),
+			contrib);
+	}
+#endif
+
 	return vec4(light_dir_n, contrib);
 }
 
@@ -133,6 +144,15 @@ vec4 getPolygonLightSampleProjected(vec3 view_dir, SampleContext ctx, const Poly
 		return vec4(0.f);
 
 	const projected_solid_angle_polygon_t sap = prepare_projected_solid_angle_polygon_sampling(vertices_count, clipped);
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALID(sap.projected_solid_angle)) {
+		debugPrintfEXT("getPolygonLightSampleProjected: vertices_count=%d v0=(%f,%f,%f) v1=(%f,%f,%f) v2=(%f,%f,%f) INVALID sap.projected_solid_angle = %f",
+			vertices_count, PRIVEC3(clipped[0]), PRIVEC3(clipped[1]), PRIVEC3(clipped[2]),
+			sap.projected_solid_angle);
+	}
+#endif
+
 	const float contrib = sap.projected_solid_angle;
 	if (contrib <= 0.f)
 		return vec4(0.f);
@@ -224,6 +244,9 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 	const uint num_polygons = uint(light_grid.clusters_[cluster_index].num_polygons);
 	for (uint i = 0; i < num_polygons; ++i) {
 		const uint index = uint(light_grid.clusters_[cluster_index].polygons[i]);
+
+		//if (index != 5) // < 6 || index >= 8)
+		//	continue;
 #else
 	for (uint index = 0; index < lights.m.num_polygons; ++index) {
 #endif
@@ -258,6 +281,19 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 			evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
 			diffuse += emissive * estimate * poly_diffuse;
 			specular += emissive * estimate * poly_specular;
+
+#ifdef DEBUG_VALIDATE_EXTRA
+			if (IS_INVALIDV(specular) || any(lessThan(specular,vec3(0.)))) {
+				debugPrintfEXT("%d INVALID specular=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_specular=(%f,%f,%f)",
+					__LINE__, PRIVEC3(specular), index, PRIVEC3(emissive), estimate, PRIVEC3(poly_specular));
+				specular = vec3(0.);
+			}
+			if (IS_INVALIDV(diffuse) || any(lessThan(diffuse,vec3(0.)))) {
+				debugPrintfEXT("%d INVALID diffuse=(%f,%f,%f) light=%d emissive=(%f,%f,%f) estimate=%f poly_diffuse=(%f,%f,%f)",
+					__LINE__, PRIVEC3(diffuse), index, PRIVEC3(emissive), estimate, PRIVEC3(poly_diffuse));
+				diffuse = vec3(0.);
+			}
+#endif
 		}
 	}
 #else // DO_ALL_IN_CLUSTERS
