@@ -28,24 +28,26 @@ layout(set = 0, binding = 10, rgba32f) uniform readonly image2D geometry_prev_po
 layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
 
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
-layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_specular;
+layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
+layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular;
 
-layout(set = 0, binding = 14, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 15, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 15, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 16, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 18) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 19) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 19, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 20, rgba16f) uniform readonly image2D legacy_blend;
 
-//layout(set = 0, binding = 20) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 21) uniform sampler2D textures[MAX_TEXTURES];
 
+#include "atrous.glsl"
 
 const int INDIRECT_SCALE = 2;
 
@@ -146,43 +148,6 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 	return c;
 }
 
-// https://jo.dreggn.org/home/2010_atrous.pdf
-// https://www.shadertoy.com/view/ldKBzG
-#define ATROUS_KERNEL_WIDTH 5
-#define ATROUS_KERNEL_HALF 2
-const float kATrousKernel[ATROUS_KERNEL_WIDTH] = { 1./16., 1./4., 3./8., 1./4., 1./16. };
-
-float aTrousSampleWeigth(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, ivec2 offset, int step_width, float phi_normal, float phi_pos, out ivec2 p) {
-	const float x_kernel = kATrousKernel[offset.x];
-	const float y_kernel = kATrousKernel[offset.y];
-
-	const float inv_step_width_sq = 1. / float(step_width * step_width);
-	p = pix + (offset - ivec2(ATROUS_KERNEL_HALF)) * step_width;
-
-	if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
-		return 0.;
-	}
-
-	// Weight normals
-	vec3 sample_geometry_normal, sample_shading_normal;
-	readNormals(p, sample_geometry_normal, sample_shading_normal);
-
-	// TODO should we go geometry_normal too?
-	const vec3 sn_diff = sample_shading_normal - shading_normal;
-	const float sn_dist2 = max(dot(sn_diff,sn_diff) * inv_step_width_sq, 0.);
-	const float weight_sn = min(exp(-(sn_dist2)/phi_normal), 1.0);
-
-	// Weight positions
-	const vec3 sample_position = imageLoad(position_t, p).xyz;
-	const vec3 p_diff = sample_position - pos;
-	//Original paper: const float p_dist2 = dot(p_diff, p_diff);
-	const float p_dist2 = max(dot(p_diff,p_diff) * inv_step_width_sq, 0.);
-	const float weight_pos = min(exp(-(p_dist2)/phi_pos),1.0);
-
-	const float weight = (weight_pos * weight_sn) * x_kernel * y_kernel;
-	return weight;
-}
-
 Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal) {
 	Components c;
 	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
@@ -191,6 +156,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	float weight_total_specular = 0.;
 	float weight_total_indirect_diffuse = 0.;
 	float weight_total_indirect_specular = 0.;
+	vec3 indirect_diffuse_c2 = vec3(0.);
 	const ivec2 res_scaled = res / INDIRECT_SCALE;
 	for (int x = 0; x <= ATROUS_KERNEL_WIDTH; ++x) {
 		for (int y = 0; y <= ATROUS_KERNEL_WIDTH; ++y) {
@@ -202,7 +168,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 				const int step_width = 3;
 				ivec2 p;
 				const float weight = aTrousSampleWeigth(
-					res, pix, pos, shading_normal, offset, step_width, sn_phi, p_phi, p);
+					res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
 
 				if (weight > 0.) {
 					weight_total_diffuse += weight;
@@ -219,7 +185,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 				const int step_width = 1;
 				ivec2 p;
 				const float weight = aTrousSampleWeigth(
-					res, pix, pos, shading_normal, offset, step_width, sn_phi, p_phi, p);
+					res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
 
 				if (weight > 0.) {
 					weight_total_specular += weight;
@@ -233,17 +199,17 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 			{
 				const float sn_phi = .5;
 				const float p_phi = 3.;
-				const int step_width = 3;
+				const int step_width = 2;
 				ivec2 p;
 				const float weight = aTrousSampleWeigth(
-					res, pix, pos, shading_normal, offset, step_width, sn_phi, p_phi, p);
+					res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
 
 				if (weight > 0.) {
-					const ivec2 p_indirect = p / INDIRECT_SCALE;
-					const bool do_indirect = all(lessThan(p_indirect, res_scaled)) && all(greaterThanEqual(p_indirect, ivec2(0)));
+					const ivec2 p_scaled = p / INDIRECT_SCALE;
+					const bool do_indirect = all(lessThan(p_scaled, res_scaled));
 					if (do_indirect) {
 						weight_total_indirect_diffuse += weight;
-						c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb * weight;
+						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
 					}
 				}
 			}
@@ -255,14 +221,14 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 				const int step_width = 1;
 				ivec2 p;
 				const float weight = aTrousSampleWeigth(
-					res, pix, pos, shading_normal, offset, step_width, sn_phi, p_phi, p);
+					res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
 
 				if (weight > 0.) {
-					const ivec2 p_indirect = p / INDIRECT_SCALE;
-					const bool do_indirect = all(lessThan(p_indirect, res_scaled)) && all(greaterThanEqual(p_indirect, ivec2(0)));
+					const ivec2 p_scaled = p / INDIRECT_SCALE;
+					const bool do_indirect = all(lessThan(p_scaled, res_scaled));
 					if (do_indirect) {
 						weight_total_indirect_specular += weight;
-						c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb * weight;
+						c.indirect_specular += imageLoad(indirect_specular, p_scaled).rgb * weight;
 					}
 				}
 			}
@@ -276,8 +242,18 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	c.direct_diffuse *= one_over_weight_diffuse;
 	c.direct_specular *= one_over_weight_specular;
 
-	c.indirect_diffuse *= one_over_weight_indirect_diffuse;
+	indirect_diffuse_c2 *= one_over_weight_indirect_diffuse;
 	c.indirect_specular *= one_over_weight_indirect_specular;
+
+	const vec3 indirect_diffuse_c0 = imageLoad(indirect_diffuse, pix / INDIRECT_SCALE).rgb;
+	const vec3 indirect_diffuse_c1 = imageLoad(indirect_diffuse_atrous1, pix / INDIRECT_SCALE).rgb;
+	const vec3 d0 = indirect_diffuse_c1 - indirect_diffuse_c0;
+	const vec3 d1 = indirect_diffuse_c2 - indirect_diffuse_c1;
+
+	// TODO(or not todo): The Á-Trous paper mentions that it should be c2 + d1 + d0, but
+	// it gives horrible artifacts. Either I'm misreading the paper, or something else is broken here,
+	// Using just c2 seems fine enough (although still not up to original paper image quality)
+	c.indirect_diffuse = indirect_diffuse_c2;// + d1 + d0;
 	return c;
 }
 
