@@ -33,7 +33,7 @@ static struct {
 	// Stores AS built data. Lifetime similar to render buffer:
 	// - some portion lives for entire map lifetime
 	// - some portion lives only for a single frame (may have several frames in flight)
-	// TODO: unify this with render buffer
+	// TODO: unify this with render buffer -- really?
 	// Needs: AS_STORAGE_BIT, SHADER_DEVICE_ADDRESS_BIT
 	vk_buffer_t accels_buffer;
 	struct alo_pool_s *accels_buffer_alloc;
@@ -330,6 +330,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, // | VK_ACCESS_TRANSFER_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
 			.buffer = g_accel.accels_buffer.buffer,
+			// FIXME this is completely wrong. Offset ans size are BLAS-specifig
 			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
 			.size = g_ray_model_state.frame.instances_count * sizeof(VkAccelerationStructureInstanceKHR),
 		}};
@@ -349,6 +350,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
 			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+			// FIXME also incorrect -- here we must barrier on tlas_geom_buffer, not accels_buffer
 			.buffer = g_accel.accels_buffer.buffer,
 			.offset = 0,
 			.size = VK_WHOLE_SIZE,
@@ -430,6 +432,7 @@ void RT_VkAccelNewMap(void) {
 
 	g_accel.frame.scratch_offset = 0;
 
+	// FIXME this clears up memory before its users are deallocated (e.g. dynamic models BLASes)
 	if (g_accel.accels_buffer_alloc)
 		aloPoolDestroy(g_accel.accels_buffer_alloc);
 	g_accel.accels_buffer_alloc = aloPoolCreate(MAX_ACCELS_BUFFER, expected_accels, accels_alignment);
