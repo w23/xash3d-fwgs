@@ -141,6 +141,14 @@ uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type) {
 
 void RT_RayModel_Clear(void) {
 	R_DEBuffer_Init(&g_ray_model_state.kusochki_alloc, MAX_KUSOCHKI / 2, MAX_KUSOCHKI / 2);
+
+	// FIXME
+	// This is a dirty workaround for sub-part memory management in this little project
+	// Accel backing buffer gets cleared on NewMap. Therefore, we need to recreate BLASes for dynamic
+	// models, even though they might have lived for the entire process lifetime.
+	// See #729
+	RT_DynamicModelShutdown();
+	RT_DynamicModelInit();
 }
 
 void XVK_RayModel_ClearForNextFrame( void ) {
