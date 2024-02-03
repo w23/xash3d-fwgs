@@ -17,10 +17,6 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "ray_common.glsl"
 #include "ray_kusochki.glsl"
 
-layout (push_constant) uniform PC_ {
-	PushConstants push_constants;
-};
-
 layout(location = PAYLOAD_LOCATION_ADDITIVE) rayPayloadInEXT RayPayloadAdditive payload_additive;
 
 hitAttributeEXT vec2 bary;

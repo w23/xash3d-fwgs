@@ -342,7 +342,7 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	{
 		const VkPipelineStageFlags stageflags[] = {
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
 
 #define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \

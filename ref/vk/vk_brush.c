@@ -2,13 +2,9 @@
 
 #include "vk_core.h"
 #include "vk_const.h"
-#include "vk_buffer.h"
-#include "vk_pipeline.h"
-#include "vk_framectl.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
-#include "vk_scene.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_light.h"
@@ -17,10 +13,6 @@
 #include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
-#include "camera.h"
-
-#include "ref_params.h"
-#include "eiface.h"
 
 #include <math.h>
 #include <memory.h>
@@ -484,7 +476,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 	R_GeometryRangeUnlock( &geom_lock );
 }
 
-static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
+static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive);
 
 static qboolean doesTextureChainChange( const texture_t *const base ) {
 	const texture_t *cur = base;
@@ -904,10 +896,12 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 			// but there's no easy way to do it for now.
 			vec3_t *emissive = &bmodel->render_model.geometries[geom_index].emissive;
 			if (RT_GetEmissiveForTexture(*emissive, new_tex_id)) {
-				rt_light_add_polygon_t polylight = loadPolyLight(mod, surface_index, geom->surf_deprecate, *emissive);
-				polylight.dynamic = true;
-				polylight.transform_row = (const matrix3x4*)&transform;
-				RT_LightAddPolygon(&polylight);
+				rt_light_add_polygon_t polylight;
+				if (loadPolyLight(&polylight, mod, surface_index, geom->surf_deprecate, *emissive)) {
+					polylight.dynamic = true;
+					polylight.transform_row = (const matrix3x4*)&transform;
+					RT_LightAddPolygon(&polylight);
+				}
 			}
 
 			if (new_tex_id == geom->ye_olde_texture)
@@ -1111,7 +1105,7 @@ static qboolean shouldSmoothLinkSurfaces(const model_t* mod, qboolean smooth_ent
 	getSurfaceNormal(mod->surfaces + surf2, n2);
 
 	const float dot = DotProduct(n1, n2);
-	DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing.threshold);
+	// TODO smooth verbose group DEBUG("Smoothing: dot(%d, %d) = %f (t=%f)", surf1, surf2, dot, g_map_entities.smoothing.threshold);
 
 	return dot >= g_map_entities.smoothing.threshold;
 }
@@ -1155,7 +1149,7 @@ static void linkSmoothSurfaces(const model_t* mod, int surf1, int surf2, int ver
 	int i1 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf1);
 	int i2 = lvFindOrAddValue(v->surfs, &v->count, COUNTOF(v->surfs), surf2);
 
-	DEBUG("Link %d(%d)<->%d(%d) v=%d", surf1, i1, surf2, i2, vertex_index);
+	// TODO smooth_verbose DEBUG("Link %d(%d)<->%d(%d) v=%d", surf1, i1, surf2, i2, vertex_index);
 
 	if (i1 < 0 || i2 < 0) {
 		ERR("Model %s cannot smooth link surf %d<->%d for vertex %d", mod->name, surf1, surf2, vertex_index);
@@ -1238,9 +1232,11 @@ static void connectVertices( const model_t *mod, qboolean smooth_entire_model ) 
 #endif
 	}
 
+	/* TODO smooth_debug
 	for (int i = 0; i < COUNTOF(hist); ++i) {
 		DEBUG("VTX hist[%d] = %d", i, hist[i]);
 	}
+	*/
 }
 
 static qboolean getSmoothedNormalFor(const model_t* mod, int vertex_index, int surface_index, vec3_t out_normal) {
@@ -1426,8 +1422,8 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
 
-
 			vk_vertex_t *const pvert_begin = p_vert;
+			vec3_t p[3];
 			for( int k = 0; k < surf->numedges; k++ )
 			{
 				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
@@ -1436,8 +1432,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
 				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
 
+
 				vk_vertex_t vertex = {
-					{in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
+					.pos = {in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
 				};
 
 				vertex.prev_pos[0] = in_vertex->position[0];
@@ -1504,6 +1501,18 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					VectorCopy(surf_normal, vertex.normal);
 				}
 
+				{
+					const float normal_len2 = DotProduct(vertex.normal, vertex.normal);
+					if (normal_len2 < .9f) {
+						ERR("model=%s surf=%d vert=%d surf_normal=(%f, %f, %f) vertex.normal=(%f,%f,%f) INVALID len2=%f",
+							args.mod->name, surface_index, k,
+							surf_normal[0], surf_normal[1], surf_normal[2],
+							vertex.normal[0], vertex.normal[1], vertex.normal[2],
+							normal_len2
+						);
+					}
+				}
+
 				VectorCopy(tangent, vertex.tangent);
 
 				Vector4Set(vertex.color, 255, 255, 255, 255);
@@ -1515,16 +1524,56 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					args.bmodel->conveyors_vertices[vertex_index] = vertex;
 				}
 
+				//DEBUG(" p[%d]=(%f,%f,%f)", k, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
+
 				*(p_vert++) = vertex;
+
+				// Write vertex window: p[0] = first, p[1] = prev, p[2] = current
+				VectorCopy(in_vertex->position, p[Q_min(k, 2)]);
 
 				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
 				if (k > 1) {
-					*(p_ind++) = (uint16_t)(vertex_offset + 0);
-					*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
-					*(p_ind++) = (uint16_t)(vertex_offset + k);
-					index_count += 3;
-					index_offset += 3;
-				}
+					// Check for collinear points/degenerate triangles
+					vec3_t tri_normal;
+					computeNormal(p[0], p[1], p[2], tri_normal);
+					const float area2 = VectorLength2(tri_normal);
+
+					if (area2 <= 0.) {
+						// Do not produce triangle if it has zero area
+						// NOTE: this is suboptimal in the sense that points that might be necessary for proper
+						// normal smoothing might be skippedk. In case that this causes undesirable rendering
+						// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
+						// be needed. E.g. ear clipping.
+						/* diagnostics
+						WARN("surface=%d numedges=%d triangle=%d has degenerate normal, area2=%f",
+							surface_index, surf->numedges, index_count / 3, area2);
+						DEBUG("  p[0]=(%f,%f,%f)", p[0][0], p[0][1], p[0][2]);
+						DEBUG("  p[%d]=(%f,%f,%f)", k - 1, p[1][0], p[1][1], p[1][2]);
+						DEBUG("  p[%d]=(%f,%f,%f)", k, p[2][0], p[2][1], p[2][2]);
+						*/
+					} else {
+						*(p_ind++) = (uint16_t)(vertex_offset + 0);
+						*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
+						*(p_ind++) = (uint16_t)(vertex_offset + k);
+						index_count += 3;
+						index_offset += 3;
+
+						/* diagnostics for degenerate triangles
+						const float dot = DotProduct(tri_normal, surf_normal) / sqrt(area2);
+						if (fabs(dot-1.) > 1e-2) {
+							WARN("surface=%d triangle=%d tri_normal=(%f,%f,%f) sn=(%f,%f,%f) dot=%f",
+								surface_index, index_count / 3,
+								tri_normal[0], tri_normal[1], tri_normal[2],
+								surf_normal[0], surf_normal[1], surf_normal[2],
+								dot
+							);
+						}
+						*/
+					} // valid triangle
+
+					// Move current vertex to prev
+					VectorCopy(p[2], p[1]);
+				} // if (k > 1)
 			} // for surf->numedges
 
 			model_geometry->element_count = index_count;
@@ -1723,25 +1772,45 @@ void R_BrushModelDestroyAll( void ) {
 	memset(g_brush.conn.vertices, 0, sizeof(*g_brush.conn.vertices) * g_brush.conn.vertices_capacity);
 }
 
-static rt_light_add_polygon_t loadPolyLight(const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
-	rt_light_add_polygon_t lpoly = {0};
-	lpoly.num_vertices = Q_min(7, surf->numedges);
+static float computeArea(vec3_t *vertices, int vertices_count) {
+		vec3_t normal = {0, 0, 0};
+
+		for (int i = 2; i < vertices_count; ++i) {
+			vec3_t e[2], lnormal;
+			VectorSubtract(vertices[i-0], vertices[0], e[0]);
+			VectorSubtract(vertices[i-1], vertices[0], e[1]);
+			CrossProduct(e[0], e[1], lnormal);
+			VectorAdd(lnormal, normal, normal);
+		}
+
+		return VectorLength(normal);
+}
+
+static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t *mod, const int surface_index, const msurface_t *surf, const vec3_t emissive) {
+	(*out_polygon) = (rt_light_add_polygon_t){0};
+	out_polygon->num_vertices = Q_min(7, surf->numedges);
 
 	// TODO split, don't clip
 	if (surf->numedges > 7)
 		WARN_THROTTLED(10, "emissive surface %d has %d vertices; clipping to 7", surface_index, surf->numedges);
 
-	VectorCopy(emissive, lpoly.emissive);
+	VectorCopy(emissive, out_polygon->emissive);
 
-	for (int i = 0; i < lpoly.num_vertices; ++i) {
+	for (int i = 0; i < out_polygon->num_vertices; ++i) {
 		const int iedge = mod->surfedges[surf->firstedge + i];
 		const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
 		const mvertex_t *vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
-		VectorCopy(vertex->position, lpoly.vertices[i]);
+		VectorCopy(vertex->position, out_polygon->vertices[i]);
 	}
 
-	lpoly.surface = surf;
-	return lpoly;
+	const float area = computeArea(out_polygon->vertices, out_polygon->num_vertices);
+	if (area <= 0) {
+		ERR("%s: emissive surface=%d has area=%f, skipping", __FUNCTION__, surface_index, area);
+		return false;
+	}
+
+	out_polygon->surface = surf;
+	return true;
 }
 
 void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel ) {
@@ -1821,7 +1890,7 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	if (!is_static) {
 		if (bmodel->dynamic_polylights)
 			Mem_Free(bmodel->dynamic_polylights);
-		bmodel->dynamic_polylights_count = emissive_surfaces_count;
+		bmodel->dynamic_polylights_count = 0;
 		bmodel->dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->dynamic_polylights[0]) * emissive_surfaces_count);
 	}
 
@@ -1829,8 +1898,9 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 	int geom_indices_count = 0;
 	for (int i = 0; i < emissive_surfaces_count; ++i) {
 		const emissive_surface_t* const s = emissive_surfaces + i;
-
-		rt_light_add_polygon_t polylight = loadPolyLight(mod, s->surface_index, s->surf, s->emissive);
+		rt_light_add_polygon_t polylight;
+		if (!loadPolyLight(&polylight, mod, s->surface_index, s->surf, s->emissive))
+			continue;
 
 		// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
 		// for lights visibility calculation directly.
@@ -1863,7 +1933,8 @@ void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean 
 			}
 			*/
 		} else {
-			bmodel->dynamic_polylights[i] = polylight;
+			ASSERT(bmodel->dynamic_polylights_count < emissive_surfaces_count);
+			bmodel->dynamic_polylights[bmodel->dynamic_polylights_count++] = polylight;
 		}
 
 		// Assign the emissive value to the right geometry

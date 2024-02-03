@@ -13,12 +13,10 @@
 #include "vk_meatpipe.h"
 #include "vk_pipeline.h"
 #include "vk_ray_internal.h"
-#include "vk_staging.h"
 #include "vk_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
 
-#include "alolcator.h"
 #include "profiler.h"
 
 #include "eiface.h"
@@ -88,6 +86,9 @@ static struct {
 		cvar_t *rt_debug_display_only;
 		uint32_t rt_debug_display_only_value;
 
+		cvar_t *rt_debug_flags;
+		uint32_t rt_debug_flags_value;
+
 		cvar_t *rt_debug_fixed_random_seed;
 	} debug;
 } g_rtx = {0};
@@ -155,20 +156,25 @@ static void parseDebugDisplayValue( void ) {
 
 	const char *cvalue = g_rtx.debug.rt_debug_display_only->string;
 #define LIST_DISPLAYS(X) \
-	X(BASECOLOR) \
-	X(BASEALPHA) \
-	X(EMISSIVE) \
-	X(NSHADE) \
-	X(NGEOM) \
-	X(LIGHTING) \
-	X(SURFHASH) \
-	X(TRIHASH) \
-	X(DIRECT) \
-	X(INDIRECT) \
-	X(INDIRECT_SPEC) \
-	X(INDIRECT_DIFF) \
+	X(BASECOLOR, "material base_color value") \
+	X(BASEALPHA, "material alpha value") \
+	X(EMISSIVE, "emissive color") \
+	X(NSHADE, "shading normal") \
+	X(NGEOM, "geometry normal") \
+	X(LIGHTING, "all lighting, direct and indirect, w/o base_color") \
+	X(SURFHASH, "each surface has random color") \
+	X(DIRECT, "direct lighting only, both diffuse and specular") \
+	X(DIRECT_DIFF, "direct diffuse lighting only") \
+	X(DIRECT_SPEC, "direct specular lighting only") \
+	X(INDIRECT, "indirect lighting only (bounced), diffuse and specular together") \
+	X(INDIRECT_DIFF, "indirect diffuse only") \
+	X(INDIRECT_SPEC, "indirect specular only") \
+	X(TRIHASH, "each triangle is drawn with random color") \
+	X(MATERIAL, "red = roughness, green = metalness") \
+	X(DIFFUSE, "direct + indirect diffuse, spatially denoised") \
+	X(SPECULAR, "direct + indirect specular, spatially denoised") \
 
-#define X(suffix) \
+#define X(suffix, info) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
 		WARN("setting debug display to %s", "DEBUG_DISPLAY_"#suffix); \
 		g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_##suffix; \
@@ -179,12 +185,41 @@ LIST_DISPLAYS(X)
 
 	if (Q_strlen(cvalue) > 0) {
 		gEngine.Con_Printf("Invalid rt_debug_display_only mode %s. Valid modes are:\n", cvalue);
-#define X(suffix) gEngine.Con_Printf("\t%s\n", #suffix);
+#define X(suffix, info) gEngine.Con_Printf("\t%s -- %s\n", #suffix, info);
 LIST_DISPLAYS(X)
 #undef X
 	}
 
 	g_rtx.debug.rt_debug_display_only_value = DEBUG_DISPLAY_DISABLED;
+//#undef LIST_DISPLAYS
+}
+
+static void parseDebugFlags( void ) {
+	if (!(g_rtx.debug.rt_debug_flags->flags & FCVAR_CHANGED))
+		return;
+
+	g_rtx.debug.rt_debug_flags->flags &= ~FCVAR_CHANGED;
+	g_rtx.debug.rt_debug_flags_value = 0;
+
+#define LIST_DEBUG_FLAGS(X) \
+	X(WHITE_FURNACE, "white furnace mode: diffuse white materials, diffuse sky light only") \
+
+	const char *cvalue = g_rtx.debug.rt_debug_flags->string;
+#define X(suffix, info) \
+	if (0 == Q_stricmp(cvalue, #suffix)) { \
+		WARN("setting debug flags to %s", "DEBUG_FLAG_"#suffix); \
+		g_rtx.debug.rt_debug_flags_value |= DEBUG_FLAG_##suffix; \
+	} else
+LIST_DEBUG_FLAGS(X)
+#undef X
+	/* else: no valid flags found */ {
+		gEngine.Con_Printf("Invalid rt_debug_flags value %s. Valid flags are:\n", cvalue);
+#define X(suffix, info) gEngine.Con_Printf("\t%s -- %s\n", #suffix, info);
+LIST_DEBUG_FLAGS(X)
+#undef X
+	}
+
+//#undef LIST_DEBUG_FLAGS
 }
 
 static uint32_t getRandomSeed( void ) {
@@ -224,6 +259,9 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	} else {
 		ubo->debug_display_only = r_lightmap->value != 0 ? DEBUG_DISPLAY_LIGHTING : DEBUG_DISPLAY_DISABLED;
 	}
+
+	parseDebugFlags();
+	ubo->debug_flags = g_rtx.debug.rt_debug_flags_value;
 
 	ubo->random_seed = getRandomSeed();
 
@@ -762,9 +800,12 @@ qboolean VK_RayInit( void )
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
 
-#define X(name) #name ", "
+#define X(name, info) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
 		"Display only the specified channel (" LIST_DISPLAYS(X) "etc)");
+
+	g_rtx.debug.rt_debug_flags = gEngine.Cvar_Get("rt_debug_flags", "", FCVAR_GLCONFIG,
+		"Enable shader debug flags (" LIST_DEBUG_FLAGS(X) "etc)");
 #undef X
 
 	g_rtx.debug.rt_debug_fixed_random_seed = gEngine.Cvar_Get("rt_debug_fixed_random_seed", "", FCVAR_GLCONFIG,

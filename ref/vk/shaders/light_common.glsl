@@ -149,23 +149,4 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 #endif
 }
 
-// This is an entry point for evaluation of all other BRDFs based on selected configuration (for direct light)
-void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
-	// Prepare data needed for BRDF evaluation - unpack material properties and evaluate commonly used terms (e.g. Fresnel, NdotL, ...)
-	const BrdfData data = prepareBRDFData(N, L, V, material);
-
-	// Ignore V and L rays "below" the hemisphere
-	//if (data.Vbackfacing || data.Lbackfacing) return vec3(0.0f, 0.0f, 0.0f);
-
-	// Eval specular and diffuse BRDFs
-	specular = evalSpecular(data);
-	diffuse = evalDiffuse(data);
-
-	// Combine specular and diffuse layers
-#if COMBINE_BRDFS_WITH_FRESNEL
-	// Specular is already multiplied by F, just attenuate diffuse
-	diffuse *= vec3(1.) - data.F;
-#endif
-}
-
 #endif //ifndef LIGHT_COMMON_GLSL_INCLUDED

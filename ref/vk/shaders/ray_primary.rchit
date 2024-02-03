@@ -27,6 +27,7 @@ hitAttributeEXT vec2 bary;
 #include "color_spaces.glsl"
 
 #include "rt_geometry.glsl"
+#include "skybox.glsl"
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);
@@ -41,7 +42,7 @@ void main() {
 	const Kusok kusok = getKusok(geom.kusok_index);
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = texture(skybox, gl_WorldRayDirectionEXT).rgb * ubo.ubo.skybox_exposure;
+		payload.emissive.rgb = sampleSkybox(gl_WorldRayDirectionEXT);
 		return;
 	} else {
 		const vec4 color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;

@@ -2,6 +2,7 @@
 #include "noise.glsl"
 
 #include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
 
 #include "light.glsl"
 
@@ -35,20 +36,33 @@ void main() {
 	const vec4 material_data = imageLoad(material_rmxx, pix);
 
 	MaterialProperties material;
-	material.baseColor = vec3(1.);
-	material.emissive = vec3(0.f);
+	material.base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
+
+#ifdef BRDF_COMPARE
+	g_mat_gltf2 = pix.x > ubo.ubo.res.x / 2.;
+#endif
 
 	const vec4 pos_t = imageLoad(position_t, pix);
 
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 
 	if (pos_t.w > 0.) {
-		vec3 geometry_normal, shading_normal;
-		readNormals(pix, geometry_normal, shading_normal);
+		const vec4 packed_normal = imageLoad(normals_gs, pix);
+		const vec3 geometry_normal = normalDecode(packed_normal.xy);
+		const vec3 shading_normal = normalDecode(packed_normal.zw);
+#ifdef DEBUG_VALIDATE_EXTRA
+		if (IS_INVALIDV(pos_t.xyz) || IS_INVALIDV(geometry_normal)) {
+			debugPrintfEXT("ray_light_direct.glsl:%d INVALID pos_t.xyz=(%f,%f,%f) geometry_normal=(%f,%f,%f) packed_normal=(%f,%f,%f,%f)",
+				__LINE__, PRIVEC3(pos_t.xyz), PRIVEC3(geometry_normal), PRIVEC4(packed_normal));
+		} else
+#endif
 		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
 	}
+
+	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));

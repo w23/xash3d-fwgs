@@ -130,9 +130,11 @@ struct Kusok {
 };
 
 struct PointLight {
-	vec4 origin_r;
+	vec4 origin_r2; // vec4(center.xyz, radius²)
 	vec4 color_stopdot;
 	vec4 dir_stopdot2;
+
+	// TODO move to either dedicated array, or section of array (by-index type delimiter)
 	uint environment; // Is directional-only environment light
 	PAD(3)
 };
@@ -169,16 +171,6 @@ struct LightCluster {
 
 #define PUSH_FLAG_LIGHTMAP_ONLY 0x01
 
-struct PushConstants {
-	float time;
-	uint random_seed;
-	int bounces;
-	float prev_frame_blend_factor;
-	float pixel_cone_spread_angle;
-	uint debug_light_index_begin, debug_light_index_end;
-	uint flags;
-};
-
 #define DEBUG_DISPLAY_DISABLED 0
 #define DEBUG_DISPLAY_BASECOLOR 1
 #define DEBUG_DISPLAY_BASEALPHA 2
@@ -188,11 +180,18 @@ struct PushConstants {
 #define DEBUG_DISPLAY_LIGHTING 6
 #define DEBUG_DISPLAY_SURFHASH 7
 #define DEBUG_DISPLAY_DIRECT 8
-#define DEBUG_DISPLAY_INDIRECT 9
-#define DEBUG_DISPLAY_INDIRECT_SPEC 10
-#define DEBUG_DISPLAY_INDIRECT_DIFF 11
-#define DEBUG_DISPLAY_TRIHASH 12
+#define DEBUG_DISPLAY_DIRECT_DIFF 9
+#define DEBUG_DISPLAY_DIRECT_SPEC 10
+#define DEBUG_DISPLAY_INDIRECT 11
+#define DEBUG_DISPLAY_INDIRECT_DIFF 12
+#define DEBUG_DISPLAY_INDIRECT_SPEC 13
+#define DEBUG_DISPLAY_TRIHASH 14
+#define DEBUG_DISPLAY_MATERIAL 15
+#define DEBUG_DISPLAY_DIFFUSE 16
+#define DEBUG_DISPLAY_SPECULAR 17
 // add more when needed
+
+#define DEBUG_FLAG_WHITE_FURNACE (1<<0)
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
@@ -204,7 +203,7 @@ struct UniformBuffer {
 	float skybox_exposure;
 
 	uint debug_display_only;
-	// LDR/HDR
+	uint debug_flags;
 	uint vk_display_dr_mode;
 };
 

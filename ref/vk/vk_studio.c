@@ -1715,6 +1715,24 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 			VectorCopy(args.prev_verts[vi], dst_vtx->prev_pos);
 
 			VectorCopy(g_studio.norms[vi], dst_vtx->normal);
+
+			{
+				const float normal_len2 = DotProduct(g_studio.norms[vi], g_studio.norms[vi]);
+				if (normal_len2 < .9f) {
+					ERROR_THROTTLED(10,
+						"model=%s bodypart=%d vert=%d+%d=%d vi=%d normal=(%f,%f,%f) INVALID len2=%f",
+						g_studio_current.entmodel->studio_header->name,
+						g_studio_current.bodypart_index,
+						j, vertex_offset, j + vertex_offset, vi,
+						g_studio.norms[vi][0],
+						g_studio.norms[vi][1],
+						g_studio.norms[vi][2],
+						normal_len2
+					);
+				}
+			}
+
+
 			VectorCopy(g_studio.tangents[vi], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
 

@@ -1,5 +1,7 @@
 #ifndef RT_GEOMETRY_GLSL_INCLUDED
 #define RT_GEOMETRY_GLSL_INCLUDED
+
+#include "debug.glsl"
 #include "utils.glsl"
 //#include "color_spaces.glsl"
 
@@ -119,11 +121,42 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 		GET_VERTEX(vi2).normal,
 		GET_VERTEX(vi3).normal,
 		bary));
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(geom.normal_shading)) {
+		debugPrintfEXT("rt_geometry.glsl:%d model=%d geom=%d prim=%d v1n=(%f,%f,%f) v2n=(%f,%f,%f) v3n=(%f,%f,%f) nt=(%f,%f,%f;%f,%f,%f;%f,%f,%f) INVALID nshade=(%f,%f,%f)",
+			__LINE__,
+			model_index, geometry_index, primitive_index,
+			PRIVEC3(GET_VERTEX(vi1).normal),
+			PRIVEC3(GET_VERTEX(vi2).normal),
+			PRIVEC3(GET_VERTEX(vi3).normal),
+			PRIVEC3(normalTransform[0]),
+			PRIVEC3(normalTransform[1]),
+			PRIVEC3(normalTransform[2])
+		);
+		// TODO ???
+		geom.normal_shading = geom.normal_geometry;
+	}
+#endif
+
 	geom.tangent = normalize(normalTransform * baryMix(
 		GET_VERTEX(vi1).tangent,
 		GET_VERTEX(vi2).tangent,
 		GET_VERTEX(vi3).tangent,
 		bary));
+
+	if (IS_INVALIDV(geom.normal_geometry)) {
+		// This shouldn't happen -- such triangles are pre-filtere-out in vk_brush.c
+#ifdef DEBUG_VALIDATE_EXTRA
+		const vec3 e0 = pos[2] - pos[0];
+		const vec3 e1 = pos[1] - pos[0];
+		debugPrintfEXT("readHitGeometry(model=%d geom=%d prim=%d) pos[0]=(%f,%f,%f) e0=(%f,%f,%f), e1=(%f,%f,%f) INVALID normal_geometry=(%f,%f,%f)",
+			model_index, geometry_index, primitive_index,
+			PRIVEC3(pos[0]), PRIVEC3(e0), PRIVEC3(e1), PRIVEC3(geom.normal_geometry));
+#endif
+		// TODO is this correct?
+		geom.normal_geometry = geom.normal_shading;
+	}
 
 	geom.uv_lods = computeAnisotropicEllipseAxes(geom.pos, geom.normal_geometry, ray_direction, ray_cone_width * hit_t, pos, uvs, geom.uv);
 
