@@ -752,7 +752,7 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32
 						.offset = 0,
 						.range = sizeof(sky_uniform_data_t),
 					};
-					g_render.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo();
+					g_render.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxOriginal );
 					VK_DescriptorsWrite(&g_render.pipeline_sky.descs, frame_index);
 
 					vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS,

@@ -1,13 +1,13 @@
 ## Next
 - [ ] performance profiling and comparison
 
+# Previously
 ## 2024-02-05 E373
-- [ ] Skybox for traditional renderer
+- [x] Skybox for traditional renderer
 	- [x] Sky pipeline
 	- [x] Submit SURF_DRAWSKY draw commands
-	- [ ] Use original skybox for trad renderer
+	- [x] Use original skybox for trad renderer
 
-# Previously
 ## 2024-02-01 E371
 - [x] tune A-Trous step widths for different channels
 	- [x] multiple passes -- core of the paper lol

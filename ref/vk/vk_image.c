@@ -118,7 +118,8 @@ void R_VkImageDestroy(r_vk_image_t *img) {
 	if (img->view != VK_NULL_HANDLE)
 		vkDestroyImageView(vk_core.device, img->view, NULL);
 
-	vkDestroyImage(vk_core.device, img->image, NULL);
+	if (img->image != VK_NULL_HANDLE)
+		vkDestroyImage(vk_core.device, img->image, NULL);
 
 	VK_DevMemFree(&img->devmem);
 	*img = (r_vk_image_t){0};

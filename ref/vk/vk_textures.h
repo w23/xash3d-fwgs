@@ -34,13 +34,13 @@ typedef struct vk_texture_s
 qboolean R_VkTexturesInit( void );
 void R_VkTexturesShutdown( void );
 
-qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, qboolean placeholder);
+qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, skybox_slot_e skybox_slot );
 void R_VkTexturesSkyboxUnload(void);
 
 qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint);
 void R_VkTextureDestroy(int index, vk_texture_t *tex);
 
-VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void );
+VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot );
 const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void );
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index );
 

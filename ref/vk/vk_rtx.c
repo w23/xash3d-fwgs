@@ -128,7 +128,7 @@ void VK_RayNewMapEnd( void ) {
 	g_rtx.res[ExternalResource_skybox].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetSkyboxDescriptorImageInfo(),
+			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
 		},
 	};
 
