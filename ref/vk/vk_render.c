@@ -3,7 +3,6 @@
 #include "vk_core.h"
 #include "vk_buffer.h"
 #include "vk_geometry.h"
-#include "vk_staging.h"
 #include "vk_const.h"
 #include "vk_common.h"
 #include "vk_cvar.h"
@@ -12,7 +11,6 @@
 #include "vk_math.h"
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
-#include "vk_framectl.h" // FIXME needed for dynamic models cmdbuf
 #include "alolcator.h"
 #include "profiler.h"
 #include "r_speeds.h"
@@ -41,9 +39,32 @@ typedef struct {
 	vec4_t color;
 } uniform_data_t;
 
+enum {
+	// These correspond to kVkRenderType*
+	kVkPipeline_Solid,    // no blending, depth RW
+	kVkPipeline_A_1mA_RW, // blend: src*a + dst*(1-a), depth: RW
+	kVkPipeline_A_1mA_R,  // blend: src*a + dst*(1-a), depth test
+	kVkPipeline_A_1,      // blend: src*a + dst, no depth test or write
+	kVkPipeline_A_1_R,    // blend: src*a + dst, depth test
+	kVkPipeline_AT,       // no blend, depth RW, alpha test
+	kVkPipeline_1_1_R,    // blend: src + dst, depth test
+
+	// Special pipeline for skybox (tex = TEX_BASE_SKYBOX)
+	//kVkPipeline_Sky,
+	kVkPipeline_COUNT,
+};
+
+typedef struct {
+	VkPipeline pipeline;
+	VkDescriptorSet sets[1];
+	vk_descriptors_t descs;
+} r_pipeline_sky_t;
+
 static struct {
 	VkPipelineLayout pipeline_layout;
-	VkPipeline pipelines[kVkRenderType_COUNT];
+	VkPipeline pipelines[kVkPipeline_COUNT];
+
+	r_pipeline_sky_t pipeline_sky;
 
 	vk_buffer_t uniform_buffer;
 	uint32_t ubo_align;
@@ -55,6 +76,94 @@ static struct {
 		int models_count;
 	} stats;
 } g_render;
+
+static qboolean createPipeline( VkPipeline* out, const char *name, const vk_pipeline_graphics_create_info_t *ci ) {
+	*out = VK_PipelineGraphicsCreate(ci);
+
+	if (*out == VK_NULL_HANDLE)
+	{
+		gEngine.Con_Printf(S_ERROR "Cannot create render pipeline \"%s\"\n", name);
+		return false;
+	}
+
+	if (vk_core.debug)
+	{
+		VkDebugUtilsObjectNameInfoEXT debug_name = {
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+			.objectHandle = (uint64_t)*out,
+			.objectType = VK_OBJECT_TYPE_PIPELINE,
+			.pObjectName = name,
+		};
+		XVK_CHECK(vkSetDebugUtilsObjectNameEXT(vk_core.device, &debug_name));
+	}
+
+	return true;
+}
+
+static qboolean createSkyboxPipeline( void ) {
+	const vk_shader_stage_t sky_shaders[] = {
+	{
+		.stage = VK_SHADER_STAGE_VERTEX_BIT,
+		.filename = "sky.vert.spv",
+		.specialization_info = NULL,
+	}, {
+		.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.filename = "sky.frag.spv",
+		.specialization_info = NULL,
+	}};
+
+	const VkVertexInputAttributeDescription attribs[] = {
+		{.binding = 0, .location = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, pos)},
+	};
+
+	const VkDescriptorSetLayoutBinding bindings[] = {{
+    .binding = 0,
+    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+    .descriptorCount = 1,
+    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		.pImmutableSamplers = NULL,
+	}, {
+    .binding = 1,
+    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    .descriptorCount = 1,
+    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		.pImmutableSamplers = NULL,
+	}};
+
+	g_render.pipeline_sky.descs = (vk_descriptors_t){
+		.bindings = bindings,
+		.num_bindings = COUNTOF(bindings),
+
+		.desc_sets = g_render.pipeline_sky.sets,
+		.num_sets = COUNTOF(g_render.pipeline_sky.sets),
+
+		.push_constants = (VkPushConstantRange){0},
+	};
+
+	VK_DescriptorsCreate(&g_render.pipeline_sky.descs);
+
+	vk_pipeline_graphics_create_info_t ci = {
+		.layout = g_render.pipeline_sky.descs.pipeline_layout,
+
+		.attribs = attribs,
+		.num_attribs = ARRAYSIZE(attribs),
+
+		.stages = sky_shaders,
+		.num_stages = ARRAYSIZE(sky_shaders),
+
+		.vertex_stride = sizeof(vk_vertex_t),
+
+		.depthTestEnable = VK_TRUE,
+		.depthWriteEnable = VK_TRUE,
+		.depthCompareOp = VK_COMPARE_OP_LESS,
+
+		.blendEnable = VK_FALSE,
+
+		.cullMode = VK_CULL_MODE_FRONT_BIT,
+	};
+
+	return createPipeline(&g_render.pipeline_sky.pipeline, "sky", &ci);
+}
 
 static qboolean createPipelines( void )
 {
@@ -105,7 +214,7 @@ static qboolean createPipelines( void )
 			{.binding = 0, .location = 2, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, gl_tc)},
 			{.binding = 0, .location = 3, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, lm_tc)},
 			{.binding = 0, .location = 4, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = offsetof(vk_vertex_t, color)},
-			{.binding = 0, .location = 6, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, prev_pos)},
+			// Not used {.binding = 0, .location = 6, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, prev_pos)},
 		};
 
 		const vk_shader_stage_t shader_stages[] = {
@@ -138,106 +247,87 @@ static qboolean createPipelines( void )
 			.cullMode = VK_CULL_MODE_FRONT_BIT,
 		};
 
-		for (int i = 0; i < kVkRenderType_COUNT; ++i)
 		{
-			const char *name = "UNDEFINED";
-			switch (i)
-			{
-				case kVkRenderTypeSolid:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.blendEnable = VK_FALSE;
-					ci.depthWriteEnable = VK_TRUE;
-					ci.depthTestEnable = VK_TRUE;
-					name = "kVkRenderTypeSolid";
-					break;
-
-				case kVkRenderType_A_1mA_RW:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.depthWriteEnable = VK_TRUE;
-					ci.depthTestEnable = VK_TRUE;
-					ci.blendEnable = VK_TRUE;
-					ci.colorBlendOp = VK_BLEND_OP_ADD;
-					ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-					ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-					name = "kVkRenderType_A_1mA_RW";
-					break;
-
-				case kVkRenderType_A_1mA_R:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.depthWriteEnable = VK_FALSE;
-					ci.depthTestEnable = VK_TRUE;
-					ci.blendEnable = VK_TRUE;
-					ci.colorBlendOp = VK_BLEND_OP_ADD;
-					ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-					ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-					name = "kVkRenderType_A_1mA_R";
-					break;
-
-				case kVkRenderType_A_1:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.depthWriteEnable = VK_FALSE;
-					ci.depthTestEnable = VK_FALSE; // Fake bloom, should be over geometry too
-					ci.blendEnable = VK_TRUE;
-					ci.colorBlendOp = VK_BLEND_OP_ADD;
-					ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-					ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-					name = "kVkRenderType_A_1";
-					break;
-
-				case kVkRenderType_A_1_R:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.depthWriteEnable = VK_FALSE;
-					ci.depthTestEnable = VK_TRUE;
-					ci.blendEnable = VK_TRUE;
-					ci.colorBlendOp = VK_BLEND_OP_ADD;
-					ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-					ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-					name = "kVkRenderType_A_1_R";
-					break;
-
-				case kVkRenderType_AT:
-					spec_data.alpha_test_threshold = .25f;
-					ci.depthWriteEnable = VK_TRUE;
-					ci.depthTestEnable = VK_TRUE;
-					ci.blendEnable = VK_FALSE;
-					name = "kVkRenderType_AT";
-					break;
-
-				case kVkRenderType_1_1_R:
-					spec_data.alpha_test_threshold = 0.f;
-					ci.depthWriteEnable = VK_FALSE;
-					ci.depthTestEnable = VK_TRUE;
-					ci.blendEnable = VK_TRUE;
-					ci.colorBlendOp = VK_BLEND_OP_ADD;
-					ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-					ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-					name = "kVkRenderType_1_1_R";
-					break;
-
-				default:
-					ASSERT(!"Unreachable");
-			}
-
-			g_render.pipelines[i] = VK_PipelineGraphicsCreate(&ci);
-
-			if (!g_render.pipelines[i])
-			{
-				// TODO complain
+			spec_data.alpha_test_threshold = 0.f;
+			ci.blendEnable = VK_FALSE;
+			ci.depthWriteEnable = VK_TRUE;
+			ci.depthTestEnable = VK_TRUE;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_Solid, "solid", &ci))
 				return false;
-			}
+		}
 
-			if (vk_core.debug)
-			{
-				VkDebugUtilsObjectNameInfoEXT debug_name = {
-					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
-					.objectHandle = (uint64_t)g_render.pipelines[i],
-					.objectType = VK_OBJECT_TYPE_PIPELINE,
-					.pObjectName = name,
-				};
-				XVK_CHECK(vkSetDebugUtilsObjectNameEXT(vk_core.device, &debug_name));
-			}
+		{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_TRUE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1mA_RW, "A_1ma_RW", &ci))
+				return false;
+		}
+
+		{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_FALSE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1mA_R, "A_1ma_R", &ci))
+				return false;
+		}
+
+		{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_FALSE;
+			ci.depthTestEnable = VK_FALSE; // Fake bloom, should be over geometry too
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1, "A_1", &ci))
+				return false;
+		}
+
+		{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_FALSE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1_R, "A_1_R", &ci))
+				return false;
+		}
+
+		{
+			spec_data.alpha_test_threshold = .25f;
+			ci.depthWriteEnable = VK_TRUE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_FALSE;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_AT, "AT", &ci))
+				return false;
+		}
+
+		{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_FALSE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_1_1_R, "1_1_R", &ci))
+				return false;
 		}
 	}
+
+	if (!createSkyboxPipeline())
+		return false;
 
 	return true;
 }
@@ -354,6 +444,9 @@ void VK_RenderShutdown( void )
 	for (int i = 0; i < ARRAYSIZE(g_render.pipelines); ++i)
 		vkDestroyPipeline(vk_core.device, g_render.pipelines[i], NULL);
 	vkDestroyPipelineLayout( vk_core.device, g_render.pipeline_layout, NULL );
+
+	vkDestroyPipeline(vk_core.device, g_render.pipeline_sky.pipeline, NULL);
+	VK_DescriptorsDestroy(&g_render.pipeline_sky.descs);
 
 	VK_BufferDestroy( &g_render.uniform_buffer );
 }
@@ -741,6 +834,10 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 		ASSERT(geom->index_offset >= 0);
 
 		if (tex < 0)
+			continue;
+
+		// TODO
+		if (tex == TEX_BASE_SKYBOX)
 			continue;
 
 		if (split) {

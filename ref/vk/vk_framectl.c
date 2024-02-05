@@ -335,19 +335,6 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
-
-#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
-		struct { \
-			TYPE items[MAX_SIZE]; \
-			int count; \
-		} NAME
-
-#define BOUNDED_ARRAY_APPEND(var, item) \
-		do { \
-			ASSERT(var.count < COUNTOF(var.items)); \
-			var.items[var.count++] = item; \
-		} while(0)
-
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
 		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
 		BOUNDED_ARRAY(waitophores, VkSemaphore, 2) = {0};

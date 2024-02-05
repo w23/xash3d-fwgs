@@ -10,6 +10,8 @@ void VK_RenderShutdown( void );
 struct ref_viewpass_s;
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 
+#define TEX_BASE_SKYBOX 0x0f000000u // FIXME ray_interop.h
+
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
 

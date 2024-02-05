@@ -872,7 +872,7 @@ success:
 
 static const char *k_skybox_default = "desert";
 
-void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
+static void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
 	DEBUG("%s: skyboxname='%s' is_custom=%d force_reload=%d", __FUNCTION__, skyboxname, is_custom, force_reload);
 
 	if (!skyboxTryLoad(skyboxname, force_reload)) {

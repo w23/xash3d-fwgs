@@ -459,6 +459,7 @@ qboolean RT_DynamicModelInit(void) {
 void RT_DynamicModelShutdown(void) {
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		RT_BlasDestroy(g_dyn.groups[i].blas);
+		g_dyn.groups[i].blas = NULL;
 	}
 }
 
