@@ -300,7 +300,10 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( cmdbuf, draw );
+		VK_RenderEnd( cmdbuf, draw,
+			g_frame.current.framebuffer.width, g_frame.current.framebuffer.height,
+			g_frame.current.index
+			);
 
 	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
 

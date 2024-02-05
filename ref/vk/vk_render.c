@@ -39,6 +39,14 @@ typedef struct {
 	vec4_t color;
 } uniform_data_t;
 
+typedef struct {
+	matrix4x4 mvp;
+	matrix4x4 inv_proj;
+	matrix4x4 inv_view;
+	vec2_t resolution;
+	float pad_[2];
+} sky_uniform_data_t;
+
 enum {
 	// These correspond to kVkRenderType*
 	kVkPipeline_Solid,    // no blending, depth RW
@@ -56,7 +64,10 @@ enum {
 
 typedef struct {
 	VkPipeline pipeline;
-	VkDescriptorSet sets[1];
+#define MAX_CONCURRENT_FRAMES 2
+	VkDescriptorSet sets[MAX_CONCURRENT_FRAMES];
+	VkDescriptorSetLayoutBinding bindings[2];
+	vk_descriptor_value_t values[2];
 	vk_descriptors_t descs;
 } r_pipeline_sky_t;
 
@@ -116,28 +127,31 @@ static qboolean createSkyboxPipeline( void ) {
 		{.binding = 0, .location = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, pos)},
 	};
 
-	const VkDescriptorSetLayoutBinding bindings[] = {{
+	g_render.pipeline_sky.bindings[0] = (VkDescriptorSetLayoutBinding){
     .binding = 0,
     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
     .descriptorCount = 1,
     .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		.pImmutableSamplers = NULL,
-	}, {
+	};
+	g_render.pipeline_sky.bindings[1] = (VkDescriptorSetLayoutBinding) {
     .binding = 1,
     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     .descriptorCount = 1,
     .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 		.pImmutableSamplers = NULL,
-	}};
+	};
 
 	g_render.pipeline_sky.descs = (vk_descriptors_t){
-		.bindings = bindings,
-		.num_bindings = COUNTOF(bindings),
+		.num_bindings = COUNTOF(g_render.pipeline_sky.bindings),
+		.bindings = g_render.pipeline_sky.bindings,
 
-		.desc_sets = g_render.pipeline_sky.sets,
-		.num_sets = COUNTOF(g_render.pipeline_sky.sets),
+		.values = g_render.pipeline_sky.values,
 
 		.push_constants = (VkPushConstantRange){0},
+
+		.num_sets = COUNTOF(g_render.pipeline_sky.sets),
+		.desc_sets = g_render.pipeline_sky.sets,
 	};
 
 	VK_DescriptorsCreate(&g_render.pipeline_sky.descs);
@@ -353,10 +367,17 @@ typedef struct render_draw_s {
 	uint32_t index_offset, vertex_offset;
 } render_draw_t;
 
+typedef struct render_draw_sky_s {
+	uint32_t element_count;
+	uint32_t index_offset, vertex_offset;
+	// TODO matrix4x4 model;
+} render_draw_sky_t;
+
 enum draw_command_type_e {
 	DrawLabelBegin,
 	DrawLabelEnd,
-	DrawDraw
+	DrawDraw,
+	DrawSky,
 };
 
 typedef struct {
@@ -364,6 +385,7 @@ typedef struct {
 	union {
 		char debug_label[MAX_DEBUG_NAME_LENGTH];
 		render_draw_t draw;
+		render_draw_sky_t draw_sky;
 	};
 } draw_command_t;
 
@@ -547,6 +569,7 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	ASSERT(draw->pipeline_index < ARRAYSIZE(g_render.pipelines));
 	ASSERT(draw->lightmap >= 0);
 	ASSERT(draw->texture >= 0);
+	ASSERT(draw->texture < MAX_TEXTURES);
 
 	if (g_render_state.num_draw_commands >= ARRAYSIZE(g_render_state.draw_commands)) {
 		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
@@ -564,6 +587,20 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	draw_command->draw = *draw;
 	draw_command->draw.ubo_offset = ubo_offset;
 	draw_command->type = DrawDraw;
+}
+
+static void drawCmdPushDrawSky( const render_draw_sky_t *draw_sky )
+{
+	draw_command_t *draw_command;
+
+	if (g_render_state.num_draw_commands >= ARRAYSIZE(g_render_state.draw_commands)) {
+		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
+		return;
+	}
+
+	draw_command = drawCmdAlloc();
+	draw_command->draw_sky = *draw_sky;
+	draw_command->type = DrawSky;
 }
 
 // Return offset of dlights data into UBO buffer
@@ -626,7 +663,7 @@ void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 	}
 }
 
-void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
+void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
 {
 	if (!draw)
 		return;
@@ -634,17 +671,23 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 	// TODO we can sort collected draw commands for more efficient and correct rendering
 	// that requires adding info about distance to camera for correct order-dependent blending
 
-	int pipeline = -1;
-	int texture = -1;
-	int lightmap = -1;
-	uint32_t ubo_offset = -1;
+	struct {
+		VkPipeline pipeline;
+		int texture;
+		int lightmap;
+		uint32_t ubo_offset;
+	} cur = {
+		.pipeline = VK_NULL_HANDLE,
+		.texture = -1,
+		.lightmap = -1,
+		.ubo_offset = -1,
+	};
 
 	const uint32_t dlights_ubo_offset = writeDlightsToUBO();
 	if (dlights_ubo_offset == UINT32_MAX)
 		return;
 
 	ASSERT(!g_render_state.current_frame_is_ray_traced);
-
 
 	{
 		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
@@ -653,51 +696,115 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw )
 		vkCmdBindIndexBuffer(cmdbuf, geom_buffer, 0, VK_INDEX_TYPE_UINT16);
 	}
 
-	vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
-
 	for (int i = 0; i < g_render_state.num_draw_commands; ++i) {
 		const draw_command_t *const draw = g_render_state.draw_commands + i;
 
 		switch (draw->type) {
 			case DrawLabelBegin:
-				{
-					VkDebugUtilsLabelEXT label = {
-						.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-						.pLabelName = draw->debug_label,
-					};
-					vkCmdBeginDebugUtilsLabelEXT(cmdbuf, &label);
-				}
+			{
+				const VkDebugUtilsLabelEXT label = {
+					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+					.pLabelName = draw->debug_label,
+				};
+				vkCmdBeginDebugUtilsLabelEXT(cmdbuf, &label);
 				continue;
+			}
+
 			case DrawLabelEnd:
 				vkCmdEndDebugUtilsLabelEXT(cmdbuf);
 				continue;
+
+			case DrawSky:
+			{
+				const render_draw_sky_t *draw_sky = &draw->draw_sky;
+
+				if (cur.pipeline != g_render.pipeline_sky.pipeline) {
+					const uint32_t ubo_offset = allocUniform(sizeof(sky_uniform_data_t), 16 /*?*/);
+					if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
+						continue;
+
+					// Compute and upload UBO stuff
+					{
+						sky_uniform_data_t* const sky_ubo = (sky_uniform_data_t*)((byte*)g_render.uniform_buffer.mapped + ubo_offset);
+
+						// FIXME model matrix
+						Matrix4x4_ToArrayFloatGL(g_render_state.projection_view, (float*)sky_ubo->mvp);
+
+						sky_ubo->resolution[0] = width;
+						sky_ubo->resolution[1] = height;
+
+						// TODO DRY, this is copypasted from vk_rtx.c
+						matrix4x4 proj_inv, view_inv;
+						Matrix4x4_Invert_Full(proj_inv, g_render_state.vk_projection);
+						Matrix4x4_ToArrayFloatGL(proj_inv, (float*)sky_ubo->inv_proj);
+
+						// TODO there's a more efficient way to construct an inverse view matrix
+						// from vforward/right/up vectors and origin in g_camera
+						Matrix4x4_Invert_Full(view_inv, g_camera.viewMatrix);
+						Matrix4x4_ToArrayFloatGL(view_inv, (float*)sky_ubo->inv_view);
+					}
+
+					cur.pipeline = g_render.pipeline_sky.pipeline;
+					vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
+
+					g_render.pipeline_sky.values[0].buffer = (VkDescriptorBufferInfo){
+						.buffer = g_render.uniform_buffer.buffer,
+						.offset = 0,
+						.range = sizeof(sky_uniform_data_t),
+					};
+					g_render.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo();
+					VK_DescriptorsWrite(&g_render.pipeline_sky.descs, frame_index);
+
+					vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+						g_render.pipeline_sky.descs.pipeline_layout, 0, 1, g_render.pipeline_sky.sets + frame_index, 1, &ubo_offset);
+				}
+
+				ASSERT(draw_sky->index_offset >= 0);
+				vkCmdDrawIndexed(cmdbuf, draw_sky->element_count, 1, draw_sky->index_offset, draw_sky->vertex_offset, 0);
+
+				// Reset current draw state
+				cur.texture = -1;
+				cur.lightmap = -1;
+				cur.ubo_offset = -1;
+
+				continue;
+			}
 
 			case DrawDraw:
 				// Continue drawing below
 				break;
 		}
 
-		if (ubo_offset != draw->draw.ubo_offset)
+		ASSERT(draw->draw.pipeline_index >= 0);
+		ASSERT(draw->draw.pipeline_index < COUNTOF(g_render.pipelines));
+		const VkPipeline pipeline = g_render.pipelines[draw->draw.pipeline_index];
+
+		if (cur.pipeline != pipeline) {
+			cur.pipeline = pipeline;
+			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
+
+			// Make sure that after pipeline change we have this bound correctly
+			// Pipeline change might be due to previous pipeline being skybox, which has
+			// incompatible layout
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
+		}
+
+		if (cur.ubo_offset != draw->draw.ubo_offset)
 		{
-			ubo_offset = draw->draw.ubo_offset;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &ubo_offset);
+			cur.ubo_offset = draw->draw.ubo_offset;
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &cur.ubo_offset);
 		}
 
-		if (pipeline != draw->draw.pipeline_index) {
-			pipeline = draw->draw.pipeline_index;
-			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipelines[pipeline]);
-		}
-
-		if (lightmap != draw->draw.lightmap) {
-			lightmap = draw->draw.lightmap;
-			const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(lightmap);
+		if (cur.lightmap != draw->draw.lightmap) {
+			cur.lightmap = draw->draw.lightmap;
+			const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(cur.lightmap);
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
 		}
 
-		if (texture != draw->draw.texture)
+		if (cur.texture != draw->draw.texture)
 		{
-			texture = draw->draw.texture;
-			const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(texture);
+			cur.texture = draw->draw.texture;
+			const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(cur.texture);
 			// TODO names/enums for binding points
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
 		}
@@ -812,10 +919,10 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	uboComputeAndSetMVPFromModel( *args.transform );
-
 	// TODO get rid of this dirty ubo thing
+	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
 
@@ -826,7 +933,8 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 		const int tex_mat = geom->material.tex_base_color;
 		const int geom_tex = g_render.use_material_textures->value && (tex_mat > 0 && tex_mat < MAX_TEXTURES) ? tex_mat : geom->ye_olde_texture;
 		const int tex = args.textures_override > 0 ? args.textures_override : geom_tex;
-		const qboolean split = current_texture != tex
+		const qboolean split =
+			   current_texture != tex
 			|| vertex_offset != geom->vertex_offset
 			|| (index_offset + element_count) != geom->index_offset;
 
@@ -836,22 +944,30 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 		if (tex < 0)
 			continue;
 
-		// TODO
-		if (tex == TEX_BASE_SKYBOX)
-			continue;
-
+		// TODO consider tracking contiguousness in drawCmdPushDraw(Sky)()
+		// Why: we could easily check that the previous command in the command list
+		// is contiguous, and could just increase its counts w/o submitting a new command
+		// This would make this code here a bit more readable and single-purpose.
 		if (split) {
 			if (element_count) {
-				render_draw_t draw = {
-					.lightmap = lightmap,
-					.texture = current_texture,
-					.pipeline_index = args.render_type,
-					.element_count = element_count,
-					.vertex_offset = vertex_offset,
-					.index_offset = index_offset,
-				};
+				if (current_texture == TEX_BASE_SKYBOX) {
+					drawCmdPushDrawSky(&(render_draw_sky_t){
+						.element_count = element_count,
+						.vertex_offset = vertex_offset,
+						.index_offset = index_offset,
+					});
+				} else {
+					render_draw_t draw = {
+						.lightmap = lightmap,
+						.texture = current_texture,
+						.pipeline_index = args.render_type,
+						.element_count = element_count,
+						.vertex_offset = vertex_offset,
+						.index_offset = index_offset,
+					};
 
-				drawCmdPushDraw( &draw );
+					drawCmdPushDraw( &draw );
+				}
 			}
 
 			current_texture = tex;
@@ -866,16 +982,24 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	}
 
 	if (element_count) {
-		const render_draw_t draw = {
-			.lightmap = lightmap,
-			.texture = current_texture,
-			.pipeline_index = args.render_type,
-			.element_count = element_count,
-			.vertex_offset = vertex_offset,
-			.index_offset = index_offset,
-		};
+		if (current_texture == TEX_BASE_SKYBOX) {
+			drawCmdPushDrawSky(&(render_draw_sky_t){
+				.element_count = element_count,
+				.vertex_offset = vertex_offset,
+				.index_offset = index_offset,
+			});
+		} else {
+			const render_draw_t draw = {
+				.lightmap = lightmap,
+				.texture = current_texture,
+				.pipeline_index = args.render_type,
+				.element_count = element_count,
+				.vertex_offset = vertex_offset,
+				.index_offset = index_offset,
+			};
 
-		drawCmdPushDraw( &draw );
+			drawCmdPushDraw( &draw );
+		}
 	}
 
 	drawCmdPushDebugLabelEnd();

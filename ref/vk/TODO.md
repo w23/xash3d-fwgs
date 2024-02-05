@@ -3,8 +3,8 @@
 
 ## 2024-02-05 E373
 - [ ] Skybox for traditional renderer
-	- [-] Sky pipeline
-	- [ ] Submit SURF_DRAWSKY draw commands
+	- [x] Sky pipeline
+	- [x] Submit SURF_DRAWSKY draw commands
 	- [ ] Use original skybox for trad renderer
 
 # Previously
