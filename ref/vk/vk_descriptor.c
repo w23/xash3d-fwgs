@@ -189,6 +189,7 @@ void VK_DescriptorsWrite(const vk_descriptors_t *desc, int set_slot)
 		switch (binding->descriptorType) {
 			case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
 			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
 				// TODO
 				ASSERT(wds[i].descriptorCount == 1);
 				wds[i].pBufferInfo = &desc->values[i].buffer;

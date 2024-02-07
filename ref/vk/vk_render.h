@@ -10,6 +10,8 @@ void VK_RenderShutdown( void );
 struct ref_viewpass_s;
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 
+#define TEX_BASE_SKYBOX 0x0f000000u // FIXME ray_interop.h
+
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
 
@@ -163,7 +165,7 @@ void VK_RenderDebugLabelBegin( const char *label );
 void VK_RenderDebugLabelEnd( void );
 
 void VK_RenderBegin( qboolean ray_tracing );
-void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw );
+void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32_t height, int frame_index );
 struct vk_combuf_s;
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h );
 

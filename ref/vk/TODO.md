@@ -1,6 +1,13 @@
 ## Next
 - [ ] performance profiling and comparison
 
+# Previously
+## 2024-02-05 E373
+- [x] Skybox for traditional renderer
+	- [x] Sky pipeline
+	- [x] Submit SURF_DRAWSKY draw commands
+	- [x] Use original skybox for trad renderer
+
 ## 2024-02-01 E371
 - [x] tune A-Trous step widths for different channels
 	- [x] multiple passes -- core of the paper lol
@@ -11,7 +18,6 @@
 - [ ] :x: temporal glitches with dontBlurSamples() and ATrous → no longer reproduces
 - [x] add `-vkdbg_shaderprintf` arg to explicitly enable shader debug printfs
 
-# Previously
 ## 2024-01-29 E370
 - [x] bounce > 1 brighness
 - [ ] tune A-Trous step widths for different channels

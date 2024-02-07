@@ -128,7 +128,7 @@ void VK_RayNewMapEnd( void ) {
 	g_rtx.res[ExternalResource_skybox].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetSkyboxDescriptorImageInfo(),
+			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
 		},
 	};
 
@@ -212,7 +212,9 @@ static void parseDebugFlags( void ) {
 	} else
 LIST_DEBUG_FLAGS(X)
 #undef X
-	/* else: no valid flags found */ {
+
+	/* else: no valid flags found */
+	if (Q_strlen(cvalue) > 0) {
 		gEngine.Con_Printf("Invalid rt_debug_flags value %s. Valid flags are:\n", cvalue);
 #define X(suffix, info) gEngine.Con_Printf("\t%s -- %s\n", #suffix, info);
 LIST_DEBUG_FLAGS(X)

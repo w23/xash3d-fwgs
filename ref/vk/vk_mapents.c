@@ -869,6 +869,7 @@ void XVK_ParseMapEntities( void ) {
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i)
 		g_map_entities.smoothing.groups[i].count = 0;
 	g_map_entities.smoothing.groups_count = 0;
+	g_map_entities.remove_all_sky_surfaces = 0;
 
 	parseEntities( map->entities, false );
 	orientSpotlights();

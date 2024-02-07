@@ -4,11 +4,8 @@
 #include "vk_descriptor.h"
 #include "vk_staging.h"
 #include "vk_logs.h"
-#include "vk_combuf.h"
 #include "r_textures.h"
 #include "r_speeds.h"
-#include "alolcator.h"
-#include "profiler.h"
 
 #include "xash3d_mathlib.h" // bound
 
@@ -16,8 +13,6 @@
 
 #define PCG_IMPLEMENT
 #include "pcg.h"
-
-#include <math.h> // sqrt
 
 #define LOG_MODULE tex
 #define MODULE_NAME "textures"
@@ -43,8 +38,7 @@ static struct {
 	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
 
-	vk_texture_t skybox_cube;
-	vk_texture_t cubemap_placeholder;
+	vk_texture_t skybox[kSkybox_COUNT];
 
 	vk_texture_t blue_noise;
 } g_vktextures;
@@ -178,7 +172,7 @@ qboolean R_VkTexturesInit( void ) {
 
 	if (vk_core.rtx)
 		loadBlueNoiseTextures();
-	
+
 	return true;
 }
 
@@ -186,10 +180,14 @@ static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
 	R_VkTexturesSkyboxUnload();
-	R_VkTextureDestroy(-1, &g_vktextures.cubemap_placeholder);
+
+	for (int i = 0; i < COUNTOF(g_vktextures.skybox); ++i) {
+		R_VkTextureDestroy(-1, g_vktextures.skybox + i);
+	}
+
 	if (vk_core.rtx)
 		R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
-	
+
 	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
 		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
 			vkDestroySampler(vk_core.device, g_vktextures.samplers[i].sampler, NULL);
@@ -611,6 +609,12 @@ qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, c
 }
 
 void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
+	if (!tex)
+		return;
+
+	if (tex->vk.image.image == VK_NULL_HANDLE)
+		return;
+
 	// Need to make sure that there are no references to this texture anywhere.
 	// It might have been added to staging and then immediately deleted, leaving references to its vkimage
 	// in the staging command buffer. See https://github.com/w23/xash3d-fwgs/issues/464
@@ -633,24 +637,42 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 
 void R_VkTexturesSkyboxUnload(void) {
 	DEBUG("%s", __FUNCTION__);
-	if (g_vktextures.skybox_cube.vk.image.image) {
-		R_VkTextureDestroy( -1, &g_vktextures.skybox_cube );
-		memset(&g_vktextures.skybox_cube, 0, sizeof(g_vktextures.skybox_cube));
+
+	for (int i = 0; i < kSkybox_COUNT; ++i) {
+		if (i == kSkyboxPlaceholder)
+			continue;
+
+		vk_texture_t* const skybox = g_vktextures.skybox + i;
+		if (skybox->vk.image.image) {
+			R_VkTextureDestroy( -1, skybox );
+			memset(skybox, 0, sizeof(*skybox));
+		}
 	}
 }
 
-VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( void ) {
+VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot ) {
+	vk_texture_t *skybox = g_vktextures.skybox + slot;
+
+	if (skybox->vk.image.view == VK_NULL_HANDLE)
+		skybox = g_vktextures.skybox + kSkyboxOriginal;
+
+	if (skybox->vk.image.view == VK_NULL_HANDLE)
+		skybox = g_vktextures.skybox + kSkyboxPlaceholder;
+
+	ASSERT(skybox->vk.image.view != VK_NULL_HANDLE);
+
 	return (VkDescriptorImageInfo){
 		.sampler = g_vktextures.default_sampler,
-		.imageView = g_vktextures.skybox_cube.vk.image.view
-			? g_vktextures.skybox_cube.vk.image.view
-			: g_vktextures.cubemap_placeholder.vk.image.view,
+		.imageView = skybox->vk.image.view,
 		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 	};
 }
 
-qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, qboolean placeholder) {
-	vk_texture_t *const dest = placeholder ? &g_vktextures.cubemap_placeholder : &g_vktextures.skybox_cube;
+qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, colorspace_hint_e colorspace_hint, skybox_slot_e skybox_slot ) {
+	ASSERT(skybox_slot >= 0);
+	ASSERT(skybox_slot < kSkybox_COUNT);
+
+	vk_texture_t *const dest = g_vktextures.skybox + skybox_slot;
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
 	dest->flags |= TF_NOMIPMAP;
 	ASSERT(pic->flags & IMAGE_CUBEMAP);

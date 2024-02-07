@@ -5,16 +5,12 @@
 #include "vk_const.h"
 #include "vk_mapents.h" // wadlist
 #include "vk_logs.h"
-#include "r_speeds.h"
 #include "profiler.h"
 #include "unordered_roadmap.h"
 #include "stringview.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
-#include "crclib.h" // COM_HashKey
-#include "com_strings.h"
-#include "eiface.h" // ARRAYSIZE
 
 #include <memory.h>
 #include <math.h>
@@ -239,7 +235,7 @@ static void createDefaultTextures( void )
 		memset(pic->buffer, 0, pic->size);
 
 		const qboolean is_placeholder = true;
-		R_VkTexturesSkyboxUpload( "skybox_placeholder", pic, kColorspaceGamma, is_placeholder );
+		R_VkTexturesSkyboxUpload( "skybox_placeholder", pic, kColorspaceGamma, kSkyboxPlaceholder );
 	}
 }
 
@@ -777,7 +773,7 @@ cleanup:
 		Mem_Free(data);
 }
 
-static qboolean skyboxLoadF(const char *fmt, ...) {
+static qboolean skyboxLoadF(skybox_slot_e slot, const char *fmt, ...) {
 	qboolean success = false;
 	char buffer[MAX_STRING];
 
@@ -805,7 +801,7 @@ static qboolean skyboxLoadF(const char *fmt, ...) {
 
 	{
 		const qboolean is_placeholder = false;
-		success = R_VkTexturesSkyboxUpload( buffer, pic, kColorspaceGamma, is_placeholder );
+		success = R_VkTexturesSkyboxUpload( buffer, pic, kColorspaceGamma, slot );
 	}
 
 	if (success)
@@ -854,15 +850,18 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 	if (!force_reload && svCmp(basename, g_textures.skybox.current_name) == 0)
 		return true;
 
-	// Try loading newer "PBR" upscaled skybox first
-	if (skyboxLoadF("pbr/env/%.*s", basename.len, basename.s))
-		goto success;
+	// Unload previous skybox
+	skyboxUnload();
 
 	// Try loading original game skybox
-	if (skyboxLoadF("gfx/env/%.*s", basename.len, basename.s))
+	const qboolean original = skyboxLoadF(kSkyboxOriginal, "gfx/env/%.*s", basename.len, basename.s);
+
+	// Try loading newer "PBR" upscaled skybox
+	const qboolean patched = skyboxLoadF(kSkyboxPatched, "pbr/env/%.*s", basename.len, basename.s);
+
+	if (original || patched)
 		goto success;
 
-	skyboxUnload();
 	return false;
 
 success:
@@ -872,7 +871,7 @@ success:
 
 static const char *k_skybox_default = "desert";
 
-void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
+static void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean force_reload ) {
 	DEBUG("%s: skyboxname='%s' is_custom=%d force_reload=%d", __FUNCTION__, skyboxname, is_custom, force_reload);
 
 	if (!skyboxTryLoad(skyboxname, force_reload)) {

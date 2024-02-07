@@ -58,6 +58,14 @@ typedef enum {
 	kColorspaceGamma,
 } colorspace_hint_e;
 
+typedef enum {
+	kSkyboxPlaceholder,
+	kSkyboxOriginal,
+	kSkyboxPatched,
+
+	kSkybox_COUNT,
+} skybox_slot_e;
+
 int R_TextureUploadFromFileExAcquire( const char *filename, colorspace_hint_e colorspace, qboolean force_reload );
 
 int R_TextureFindByNameF( const char *fmt, ...);
