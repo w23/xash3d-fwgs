@@ -212,7 +212,9 @@ static void parseDebugFlags( void ) {
 	} else
 LIST_DEBUG_FLAGS(X)
 #undef X
-	/* else: no valid flags found */ {
+
+	/* else: no valid flags found */
+	if (Q_strlen(cvalue) > 0) {
 		gEngine.Con_Printf("Invalid rt_debug_flags value %s. Valid flags are:\n", cvalue);
 #define X(suffix, info) gEngine.Con_Printf("\t%s -- %s\n", #suffix, info);
 LIST_DEBUG_FLAGS(X)
