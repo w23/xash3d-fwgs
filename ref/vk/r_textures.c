@@ -850,16 +850,18 @@ static qboolean skyboxTryLoad( const char *skyboxname, qboolean force_reload ) {
 	if (!force_reload && svCmp(basename, g_textures.skybox.current_name) == 0)
 		return true;
 
+	// Unload previous skybox
+	skyboxUnload();
+
 	// Try loading original game skybox
 	const qboolean original = skyboxLoadF(kSkyboxOriginal, "gfx/env/%.*s", basename.len, basename.s);
 
-	// Try loading newer "PBR" upscaled skybox first
+	// Try loading newer "PBR" upscaled skybox
 	const qboolean patched = skyboxLoadF(kSkyboxPatched, "pbr/env/%.*s", basename.len, basename.s);
 
 	if (original || patched)
 		goto success;
 
-	skyboxUnload();
 	return false;
 
 success:
