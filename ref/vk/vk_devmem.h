@@ -54,6 +54,4 @@ typedef struct vk_devmem_allocate_args_s {
 vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_type, vk_devmem_allocate_args_t devmem_allocate_args);
 void VK_DevMemFree(const vk_devmem_t *mem);
 
-// Returns short string representation of `vk_devmem_usage_type_t` usage type.
-static const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type );
 

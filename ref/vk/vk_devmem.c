@@ -153,6 +153,20 @@ static void register_free_for_type( vk_devmem_usage_type_t type, int size, int a
 	}
 }
 
+// Returns short string representation of `vk_devmem_usage_type_t` usage type.
+static const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type ) {
+	ASSERT( type >= VK_DEVMEM_USAGE_TYPE_ALL );
+	ASSERT( type < VK_DEVMEM_USAGE_TYPES_COUNT );
+
+	switch ( type ) {
+		case VK_DEVMEM_USAGE_TYPE_ALL:     return "ALL";
+		case VK_DEVMEM_USAGE_TYPE_BUFFER:  return "BUFFER";
+		case VK_DEVMEM_USAGE_TYPE_IMAGE:   return "IMAGE";
+	}
+
+	return "(unknown)";
+}
+
 static int findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
 	const VkPhysicalDeviceMemoryProperties *const properties = &vk_core.physical_device.memory_properties2.memoryProperties;
 	for ( int type = 0; type < (int)properties->memoryTypeCount; type += 1 ) {
@@ -328,7 +342,7 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 
 	if (slot->refcount == 0) {
 		// FIXME free empty
-		gEngine.Con_Reportf(S_WARN "devmem[%d] reached refcount=0\n", mem->priv_.devmem);
+		gEngine.Con_Reportf(S_WARN "device_memory_slot[%d] reached refcount=0\n", slot_index);
 	}
 }
 
@@ -387,17 +401,4 @@ void VK_DevMemDestroy( void ) {
 	}
 
 	g_devmem.alloc_slots_count = 0;
-}
-
-const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type ) {
-	ASSERT( type >= VK_DEVMEM_USAGE_TYPE_ALL );
-	ASSERT( type < VK_DEVMEM_USAGE_TYPES_COUNT );
-
-	switch ( type ) {
-		case VK_DEVMEM_USAGE_TYPE_ALL:     return "ALL";
-		case VK_DEVMEM_USAGE_TYPE_BUFFER:  return "BUFFER";
-		case VK_DEVMEM_USAGE_TYPE_IMAGE:   return "IMAGE";
-	}
-
-	return "(unknown)";
 }
