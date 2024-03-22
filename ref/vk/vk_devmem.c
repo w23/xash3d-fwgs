@@ -2,7 +2,7 @@
 #include "alolcator.h"
 #include "r_speeds.h"
 
-#define MAX_DEVMEM_ALLOC_SLOTS 16
+#define MAX_DEVMEM_ALLOC_SLOTS 32
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
 
 #define MODULE_NAME "devmem"
@@ -249,12 +249,6 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 			name, usage_type_str, Q_memprint( (float)req.size ), req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
 	}
 
-	if ( vk_core.rtx ) {
-		// TODO this is needed only for the ray tracer and only while there's no proper staging
-		// Once staging is established, we can avoid forcing this on every devmem allocation
-		allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
-	}
-
 	alo_block_t block;
 	int selected_slot_index = -1;
 	for ( int slot_index = 0; slot_index < g_devmem.alloc_slots_count; slot_index += 1 ) {
@@ -329,7 +323,13 @@ void VK_DevMemFree(const vk_devmem_t *mem) {
 
 	REGISTER_FREE( mem->usage_type, mem->internal.block_size, mem->internal.block_alignment, mem->internal.block_alignment_hole );
 
+	ASSERT(slot->refcount > 0);
 	slot->refcount--;
+
+	if (slot->refcount == 0) {
+		// FIXME free empty
+		gEngine.Con_Reportf(S_WARN "devmem[%d] reached refcount=0\n", mem->priv_.devmem);
+	}
 }
 
 // Register single stats variable.
