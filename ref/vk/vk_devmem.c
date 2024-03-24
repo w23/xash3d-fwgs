@@ -236,10 +236,11 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 			XVK_CHECK( vkMapMemory( vk_core.device, slot->device_memory, 0, slot->size, 0, &slot->mapped ) );
 			if ( g_devmem.verbose ) {
 				size_t device        = (size_t) vk_core.device;
+				size_t mapped        = (size_t) slot->mapped;
 				size_t device_memory = (size_t) slot->device_memory;
 				// `z` - specifies `size_t` length
 				gEngine.Con_Reportf( "  ^3->^7 ^6Mapped:^7 { device: 0x%zx, mapped: 0x%zx, device_memory: 0x%zx, size: %s }\n",
-					device, slot->mapped, device_memory, Q_memprint( (float)slot->size ) );
+					device, mapped, device_memory, Q_memprint( (float)slot->size ) );
 			}
 		} else {
 			slot->mapped = NULL;
@@ -259,7 +260,7 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 
 	if ( g_devmem.verbose ) {
 		const char *usage_type_str = VK_DevMemUsageTypeString( usage_type );
-		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %s, alignment: %llu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %s, alignment: %lu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
 			name, usage_type_str, Q_memprint( (float)req.size ), req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
 	}
 
