@@ -260,8 +260,9 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 
 	if ( g_devmem.verbose ) {
 		const char *usage_type_str = VK_DevMemUsageTypeString( usage_type );
-		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %s, alignment: %lu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
-			name, usage_type_str, Q_memprint( (float)req.size ), req.alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
+		size_t alignment = (size_t) req.alignment;
+		gEngine.Con_Reportf( "^3VK_DevMemAllocate:^7 { name: \"%s\", usage: %s, size: %s, alignment: %zu, memoryTypeBits: 0x%x, property_flags: " PRI_VKMEMPROPFLAGS_FMT ", allocate_flags: " PRI_VKMEMALLOCFLAGS_FMT " => type_index: %d }\n",
+			name, usage_type_str, Q_memprint( (float)req.size ), alignment, req.memoryTypeBits, PRI_VKMEMPROPFLAGS_ARG( property_flags ), PRI_VKMEMALLOCFLAGS_ARG( allocate_flags ), type_index );
 	}
 
 	alo_block_t block;
