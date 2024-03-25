@@ -42,7 +42,8 @@ typedef struct {
 	vec3_t origin;
 	vec3_t color;
 	vec3_t dir;
-	float stopdot, stopdot2;
+	float stopdot;
+	float stopdot2_or_costheta;
 	float radius;
 	int flags;
 

@@ -1,7 +1,7 @@
 #include "vk_ray_internal.h"
 
 #include "vk_rtx.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_materials.h"
 #include "vk_geometry.h"
 #include "vk_render.h"
@@ -25,10 +25,21 @@ typedef struct rt_model_s {
 	rt_kusochki_t kusochki;
 } rt_model_t;
 
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, int override_texture_id, const vec4_t override_color) {
-	const int tex_id = override_texture_id > 0 ? override_texture_id : geom->texture;
-	const xvk_material_t *const mat = XVK_GetMaterialForTextureIndex( tex_id );
+static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const r_vk_material_t *override_material, const vec4_t override_color) {
+	const r_vk_material_t *const mat = override_material ? override_material : &geom->material;
 	ASSERT(mat);
+
+	ASSERT(mat->tex_base_color >= 0);
+	ASSERT(mat->tex_base_color < MAX_TEXTURES || mat->tex_base_color == TEX_BASE_SKYBOX);
+
+	ASSERT(mat->tex_roughness >= 0);
+	ASSERT(mat->tex_roughness < MAX_TEXTURES);
+
+	ASSERT(mat->tex_metalness >= 0);
+	ASSERT(mat->tex_metalness < MAX_TEXTURES);
+
+	ASSERT(mat->tex_normalmap >= 0);
+	ASSERT(mat->tex_normalmap < MAX_TEXTURES);
 
 	// TODO split kusochki into static geometry data and potentially dynamic material data
 	// This data is static, should never change
@@ -57,15 +68,6 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		kusok->material.base_color[2] *= override_color[2];
 		kusok->material.base_color[3] *= override_color[3];
 	}
-
-	// TODO should be patched by the Chrome material source itself to generate a static chrome material
-	const qboolean HACK_chrome = geom->material == kXVkMaterialChrome;
-	if (!mat->set && HACK_chrome)
-		kusok->material.tex_roughness = tglob.grayTexture;
-
-	// Purely static. Once a sky forever a sky.
-	if (geom->material == kXVkMaterialSky)
-		kusok->material.tex_base_color = TEX_BASE_SKYBOX;
 }
 
 // TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
@@ -109,7 +111,7 @@ static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk
 
 // TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
 // same render_mode/type and even texture.
-static uint32_t materialModeFromRenderType(vk_render_type_e render_type) {
+uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type) {
 	switch (render_type) {
 		case kVkRenderTypeSolid:
 			return MATERIAL_MODE_OPAQUE;
@@ -139,6 +141,14 @@ static uint32_t materialModeFromRenderType(vk_render_type_e render_type) {
 
 void RT_RayModel_Clear(void) {
 	R_DEBuffer_Init(&g_ray_model_state.kusochki_alloc, MAX_KUSOCHKI / 2, MAX_KUSOCHKI / 2);
+
+	// FIXME
+	// This is a dirty workaround for sub-part memory management in this little project
+	// Accel backing buffer gets cleared on NewMap. Therefore, we need to recreate BLASes for dynamic
+	// models, even though they might have lived for the entire process lifetime.
+	// See #729
+	RT_DynamicModelShutdown();
+	RT_DynamicModelInit();
 }
 
 void XVK_RayModel_ClearForNextFrame( void ) {
@@ -180,7 +190,7 @@ void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
 }
 
 // TODO this function can't really fail. It'd mean that staging is completely broken.
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_colors) {
+qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
 	const vk_staging_buffer_args_t staging_args = {
 		.buffer = g_ray_model_state.kusochki_buffer.buffer,
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
@@ -197,7 +207,7 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 	vk_kusok_data_t *const p = kusok_staging.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
-		applyMaterialToKusok(p + i, geom, override_texture_id, override_colors ? override_colors[i] : NULL);
+		applyMaterialToKusok(p + i, geom, override_material, override_colors ? override_colors[i] : NULL);
 	}
 
 	R_VkStagingUnlock(kusok_staging.handle);
@@ -222,7 +232,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		goto fail;
 	}
 
-	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, -1, NULL);
+	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
@@ -256,7 +266,20 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 }
 
 qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count) {
-	return RT_BlasBuild(model->blas, geometries, geometries_count);
+	// TODO: It might be beneficial to be able to supply which parts of the RT model should be updated.
+	// E.g.:
+	// - A flag to update BLAS (not all model updates need BLAS updates, e.g. waveHeight=0 water updates
+	// only update UVs)
+	// - A flag to update kusochki. Not all updates update offsets and textures, e.g. studio models have
+	// stable textures that don't change.
+
+	// Schedule rebuilding blas
+	if (!RT_BlasBuild(model->blas, geometries, geometries_count))
+		return false;
+
+	// Also update materials
+	RT_KusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
+	return true;
 }
 
 qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count) {
@@ -275,7 +298,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 			const int offset = geom_indices[begin];
 			const int count = i - begin;
 			ASSERT(offset + count <= geometries_count);
-			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 				APROF_SCOPE_END(update_materials);
 				return false;
 			}
@@ -288,7 +311,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 		const int offset = geom_indices[begin];
 		const int count = geom_indices_count - begin;
 		ASSERT(offset + count <= geometries_count);
-		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, -1, NULL)) {
+		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 
 			APROF_SCOPE_END(update_materials);
 			return false;
@@ -308,28 +331,61 @@ rt_draw_instance_t *getDrawInstance(void) {
 	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
 }
 
+static qboolean isLegacyBlendingMode(int material_mode) {
+	switch (material_mode) {
+		case MATERIAL_MODE_BLEND_ADD:
+		case MATERIAL_MODE_BLEND_MIX:
+		case MATERIAL_MODE_BLEND_GLOW:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static float sRGBtoLinearScalar(const float sRGB) {
+	// IEC 61966-2-1:1999
+	const float linearLow = sRGB / 12.92f;
+	const float linearHigh = powf((sRGB + 0.055f) / 1.055f, 2.4f);
+	return sRGB <= 0.04045f ? linearLow : linearHigh;
+}
+
+static void sRGBtoLinearVec4(const vec4_t in, vec4_t out) {
+	out[0] = sRGBtoLinearScalar(in[0]);
+	out[1] = sRGBtoLinearScalar(in[1]);
+	out[2] = sRGBtoLinearScalar(in[2]);
+
+	// Historically: sprite animation lerping is linear
+	// To-linear conversion should not be done on anything with blending, therefore
+	// it's irrelevant really.
+	out[3] = in[3];
+}
+
+/*
+static void sRGBAtoLinearVec4(const vec4_t in, vec4_t out) {
+	out[0] = sRGBtoLinearScalar(in[0]);
+	out[1] = sRGBtoLinearScalar(in[1]);
+	out[2] = sRGBtoLinearScalar(in[2]);
+
+	// α also needs to be linearized for tau-cannon hit position sprite to look okay
+	out[3] = sRGBtoLinearScalar(in[3]);
+}
+*/
+
 void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	if (!model || !model->blas)
 		return;
 
 	uint32_t kusochki_offset = model->kusochki.offset;
 
-	if (args.override.textures > 0) {
+	if (args.override.material != NULL) {
 		kusochki_offset = RT_KusochkiAllocOnce(args.override.geoms_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED)
 			return;
 
-		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.textures, NULL)) {
+		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
 			return;
 		}
-	}
-
-	for (int i = 0; i < args.dynamic_polylights_count; ++i) {
-		rt_light_add_polygon_t *const polylight = args.dynamic_polylights + i;
-		polylight->transform_row = (const matrix3x4*)args.transform;
-		polylight->dynamic = true;
-		RT_LightAddPolygon(polylight);
 	}
 
 	rt_draw_instance_t *const draw_instance = getDrawInstance();
@@ -338,8 +394,15 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 
 	draw_instance->blas_addr = model->blas_addr;
 	draw_instance->kusochki_offset = kusochki_offset;
-	draw_instance->material_mode = materialModeFromRenderType(args.render_type);
-	Vector4Copy(*args.color, draw_instance->color);
+	draw_instance->material_mode = args.material_mode;
+	draw_instance->material_flags = args.material_flags;
+
+	// Legacy blending is done in sRGB-γ space
+	if (isLegacyBlendingMode(args.material_mode))
+		Vector4Copy(*args.color_srgb, draw_instance->color);
+	else
+		sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
+
 	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
 	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
 }
@@ -396,10 +459,12 @@ qboolean RT_DynamicModelInit(void) {
 void RT_DynamicModelShutdown(void) {
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		RT_BlasDestroy(g_dyn.groups[i].blas);
+		g_dyn.groups[i].blas = NULL;
 	}
 }
 
 void RT_DynamicModelProcessFrame(void) {
+	APROF_SCOPE_DECLARE_BEGIN(process, __FUNCTION__);
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		rt_dynamic_t *const dyn = g_dyn.groups + i;
 		if (!dyn->geometries_count)
@@ -412,8 +477,7 @@ void RT_DynamicModelProcessFrame(void) {
 			goto tail;
 		}
 
-		// FIXME override color
-		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, -1, dyn->colors)) {
+		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
@@ -430,6 +494,7 @@ void RT_DynamicModelProcessFrame(void) {
 		draw_instance->blas_addr = dyn->blas_addr;
 		draw_instance->kusochki_offset = kusochki_offset;
 		draw_instance->material_mode = i;
+		draw_instance->material_flags = 0;
 		Vector4Set(draw_instance->color, 1, 1, 1, 1);
 		Matrix3x4_LoadIdentity(draw_instance->transform_row);
 		Matrix4x4_LoadIdentity(draw_instance->prev_transform_row);
@@ -437,10 +502,12 @@ void RT_DynamicModelProcessFrame(void) {
 tail:
 		dyn->geometries_count = 0;
 	}
+	APROF_SCOPE_END(process);
 }
 
 void RT_FrameAddOnce( rt_frame_add_once_t args ) {
-	const int material_mode = materialModeFromRenderType(args.render_type);
+	// TODO pass material_mode explicitly
+	const int material_mode = R_VkMaterialModeFromRenderType(args.render_type);
 	rt_dynamic_t *const dyn = g_dyn.groups + material_mode;
 
 	for (int i = 0; i < args.geometries_count; ++i) {
@@ -449,7 +516,12 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 			break;
 		}
 
-		Vector4Copy(*args.color, dyn->colors[dyn->geometries_count]);
+		// Legacy blending is done in sRGB-γ space
+		if (isLegacyBlendingMode(material_mode))
+			Vector4Copy(*args.color_srgb, dyn->colors[dyn->geometries_count]);
+		else
+			sRGBtoLinearVec4(*args.color_srgb, dyn->colors[dyn->geometries_count]);
+
 		dyn->geometries[dyn->geometries_count++] = args.geometries[i];
 	}
 }

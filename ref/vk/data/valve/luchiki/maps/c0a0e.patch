@@ -1,0 +1,52 @@
+// wagonchik
+{
+"_xvk_ent_id" "29 21 25 19 23 16 26 28 20 27 17 22 18 24" // remove hack light entity
+}
+{
+"_xvk_ent_id" "14 15" // remove hack light entity "EXIT"
+}
+// more bright lamp
+{
+"_xvk_surface_id" "567" // +0LAB1_W6        150 160 210  8800
+"_light" "150 160 210  35000"
+}
+// smoothing
+{
+"_xvk_smoothing_threshold" "55"
+}
+// fix texture coordinates
+{
+"_xvk_surface_id" "1362 1363 1442 1443" // subway_lights
+"_xvk_tex_offset" "0 1.4"
+"_xvk_tex_scale" "1 0.9"
+}
+{
+"_xvk_surface_id" "1374 1372 1353 1351" // subway_ceiling (fan box)
+"_xvk_tex_offset" "40 0"
+}
+//{
+//"_xvk_surface_id" "1511" // subway_seat
+//"_xvk_tex_offset" "0 0.3"
+//}
+{
+//"_xvk_surface_id" "1520" // subway_floor1
+//"_xvk_tex_offset" "0 2.8"
+}
+{
+"_xvk_surface_id" "1528 1529" // subway_floor2
+"_xvk_tex_offset" "0 1"
+}
+{
+"_xvk_surface_id" "1300 1274 1278" // subway_outside
+"_xvk_tex_offset" "1 1"
+}
+{
+"_xvk_surface_id" "1280" // subway_outside
+"_xvk_tex_offset" "0 -1"
+}
+// fix textures
+{
+"_xvk_surface_id" "1531 1530" // subway_inpanel (more correct)
+"_xvk_material" "subway_inpanel_2"
+//"_xvk_tex_offset" "15 0"
+}

@@ -22,6 +22,7 @@
 #define vec4 vec4_t
 #define mat4 matrix4x4
 typedef int ivec3[3];
+typedef int ivec2[2];
 #define TOKENPASTE(x, y) x ## y
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 #define PAD(x) float TOKENPASTE2(pad_, __LINE__)[x];
@@ -47,6 +48,16 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 
 #endif // not GLSL
 
+struct Vertex {
+	vec3 pos;
+	vec3 prev_pos;
+	vec3 normal;
+	vec3 tangent;
+	vec2 gl_tc;
+	vec2 _unused_lm_tc;
+	uint color;
+};
+
 #define GEOMETRY_BIT_OPAQUE 0x01
 #define GEOMETRY_BIT_ALPHA_TEST 0x02
 #define GEOMETRY_BIT_BLEND 0x04
@@ -71,7 +82,7 @@ LIST_SPECIALIZATION_CONSTANTS(DECLARE_SPECIALIZATION_CONSTANT)
 #define MATERIAL_MODE_BLEND_GLOW 5
 #define MATERIAL_MODE_COUNT 6
 
-#define TEX_BASE_SKYBOX 0xffffffffu
+#define TEX_BASE_SKYBOX 0x0f000000u
 
 struct Material {
 	uint tex_base_color;
@@ -119,9 +130,11 @@ struct Kusok {
 };
 
 struct PointLight {
-	vec4 origin_r;
+	vec4 origin_r2; // vec4(center.xyz, radius²)
 	vec4 color_stopdot;
 	vec4 dir_stopdot2;
+
+	// TODO move to either dedicated array, or section of array (by-index type delimiter)
 	uint environment; // Is directional-only environment light
 	PAD(3)
 };
@@ -158,22 +171,39 @@ struct LightCluster {
 
 #define PUSH_FLAG_LIGHTMAP_ONLY 0x01
 
-struct PushConstants {
-	float time;
-	uint random_seed;
-	int bounces;
-	float prev_frame_blend_factor;
-	float pixel_cone_spread_angle;
-	uint debug_light_index_begin, debug_light_index_end;
-	uint flags;
-};
+#define DEBUG_DISPLAY_DISABLED 0
+#define DEBUG_DISPLAY_BASECOLOR 1
+#define DEBUG_DISPLAY_BASEALPHA 2
+#define DEBUG_DISPLAY_EMISSIVE 3
+#define DEBUG_DISPLAY_NSHADE 4
+#define DEBUG_DISPLAY_NGEOM 5
+#define DEBUG_DISPLAY_LIGHTING 6
+#define DEBUG_DISPLAY_SURFHASH 7
+#define DEBUG_DISPLAY_DIRECT 8
+#define DEBUG_DISPLAY_DIRECT_DIFF 9
+#define DEBUG_DISPLAY_DIRECT_SPEC 10
+#define DEBUG_DISPLAY_INDIRECT 11
+#define DEBUG_DISPLAY_INDIRECT_DIFF 12
+#define DEBUG_DISPLAY_INDIRECT_SPEC 13
+#define DEBUG_DISPLAY_TRIHASH 14
+#define DEBUG_DISPLAY_MATERIAL 15
+#define DEBUG_DISPLAY_DIFFUSE 16
+#define DEBUG_DISPLAY_SPECULAR 17
+// add more when needed
+
+#define DEBUG_FLAG_WHITE_FURNACE (1<<0)
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
+	ivec2 res;
 	float ray_cone_width;
 	uint random_seed;
-	PAD(2)
+	uint frame_counter;
+	float skybox_exposure;
+
+	uint debug_display_only;
+	uint debug_flags;
 };
 
 #undef PAD

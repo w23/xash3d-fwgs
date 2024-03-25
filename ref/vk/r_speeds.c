@@ -3,6 +3,7 @@
 #include "vk_framectl.h"
 #include "vk_cvar.h"
 #include "vk_combuf.h"
+#include "stringview.h"
 
 #include "profiler.h"
 
@@ -21,9 +22,10 @@
 enum {
 	SPEEDS_BIT_OFF = 0,       // `r_speeds 0` turns off all performance stats display
 	SPEEDS_BIT_SIMPLE = 1,    // `r_speeds 1` displays only basic info about frame time
-	SPEEDS_BIT_STATS = 2,     // `r_speeds 2` displays additional metrics, i.e. lights counts, dynamic geometry upload sizes, etc (TODO)
-	SPEEDS_BIT_GPU_USAGE = 4, // `r_speeds 4` displays overall GPU usage stats (TODO)
-	SPEEDS_BIT_FRAME = 8,     // `r_speeds 8` diplays details instrumental profiler frame data, e.g. specific functions times graphs, etc
+	SPEEDS_BIT_STATS = 2,     // `r_speeds 2` displays additional metrics, i.e. lights counts, dynamic geometry upload sizes, etc
+	SPEEDS_BIT_GRAPHS = 4,     // `r_speeds 4` display instrumental metrics graphs, controlled by r_speeds_graphs var
+	SPEEDS_BIT_FRAME = 8,     // `r_speeds 8` diplays details instrumental profiler flame graph
+	// TODO SPEEDS_BIT_GPU_USAGE = 16, // `r_speeds 16` displays overall GPU usage stats
 
 	// These bits can be combined, e.g. `r_speeds 9`, 8+1, will display 1: basic timing info and 8: frame graphs
 };
@@ -213,9 +215,23 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					ASSERT(depth > 0);
 					--depth;
 
-					ASSERT(stack[depth].scope_id == scope_id);
 					ASSERT(scope_id >= 0);
 					ASSERT(scope_id < APROF_MAX_SCOPES);
+
+					if (stack[depth].scope_id != scope_id) {
+						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
+							depth,
+							scope_id, g_aprof.scopes[scope_id].name,
+							stack[depth].scope_id, g_aprof.scopes[stack[depth].scope_id].name);
+
+						gEngine.Con_Printf(S_ERROR "Full stack:\n");
+						for (int i = depth; i >= 0; --i) {
+							gEngine.Con_Printf(S_ERROR "  %d: scope_id=%d(%s)\n", i,
+								stack[i].scope_id, g_aprof.scopes[stack[i].scope_id].name);
+						}
+
+						return;
+					}
 
 					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
@@ -288,23 +304,9 @@ static void handlePause( uint32_t prev_frame_index ) {
 	}
 }
 
-// TODO move this to vk_common or something
-int stringViewCmp(const_string_view_t sv, const char* s) {
-	for (int i = 0; i < sv.len; ++i) {
-		const int d = sv.s[i] - s[i];
-		if (d != 0)
-			return d;
-		if (s[i] == '\0')
-			return 1;
-	}
-
-	// Check that both strings end the same
-	return '\0' - s[sv.len];
-}
-
 static int findMetricIndexByName( const_string_view_t name) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
-		if (stringViewCmp(name, g_speeds.metrics[i].name) == 0)
+		if (svCmp(name, g_speeds.metrics[i].name) == 0)
 			return i;
 	}
 
@@ -313,7 +315,7 @@ static int findMetricIndexByName( const_string_view_t name) {
 
 static int findGraphIndexByName( const_string_view_t name) {
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
-		if (stringViewCmp(name, g_speeds.graphs[i].name) == 0)
+		if (svCmp(name, g_speeds.graphs[i].name) == 0)
 			return i;
 	}
 
@@ -482,7 +484,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 	}
 }
 
-static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
 	const int max_frames_to_draw = 2;
@@ -520,6 +522,9 @@ static int drawFrames( int draw, uint32_t prev_frame_index, int y, const vk_comb
 static void printMetrics( void ) {
 	for (int i = 0; i < g_speeds.metrics_count; ++i) {
 		const r_speeds_metric_t *const metric = g_speeds.metrics + i;
+		if (Q_strncmp(metric->name, "speeds", 6) != 0)
+			continue;
+
 		char buf[32];
 		metricTypeSnprintf(buf, sizeof(buf), (*metric->p_value), metric->type);
 		speedsPrintf("%s: %s\n", metric->name, buf);
@@ -952,12 +957,14 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 
 	handlePause( prev_frame_index );
 
+	if (speeds_bits != 0)
 	{
 		int y = 100;
-		const int draw = speeds_bits & SPEEDS_BIT_FRAME;
-		y = drawFrames( draw, prev_frame_index, y, gpurofl, gpurofl_count );
+		const int draw_frame = speeds_bits & SPEEDS_BIT_FRAME;
+		y = analyzeScopesAndDrawFrames( draw_frame, prev_frame_index, y, gpurofl, gpurofl_count );
 
-		if (draw)
+		const int draw_graphs = speeds_bits & SPEEDS_BIT_GRAPHS;
+		if (draw_graphs)
 			y = drawGraphs(y + 10);
 	}
 

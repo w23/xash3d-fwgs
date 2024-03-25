@@ -7,7 +7,9 @@
 #include "vk_common.h"
 #include "vk_logs.h"
 
-#define LOG_MODULE LogModule_Meatpipe
+#include "profiler.h"
+
+#define LOG_MODULE meat
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
 
@@ -427,6 +429,7 @@ void R_VkMeatpipeDestroy(vk_meatpipe_t *mp) {
 }
 
 void R_VkMeatpipePerform(vk_meatpipe_t *mp, struct vk_combuf_s *combuf, vk_meatpipe_perfrom_args_t args) {
+	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	for (int i = 0; i < mp->passes_count; ++i) {
 		const vk_meatpipe_pass_t *pass = mp->passes + i;
 		RayPassPerform(pass->pass, combuf,
@@ -439,4 +442,5 @@ void R_VkMeatpipePerform(vk_meatpipe_t *mp, struct vk_combuf_s *combuf, vk_meatp
 			}
 		);
 	}
+	APROF_SCOPE_END(perform);
 }

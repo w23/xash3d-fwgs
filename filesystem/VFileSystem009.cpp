@@ -150,7 +150,10 @@ public:
 
 	void RemoveFile( const char *path, const char *id ) override
 	{
-		FS_Delete( path ); // FS_Delete is aware of slashes
+		char dir[MAX_VA_STRING], fullpath[MAX_VA_STRING];
+
+		Q_snprintf( fullpath, sizeof( fullpath ), "%s/%s", IdToDir( dir, sizeof( dir ), id ), path );
+		FS_Delete( fullpath ); // FS_Delete is aware of slashes
 	}
 
 	void CreateDirHierarchy( const char *path, const char *id ) override
@@ -406,8 +409,6 @@ public:
 
 	bool FullPathToRelativePath( const char *path, char *out ) override
 	{
-		searchpath_t *sp;
-
 		if( !COM_CheckString( path ))
 		{
 			*out = 0;
@@ -416,19 +417,7 @@ public:
 
 		FixupPath( p, path );
 
-		for( sp = fs_searchpaths; sp; sp = sp->next )
-		{
-			size_t splen = Q_strlen( sp->filename );
-
-			if( !Q_strnicmp( sp->filename, p, splen ))
-			{
-				Q_strncpy( out, p + splen + 1, 512 );
-				return true;
-			}
-		}
-
-		Q_strncpy( out, p, 512 );
-		return false;
+		return FS_FullPathToRelativePath( out, p, 512 );
 	}
 
 	bool GetCurrentDirectory( char *p, int size ) override
@@ -470,11 +459,19 @@ public:
 	bool AddPackFile( const char *path, const char *id ) override
 	{
 		char dir[MAX_VA_STRING], fullpath[MAX_VA_STRING];
+		const char *ext = COM_FileExtension( path );
 
-		Q_snprintf( fullpath, sizeof( fullpath ), "%s/%s", IdToDir( dir, sizeof( dir ), id ), path );
-		CopyAndFixSlashes( fullpath, path, sizeof( fullpath ));
+		IdToDir( dir, sizeof( dir ), id );
+		Q_snprintf( fullpath, sizeof( fullpath ), "%s/%s", dir, path );
+		COM_FixSlashes( fullpath );
 
-		return !!FS_AddPak_Fullpath( fullpath, nullptr, FS_CUSTOM_PATH );
+		for( const fs_archive_t *archive = g_archives; archive->ext; archive++ )
+		{
+			if( archive->type == SEARCHPATH_PAK && !Q_stricmp( ext, archive->ext ))
+				return FS_AddArchive_Fullpath( archive, fullpath, FS_CUSTOM_PATH );
+		}
+
+		return false;
 	}
 
 	FileHandle_t OpenFromCacheForRead( const char *path , const char *mode, const char *id ) override
@@ -511,7 +508,7 @@ public:
 
 extern "C" void EXPORT *CreateInterface( const char *interface, int *retval )
 {
-	if( !Q_strcmp( interface, "VFileSystem009" ))
+	if( !Q_strcmp( interface, FILESYSTEM_INTERFACE_VERSION ))
 	{
 		if( retval )
 			*retval = 0;
@@ -523,8 +520,7 @@ extern "C" void EXPORT *CreateInterface( const char *interface, int *retval )
 	{
 		static fs_api_t copy = { 0 }; // return a copy, to disallow overriding
 
-		if( !copy.InitStdio )
-			memcpy( &copy, &g_api, sizeof( copy ));
+		memcpy( &copy, &g_api, sizeof( copy ));
 
 		if( retval )
 			*retval = 0;

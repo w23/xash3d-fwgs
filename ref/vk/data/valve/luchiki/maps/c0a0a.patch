@@ -1,0 +1,102 @@
+// wagonchik
+{
+"_xvk_ent_id" "127 117 121 116 126 119 123 128 125 115 122 118 124 120" // remove hack light entity
+}
+{
+"_xvk_ent_id" "114 113" // remove hack light entity "EXIT"
+}
+// fix texture coordinates
+{
+"_xvk_surface_id" "3289 3290 3368 3367" // subway_lights
+"_xvk_tex_offset" "0 1.4"
+"_xvk_tex_scale" "1 0.9"
+}
+{
+"_xvk_surface_id" "3298 3300 3281 3279" // subway_ceiling (fan box)
+"_xvk_tex_offset" "40 0"
+}
+//{
+//"_xvk_surface_id" "1511" // subway_seat
+//"_xvk_tex_offset" "0 0.3"
+//}
+//{
+//"_xvk_surface_id" "1520" // subway_floor1
+//"_xvk_tex_offset" "0 2.8"
+//}
+{
+"_xvk_surface_id" "3469 3470" // subway_floor2
+"_xvk_tex_offset" "0 1"
+}
+// fix textures
+{
+"_xvk_surface_id" "3236 3235" // subway_inpanel (more correct)
+"_xvk_material" "subway_inpanel_2"
+//"_xvk_tex_offset" "15 0"
+}
+{
+"_xvk_surface_id" "3173 3172 3174 3178 3176 3175 3177 3180 3181 3179 3182 3183 3185 3184" // subway_inend -> subway_outend
+"_xvk_material" "subway_outend_2"
+}
+
+
+// section 1
+{
+"_xvk_ent_id" "20" // remove hack light
+}
+{
+"_xvk_surface_id" "661 854" // SKKYLITE         255 110 40   700
+"_light" "255 110 40 4000"
+}
+//{
+//"_xvk_surface_id" "2179 1927" // SKKYLITE         255 110 40   700
+//"_light" "255 110 40 4000"
+//}
+{
+"_xvk_ent_id" "22" // remove hack light
+}
+{
+"_xvk_ent_id" "23" // tune hack light
+"origin" "-344 46 85"
+"_xvk_radius" "10"
+}
+
+// section 2
+{
+"_xvk_surface_id" "1675 783" // +0~LIGHT2A       255 255 90   2500
+"_light" "255 255 90 8000" // more correct light
+}
+{
+"_xvk_ent_id" "142" // remove hack light
+}
+{
+"_xvk_surface_id" "178 167" // SKKYLITE         255 110 40   700
+"_light" "255 110 40 2400"
+}
+{
+"_xvk_surface_id" "1041 1092" // SKKYLITE         255 110 40   700
+"_light" "255 110 40 2400"
+}
+{
+"_xvk_ent_id" "101 102 104 103 105 106 107 108 109" // remove hack light
+}
+{
+"_xvk_surface_id" "1507 1508 1633 1634 1635" // +0~FIFTIES_LGT2  185 195 255  3000
+"_light" "185 195 255 8000"
+}
+
+
+// smoothing
+{
+"_xvk_smoothing_group" "2117 2116 2115 2099"
+}
+{
+"_xvk_smoothing_group" "2207 2202 2209 2208"
+}
+
+
+{
+"_xvk_smoothing_group" "2707 2803 2804 2805 2806 2809 2704 2705 2727 2728 2714 2826 2824 2827 2828 2714 2715 2713 2703 2789 2790 2749 2771 2785 2764 2770 2751 2779 2736 2738 2708"
+}
+{
+"_xvk_smoothing_group" "2819 2818 2816 2740 2741 2775 2753 2773 2754 2766 2786 2787 2794 2795 2725 2726 2729 2730 2799 2800 2801 2802"
+}

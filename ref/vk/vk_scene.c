@@ -13,7 +13,7 @@
 #include "vk_beams.h"
 #include "vk_light.h"
 #include "vk_rtx.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_cvar.h"
 #include "vk_materials.h"
 #include "camera.h"
@@ -30,7 +30,7 @@
 #include <stdlib.h> // qsort
 #include <memory.h>
 
-#define LOG_MODULE LogModule_Misc
+#define LOG_MODULE misc
 
 #define PROFILER_SCOPES(X) \
 	X(scene_render, "VK_SceneRender"); \
@@ -87,27 +87,6 @@ static void loadLights( const model_t *const map ) {
 	RT_LightsLoadEnd();
 }
 
-// Clears all old map data
-static void mapLoadBegin( const model_t *const map ) {
-	R_StudioCacheClear();
-	R_GeometryBuffer_MapClear();
-
-	VK_ClearLightmap();
-
-	// This is to ensure that we have computed lightstyles properly
-	VK_RunLightStyles();
-
-	if (vk_core.rtx)
-		VK_RayNewMap();
-
-	RT_LightsNewMap(map);
-}
-
-static void mapLoadEnd(const model_t *const map) {
-	// TODO should we do something like VK_BrushEndLoad?
-	VK_UploadLightmap();
-}
-
 static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
@@ -119,11 +98,15 @@ static void preloadModels( void ) {
 		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
 			continue;
 
+		const qboolean is_worldmodel = i == 0;
+
 		DEBUG( "  %d: name=%s, type=%d, submodels=%d, nodes=%d, surfaces=%d, nummodelsurfaces=%d", i, m->name, m->type, m->numsubmodels, m->numnodes, m->numsurfaces, m->nummodelsurfaces);
+
+		R_VkMaterialsLoadForModel(m);
 
 		switch (m->type) {
 			case mod_brush:
-				if (!VK_BrushModelLoad(m))
+				if (!R_BrushModelLoad(m, is_worldmodel))
 					gEngine.Host_Error( "Couldn't load brush model %s\n", m->name );
 				break;
 
@@ -138,9 +121,22 @@ static void preloadModels( void ) {
 	}
 }
 
-static void loadMap(const model_t* const map) {
-	VK_LogsReadCvar();
-	mapLoadBegin(map);
+static void loadMap(const model_t* const map, qboolean force_reload) {
+	VK_EntityDataClear();
+
+	// Depends on VK_EntityDataClear()
+	R_StudioCacheClear();
+	R_GeometryBuffer_MapClear();
+
+	VK_ClearLightmap();
+
+	// This is to ensure that we have computed lightstyles properly
+	VK_RunLightStyles();
+
+	if (vk_core.rtx)
+		VK_RayNewMapBegin();
+
+	RT_LightsNewMap(map);
 
 	R_SpriteNewMapFIXME();
 
@@ -148,7 +144,7 @@ static void loadMap(const model_t* const map) {
 	XVK_ParseMapEntities();
 
 	// Load PBR materials (depends on wadlist from parsed map entities)
-	XVK_ReloadMaterials();
+	R_VkMaterialsReload();
 
 	// Parse patch data
 	// Depends on loaded materials. Must preceed loading brush models.
@@ -156,8 +152,22 @@ static void loadMap(const model_t* const map) {
 
 	preloadModels();
 
+	// Can only do after preloadModels(), as we need to know whether there are SURF_DRAWSKY
+	R_TextureSetupSky( gEngine.pfnGetMoveVars()->skyName, force_reload );
+
 	loadLights(map);
-	mapLoadEnd(map);
+
+	// TODO should we do something like R_BrushEndLoad?
+	VK_UploadLightmap();
+
+	// This is needed mainly for picking up skybox only after it has been loaded
+	// Most of the things here could be simplified if we had less imperative style for this renderer:
+	// - Group everything into modules with explicit dependencies, then init/shutdown/newmap order could
+	//   be automatic and correct.
+	// - "Rendergraph"-like dependencies for resources (like textures, materials, skybox, ...). Then they
+	//   could be loaded lazily when needed, and after all the needed info for them has been collected.
+	if (vk_core.rtx)
+		VK_RayNewMapEnd();
 }
 
 static void reloadPatches( void ) {
@@ -167,10 +177,11 @@ static void reloadPatches( void ) {
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
-	VK_BrushModelDestroyAll();
+	R_BrushModelDestroyAll();
 
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
-	loadMap(map);
+	const qboolean force_reload = true;
+	loadMap(map, force_reload);
 
 	R_VkStagingFlushSync();
 }
@@ -183,7 +194,7 @@ void VK_SceneInit( void )
 	g_lists.draw_stack_pos = 0;
 
 	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
+		gEngine.Cmd_AddCommand("rt_debug_reload_patches", reloadPatches, "Reload patched entities, lights and extra PBR materials");
 	}
 }
 
@@ -225,7 +236,10 @@ int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 }
 
 void R_SceneMapDestroy( void ) {
-	VK_BrushModelDestroyAll();
+	// Make sure no rendering is happening
+	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
+
+	R_BrushModelDestroyAll();
 }
 
 // tell the renderer what new map is started
@@ -236,12 +250,14 @@ void R_NewMap( void ) {
 	// and this R_NewMap call is from within loading of a saved game.
 	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
 
-	INFO( "R_NewMap, loading save: %d", is_save_load );
+	INFO( "R_NewMap(%s) is_save_load=%d", map->name, is_save_load );
 
 	// New map causes entites to be reallocated regardless of whether it was save-load.
 	// This realloc invalidates all previous entity data and pointers.
 	// Make sure that EntityData doesn't accidentally reference old pointers.
 	VK_EntityDataClear();
+
+	RT_FrameDiscontinuity();
 
 	// Skip clearing already loaded data if the map hasn't changed.
 	if (is_save_load)
@@ -249,10 +265,8 @@ void R_NewMap( void ) {
 
 	// Make sure that we're not rendering anything before starting to mess with GPU objects
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
-
-	XVK_SetupSky( gEngine.pfnGetMoveVars()->skyName );
-
-	loadMap(map);
+	const qboolean force_reload = false;
+	loadMap(map, force_reload);
 
 	R_StudioResetPlayerModels();
 }
@@ -589,11 +603,11 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 		case mod_brush:
 			R_RotateForEntity( model, ent );
 
-			// If this is potentially a func_wall model
+			// If this is potentially a func_any model
 			if (ent->model->name[0] == '*') {
-				for (int i = 0; i < g_map_entities.func_walls_count; ++i) {
-					xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + i;
-					if (Q_strcmp(ent->model->name, fw->model) == 0) {
+				for (int i = 0; i < g_map_entities.func_any_count; ++i) {
+					xvk_mapent_func_any_t *const fw = g_map_entities.func_any + i;
+					if (Q_strcmp(ent->model->name, fw->model) == 0 && fw->origin_patched) {
 						/* DEBUG("ent->index=%d (%s) mapent:%d off=%f %f %f", */
 						/* 		ent->index, ent->model->name, fw->entity_index, */
 						/* 		fw->origin[0], fw->origin[1], fw->origin[2]); */
@@ -604,7 +618,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 				}
 			}
 
-			VK_BrushModelDraw( ent, render_mode, blend, model );
+			R_BrushModelDraw( ent, render_mode, blend, model );
 			break;
 
 		case mod_studio:
@@ -652,7 +666,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		if( world && world->model )
 		{
 			const float blend = 1.f;
-			VK_BrushModelDraw( world, kRenderNormal, blend, NULL );
+			R_BrushModelDraw( world, kRenderNormal, blend, NULL );
 		}
 		APROF_SCOPE_END(draw_worldbrush);
 	}
@@ -708,7 +722,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 
 	VK_RenderDebugLabelEnd();
 
-	if (ui_infotool->value > 0)
+	if (r_infotool->value > 0)
 		XVK_CameraDebugPrintCenterEntity();
 
 	APROF_SCOPE_END(scene_render);

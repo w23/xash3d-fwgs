@@ -4,8 +4,6 @@
 #include "vk_sprite.h" // R_GetSpriteTexture
 #include "vk_logs.h"
 
-#include "vk_textures.h" // FIXME temp
-
 #include "xash3d_mathlib.h"
 
 #define MAX_TRIAPI_VERTICES 1024
@@ -170,7 +168,8 @@ void TriEndEx( const vec4_t color, const char* name ) {
 			.vertices_count = g_triapi.num_vertices,
 			.indices_count = num_indices,
 			.render_type = g_triapi.render_type,
-			.texture = g_triapi.texture_index,
+			.material = R_VkMaterialGetForTexture(g_triapi.texture_index),
+			.ye_olde_texture = g_triapi.texture_index,
 			.emissive = (const vec4_t*)color,
 			.color = (const vec4_t*)color,
 		});

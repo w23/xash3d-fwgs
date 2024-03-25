@@ -16,7 +16,7 @@ GNU General Public License for more details.
 #include "vk_rpart.h"
 #include "vk_triapi.h"
 #include "camera.h"
-#include "vk_textures.h" // tglob.particleTexture
+#include "r_textures.h" // tglob.particleTexture
 #include "vk_common.h"
 #include "vk_sprite.h" // R_GetSpriteTexture
 

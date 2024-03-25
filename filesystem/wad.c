@@ -251,7 +251,7 @@ FS_CloseWAD
 finalize wad or just close
 ===========
 */
-void FS_CloseWAD( wfile_t *wad )
+static void FS_CloseWAD( wfile_t *wad )
 {
 	Mem_FreePool( &wad->mempool );
 	if( wad->handle != NULL )
@@ -264,7 +264,7 @@ void FS_CloseWAD( wfile_t *wad )
 FS_Close_WAD
 ===========
 */
-void FS_Close_WAD( searchpath_t *search )
+static void FS_Close_WAD( searchpath_t *search )
 {
 	FS_CloseWAD( search->wad );
 }
@@ -274,7 +274,7 @@ void FS_Close_WAD( searchpath_t *search )
 FS_OpenFile_WAD
 ===========
 */
-file_t *FS_OpenFile_WAD( searchpath_t *search, const char *filename, const char *mode, int pack_ind )
+static file_t *FS_OpenFile_WAD( searchpath_t *search, const char *filename, const char *mode, int pack_ind )
 {
 	return NULL;
 }
@@ -583,67 +583,6 @@ static void FS_Search_WAD( searchpath_t *search, stringlist_t *list, const char 
 	}
 }
 
-/*
-====================
-FS_AddWad_Fullpath
-====================
-*/
-qboolean FS_AddWad_Fullpath( const char *wadfile, qboolean *already_loaded, int flags )
-{
-	searchpath_t	*search;
-	wfile_t		*wad = NULL;
-	const char	*ext = COM_FileExtension( wadfile );
-	int		errorcode = WAD_LOAD_COULDNT_OPEN;
-
-	for( search = fs_searchpaths; search; search = search->next )
-	{
-		if( search->type == SEARCHPATH_WAD && !Q_stricmp( search->filename, wadfile ))
-		{
-			if( already_loaded ) *already_loaded = true;
-			return true; // already loaded
-		}
-	}
-
-	if( already_loaded )
-		*already_loaded = false;
-
-	if( !Q_stricmp( ext, "wad" ))
-		wad = W_Open( wadfile, &errorcode );
-
-	if( wad )
-	{
-		search = (searchpath_t *)Mem_Calloc( fs_mempool, sizeof( searchpath_t ));
-		Q_strncpy( search->filename, wadfile, sizeof( search->filename ));
-		search->wad = wad;
-		search->type = SEARCHPATH_WAD;
-		search->next = fs_searchpaths;
-		search->flags = flags;
-
-		search->pfnPrintInfo = FS_PrintInfo_WAD;
-		search->pfnClose = FS_Close_WAD;
-		search->pfnOpenFile = FS_OpenFile_WAD;
-		search->pfnFileTime = FS_FileTime_WAD;
-		search->pfnFindFile = FS_FindFile_WAD;
-		search->pfnSearch = FS_Search_WAD;
-
-		fs_searchpaths = search;
-
-		Con_Reportf( "Adding wadfile: %s (%i files)\n", wadfile, wad->numlumps );
-		return true;
-	}
-
-	if( errorcode != WAD_LOAD_NO_FILES )
-		Con_Reportf( S_ERROR "FS_AddWad_Fullpath: unable to load wad \"%s\"\n", wadfile );
-	return false;
-}
-
-/*
-=============================================================================
-
-WADSYSTEM PRIVATE ROUTINES
-
-=============================================================================
-*/
 
 /*
 ===========
@@ -652,8 +591,10 @@ W_ReadLump
 reading lump into temp buffer
 ===========
 */
-static byte *W_ReadLump( wfile_t *wad, dlumpinfo_t *lump, fs_offset_t *lumpsizeptr )
+static byte *W_ReadLump( searchpath_t *search, const char *path, int pack_ind, fs_offset_t *lumpsizeptr )
 {
+	const wfile_t *wad = search->wad;
+	const dlumpinfo_t *lump = &wad->lumps[pack_ind];
 	size_t	oldpos, size = 0;
 	byte	*buf;
 
@@ -690,19 +631,39 @@ static byte *W_ReadLump( wfile_t *wad, dlumpinfo_t *lump, fs_offset_t *lumpsizep
 }
 
 /*
-===========
-FS_LoadWADFile
-
-loading lump into the tmp buffer
-===========
+====================
+FS_AddWad_Fullpath
+====================
 */
-byte *FS_LoadWADFile( const char *path, fs_offset_t *lumpsizeptr, qboolean gamedironly )
+searchpath_t *FS_AddWad_Fullpath( const char *wadfile, int flags )
 {
-	searchpath_t	*search;
-	int		index;
+	searchpath_t *search;
+	wfile_t *wad;
+	int errorcode = WAD_LOAD_COULDNT_OPEN;
 
-	search = FS_FindFile( path, &index, NULL, 0, gamedironly );
-	if( search && search->type == SEARCHPATH_WAD )
-		return W_ReadLump( search->wad, &search->wad->lumps[index], lumpsizeptr );
-	return NULL;
+	wad = W_Open( wadfile, &errorcode );
+
+	if( !wad )
+	{
+		if( errorcode != WAD_LOAD_NO_FILES )
+			Con_Reportf( S_ERROR "FS_AddWad_Fullpath: unable to load wad \"%s\"\n", wadfile );
+		return NULL;
+	}
+
+	search = (searchpath_t *)Mem_Calloc( fs_mempool, sizeof( searchpath_t ));
+	Q_strncpy( search->filename, wadfile, sizeof( search->filename ));
+	search->wad = wad;
+	search->type = SEARCHPATH_WAD;
+	search->flags = flags;
+
+	search->pfnPrintInfo = FS_PrintInfo_WAD;
+	search->pfnClose = FS_Close_WAD;
+	search->pfnOpenFile = FS_OpenFile_WAD;
+	search->pfnFileTime = FS_FileTime_WAD;
+	search->pfnFindFile = FS_FindFile_WAD;
+	search->pfnSearch = FS_Search_WAD;
+	search->pfnLoadFile = W_ReadLump;
+
+	Con_Reportf( "Adding wadfile: %s (%i files)\n", wadfile, wad->numlumps );
+	return search;
 }

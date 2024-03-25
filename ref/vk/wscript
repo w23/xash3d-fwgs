@@ -60,6 +60,12 @@ def configure(conf):
 		conf.env.LIB_AFTERMATH = [lib]
 		conf.end_msg('SDK: {0}, includes: {1}, libpath: {2}, lib: {3}'.format(path, conf.env.INCLUDES_AFTERMATH, conf.env.LIBPATH_AFTERMATH, conf.env.LIB_AFTERMATH))
 
+	if not conf.options.ALLOW64:
+		Logs.warn('\x1b[35;20m==============================================================')
+		Logs.error('\x1b[33;20mNo ray tracing extensions in \x1b[31;1m32-bit \x1b[33;20mmode!')
+		Logs.warn("Note that Ray Tracing REQUIRES \x1b[32;1m64-bit \x1b[33;20mprocess!\n\x1b[36;20mPlease configure with the 64-bit using \x1b[32;1m-8 \x1b[36;20mor \x1b[32;1m--64bits \x1b[36;20mflags.");
+		Logs.warn('\x1b[35;20m==============================================================')
+
 	# TODO if debug
 	conf.env.GLSLCFLAGS += ['-g', '-O']
 
@@ -103,7 +109,7 @@ def build(bld):
 
 	if bld.env.DEST_OS == 'win32':
 		includes.append(bld.env.VULKAN_SDK + '\\Include')
-		includes.append(bld.env.VULKAN_SDK + '\\Source\SPIRV-Reflect\include') # for spirv.h
+		includes.append(bld.env.VULKAN_SDK + '\\Source\\SPIRV-Reflect\\include') # for spirv.h
 
 	if bld.env.HAVE_AFTERMATH:
 		defines.append('USE_AFTERMATH')
@@ -153,12 +159,28 @@ def build(bld):
 	#bld.install_files(bld.env.LIBDIR + '/valve', things)
 
 	bld.install_files(bld.env.LIBDIR,
-					  bld.path.ant_glob('data/**'),
-					  cwd=bld.path.find_dir('data/'),
-					  relative_trick=True)
+					bld.path.ant_glob('data/**'),
+					cwd=bld.path.find_dir('data/'),
+					relative_trick=True)
 
-	#bld.program(features='test', defines=['ALOLCATOR_TEST'],source='alolcator.c', target='alolcator')
-	bld.add_post_fun(printTestSummary)
+	if bld.env.TESTS:
+		bld.program(
+			features='test',
+			defines=['ALOLCATOR_TEST'],
+			source='alolcator.c',
+			target='test_alolcator',
+			subsystem = bld.env.CONSOLE_SUBSYSTEM,
+			install_path = None)
 
-	#from waflib.Tools import waf_unit_test
-	#bld.add_post_fun(waf_unit_test.summary)
+		tests = {
+			'unordered_roadmap': 'tests/unordered_roadmap.c',
+		}
+
+		for i in tests:
+			bld.program(features = 'test',
+				source = tests[i],
+				target = 'test_%s' % i,
+				subsystem = bld.env.CONSOLE_SUBSYSTEM,
+				install_path = None)
+
+		#bld.add_post_fun(printTestSummary)

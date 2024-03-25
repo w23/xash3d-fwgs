@@ -645,6 +645,17 @@ static void GAME_EXPORT pfnFillRGBA( int x, int y, int width, int height, int r,
 
 /*
 =============
+pfnCvar_RegisterVariable
+
+=============
+*/
+static cvar_t *GAME_EXPORT pfnCvar_RegisterGameUIVariable( const char *szName, const char *szValue, int flags )
+{
+	return (cvar_t *)Cvar_Get( szName, szValue, flags|FCVAR_GAMEUIDLL, Cvar_BuildAutoDescription( szName, flags|FCVAR_GAMEUIDLL ));
+}
+
+/*
+=============
 pfnClientCmd
 
 =============
@@ -972,28 +983,21 @@ pfnCheckGameDll
 */
 int GAME_EXPORT pfnCheckGameDll( void )
 {
-	string dllpath;
-	void	*hInst;
-
-#if TARGET_OS_IPHONE
-	// loading server library drains too many ram
-	// so 512MB iPod Touch cannot even connect to
-	// to servers in cstrike
+#ifdef XASH_INTERNAL_GAMELIBS
 	return true;
-#endif
+#else
+	string dllpath;
 
 	if( svgame.hInstance )
 		return true;
 
 	COM_GetCommonLibraryPath( LIBRARY_SERVER, dllpath, sizeof( dllpath ));
 
-	if(( hInst = COM_LoadLibrary( dllpath, true, false )) != NULL )
-	{
-		COM_FreeLibrary( hInst ); // don't increase linker's reference counter
+	if( FS_FileExists( dllpath, false ))
 		return true;
-	}
-	Con_Reportf( S_WARN "Could not load server library: %s\n", COM_GetLibraryError() );
+
 	return false;
+#endif
 }
 
 /*
@@ -1220,12 +1224,12 @@ void UI_UnloadProgs( void )
 
 	Cvar_FullSet( "host_gameuiloaded", "0", FCVAR_READ_ONLY );
 
+	Cvar_Unlink( FCVAR_GAMEUIDLL );
+	Cmd_Unlink( CMD_GAMEUIDLL );
+
 	COM_FreeLibrary( gameui.hInstance );
 	Mem_FreePool( &gameui.mempool );
 	memset( &gameui, 0, sizeof( gameui ));
-
-	Cvar_Unlink( FCVAR_GAMEUIDLL );
-	Cmd_Unlink( CMD_GAMEUIDLL );
 }
 
 qboolean UI_LoadProgs( void )

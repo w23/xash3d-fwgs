@@ -1,7 +1,7 @@
 #include "vk_core.h"
 
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_overlay.h"
 #include "vk_renderstate.h"
 #include "vk_staging.h"
@@ -98,6 +98,9 @@ static const char* device_extensions_rt[] = {
 	VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 	VK_KHR_RAY_QUERY_EXTENSION_NAME,
+
+	// TODO optional under -vkvalidate
+	VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
 };
 
 static const char* device_extensions_nv_checkpoint[] = {
@@ -127,13 +130,20 @@ VkBool32 VKAPI_PTR debugCallback(
 
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		gEngine.Con_Printf(S_ERROR "Validation: %s\n", pCallbackData->pMessage);
+		gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
 #ifdef _MSC_VER
 		__debugbreak();
 #else
 		debug_break();
 #endif
+	} else {
+		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
+			gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+		} else {
+			gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+		}
 	}
+
 	return VK_FALSE;
 }
 
@@ -178,15 +188,20 @@ static qboolean createInstance( void )
 		.pApplicationName = "",
 		.pEngineName = "xash3d-fwgs",
 	};
-	const VkValidationFeatureEnableEXT validation_features[] = {
-		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-	};
+
+	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8) = {0};
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+
+	if (!!gEngine.Sys_CheckParm("-vkdbg_shaderprintf"))
+		BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+
 	const VkValidationFeaturesEXT validation_ext = {
 		.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-		.pEnabledValidationFeatures = validation_features,
-		.enabledValidationFeatureCount = COUNTOF(validation_features),
+		.pEnabledValidationFeatures = validation_features.items,
+		.enabledValidationFeatureCount = validation_features.count,
 	};
+
 	VkInstanceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
@@ -327,6 +342,8 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 
 	*available_devices = Mem_Malloc(vk_core.pool, num_physical_devices * sizeof(vk_available_device_t));
 	this_device = *available_devices;
+
+	qboolean has_rt = false;
 	for (uint32_t i = 0; i < num_physical_devices; ++i) {
 		uint32_t queue_index = VK_QUEUE_FAMILY_IGNORED;
 		VkPhysicalDeviceProperties props;
@@ -417,7 +434,7 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 			this_device->anisotropy = features.features.samplerAnisotropy;
 			gEngine.Con_Printf("\t\tAnistoropy supported: %d\n", this_device->anisotropy);
 
-			this_device->ray_tracing = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
+			has_rt |= this_device->ray_tracing = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
 			gEngine.Con_Printf("\t\tRay tracing supported: %d\n", this_device->ray_tracing);
 
 			this_device->nv_checkpoint = vk_core.debug && deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_nv_checkpoint, ARRAYSIZE(device_extensions_nv_checkpoint));
@@ -436,6 +453,18 @@ static int enumerateDevices( vk_available_device_t **available_devices ) {
 	}
 
 	Mem_Free(physical_devices);
+
+	if (!has_rt) {
+		gEngine.Con_Printf( "^6===================================================^7\n" );
+		gEngine.Con_Printf(S_ERROR "^1No ray tracing extensions found.^7\n");
+		#if defined XASH_64BIT
+		gEngine.Con_Printf(S_NOTE "^3Check that you have compatible hardware and drivers.^7\n");
+		#else
+		gEngine.Con_Printf(S_WARN "^3You're running in ^132-bit ^3mode!^7\n");
+		gEngine.Con_Printf(S_NOTE "^3Ray Tracing REQUIRES ^264-bit ^3process!\n^5Please rebuild and start the 64-bit xash3d binary.^7\n");
+		#endif
+		gEngine.Con_Printf( "^6===================================================^7\n" );
+	}
 
 	return this_device - *available_devices;
 }
@@ -489,7 +518,7 @@ static qboolean createDevice( void ) {
 			is_target_device_found = true;
 		}
 
-		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(vk_only)) {
+		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(rt_force_disable)) {
 			vk_core.rtx = true;
 		}
 
@@ -544,7 +573,7 @@ static qboolean createDevice( void ) {
 		VkDeviceDiagnosticsConfigCreateInfoNV diag_config_nv = {
 			.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
 			.pNext = head,
-			.flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV
+			.flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV | 0x00000008 /*VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV */
 		};
 
 		if (candidate_device->nv_checkpoint)
@@ -701,7 +730,12 @@ qboolean R_VkInit( void )
 	vk_core.rtx = false;
 
 	VK_LoadCvars();
-	VK_LogsReadCvar();
+
+	// Force extremely verbose logs at startup.
+	// This is instrumental in some investigations, because the usual "vk_debug_log" cvar is not set
+	// at this point and cannot be used to selectively swith things on.
+	if (gEngine.Sys_CheckParm("-vkverboselogs"))
+		g_log_debug_bits = 0xffffffffu;
 
 	R_SpeedsInit();
 
@@ -786,14 +820,14 @@ qboolean R_VkInit( void )
 
 	VK_SceneInit();
 
-	initTextures();
+	R_TexturesInit();
 
 	// All below need render_pass
 
 	if (!R_VkOverlay_Init())
 		return false;
 
-	if (!VK_BrushInit())
+	if (!R_BrushInit())
 		return false;
 
 	if (vk_core.rtx)
@@ -824,7 +858,7 @@ void R_VkShutdown( void ) {
 		VK_RayShutdown();
 	}
 
-	VK_BrushShutdown();
+	R_BrushShutdown();
 	VK_StudioShutdown();
 	R_VkOverlay_Shutdown();
 
@@ -833,7 +867,9 @@ void R_VkShutdown( void ) {
 
 	VK_FrameCtlShutdown();
 
-	destroyTextures();
+	R_VkMaterialsShutdown();
+
+	R_TexturesShutdown();
 
 	VK_PipelineShutdown();
 

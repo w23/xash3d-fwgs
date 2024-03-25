@@ -46,8 +46,8 @@ uint IN_CollectInputDevices( void );
 void IN_LockInputDevices( qboolean lock );
 void IN_EngineAppendMove( float frametime, void *cmd, qboolean active );
 
-extern convar_t *m_yaw;
-extern convar_t *m_pitch;
+extern convar_t m_yaw;
+extern convar_t m_pitch;
 //
 // in_touch.c
 //
@@ -75,6 +75,7 @@ void Touch_ResetDefaultButtons( void );
 int IN_TouchEvent( touchEventType type, int fingerID, float x, float y, float dx, float dy );
 void Touch_KeyEvent( int key, int down );
 qboolean Touch_WantVisibleCursor( void );
+void Touch_NotifyResize( void );
 
 //
 // in_joy.c

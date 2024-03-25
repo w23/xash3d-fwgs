@@ -1,4 +1,12 @@
 #include "vk_image.h"
+#include "vk_staging.h"
+#include "vk_combuf.h"
+#include "vk_logs.h"
+
+#include "xash3d_mathlib.h" // Q_max
+
+// Long type lists functions
+#include "vk_image_extra.h"
 
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -16,17 +24,30 @@ static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 */
 
-xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
+r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	const qboolean is_depth = !!(create->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-	xvk_image_t image = {0};
+	r_vk_image_t image = {0};
 	VkMemoryRequirements memreq;
+
+	const qboolean is_cubemap = !!(create->flags & kVkImageFlagIsCubemap);
+	const qboolean is_3d = create->depth > 1;
+
+	ASSERT(create->depth > 0);
+
+	ASSERT(is_cubemap + is_3d != 2);
+
+	const VkFormat unorm_format = unormFormatFor(create->format);
+	const qboolean create_unorm =
+		!!(create->flags & kVkImageFlagCreateUnormView)
+		&& unorm_format != VK_FORMAT_UNDEFINED
+		&& unorm_format != create->format;
 
 	VkImageCreateInfo ici = {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.imageType = VK_IMAGE_TYPE_2D,
+		.imageType = is_3d ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D,
 		.extent.width = create->width,
 		.extent.height = create->height,
-		.extent.depth = 1,
+		.extent.depth = create->depth,
 		.mipLevels = create->mips,
 		.arrayLayers = create->layers,
 		.format = create->format,
@@ -35,10 +56,14 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 		.usage = create->usage,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.flags = create->is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0,
+		.flags = 0
+			| (is_cubemap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0)
+			| (create_unorm ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0),
 	};
 
 	XVK_CHECK(vkCreateImage(vk_core.device, &ici, NULL, &image.image));
+
+	image.format = ici.format;
 
 	if (create->debug_name)
 		SET_DEBUG_NAME(image.image, VK_OBJECT_TYPE_IMAGE, create->debug_name);
@@ -55,9 +80,11 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 	XVK_CHECK(vkBindImageMemory(vk_core.device, image.image, image.devmem.device_memory, image.devmem.offset));
 
 	if (create->usage & usage_bits_implying_views) {
-		const VkImageViewCreateInfo ivci = {
+		const qboolean ignore_alpha = !!(create->flags & kVkImageFlagIgnoreAlpha) && !is_depth;
+
+		VkImageViewCreateInfo ivci = {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.viewType = create->is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D,
+			.viewType = is_cubemap ? VK_IMAGE_VIEW_TYPE_CUBE : (is_3d ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D),
 			.format = ici.format,
 			.image = image.image,
 			.subresourceRange.aspectMask = is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
@@ -65,26 +92,44 @@ xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create) {
 			.subresourceRange.levelCount = ici.mipLevels,
 			.subresourceRange.baseArrayLayer = 0,
 			.subresourceRange.layerCount = ici.arrayLayers,
-			.components = (VkComponentMapping){0, 0, 0, (is_depth || create->has_alpha) ? 0 : VK_COMPONENT_SWIZZLE_ONE},
+			.components = componentMappingForFormat(ici.format, ignore_alpha),
 		};
 		XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view));
 
 		if (create->debug_name)
 			SET_DEBUG_NAME(image.view, VK_OBJECT_TYPE_IMAGE_VIEW, create->debug_name);
+
+		if (create_unorm) {
+			ivci.format = unorm_format;
+			XVK_CHECK(vkCreateImageView(vk_core.device, &ivci, NULL, &image.view_unorm));
+
+			if (create->debug_name)
+				SET_DEBUG_NAMEF(image.view_unorm, VK_OBJECT_TYPE_IMAGE_VIEW, "%s_unorm", create->debug_name);
+		}
 	}
 
 	image.width = create->width;
 	image.height = create->height;
+	image.depth = create->depth;
 	image.mips = create->mips;
+	image.layers = create->layers;
+	image.flags = create->flags;
 
 	return image;
 }
 
-void XVK_ImageDestroy(xvk_image_t *img) {
-	vkDestroyImageView(vk_core.device, img->view, NULL);
-	vkDestroyImage(vk_core.device, img->image, NULL);
+void R_VkImageDestroy(r_vk_image_t *img) {
+	if (img->view_unorm != VK_NULL_HANDLE)
+		vkDestroyImageView(vk_core.device, img->view_unorm, NULL);
+
+	if (img->view != VK_NULL_HANDLE)
+		vkDestroyImageView(vk_core.device, img->view, NULL);
+
+	if (img->image != VK_NULL_HANDLE)
+		vkDestroyImage(vk_core.device, img->image, NULL);
+
 	VK_DevMemFree(&img->devmem);
-	*img = (xvk_image_t){0};
+	*img = (r_vk_image_t){0};
 }
 
 void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image) {
@@ -191,4 +236,96 @@ void R_VkImageBlit(VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args)
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			0, 0, NULL, 0, NULL, COUNTOF(image_barriers), image_barriers);
 	}
+}
+
+void R_VkImageUploadBegin( r_vk_image_t *img ) {
+	const VkImageMemoryBarrier image_barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.image = img->image,
+		.srcAccessMask = 0,
+		.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.subresourceRange = (VkImageSubresourceRange) {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = img->mips,
+			.baseArrayLayer = 0,
+			.layerCount = img->layers,
+		}
+	};
+
+	// Command buffer might be invalidated on any slice load
+	const VkCommandBuffer cmdbuf = R_VkStagingGetCommandBuffer();
+	vkCmdPipelineBarrier(cmdbuf,
+			VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0, 0, NULL, 0, NULL, 1, &image_barrier);
+}
+
+void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data ) {
+	const uint32_t width = Q_max(1, img->width >> mip);
+	const uint32_t height = Q_max(1, img->height >> mip);
+	const uint32_t depth = Q_max(1, img->depth >> mip);
+	const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(img->format);
+
+	const vk_staging_image_args_t staging_args = {
+		.image = img->image,
+		.region = (VkBufferImageCopy) {
+			.bufferOffset = 0,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = (VkImageSubresourceLayers){
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.mipLevel = mip,
+				.baseArrayLayer = layer,
+				.layerCount = 1,
+			},
+			.imageExtent = (VkExtent3D){
+				.width = width,
+				.height = height,
+				.depth = depth,
+			},
+		},
+		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.size = size,
+		.alignment = texel_block_size,
+	};
+
+	{
+		const vk_staging_region_t staging = R_VkStagingLockForImage(staging_args);
+		ASSERT(staging.ptr);
+		memcpy(staging.ptr, data, size);
+		R_VkStagingUnlock(staging.handle);
+	}
+}
+
+void R_VkImageUploadEnd( r_vk_image_t *img ) {
+	// TODO Don't change layout here. Alternatively:
+	// I. Attach layout metadata to the image, and request its change next time it is used.
+	// II. Build-in layout transfer to staging commit and do it there on commit.
+
+	const VkImageMemoryBarrier image_barrier = {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.image = img->image,
+		.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+		.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		.subresourceRange = (VkImageSubresourceRange) {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = img->mips,
+			.baseArrayLayer = 0,
+			.layerCount = img->layers,
+		}
+	};
+
+	// Commit is needed to make sure that all previous image loads have been submitted to cmdbuf
+	const VkCommandBuffer cmdbuf = R_VkStagingCommit()->cmdbuf;
+	vkCmdPipelineBarrier(cmdbuf,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			// FIXME incorrect, we also use them in compute and potentially ray tracing shaders
+			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			0, 0, NULL, 0, NULL, 1, &image_barrier);
 }

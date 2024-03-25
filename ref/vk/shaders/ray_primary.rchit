@@ -1,21 +1,33 @@
 #version 460 core
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_ray_tracing: require
 
-#include "utils.glsl"
-#include "ray_primary_common.glsl"
-#include "ray_kusochki.glsl"
-#include "color_spaces.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
 
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
 layout(set = 0, binding = 7) uniform samplerCube skybox;
+
+layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
+layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
+layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
+layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
+
+#include "ray_primary_common.glsl"
 
 layout(location = PAYLOAD_LOCATION_PRIMARY) rayPayloadInEXT RayPayloadPrimary payload;
 hitAttributeEXT vec2 bary;
 
+#include "utils.glsl"
+#include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
+
 #include "rt_geometry.glsl"
+#include "skybox.glsl"
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);
@@ -30,7 +42,7 @@ void main() {
 	const Kusok kusok = getKusok(geom.kusok_index);
 
 	if (kusok.material.tex_base_color == TEX_BASE_SKYBOX) {
-		payload.emissive.rgb = SRGBtoLINEAR(texture(skybox, gl_WorldRayDirectionEXT).rgb);
+		payload.emissive.rgb = sampleSkybox(gl_WorldRayDirectionEXT);
 		return;
 	} else {
 		const vec4 color = getModelHeader(gl_InstanceID).color * kusok.material.base_color;
@@ -55,7 +67,7 @@ void main() {
 #if 1
 	// Real correct emissive color
 	//payload.emissive.rgb = kusok.emissive;
-	payload.emissive.rgb = clamp(kusok.emissive / (1.0/3.0) / 25, 0, 1.5) * SRGBtoLINEAR(payload.base_color_a.rgb);
+	payload.emissive.rgb = clamp(kusok.emissive / (1.0/3.0) / 25, 0, 1.5) * payload.base_color_a.rgb;
 #else
 	// Fake texture color
 	if (any(greaterThan(kusok.emissive, vec3(0.))))

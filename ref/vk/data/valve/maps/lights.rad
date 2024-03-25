@@ -4,10 +4,10 @@
 +0BUTTONLITE     255 0   0    220
 //+0DRKMTL_SCRN    60  80  255  10000
 //+1DRKMTL_SCRN    60  80  255  10000 // hack, because no inheritance yet
-//+2DRKMTL_SCRN    60  80  255  10000
+//+2DRKMTL_SCRN    60  80  255  10000 // hack, because no inheritance yet
 +0DRKMTL_SCRN    60  80  255  200
-+1DRKMTL_SCRN    60  80  255  200
-+2DRKMTL_SCRN    60  80  255  200
++1DRKMTL_SCRN    60  80  255  200 // hack, because no inheritance yet
++2DRKMTL_SCRN    60  80  255  200 // hack, because no inheritance yet
 +1FLICKERMON     255 255 255  1000
 +3FLICKERMON     255 255 255  300
 +4FLICKERMON     255 255 255  1000
@@ -42,12 +42,9 @@
 +0~GYMLIGHT      255 230 150  2500
 +0~LAB_CRT8      50  50  255  100
 +1~LAB_CRT8      50  50  255  100 // hack, because no inheritance yet
-//+0~LAB1_CMP2     255 255 255  20
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
 //+1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 //+2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
-+0~LAB1_CMP2     255 255 255  0 // TODO: emissive texture
-+1~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
-+2~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
 //+0~LIGHT1        40  60  150  3000
 +0~LIGHT1        40  60  150  10000
 +0~LIGHT2A       255 250 130  2000
@@ -70,7 +67,7 @@ DRKMTL_SCRN3     1   111 220  200
 ELEV2_CIEL       255 200 100  2000
 EMERGLIGHT       255 200 100  50000
 EMERGLIGHTC      101 255 170  8000
-FIFTIES_MON1B    100 100 180  30
+//FIFTIES_MON1B    100 100 180  30
 FILL1            140 190 175  30
 FILL2            140 190 175  30
 //FLATBED_HLITE2   215 180 95   2000
@@ -103,15 +100,13 @@ SKKYLITEDAWN     210 175 195  2000
 SUBWAY_LIGHTS    255 250 202  2000
 //WHITE            255 255 255  100
 //YELLOW           255 200 100  2000
-//LAB1_COMP3D      255 255 255  20
-LAB1_COMP3D      255 255 255  0 // TODO: emissive texture
+//LAB1_COMP3D      255 255 255  20 // TODO: emissive texture
 ~GENERIC87       205 230 255  550
 ~GENERIC88       205 230 255  550
 ~LAB_CRT9A       225 150 150  100
 ~LAB_CRT9B       100 100 255  100
 ~LAB_CRT9C       100 200 150  100
-//~LAB1_COMP7      255 255 255  20
-~LAB1_COMP7      255 255 255  0 // TODO: emissive texture
+//~LAB1_COMP7      255 255 255  20 // TODO: emissive texture
 ~LIGHT3A         190 20  20   3000
 //~LIGHT3B         155 155 235  2000
 ~LIGHT3B         84  118 198  14000

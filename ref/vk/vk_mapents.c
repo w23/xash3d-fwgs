@@ -1,7 +1,7 @@
 #include "vk_common.h"
 #include "vk_mapents.h"
 #include "vk_core.h" // TODO we need only pool from there, not the entire vulkan garbage
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_logs.h"
 
 #include "eiface.h" // ARRAYSIZE
@@ -9,7 +9,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define LOG_MODULE LogModule_Patch
+#define LOG_MODULE patch
 
 xvk_map_entities_t g_map_entities;
 
@@ -138,8 +138,8 @@ static unsigned parseEntPropClassname(const char* value, class_name_e *out, unsi
 		*out = LightEnvironment;
 	} else if (Q_strcmp(value, "worldspawn") == 0) {
 		*out = Worldspawn;
-	} else if (Q_strcmp(value, "func_wall") == 0) {
-		*out = FuncWall;
+	} else if (Q_strncmp(value, "func_", 5) == 0) {
+		*out = FuncAny;
 	} else {
 		*out = Ignored;
 	}
@@ -229,6 +229,10 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		le->radius = props->_xvk_radius;
 	}
 
+	if (have_fields & Field__xvk_solid_angle) {
+		le->solid_angle = props->_xvk_solid_angle;
+	}
+
 	if (have_fields & Field_style) {
 		le->style = props->style;
 	}
@@ -237,7 +241,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		weirdGoldsrcLightScaling(le->color);
 	}
 
-	DEBUG("%s light %d (ent=%d): %s targetname=%s color=(%f %f %f) origin=(%f %f %f) style=%d R=%f dir=(%f %f %f) stopdot=(%f %f)",
+	DEBUG("%s light %d (ent=%d): %s targetname=%s color=(%f %f %f) origin=(%f %f %f) style=%d R=%f SA=%f dir=(%f %f %f) stopdot=(%f %f)",
 		patch ? "Patch" : "Added",
 		g_map_entities.num_lights, entity_index,
 		le->type == LightTypeEnvironment ? "environment" : le->type == LightTypeSpot ? "spot" : "point",
@@ -245,7 +249,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		le->color[0], le->color[1], le->color[2],
 		le->origin[0], le->origin[1], le->origin[2],
 		le->style,
-		le->radius,
+		le->radius, le->solid_angle,
 		le->dir[0], le->dir[1], le->dir[2],
 		le->stopdot, le->stopdot2);
 }
@@ -339,19 +343,34 @@ static void readWorldspawn( const entity_props_t *props ) {
 	};
 }
 
-static void readFuncWall( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
-	DEBUG("func_wall entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
+int R_VkRenderModeFromString( const char *s ) {
+#define CHECK_IF_MODE(mode) if (Q_strcmp(s, #mode) == 0) { return mode; }
+		CHECK_IF_MODE(kRenderNormal)
+		else CHECK_IF_MODE(kRenderTransColor)
+		else CHECK_IF_MODE(kRenderTransTexture)
+		else CHECK_IF_MODE(kRenderGlow)
+		else CHECK_IF_MODE(kRenderTransAlpha)
+		else CHECK_IF_MODE(kRenderTransAdd)
+		return -1;
+}
 
-	if (g_map_entities.func_walls_count >= MAX_FUNC_WALL_ENTITIES) {
-		ERR("Too many func_wall entities, max supported = %d", MAX_FUNC_WALL_ENTITIES);
+static void readFuncAny( const entity_props_t *const props, uint32_t have_fields, int props_count ) {
+	DEBUG("func_any entity=%d model=\"%s\", props_count=%d", g_map_entities.entity_count, (have_fields & Field_model) ? props->model : "N/A", props_count);
+
+	if (g_map_entities.func_any_count >= MAX_FUNC_ANY_ENTITIES) {
+		ERR("Too many func_any entities, max supported = %d", MAX_FUNC_ANY_ENTITIES);
 		return;
 	}
 
-	xvk_mapent_func_wall_t *const e = g_map_entities.func_walls + g_map_entities.func_walls_count;
+	xvk_mapent_func_any_t *const e = g_map_entities.func_any + g_map_entities.func_any_count;
 
-	*e = (xvk_mapent_func_wall_t){0};
+	*e = (xvk_mapent_func_any_t){0};
+	e->rendermode = -1;
 
 	Q_strncpy( e->model, props->model, sizeof( e->model ));
+
+	if (have_fields & Field_rendermode)
+		e->rendermode = props->rendermode;
 
 	/* NOTE: not used
 	e->rendercolor.r = 255;
@@ -364,9 +383,6 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 	if (have_fields & Field_renderfx)
 		e->renderfx = props->renderfx;
 
-	if (have_fields & Field_rendermode)
-		e->rendermode = props->rendermode;
-
 	if (have_fields & Field_rendercolor) {
 		e->rendercolor.r = props->rendercolor[0];
 		e->rendercolor.g = props->rendercolor[1];
@@ -376,16 +392,16 @@ static void readFuncWall( const entity_props_t *const props, uint32_t have_field
 
 	e->entity_index = g_map_entities.entity_count;
 	g_map_entities.refs[g_map_entities.entity_count] = (xvk_mapent_ref_t){
-		.class = FuncWall,
-		.index = g_map_entities.func_walls_count,
+		.class = FuncAny,
+		.index = g_map_entities.func_any_count,
 	};
-	++g_map_entities.func_walls_count;
+	++g_map_entities.func_any_count;
 }
 
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
 	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
 	const int num_surfaces = map->numsurfaces;
-	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_texture && props->_xvk_texture[0] == '\0');
+	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_material && props->_xvk_material[0] == '\0');
 
 	for (int i = 0; i < props->_xvk_surface_id.num; ++i) {
 		const int index = props->_xvk_surface_id.values[i];
@@ -400,8 +416,7 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			g_patch.surfaces_count = num_surfaces;
 			for (int i = 0; i < num_surfaces; ++i) {
 				g_patch.surfaces[i].flags = Patch_Surface_NoPatch;
-				g_patch.surfaces[i].tex_id = -1;
-				g_patch.surfaces[i].tex = NULL;
+				g_patch.surfaces[i].material_ref.index = -1;
 			}
 		}
 
@@ -413,22 +428,15 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			continue;
 		}
 
-		if (have_fields & Field__xvk_texture) {
-			const int tex_id = XVK_FindTextureNamedLike( props->_xvk_texture );
-			DEBUG("Patch for surface %d with texture \"%s\" -> %d", index, props->_xvk_texture, tex_id);
-			psurf->tex_id = tex_id;
-
-			// Find texture_t for this index
-			for (int i = 0; i < map->numtextures; ++i) {
-				const texture_t* const tex = map->textures[i];
-				if (tex->gl_texturenum == tex_id) {
-					psurf->tex = tex;
-					psurf->tex_id = -1;
-					break;
-				}
+		if (have_fields & Field__xvk_material) {
+			const r_vk_material_ref_t mat = R_VkMaterialGetForName( props->_xvk_material );
+			if (mat.index >= 0) {
+				DEBUG("Patch for surface %d with material \"%s\" -> %d", index, props->_xvk_material, mat.index);
+				psurf->material_ref = mat;
+				psurf->flags |= Patch_Surface_Material;
+			} else {
+				ERR("Cannot patch surface %d with material \"%s\": material not found", index, props->_xvk_material);
 			}
-
-			psurf->flags |= Patch_Surface_Texture;
 		}
 
 		if (have_fields & Field__light) {
@@ -441,27 +449,55 @@ static void addPatchSurface( const entity_props_t *props, uint32_t have_fields )
 			);
 		}
 
-		if (have_fields & (Field__xvk_svec | Field__xvk_tvec)) {
-			Vector4Copy(props->_xvk_svec, psurf->s_vec);
-			Vector4Copy(props->_xvk_tvec, psurf->t_vec);
-			psurf->flags |= Patch_Surface_STvecs;
-			DEBUG("Patch for surface %d: assign stvec", index);
-		}
+		// Set default texture identity matrix
+		VectorSet(psurf->texmat_s, 1, 0, 0);
+		VectorSet(psurf->texmat_t, 0, 1, 0);
 
 		if (have_fields & Field__xvk_tex_scale) {
-			Vector2Copy(props->_xvk_tex_scale, psurf->tex_scale);
-			psurf->flags |= Patch_Surface_TexScale;
-			DEBUG("Patch for surface %d: assign tex scale %f %f",
-				index, psurf->tex_scale[0], psurf->tex_scale[1]
-			);
+			DEBUG("Patch for surface %d: assign tex_scale %f %f",
+				index, props->_xvk_tex_scale[0], props->_xvk_tex_scale[1]);
+
+			psurf->texmat_s[0] = props->_xvk_tex_scale[0];
+			psurf->texmat_t[1] = props->_xvk_tex_scale[1];
+			psurf->flags |= Patch_Surface_TexMatrix;
+
 		}
 
 		if (have_fields & Field__xvk_tex_offset) {
-			Vector2Copy(props->_xvk_tex_offset, psurf->tex_offset);
-			psurf->flags |= Patch_Surface_TexOffset;
-			DEBUG("Patch for surface %d: assign tex offset %f %f",
-				index, psurf->tex_offset[0], psurf->tex_offset[1]
+			DEBUG("Patch for surface %d: assign tex_offset %f %f",
+				index, props->_xvk_tex_offset[0], props->_xvk_tex_offset[1]);
+
+			psurf->texmat_s[2] = props->_xvk_tex_offset[0];
+			psurf->texmat_t[2] = props->_xvk_tex_offset[1];
+			psurf->flags |= Patch_Surface_TexMatrix;
+		}
+
+		if (have_fields & Field__xvk_tex_rotate) {
+			const float rad = props->_xvk_tex_rotate * M_PI / 180.;
+			const float co = cos(rad), si = sin(rad);
+
+			const float a0 = psurf->texmat_s[0], a1 = psurf->texmat_s[1];
+			const float a2 = psurf->texmat_t[0], a3 = psurf->texmat_t[1];
+
+			const float b0 = co, b1 = -si;
+			const float b2 = si, b3 = co;
+
+			const vec2_t s = {a0 * b0 + a1 * b2, a0 * b1 + a1 * b3};
+			const vec2_t t = {a2 * b0 + a3 * b2, a2 * b1 + a3 * b3};
+
+			DEBUG("Patch for surface %d: rotate by %f degrees:\n%f %f\n%f %f",
+				index, props->_xvk_tex_rotate,
+				s[0], s[1],
+				t[0], t[1]
 			);
+
+			psurf->texmat_s[0] = s[0];
+			psurf->texmat_s[1] = s[1];
+
+			psurf->texmat_t[0] = t[0];
+			psurf->texmat_t[1] = t[1];
+
+			psurf->flags |= Patch_Surface_TexMatrix;
 		}
 	}
 }
@@ -483,15 +519,77 @@ static void patchLightEntity( const entity_props_t *props, int ent_id, uint32_t 
 	fillLightFromProps(light, props, have_fields, true, ent_id);
 }
 
-static void patchFuncWallEntity( const entity_props_t *props, uint32_t have_fields, int index ) {
+static void patchFuncAnyEntity( const entity_props_t *props, uint32_t have_fields, int index ) {
 	ASSERT(index >= 0);
-	ASSERT(index < g_map_entities.func_walls_count);
-	xvk_mapent_func_wall_t *const fw = g_map_entities.func_walls + index;
+	ASSERT(index < g_map_entities.func_any_count);
+	xvk_mapent_func_any_t *const e = g_map_entities.func_any + index;
 
-	if (have_fields & Field_origin)
-		VectorCopy(props->origin, fw->origin);
+	if (have_fields & Field_origin) {
+		VectorCopy(props->origin, e->origin);
+		e->origin_patched = true;
+		DEBUG("Patching ent=%d func_any=%d %f %f %f", e->entity_index, index, e->origin[0], e->origin[1], e->origin[2]);
+	}
 
-	DEBUG("Patching ent=%d func_wall=%d %f %f %f", fw->entity_index, index, fw->origin[0], fw->origin[1], fw->origin[2]);
+	if (have_fields & Field_rendermode) {
+		e->rendermode = props->rendermode;
+		e->rendermode_patched = true;
+		DEBUG("Patching ent=%d func_any=%d rendermode=%d", e->entity_index, index, e->rendermode);
+	}
+
+	if (have_fields & Field__xvk_smooth_entire_model) {
+		DEBUG("Patching ent=%d func_any=%d smooth_entire_model =%d", e->entity_index, index, props->_xvk_smooth_entire_model);
+		e->smooth_entire_model = props->_xvk_smooth_entire_model;
+	}
+
+	if (have_fields & Field__xvk_map_material) {
+		const char *s = props->_xvk_map_material;
+		while (*s) {
+			while (*s && isspace(*s)) ++s; // skip space
+			const char *from_begin = s;
+			while (*s && !isspace(*s)) ++s; // find first space or end
+			const int from_len = s - from_begin;
+			if (!from_len)
+				break;
+
+			while (*s && isspace(*s)) ++s; // skip space
+			const char *to_begin = s;
+			while (*s && !isspace(*s)) ++s; // find first space or end
+			const int to_len = s - to_begin;
+			if (!to_len)
+				break;
+
+			string from_tex, to_mat;
+			Q_strncpy(from_tex, from_begin, Q_min(sizeof from_tex, from_len + 1));
+			Q_strncpy(to_mat, to_begin, Q_min(sizeof to_mat, to_len + 1));
+
+			const int from_tex_index = R_TextureFindByNameLike(from_tex);
+			const r_vk_material_ref_t to_mat_ref = R_VkMaterialGetForName(to_mat);
+
+			DEBUG("Adding mapping from tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d",
+				from_tex, from_tex_index, to_mat, to_mat_ref.index, e->entity_index);
+
+			if (from_tex_index <= 0) {
+				ERR("When patching entity=%d couldn't find map-from texture \"%s\"", e->entity_index, from_tex);
+				continue;
+			}
+
+			if (to_mat_ref.index <= 0) {
+				ERR("When patching entity=%d couldn't find map-to material \"%s\"", e->entity_index, to_mat);
+				continue;
+			}
+
+			if (e->matmap_count == MAX_MATERIAL_MAPPINGS) {
+				ERR("Cannot map tex \"%s\"(%d) to mat \"%s\"(%d) for entity=%d: too many mappings, "
+						"consider increasing MAX_MATERIAL_MAPPINGS",
+					from_tex, from_tex_index, to_mat, to_mat_ref.index, e->entity_index);
+				continue;
+			}
+
+			e->matmap[e->matmap_count].from_tex = from_tex_index;
+			e->matmap[e->matmap_count].to_mat = to_mat_ref;
+			++e->matmap_count;
+		}
+	}
 }
 
 static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
@@ -511,8 +609,8 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 			case LightEnvironment:
 				patchLightEntity(props, ei, have_fields, ref->index);
 				break;
-			case FuncWall:
-				patchFuncWallEntity(props, have_fields, ref->index);
+			case FuncAny:
+				patchFuncAnyEntity(props, have_fields, ref->index);
 				break;
 			default:
 				WARN("vk_mapents: trying to patch unsupported entity %d class %d", ei, ref->class);
@@ -520,18 +618,38 @@ static void patchEntity( const entity_props_t *props, uint32_t have_fields ) {
 	}
 }
 
-static void appendExludedPairs(const entity_props_t *props) {
+static void appendExcludedPairs(const entity_props_t *props) {
 	if (props->_xvk_smoothing_excluded_pairs.num % 2 != 0) {
-		ERR("vk_mapents: smoothing group exclusion list should be list of pairs -- divisible by 2; cutting the tail");
+		ERR("vk_mapents: smoothing group exclusion pairs list should be list of pairs -- divisible by 2; cutting the tail");
 	}
 
 	int count = props->_xvk_smoothing_excluded_pairs.num & ~1;
+	if (g_map_entities.smoothing.excluded_pairs_count + count > COUNTOF(g_map_entities.smoothing.excluded_pairs)) {
+		ERR("vk_mapents: smoothing exclusion pairs capacity exceeded, go complain in github issues");
+		count = COUNTOF(g_map_entities.smoothing.excluded_pairs) - g_map_entities.smoothing.excluded_pairs_count;
+	}
+
+	memcpy(g_map_entities.smoothing.excluded_pairs + g_map_entities.smoothing.excluded_pairs_count, props->_xvk_smoothing_excluded_pairs.values, count * sizeof(int));
+
+	g_map_entities.smoothing.excluded_pairs_count += count;
+}
+
+static void appendExcludedSingles(const entity_props_t *props) {
+	int count = props->_xvk_smoothing_excluded.num;
+
 	if (g_map_entities.smoothing.excluded_count + count > COUNTOF(g_map_entities.smoothing.excluded)) {
 		ERR("vk_mapents: smoothing exclusion group capacity exceeded, go complain in github issues");
 		count = COUNTOF(g_map_entities.smoothing.excluded) - g_map_entities.smoothing.excluded_count;
 	}
 
-	memcpy(g_map_entities.smoothing.excluded + g_map_entities.smoothing.excluded_count, props->_xvk_smoothing_excluded_pairs.values, count * sizeof(int));
+	memcpy(g_map_entities.smoothing.excluded + g_map_entities.smoothing.excluded_count, props->_xvk_smoothing_excluded.values, count * sizeof(int));
+
+	if (LOG_VERBOSE) {
+		DEBUG("Adding %d smoothing-excluded surfaces", props->_xvk_smoothing_excluded.num);
+		for (int i = 0; i < props->_xvk_smoothing_excluded.num; ++i) {
+			DEBUG("%d", props->_xvk_smoothing_excluded.values[i]);
+		}
+	}
 
 	g_map_entities.smoothing.excluded_count += count;
 }
@@ -593,8 +711,8 @@ static void parseEntities( char *string, qboolean is_patch ) {
 					readWorldspawn( &values );
 					break;
 
-				case FuncWall:
-					readFuncWall( &values, have_fields, props_count );
+				case FuncAny:
+					readFuncAny( &values, have_fields, props_count );
 					break;
 
 				case Unknown:
@@ -609,11 +727,20 @@ static void parseEntities( char *string, qboolean is_patch ) {
 							}
 
 							if (have_fields & Field__xvk_smoothing_excluded_pairs) {
-								appendExludedPairs(&values);
+								appendExcludedPairs(&values);
+							}
+
+							if (have_fields & Field__xvk_smoothing_excluded) {
+								appendExcludedSingles(&values);
 							}
 
 							if (have_fields & Field__xvk_smoothing_group) {
 								addSmoothingGroup(&values);
+							}
+
+							if (have_fields & Field__xvk_remove_all_sky_surfaces) {
+								DEBUG("_xvk_remove_all_sky_surfaces=%d", values._xvk_remove_all_sky_surfaces);
+								g_map_entities.remove_all_sky_surfaces = values._xvk_remove_all_sky_surfaces;
 							}
 						}
 					}
@@ -699,7 +826,22 @@ static void parsePatches( const model_t *const map ) {
 		g_patch.surfaces_count = 0;
 	}
 
-	Q_snprintf(filename, sizeof(filename), "luchiki/%s.patch", map->name);
+	{
+		const char *ext = NULL;
+
+		// Find extension (if any)
+		{
+			const char *p = map->name;
+			for(; *p; ++p)
+				if (*p == '.')
+					ext = p;
+			if (!ext)
+				ext = p;
+		}
+
+		Q_snprintf(filename, sizeof(filename), "luchiki/%.*s.patch", (int)(ext - map->name), map->name);
+	}
+
 	DEBUG("Loading patches from file \"%s\"", filename);
 	data = gEngine.fsapi->LoadFile( filename, 0, false );
 	if (!data) {
@@ -720,12 +862,14 @@ void XVK_ParseMapEntities( void ) {
 	g_map_entities.num_lights = 0;
 	g_map_entities.single_environment_index = NoEnvironmentLights;
 	g_map_entities.entity_count = 0;
-	g_map_entities.func_walls_count = 0;
+	g_map_entities.func_any_count = 0;
 	g_map_entities.smoothing.threshold = cosf(DEG2RAD(45.f));
+	g_map_entities.smoothing.excluded_pairs_count = 0;
 	g_map_entities.smoothing.excluded_count = 0;
 	for (int i = 0; i < g_map_entities.smoothing.groups_count; ++i)
 		g_map_entities.smoothing.groups[i].count = 0;
 	g_map_entities.smoothing.groups_count = 0;
+	g_map_entities.remove_all_sky_surfaces = 0;
 
 	parseEntities( map->entities, false );
 	orientSpotlights();

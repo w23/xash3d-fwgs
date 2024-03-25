@@ -60,6 +60,7 @@ Makefile.dep
 ALL_BUILD.*
 INSTALL.*
 ZERO_CHECK.*
+CMakeLists.txt
 
 # Visual Studio
 *.obj
@@ -339,3 +340,6 @@ core
 .history/*
 .cache/*
 enc_temp_folder/
+
+# KDevelop4
+*.kdev4

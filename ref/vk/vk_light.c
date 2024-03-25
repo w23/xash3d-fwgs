@@ -1,9 +1,8 @@
 #include "vk_light.h"
 #include "vk_buffer.h"
 #include "vk_mapents.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_lightmap.h"
-#include "vk_cvar.h"
 #include "vk_common.h"
 #include "shaders/ray_interop.h"
 #include "bitarray.h"
@@ -26,7 +25,7 @@
 #include "pmtrace.h"
 
 #define MODULE_NAME "light"
-#define LOG_MODULE LogModule_Lights
+#define LOG_MODULE light
 
 #define PROFILER_SCOPES(X) \
 	X(finalize , "RT_LightsFrameEnd"); \
@@ -98,7 +97,7 @@ vk_lights_t g_lights = {0};
 qboolean VK_LightsInit( void ) {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
 
-	gEngine.Cmd_AddCommand("vk_lights_dump", debugDumpLights, "Dump all light sources for next frame");
+	gEngine.Cmd_AddCommand("rt_debug_lights_dump", debugDumpLights, "Dump all light sources for next frame");
 
 	const int buffer_size = sizeof(struct LightsMetadata) + sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS;
 
@@ -233,20 +232,21 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 				}
 
 				// FIXME replace this with findTexturesNamedLike from vk_materials.c
+				// It has slightly different logic, though, and is a bit scary to change
 
 				// Try bsp texture first
-				tex_id = XVK_TextureLookupF("#%s:%s.mip", map->name, texture_name);
+				tex_id = R_TextureFindByNameF("#%s:%s.mip", map->name, texture_name);
 
 				// Try wad texture if bsp is not there
 				if (!tex_id && wad_name) {
-					tex_id = XVK_TextureLookupF("%s.wad/%s.mip", wad_name, texture_name);
+					tex_id = R_TextureFindByNameF("%s.wad/%s.mip", wad_name, texture_name);
 				}
 
 				if (!tex_id) {
 					const char *wad = g_map_entities.wadlist;
 					for (; *wad;) {
 						const char *const wad_end = Q_strchr(wad, ';');
-						tex_id = XVK_TextureLookupF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
+						tex_id = R_TextureFindByNameF("%.*s/%s.mip", wad_end - wad, wad, texture_name);
 						if (tex_id)
 							break;
 						wad = wad_end + 1;
@@ -706,7 +706,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	plight->lightstyle = lightstyle;
 
 	// Omnidirectional light
-	plight->stopdot = plight->stopdot2 = -1.f;
+	plight->stopdot = plight->stopdot2_or_costheta = -1.f;
 	VectorSet(plight->dir, 0, 0, 0);
 
 	addPointLightToClusters( index );
@@ -714,7 +714,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	return index;
 }
 
-static int addSpotLight( const vk_light_entity_t *le, float radius, int lightstyle, float hack_attenuation, qboolean all_clusters ) {
+static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_angle, int lightstyle, float hack_attenuation, qboolean all_clusters ) {
 	const int index = g_lights_.num_point_lights;
 	vk_point_light_t *const plight = g_lights_.point_lights + index;
 
@@ -736,16 +736,30 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, int lightsty
 	VectorCopy(le->origin, plight->origin);
 	plight->radius = radius;
 
-	VectorScale(le->color, hack_attenuation, plight->base_color);
 	VectorCopy(plight->base_color, plight->color);
 	plight->lightstyle = lightstyle;
 
 	VectorCopy(le->dir, plight->dir);
 	plight->stopdot = le->stopdot;
-	plight->stopdot2 = le->stopdot2;
 
-	if (le->type == LightTypeEnvironment)
+	if (le->type == LightTypeEnvironment) {
+		// Baseline values
+		const float kSunSolidAngle = 6.794e-5; // Wikipedia
+		const float kSunCosTheta = 1. - kSunSolidAngle / (2 * M_PI);
+
+		const float cos_theta_max = Q_min(kSunCosTheta, 1. - solid_angle / (2 * M_PI));
+
+		// Make sure that the brightness is preserved
+		// light.glsl will multiply color by one_over_pdf for future MIS reasons
+		hack_attenuation /= (1. - cos_theta_max) / (1. - kSunCosTheta);
+
 		plight->flags = LightFlag_Environment;
+		plight->stopdot2_or_costheta = cos_theta_max;
+	} else {
+		plight->stopdot2_or_costheta = le->stopdot2;
+	}
+
+	VectorScale(le->color, hack_attenuation, plight->base_color);
 
 	if (all_clusters)
 		addPointLightToAllClusters( index );
@@ -758,7 +772,7 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, int lightsty
 
 void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player ) {
 	// parameters
-	const float hack_attenuation = 0.1;
+	const float hack_attenuation = 0.1f / 25.f;
 	float radius = 1.0;
 	// TODO: better tune it
 	const float _cone = 10.0;
@@ -848,7 +862,8 @@ void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player 
 		le.dir[0], le.dir[1], le.dir[2]);
 	*/
 
-	addSpotLight(&le, radius, 0, hack_attenuation, false);
+	const float solid_angle_unused = 0.;
+	addSpotLight(&le, radius, 0, solid_angle_unused, hack_attenuation, false);
 }
 
 static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
@@ -868,6 +883,9 @@ static qboolean addDlight( const dlight_t *dlight ) {
 
 	scaler = k_threshold / (max_comp * sphereSolidAngleFromDistDiv2Pi(k_light_radius, dlight->radius));
 
+	// These constants are empirical. There's no known math reason behind them
+	scaler /= 25.;
+
 	VectorSet(
 		color,
 		dlight->color.r * scaler,
@@ -886,20 +904,26 @@ static void processStaticPointLights( void ) {
 	g_lights_.num_point_lights = 0;
 	for (int i = 0; i < g_map_entities.num_lights; ++i) {
 		const vk_light_entity_t *le = g_map_entities.lights + i;
-		const float default_radius = 2.f; // FIXME tune
-		const float hack_attenuation = .1f; // FIXME tune
-		const float hack_attenuation_spot = .1f; // FIXME tune
+		const float default_radius = 2.f; // TODO tune
 		const float radius = le->radius > 0.f ? le->radius : default_radius;
-		int index;
 
+		// Expects skybox to be loaded already.
+		const float solid_angle = le->solid_angle > 0.f ? le->solid_angle : R_TexturesGetSkyboxInfo().sun_solid_angle;
+
+		// These constants are empirical. There's no known math reason behind them
+		const float hack_attenuation = (le->type == LightTypeEnvironment)
+			? 700.f // FIXME why?
+			: .1f / 25.f; // FIXME why?
+
+		int index;
 		switch (le->type) {
 			case LightTypePoint:
 				index = addPointLight(le->origin, le->color, radius, le->style, hack_attenuation);
 				break;
 
-			case LightTypeSpot:
 			case LightTypeEnvironment:
-				index = addSpotLight(le, radius, le->style, hack_attenuation_spot, i == g_map_entities.single_environment_index);
+			case LightTypeSpot:
+				index = addSpotLight(le, radius, solid_angle, le->style, hack_attenuation, i == g_map_entities.single_environment_index);
 				break;
 
 			default:
@@ -1089,7 +1113,12 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		poly->vertices.offset = g_lights_.num_polygon_vertices;
 		poly->vertices.count = addpoly->num_vertices;
 
-		VectorCopy(addpoly->emissive, poly->emissive);
+		{
+			// These constants are empirical. There's no known math reason behind them
+			const float hack_attenuation_poly = 1.f / 25.f;
+			VectorScale(addpoly->emissive, hack_attenuation_poly, poly->emissive);
+		}
+
 		VectorSet(poly->center, 0, 0, 0);
 		VectorSet(normal, 0, 0, 0);
 
@@ -1110,6 +1139,11 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 		}
 
 		poly->area = VectorLength(normal);
+		if (poly->area <= 0) {
+			ERR("%s: Polygon light has zero area", __FUNCTION__);
+			return -1;
+		}
+
 		VectorM(1.f / poly->area, normal, poly->plane);
 		poly->plane[3] = -DotProduct(vertices[0], poly->plane);
 
@@ -1249,20 +1283,21 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 		vk_point_light_t *const src = g_lights_.point_lights + i;
 		struct PointLight *const dst = metadata->point_lights + i;
 
-		VectorCopy(src->origin, dst->origin_r);
-		dst->origin_r[3] = src->radius;
+		VectorCopy(src->origin, dst->origin_r2);
+		dst->origin_r2[3] = src->radius * src->radius;
 
 		VectorCopy(src->color, dst->color_stopdot);
 		dst->color_stopdot[3] = src->stopdot;
 
-		VectorCopy(src->dir, dst->dir_stopdot2);
-		dst->dir_stopdot2[3] = src->stopdot2;
+		VectorNegate(src->dir, dst->dir_stopdot2);
+		dst->dir_stopdot2[3] = src->stopdot2_or_costheta;
 
 		dst->environment = !!(src->flags & LightFlag_Environment);
 	}
 }
 
 vk_lights_bindings_t VK_LightsUpload( void ) {
+	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
 	const vk_staging_region_t locked = R_VkStagingLockForBuffer( (vk_staging_buffer_args_t) {
 		.buffer = g_lights_.buffer.buffer,
 		.offset = 0,
@@ -1286,6 +1321,8 @@ vk_lights_bindings_t VK_LightsUpload( void ) {
 	uploadGrid();
 
 	g_lights_.frame_sequence++;
+
+	APROF_SCOPE_END(upload);
 
 	return (vk_lights_bindings_t){
 		.buffer = g_lights_.buffer.buffer,

@@ -2,29 +2,40 @@
 #include "vk_core.h"
 #include "vk_devmem.h"
 
-typedef struct xvk_image_s {
+typedef struct r_vk_image_s {
 	vk_devmem_t devmem;
 	VkImage image;
 	VkImageView view;
 
-	uint32_t width, height;
-	int mips;
-} xvk_image_t;
+	// Optional, created by kVkImageFlagCreateUnormView
+	// Used for sRGB-γ-unaware traditional renderer
+	VkImageView view_unorm;
+
+	uint32_t width, height, depth;
+	int mips, layers;
+	VkFormat format;
+	uint32_t flags;
+} r_vk_image_t;
+
+enum {
+	kVkImageFlagIgnoreAlpha = (1<<0),
+	kVkImageFlagIsCubemap = (1<<1),
+	kVkImageFlagCreateUnormView = (1<<2),
+};
 
 typedef struct {
 	const char *debug_name;
-	uint32_t width, height;
+	uint32_t width, height, depth;
 	int mips, layers;
 	VkFormat format;
 	VkImageTiling tiling;
 	VkImageUsageFlags usage;
-	qboolean has_alpha;
-	qboolean is_cubemap;
 	VkMemoryPropertyFlags memory_props;
-} xvk_image_create_t;
+	uint32_t flags;
+} r_vk_image_create_t;
 
-xvk_image_t XVK_ImageCreate(const xvk_image_create_t *create);
-void XVK_ImageDestroy(xvk_image_t *img);
+r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
+void R_VkImageDestroy(r_vk_image_t *img);
 
 void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image);
 
@@ -40,3 +51,8 @@ typedef struct {
 
 void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args );
 
+uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
+
+void R_VkImageUploadBegin( r_vk_image_t *img );
+void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
+void R_VkImageUploadEnd( r_vk_image_t *img );

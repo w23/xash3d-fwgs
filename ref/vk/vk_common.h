@@ -28,12 +28,18 @@ inline static int clampi32(int v, int min, int max) {
 	return v;
 }
 
-typedef struct {
-	const char *s;
-	int len;
-} const_string_view_t;
-
-int stringViewCmp(const_string_view_t sv, const char* s);
-
 extern ref_api_t gEngine;
 extern ref_globals_t *gpGlobals;
+
+// TODO improve and make its own file
+#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
+		struct { \
+			TYPE items[MAX_SIZE]; \
+			int count; \
+		} NAME
+
+#define BOUNDED_ARRAY_APPEND(var, item) \
+		do { \
+			ASSERT(var.count < COUNTOF(var.items)); \
+			var.items[var.count++] = item; \
+		} while(0)

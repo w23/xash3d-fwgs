@@ -85,7 +85,7 @@ static void R_ParseDetailTextures( const char *filename )
 			if( Q_stricmp( tex->name, texname ))
 				continue;
 
-			tex->dt_texturenum = GL_LoadTexture( detail_path, NULL, 0, TF_FORCE_COLOR );
+			tex->dt_texturenum = GL_LoadTexture( detail_path, NULL, 0, TF_FORCE_COLOR|TF_NOFLIP_TGA );
 
 			// texture is loaded
 			if( tex->dt_texturenum )
@@ -113,7 +113,7 @@ void R_NewMap( void )
 	R_StudioResetPlayerModels();
 
 	// upload detailtextures
-	if( CVAR_TO_BOOL( r_detailtextures ))
+	if( r_detailtextures.value )
 	{
 		string	mapname, filepath;
 
@@ -150,6 +150,7 @@ void R_NewMap( void )
 
 	GL_BuildLightmaps ();
 	R_GenerateVBO();
+	R_ResetRipples();
 
 	if( gEngfuncs.drawFuncs->R_NewMap != NULL )
 		gEngfuncs.drawFuncs->R_NewMap();

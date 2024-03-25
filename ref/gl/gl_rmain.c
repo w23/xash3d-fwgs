@@ -20,6 +20,7 @@ GNU General Public License for more details.
 #include "particledef.h"
 #include "entity_types.h"
 
+
 #define IsLiquidContents( cnt )	( cnt == CONTENTS_WATER || cnt == CONTENTS_SLIME || cnt == CONTENTS_LAVA )
 
 float		gldepthmin, gldepthmax;
@@ -345,7 +346,7 @@ void R_SetupFrustum( void )
 	// build the transformation matrix for the given view angles
 	AngleVectors( RI.viewangles, RI.vforward, RI.vright, RI.vup );
 
-	if( !r_lockfrustum->value )
+	if( !r_lockfrustum.value )
 	{
 		VectorCopy( RI.vieworg, RI.cullorigin );
 		VectorCopy( RI.vforward, RI.cull_vforward );
@@ -495,7 +496,7 @@ static void R_SetupFrame( void )
 	// NOTE: this request is the fps-killer on some NVidia drivers
 	glState.isFogEnabled = pglIsEnabled( GL_FOG );
 
-	if( !gl_nosort->value )
+	if( !gl_nosort.value )
 	{
 		// sort translucents entities by rendermode and distance
 		qsort( tr.draw_list->trans_entities, tr.draw_list->num_trans_entities, sizeof( cl_entity_t* ), R_TransEntityCompare );
@@ -968,6 +969,8 @@ void R_RenderScene( void )
 
 	R_MarkLeaves();
 	R_DrawFog ();
+	if( RI.drawWorld )
+		R_AnimateRipples();
 
 	R_CheckGLFog();
 	R_DrawWorld();
@@ -1030,7 +1033,7 @@ void R_BeginFrame( qboolean clearScene )
 	pglDrawBuffer( GL_BACK );
 
 	// update texture parameters
-	if( FBitSet( gl_texture_nearest->flags|gl_lightmap_nearest->flags|gl_texture_anisotropy->flags|gl_texture_lodbias->flags, FCVAR_CHANGED ))
+	if( FBitSet( gl_texture_nearest.flags|gl_lightmap_nearest.flags|gl_texture_anisotropy.flags|gl_texture_lodbias.flags, FCVAR_CHANGED ))
 		R_SetTextureParameters();
 
 	gEngfuncs.CL_ExtraUpdate ();
@@ -1082,15 +1085,15 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	// setup the initial render params
 	R_SetupRefParams( rvp );
 
-	if( gl_finish->value && RI.drawWorld )
+	if( gl_finish.value && RI.drawWorld )
 		pglFinish();
 
-	if( glConfig.max_multisamples > 1 && FBitSet( gl_msaa->flags, FCVAR_CHANGED ))
+	if( glConfig.max_multisamples > 1 && FBitSet( gl_msaa.flags, FCVAR_CHANGED ))
 	{
-		if( CVAR_TO_BOOL( gl_msaa ))
+		if( gl_msaa.value )
 			pglEnable( GL_MULTISAMPLE_ARB );
 		else pglDisable( GL_MULTISAMPLE_ARB );
-		ClearBits( gl_msaa->flags, FCVAR_CHANGED );
+		ClearBits( gl_msaa.flags, FCVAR_CHANGED );
 	}
 
 	// completely override rendering
@@ -1126,6 +1129,9 @@ void R_EndFrame( void )
 {
 #if XASH_PSVITA
 	VGL_ShimEndFrame();
+#endif
+#if !defined( XASH_GL_STATIC )
+	GL2_ShimEndFrame();
 #endif
 	// flush any remaining 2D bits
 	R_Set2DMode( false );

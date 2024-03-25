@@ -228,10 +228,10 @@ void R_BeginFrame( qboolean clearScene ) {
 		R_SpeedsDisplayMore(prev_frame_event_index, frame->staging_combuf ? gpurofl : gpurofl + 1, frame->staging_combuf ? 2 : 1);
 	}
 
-	if (vk_core.rtx && FBitSet( vk_rtx->flags, FCVAR_CHANGED )) {
-		vk_frame.rtx_enabled = CVAR_TO_BOOL( vk_rtx );
+	if (vk_core.rtx && FBitSet( rt_enable->flags, FCVAR_CHANGED )) {
+		vk_frame.rtx_enabled = CVAR_TO_BOOL( rt_enable );
 	}
-	ClearBits( vk_rtx->flags, FCVAR_CHANGED );
+	ClearBits( rt_enable->flags, FCVAR_CHANGED );
 
 	updateGamma();
 
@@ -259,6 +259,7 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 }
 
 static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
+	APROF_SCOPE_DECLARE_BEGIN(enqueue, __FUNCTION__);
 	const VkClearValue clear_value[] = {
 		{.color = {{1., 0., 0., 0.}}},
 		{.depthStencil = {1., 0.}} // TODO reverse-z
@@ -299,7 +300,10 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( cmdbuf, draw );
+		VK_RenderEnd( cmdbuf, draw,
+			g_frame.current.framebuffer.width, g_frame.current.framebuffer.height,
+			g_frame.current.index
+			);
 
 	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
 
@@ -307,10 +311,12 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 		vkCmdEndRenderPass(cmdbuf);
 
 	g_frame.current.phase = Phase_RenderingEnqueued;
+	APROF_SCOPE_END(enqueue);
 }
 
 // FIXME pass frame, not combuf (possible desync)
 static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
+	APROF_SCOPE_DECLARE_BEGIN(submit, __FUNCTION__);
 	ASSERT(g_frame.current.phase == Phase_RenderingEnqueued);
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
@@ -330,21 +336,8 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	{
 		const VkPipelineStageFlags stageflags[] = {
 			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
-
-#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
-		struct { \
-			TYPE items[MAX_SIZE]; \
-			int count; \
-		} NAME
-
-#define BOUNDED_ARRAY_APPEND(var, item) \
-		do { \
-			ASSERT(var.count < COUNTOF(var.items)); \
-			var.items[var.count++] = item; \
-		} while(0)
-
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
 		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
 		BOUNDED_ARRAY(waitophores, VkSemaphore, 2) = {0};
@@ -390,6 +383,8 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		/* } */
 		g_frame.current.phase = Phase_Idle;
 	}
+
+	APROF_SCOPE_END(submit);
 }
 
 inline static VkCommandBuffer currentCommandBuffer( void ) {
@@ -410,13 +405,6 @@ void R_EndFrame( void )
 
 	APROF_SCOPE_END(end_frame);
 	APROF_SCOPE_END(frame);
-}
-
-static void toggleRaytracing( void ) {
-	ASSERT(vk_core.rtx);
-	vk_frame.rtx_enabled = !vk_frame.rtx_enabled;
-	gEngine.Cvar_Set("vk_rtx", vk_frame.rtx_enabled ? "1" : "0");
-	gEngine.Con_Printf(S_WARN "Switching ray tracing to %d\n", vk_frame.rtx_enabled);
 }
 
 qboolean VK_FrameCtlInit( void )
@@ -466,10 +454,6 @@ qboolean VK_FrameCtlInit( void )
 
 	vk_frame.rtx_enabled = vk_core.rtx;
 
-	if (vk_core.rtx) {
-		gEngine.Cmd_AddCommand("vk_rtx_toggle", toggleRaytracing, "Toggle between rasterization and ray tracing");
-	}
-
 	return true;
 }
 
@@ -508,9 +492,9 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 	return true;
 }
 
-static rgbdata_t *XVK_ReadPixels( void ) {
+static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
-	xvk_image_t dest_image;
+	r_vk_image_t dest_image;
 	const VkImage frame_image = g_frame.current.framebuffer.image;
 	rgbdata_t *r_shot = NULL;
 	qboolean blit = canBlitFromSwapchainToFormat( dest_format );
@@ -525,20 +509,20 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 
 	// Create destination image to blit/copy framebuffer pixels to
 	{
-		const xvk_image_create_t xic = {
+		const r_vk_image_create_t xic = {
 			.debug_name = "screenshot",
 			.width = vk_frame.width,
 			.height = vk_frame.height,
+			.depth = 1,
 			.mips = 1,
 			.layers = 1,
 			.format = dest_format,
 			.tiling = VK_IMAGE_TILING_LINEAR,
 			.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-			.has_alpha = false,
-			.is_cubemap = false,
+			.flags = 0,
 			.memory_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 		};
-		dest_image = XVK_ImageCreate(&xic);
+		dest_image = R_VkImageCreate(&xic);
 	}
 
 	// Make sure that all rendering ops are enqueued
@@ -648,7 +632,10 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
 	}
 
-	submit( combuf, true, draw );
+	{
+		const qboolean wait = true;
+		submit( combuf, wait, draw );
+	}
 
 	// copy bytes to buffer
 	{
@@ -700,7 +687,7 @@ static rgbdata_t *XVK_ReadPixels( void ) {
 		}
 	}
 
-	XVK_ImageDestroy( &dest_image );
+	R_VkImageDestroy( &dest_image );
 
 	return r_shot;
 }
@@ -711,8 +698,10 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	int	width = 0, height = 0;
 	qboolean	result;
 
+	const uint64_t start_ns = aprof_time_now_ns();
+
 	// get screen frame
-	rgbdata_t *r_shot = XVK_ReadPixels();
+	rgbdata_t *r_shot = R_VkReadPixels();
 	if (!r_shot)
 		return false;
 
@@ -751,10 +740,15 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	gEngine.Image_Process( &r_shot, width, height, flags, 0.0f );
 
 	// write image
+	const uint64_t save_begin_ns = aprof_time_now_ns();
 	result = gEngine.FS_SaveImage( filename, r_shot );
+	const uint64_t save_end_ns = aprof_time_now_ns();
+
 	gEngine.fsapi->AllowDirectPaths( false );			// always reset after store screenshot
 	gEngine.FS_FreeImage( r_shot );
 
-	gEngine.Con_Printf("Wrote screenshot %s\n", filename);
+	const uint64_t end_ns = aprof_time_now_ns();
+	gEngine.Con_Printf("Wrote screenshot %s. Saving file: %.03fms, total: %.03fms\n",
+		filename, (save_end_ns - save_begin_ns) / 1e6, (end_ns - start_ns) / 1e6);
 	return result;
 }

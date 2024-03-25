@@ -12,8 +12,7 @@ def options(opt):
 	return
 
 def configure(conf):
-	# stub
-	return
+	conf.define('XASH_BUILD_COMMIT', conf.env.GIT_VERSION if conf.env.GIT_VERSION else 'notset')
 
 def build(bld):
 	bld(name = 'sdk_includes', export_includes = '. ../common ../pm_shared ../engine')
@@ -28,6 +27,7 @@ def build(bld):
 			'strings': 'tests/test_strings.c',
 			'build': 'tests/test_build.c',
 			'filebase': 'tests/test_filebase.c',
+			'efp': 'tests/test_efp.c',
 		}
 
 		for i in tests:
@@ -35,6 +35,5 @@ def build(bld):
 				source = tests[i],
 				target = 'test_%s' % i,
 				use = 'public',
-				rpath = '$ORIGIN',
 				subsystem = bld.env.CONSOLE_SUBSYSTEM,
 				install_path = None)

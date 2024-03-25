@@ -1,7 +1,7 @@
 #include "vk_studio.h"
 #include "com_model.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_renderstate.h"
@@ -28,7 +28,7 @@
 #include <stdlib.h>
 
 #define MODULE_NAME "studio"
-#define LOG_MODULE LogModule_Studio
+#define LOG_MODULE studio
 
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
@@ -1715,6 +1715,24 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 			VectorCopy(args.prev_verts[vi], dst_vtx->prev_pos);
 
 			VectorCopy(g_studio.norms[vi], dst_vtx->normal);
+
+			{
+				const float normal_len2 = DotProduct(g_studio.norms[vi], g_studio.norms[vi]);
+				if (normal_len2 < .9f) {
+					ERROR_THROTTLED(10,
+						"model=%s bodypart=%d vert=%d+%d=%d vi=%d normal=(%f,%f,%f) INVALID len2=%f",
+						g_studio_current.entmodel->studio_header->name,
+						g_studio_current.bodypart_index,
+						j, vertex_offset, j + vertex_offset, vi,
+						g_studio.norms[vi][0],
+						g_studio.norms[vi][1],
+						g_studio.norms[vi][2],
+						normal_len2
+					);
+				}
+			}
+
+
 			VectorCopy(g_studio.tangents[vi], dst_vtx->tangent);
 			dst_vtx->lm_tc[0] = dst_vtx->lm_tc[1] = 0.f;
 
@@ -1770,8 +1788,8 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 	ASSERT(vertex_offset == num_vertices);
 
 	*args.out_geometry = (vk_render_geometry_t){
-		.texture = args.texture,
-		.material = FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kXVkMaterialChrome : kXVkMaterialRegular,
+		.material = R_VkMaterialGetForTextureWithFlags(args.texture, FBitSet( args.face_flags, STUDIO_NF_CHROME ) ? kVkMaterialFlagChrome : kVkMaterialFlagNone),
+		.ye_olde_texture = args.texture,
 
 		.vertex_offset = args.vertices_offset,
 		.max_vertex = num_vertices,
@@ -2117,18 +2135,18 @@ static qboolean studioSubmodelRenderInit(r_studio_submodel_render_t *render_subm
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, submodel->nummesh * sizeof(*geometries));
 	ASSERT(geometries);
 
-	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
-	render_submodel->prev_verts = Mem_Malloc(vk_core.pool, verts_size);
-	memcpy(render_submodel->prev_verts, g_studio.verts, verts_size);
-
 	buildStudioSubmodelGeometry((build_submodel_geometry_t){
-		//.submodel = submodel,
 		.geometry = &geometry,
 		.geometries = geometries,
 		.vertex_count = vertex_count,
 		.index_count = index_count,
-		.prev_verts = render_submodel->prev_verts,
+		.prev_verts = g_studio.verts,
 	});
+
+	// Store vertices computed by bulidStudioSubmodelGeometry as intial prev_verts
+	const size_t verts_size = sizeof(vec3_t) * submodel->numverts;
+	render_submodel->prev_verts = Mem_Malloc(vk_core.pool, verts_size);
+	memcpy(render_submodel->prev_verts, g_studio.verts, verts_size);
 
 	render_submodel->geometries = geometries;
 	render_submodel->geometries_count = submodel->nummesh;
@@ -2229,6 +2247,33 @@ static r_studio_submodel_info_t *studioModelFindSubmodelInfo(void) {
 	return NULL;
 }
 
+static material_mode_e studioMaterialModeForRenderType(vk_render_type_e render_type) {
+	switch (render_type) {
+		case kVkRenderTypeSolid:
+			return kMaterialMode_Opaque;
+			break;
+		case kVkRenderType_A_1mA_RW: // blend: scr*a + dst*(1-a), depth: RW
+		case kVkRenderType_A_1mA_R:  // blend: scr*a + dst*(1-a), depth test
+			return kMaterialMode_Translucent;
+			break;
+		case kVkRenderType_A_1:   // blend: scr*a + dst, no depth test or write; sprite:kRenderGlow only
+			return kMaterialMode_BlendGlow;
+			break;
+		case kVkRenderType_A_1_R: // blend: scr*a + dst, depth test
+		case kVkRenderType_1_1_R: // blend: scr + dst, depth test
+			return kMaterialMode_BlendAdd;
+			break;
+		case kVkRenderType_AT: // no blend, depth RW, alpha test
+			return kMaterialMode_AlphaTest;
+			break;
+
+		default:
+			gEngine.Host_Error("Unexpected render type %d\n", render_type);
+	}
+
+	return kMaterialMode_Opaque;
+}
+
 // Draws current studio model submodel
 // Can be called externally, i.e. from game dll.
 // Expects m_pStudioHeader, m_pSubModel, RI.currententity, etc to be already set up
@@ -2299,12 +2344,19 @@ static void R_StudioDrawPoints( void ) {
 		Vector4Set(color, g_studio.blend, g_studio.blend, g_studio.blend, 1.f);
 
 	// TODO r_model_draw_t.transform should be matrix3x4
+	const vk_render_type_e render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode);
+	const material_mode_e material_mode = studioMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&render_submodel->model, (r_model_draw_t){
-		.render_type = studioRenderModeToRenderType(RI.currententity->curstate.rendermode),
+		.render_type = render_type,
+		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_CullBackFace_Bit, // TODO for transparent only?
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
-		.textures_override = -1,
+		.override = {
+			.material = NULL,
+			.old_texture = -1,
+		},
 	});
 
 	++g_studio_stats.submodels_total;
@@ -3329,7 +3381,7 @@ static void R_StudioLoadTexture( model_t *mod, studiohdr_t *phdr, mstudiotexture
 
 	// build the texname
 	Q_snprintf( texname, sizeof( texname ), "#%s/%s.mdl", mdlname, name );
-	ptexture->index = VK_LoadTexture( texname, (byte *)ptexture, size, flags );
+	ptexture->index = R_TextureUploadFromFile( texname, (byte *)ptexture, size, flags );
 
 	if( !ptexture->index )
 	{
@@ -3375,7 +3427,7 @@ void Mod_StudioUnloadTextures( void *data )
 	{
 		if( ptexture[i].index == tglob.defaultTexture )
 			continue;
-		VK_FreeTexture( ptexture[i].index );
+		R_TextureFree( ptexture[i].index );
 	}
 }
 
@@ -3567,9 +3619,6 @@ void CL_InitStudioAPI( void )
 
 	// trying to grab them from client.dll
 	cl_righthand = gEngine.pfnGetCvarPointer( "cl_righthand", 0 );
-
-	if( cl_righthand == NULL )
-		cl_righthand = gEngine.Cvar_Get( "cl_righthand", "0", FCVAR_ARCHIVE, "flip viewmodel (left to right)" );
 
 	// Xash will be used internal StudioModelRenderer
 	if( gEngine.pfnGetStudioModelInterface( STUDIO_INTERFACE_VERSION, &pStudioDraw, &gStudioAPI ))

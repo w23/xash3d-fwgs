@@ -202,25 +202,6 @@ int NearestPOW( int value, qboolean roundDown )
 	return n;
 }
 
-// remap a value in the range [A,B] to [C,D].
-float RemapVal( float val, float A, float B, float C, float D )
-{
-	return C + (D - C) * (val - A) / (B - A);
-}
-
-float ApproachVal( float target, float value, float speed )
-{
-	float	delta = target - value;
-
-	if( delta > speed )
-		value += speed;
-	else if( delta < -speed )
-		value -= speed;
-	else value = target;
-
-	return value;
-}
-
 /*
 =================
 rsqrt
@@ -241,31 +222,6 @@ float rsqrt( float number )
 	y = y * (1.5f - (x * y * y));	// first iteration
 
 	return y;
-}
-
-/*
-=================
-SinCos
-=================
-*/
-void SinCos( float radians, float *sine, float *cosine )
-{
-#if _MSC_VER == 1200
-	_asm
-	{
-		fld	dword ptr [radians]
-		fsincos
-
-		mov edx, dword ptr [cosine]
-		mov eax, dword ptr [sine]
-
-		fstp dword ptr [edx]
-		fstp dword ptr [eax]
-	}
-#else
-	*sine = sin(radians);
-	*cosine = cos(radians);
-#endif
 }
 
 /*

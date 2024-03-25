@@ -1,6 +1,9 @@
 #ifndef RT_GEOMETRY_GLSL_INCLUDED
 #define RT_GEOMETRY_GLSL_INCLUDED
+
+#include "debug.glsl"
 #include "utils.glsl"
+#include "color_spaces.glsl"
 
 // Taken from Journal of Computer Graphics Techniques, Vol. 10, No. 1, 2021.
 // Improved Shader and Texture Level of Detail Using Ray Cones,
@@ -118,11 +121,42 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 		GET_VERTEX(vi2).normal,
 		GET_VERTEX(vi3).normal,
 		bary));
+
+#ifdef DEBUG_VALIDATE_EXTRA
+	if (IS_INVALIDV(geom.normal_shading)) {
+		debugPrintfEXT("rt_geometry.glsl:%d model=%d geom=%d prim=%d v1n=(%f,%f,%f) v2n=(%f,%f,%f) v3n=(%f,%f,%f) nt=(%f,%f,%f;%f,%f,%f;%f,%f,%f) INVALID nshade=(%f,%f,%f)",
+			__LINE__,
+			model_index, geometry_index, primitive_index,
+			PRIVEC3(GET_VERTEX(vi1).normal),
+			PRIVEC3(GET_VERTEX(vi2).normal),
+			PRIVEC3(GET_VERTEX(vi3).normal),
+			PRIVEC3(normalTransform[0]),
+			PRIVEC3(normalTransform[1]),
+			PRIVEC3(normalTransform[2])
+		);
+		// TODO ???
+		geom.normal_shading = geom.normal_geometry;
+	}
+#endif
+
 	geom.tangent = normalize(normalTransform * baryMix(
 		GET_VERTEX(vi1).tangent,
 		GET_VERTEX(vi2).tangent,
 		GET_VERTEX(vi3).tangent,
 		bary));
+
+	if (IS_INVALIDV(geom.normal_geometry)) {
+		// This shouldn't happen -- such triangles are pre-filtere-out in vk_brush.c
+#ifdef DEBUG_VALIDATE_EXTRA
+		const vec3 e0 = pos[2] - pos[0];
+		const vec3 e1 = pos[1] - pos[0];
+		debugPrintfEXT("readHitGeometry(model=%d geom=%d prim=%d) pos[0]=(%f,%f,%f) e0=(%f,%f,%f), e1=(%f,%f,%f) INVALID normal_geometry=(%f,%f,%f)",
+			model_index, geometry_index, primitive_index,
+			PRIVEC3(pos[0]), PRIVEC3(e0), PRIVEC3(e1), PRIVEC3(geom.normal_geometry));
+#endif
+		// TODO is this correct?
+		geom.normal_geometry = geom.normal_shading;
+	}
 
 	geom.uv_lods = computeAnisotropicEllipseAxes(geom.pos, geom.normal_geometry, ray_direction, ray_cone_width * hit_t, pos, uvs, geom.uv);
 
@@ -133,7 +167,7 @@ Geometry readHitGeometry(vec2 bary, float ray_cone_width) {
 struct MiniGeometry {
 	vec2 uv;
 	uint kusok_index;
-	vec4 vertex_color;
+	vec4 vertex_color_srgb;
 };
 
 MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
@@ -155,7 +189,14 @@ MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
 		const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, false);
 		const vec2 uv = baryMix(uvs[0], uvs[1], uvs[2], bary);
 
+		/*
 		const vec4 colors[3] = {
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi1).color)),
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi2).color)),
+			SRGBtoLINEAR(unpackUnorm4x8(GET_VERTEX(vi3).color)),
+		};
+		*/
+		const vec4 colors_srgb[3] = {
 			unpackUnorm4x8(GET_VERTEX(vi1).color),
 			unpackUnorm4x8(GET_VERTEX(vi2).color),
 			unpackUnorm4x8(GET_VERTEX(vi3).color),
@@ -164,7 +205,7 @@ MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
 		MiniGeometry ret;
 		ret.uv = uv;
 		ret.kusok_index = kusok_index;
-		ret.vertex_color = baryMix(colors[0], colors[1], colors[2], bary);
+		ret.vertex_color_srgb = baryMix(colors_srgb[0], colors_srgb[1], colors_srgb[2], bary);
 		return ret;
 }
 #endif // #ifdef RAY_QUERY

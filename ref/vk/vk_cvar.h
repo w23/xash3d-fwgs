@@ -16,18 +16,16 @@ void VK_LoadCvars( void );
 void VK_LoadCvarsAfterInit( void );
 
 #define DECLARE_CVAR(X) \
-	X(r_lighting_modulate) \
 	X(cl_lightstyle_lerping) \
-	X(vk_rtx_bounces) \
-	X(vk_rtx_light_begin) \
-	X(vk_rtx_light_end) \
+	X(r_lighting_modulate) \
 	X(r_lightmap) \
-	X(ui_infotool) \
-	X(vk_rtx) \
-	X(vk_rtx_extension) \
-	X(vk_only) \
+	X(r_infotool) \
 	X(vk_device_target_id) \
 	X(vk_debug_log) \
+	X(rt_capable) \
+	X(rt_force_disable) \
+	X(rt_enable) \
+	X(rt_bounces) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

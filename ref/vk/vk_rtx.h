@@ -27,13 +27,15 @@ typedef struct {
 } vk_ray_frame_render_args_t;
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args);
 
-void VK_RayNewMap( void );
+void VK_RayNewMapBegin( void );
+void VK_RayNewMapEnd( void );
 
 qboolean VK_RayInit( void );
 void VK_RayShutdown( void );
 
 struct vk_render_geometry_s;
 struct rt_model_s;
+struct r_vk_material_s;
 
 typedef enum {
 	kBlasBuildStatic, // builds slow for fast trace
@@ -55,15 +57,14 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_render_geometry_s *geometries, int geometries_count, const int *geom_indices, int geom_indices_count);
 
 typedef struct {
-	int render_type; // TODO material_mode
-	const matrix3x4 *transform, *prev_transform;
-	const vec4_t *color;
+	int material_mode;
+	uint32_t material_flags;
 
-	struct rt_light_add_polygon_s *dynamic_polylights;
-	int dynamic_polylights_count;
+	const matrix3x4 *transform, *prev_transform;
+	const vec4_t *color_srgb;
 
 	struct {
-		int textures; // Override kusochki/material textures if > 0
+		const struct r_vk_material_s *material;
 
 		// These are needed in order to recreate kusochki geometry data
 		// TODO remove when material data is split from kusochki
@@ -77,9 +78,13 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args );
 typedef struct {
 	const char *debug_name;
 	const struct vk_render_geometry_s *geometries;
-	const vec4_t *color;
+	const vec4_t *color_srgb;
 	int geometries_count;
 	int render_type;
 } rt_frame_add_once_t;
 
 void RT_FrameAddOnce( rt_frame_add_once_t args );
+
+// Signal that the next frame is discontinuous, and all accumulated screen-space
+// statistics should be reset. Should help with newmap/saveload/teleport denoiser artifacts.
+void RT_FrameDiscontinuity( void );

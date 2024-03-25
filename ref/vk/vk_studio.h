@@ -10,6 +10,7 @@ void VK_StudioInit( void );
 void VK_StudioShutdown( void );
 
 void Mod_StudioLoadTextures( model_t *mod, void *data );
+void Mod_StudioUnloadTextures( void *data );
 
 void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend );
 

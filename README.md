@@ -2,6 +2,7 @@
 [![GitHub Actions Status](https://github.com/w23/xash3d-fwgs/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/w23/xash3d-fwgs/actions/workflows/c-cpp.yml)
 
 ## TL;DR
+- ![image](https://github.com/w23/xash3d-fwgs/assets/321361/12200b56-df80-4d33-b433-71f5690fb4f5)
 - This fork adds Vulkan renderer to Xash3D-FWGS engine.
 - This is work-in-progress. It is in early stages and is not ready for unsupervised usage.
 - Vulkan renderer targets two different modes:
@@ -13,19 +14,20 @@
 - [Page on Mod DB](https://www.moddb.com/mods/half-life-rtx) (screenshots, etc).
 
 ## Current status
-- See Issues and [ref/vk/TODO.md](ref/vk/TODO.md)
-- Traditional rasterizer works with some issues.
+- See [issues](https://github.com/w23/xash3d-fwgs/issues) and [project](https://github.com/users/w23/projects/2/views/12)
+- Traditional rasterizer mostly works:
 	- Works on Windows and Linux with any Vulkan GPU (and at some point it worked on Raspberry Pi 4 even).
 	- It is slower than OpenGL renderer (1. I suck at Vulkan. 2. No visibility culling is performed).
-	- Some features are not implemented yet.
+	- Some features are not implemented yet, like decals, dynamic lighting is different and way off, etc.
 - Ray tracer mostly works too, with dynamic GI and stuff.
 	- It also requires material remaster (i.e. newer textures for PBR parameters) and missing RAD files for most of the game maps.
 	- Works under both Windows and Linux.
 	- Works on both AMD and Nvidia GPUs.
-- If you feel adventurous, you can follow [build instructions](https://github.com/w23/xash3d-fwgs/wiki/64-bit-build-on-Windows). Note that they might be slightly out of date, kek.
+	- Works on Steam Deck with _interactive framerates_.
+- If you feel adventurous, you can follow [build instructions](https://github.com/w23/xash3d-fwgs/wiki/How-to-build-a-64bit). Note that they might be slightly out of date, kek.
 
 ## Follow development
-This project is 99.999% developed live on stream. I'm not a graphics programmer, and have no idea what I'm doing. I'm essentially learning Vulkan, game engine renderer development, linear algebra, and ray tracing techniques while getting hands dirty with this. This is all for your amusement.
+This project is 99% developed live on stream. I'm not a graphics programmer, and have no idea what I'm doing. I'm essentially learning Vulkan, game engine renderer development, linear algebra, and ray tracing techniques while getting hands dirty with this. This is all for your amusement.
 
 You can watch me making a fool of myself publicly here:
 - [Archive playlist on YouTube/floba23](https://www.youtube.com/playlist?list=PLP0z1CQXyu5CrDa522FklxbOC0SM_Manl)
@@ -37,36 +39,30 @@ Regular upstream Xash3D README.md follows.
 
 ---
 
-# Xash3D FWGS Engine
+# Xash3D FWGS Engine <img align="right" width="128" height="128" src="https://github.com/FWGS/xash3d-fwgs/raw/master/game_launch/icon-xash-material.png" alt="Xash3D FWGS icon" />
 [![GitHub Actions Status](https://github.com/FWGS/xash3d-fwgs/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/FWGS/xash3d-fwgs/actions/workflows/c-cpp.yml) [![FreeBSD Build Status](https://img.shields.io/cirrus/github/FWGS/xash3d-fwgs?label=freebsd%20build)](https://cirrus-ci.com/github/FWGS/xash3d-fwgs) [![Discord Server](https://img.shields.io/discord/355697768582610945.svg)](http://fwgsdiscord.mentality.rip/) \
-[![Download Stable](https://img.shields.io/badge/download-stable-yellow)](https://github.com/FWGS/xash3d-fwgs/releases/latest) [![Download Testing](https://img.shields.io/badge/downloads-testing-orange)](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous) 
+[![Download Stable](https://img.shields.io/badge/download-stable-yellow)](https://github.com/FWGS/xash3d-fwgs/releases/latest) [![Download Testing](https://img.shields.io/badge/downloads-testing-orange)](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous)
 
-Xash3D FWGS is a fork of Xash3D Engine by Unkle Mike with extended features and crossplatform.
+Xash3D FWGS is a game engine, aimed to provide compatibility with Half-Life Engine and extend it, as well as to give game developers well known workflow.
 
-```
-Xash3D is a game engine, aimed to provide compatibility with Half-Life Engine, 
-as well as to give game developers well known workflow and extend it.
-Read more about Xash3D on ModDB: https://www.moddb.com/engines/xash3d-engine
-```
+Xash3D FWGS is a heavily modified fork of an original [Xash3D Engine](https://www.moddb.com/engines/xash3d-engine) by Unkle Mike.
+
+## Donate
+[![Donate to FWGS button](https://img.shields.io/badge/Donate_to_FWGS-%3C3-magenta)](Documentation/donate.md) \
+If you like Xash3D FWGS, consider supporting individual engine maintainers. By supporting us, you help to continue developing this game engine further. The sponsorship links are available in [documentation](Documentation/donate.md).
 
 ## Fork features
-* HLSDK 2.4 support.
-* Crossplatform: supported x86 and ARM on Windows/Linux/BSD/Android. ([see docs for more info](Documentation/ports.md))
-* Modern compilers support: say no more to MSVC6.
-* Better multiplayer support: multiple master servers, headless dedicated server.
-* Mobility API: allows better game integration on mobile devices(vibration, touch controls)
-* Different input methods: touch, gamepad and classic mouse & keyboard.
+* Steam Half-Life (HLSDK 2.4) support.
+* Crossplatform and modern compilers support: supports Windows, Linux, BSD & Android on x86 & ARM and [many more](Documentation/ports.md).
+* Better multiplayer support: multiple master servers, headless dedicated server, voice chat and IPv6 support.
+* Multiple renderers support: OpenGL, GLESv1, GLESv2 and Software.
+* Advanced virtual filesystem: `.pk3` and `.pk3dir` support, compatibility with GoldSrc FS module, fast case-insensitivity emulation for crossplatform.
+* Mobility API: better game integration on mobile devices (vibration, touch controls)
+* Different input methods: touch and gamepad in addition to mouse & keyboard.
 * TrueType font rendering, as a part of mainui_cpp.
-* Multiple renderers support: OpenGL, GLESv1, GLESv2, Software.
-* Voice support.
-* External filesystem module like in GoldSrc engine.
-* External vgui support module.
-* PNG image format support.
-* A set of small improvements, without broken compatibility.
-
-## Planned fork features
-* Virtual Reality support and game API.
-* Vulkan renderer.
+* External VGUI support module.
+* PNG & KTX2 image format support.
+* [A set of small improvements](Documentation/), without broken compatibility.
 
 ## Installation & Running
 0) Get Xash3D FWGS binaries: you can use [testing](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous) build or you can compile engine from source code.

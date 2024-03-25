@@ -20,6 +20,7 @@ typedef struct rt_draw_instance_s {
 	matrix4x4 prev_transform_row;
 	vec4_t color;
 	uint32_t material_mode; // MATERIAL_MODE_ from ray_interop.h
+	uint32_t material_flags; // material_flag_bits_e
 } rt_draw_instance_t;
 
 typedef struct {
@@ -101,8 +102,8 @@ rt_kusochki_t RT_KusochkiAllocLong(int count);
 uint32_t RT_KusochkiAllocOnce(int count);
 void RT_KusochkiFree(const rt_kusochki_t*);
 
-struct vk_render_geometry_s;
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_color);
+//struct vk_render_geometry_s;
+//qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_color);
 
 qboolean RT_DynamicModelInit(void);
 void RT_DynamicModelShutdown(void);

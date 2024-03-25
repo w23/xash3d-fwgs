@@ -41,21 +41,17 @@ static void SequenceNameFix( void )
 {
 	int			 i, j, counter;
 	qboolean		 hasduplicates = false;
-	mstudioseqdesc_t	*seqdesc, *seqdesc1;
+	mstudioseqdesc_t	*seqdesc = (mstudioseqdesc_t *)( (byte *)model_hdr + model_hdr->seqindex ), *seqdesc1;
 
-	for( i = 0; i < model_hdr->numseq; i++ )
+	for( i = 0; i < model_hdr->numseq; ++i, ++seqdesc )
 	{
-		seqdesc = (mstudioseqdesc_t *)( (byte *)model_hdr + model_hdr->seqindex ) + i;
-
 		counter = 1;
 
-		for( j = 0; j < model_hdr->numseq; j++ )
-		{
-			seqdesc1 = (mstudioseqdesc_t *)( (byte *)model_hdr + model_hdr->seqindex ) + j;
+		seqdesc1 = (mstudioseqdesc_t *)( (byte *)model_hdr + model_hdr->seqindex );
 
+		for( j = 0; j < model_hdr->numseq; ++j, ++seqdesc1 )
 			if( j != i && !Q_strncmp( seqdesc1->label, seqdesc->label, sizeof( seqdesc1->label ) ) )
 				Q_snprintf( seqdesc1->label, sizeof( seqdesc1->label ), "%s_%i", seqdesc1->label, ++counter );
-		}
 
 		if( counter > 1 )
 		{
@@ -79,15 +75,11 @@ BoneNameFix
 static void BoneNameFix( void )
 {
 	int		 i, counter = 0;
-	mstudiobone_t	*bone;
+	mstudiobone_t	*bone = (mstudiobone_t *)( (byte *)model_hdr + model_hdr->boneindex );
 
-	for( i = 0; i < model_hdr->numbones; i++ )
-	{
-		bone = (mstudiobone_t *)( (byte *)model_hdr + model_hdr->boneindex ) + i;
-
+	for( i = 0; i < model_hdr->numbones; ++i, ++bone )
 		if( bone->name[0] == '\0' )
 			Q_snprintf( bone->name, sizeof( bone->name ), "MDLDEC_Bone%i", ++counter );
-	}
 
 	if( counter )
 		printf( "WARNING: Gived name to %i unnamed bone(s).\n", counter );
@@ -266,6 +258,8 @@ static void ShowHelp( const char *app_name )
 
 int main( int argc, char *argv[] )
 {
+	int ret = 0;
+
 	puts( "\nHalf-Life Studio Model Decompiler " APP_VERSION );
 	puts( "Copyright Flying With Gauss 2020 (c) " );
 	puts( "--------------------------------------------------" );
@@ -273,6 +267,7 @@ int main( int argc, char *argv[] )
 	if( argc == 1 )
 	{
 		ShowHelp( argv[0] );
+		ret = 2;
 		goto end;
 	}
 	else if( argc == 3 )
@@ -280,6 +275,7 @@ int main( int argc, char *argv[] )
 		if( Q_strlen( argv[2] ) > MAX_SYSPATH - 2 )
 		{
 			fputs( "ERROR: Destination path is too long.\n", stderr );
+			ret = 1;
 			goto end;
 		}
 
@@ -287,7 +283,10 @@ int main( int argc, char *argv[] )
 	}
 
 	if( !LoadActivityList( argv[0] ) || !LoadMDL( argv[1] ) )
+	{
+		ret = 1;
 		goto end;
+	}
 
 	WriteQCScript();
 	WriteSMD();
@@ -298,6 +297,6 @@ int main( int argc, char *argv[] )
 end:
 	puts( "--------------------------------------------------" );
 
-	return 0;
+	return ret;
 }
 

@@ -17,15 +17,11 @@ LITEPANEL1       190 170 120  2500
 ~LIGHT3F         200 190 140  2500
 +0~GENERIC85     110 160 220  25500 // 11000 16000 22000
 ~SPOTBLUE        7   163 245  18000
-//+0~LAB1_CMP2     255 255 255  20
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
 //+1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 //+2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
-+0~LAB1_CMP2     255 255 255  0 // TODO: emissive texture
-+1~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
-+2~LAB1_CMP2     255 255 255  0 // hack, because no inheritance yet
-//LAB1_COMP3D      255 255 255  20
-LAB1_COMP3D      255 255 255  0 // TODO: emissive texture
-~LAB1_COMP7      255 255 255  20
+//LAB1_COMP3D      255 255 255  20 // TODO: emissive texture
+//~LAB1_COMP7      255 255 255  20 // TODO: emissive texture
 +0~FIFTS_LGHT5   255 255 255  10000
 
 GENERIC105       255 100 100  0

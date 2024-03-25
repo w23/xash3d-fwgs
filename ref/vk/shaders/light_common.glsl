@@ -4,10 +4,6 @@
 
 #include "ray_kusochki.glsl"
 
-#ifndef TEXTURES_INCLUDED_ALREADY_FIXME
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
-#endif
-
 #ifdef RAY_TRACE2
 #include "ray_shadow_interface.glsl"
 layout(location = PAYLOAD_LOCATION_SHADOW) rayPayloadEXT RayPayloadShadow payload_shadow;
@@ -150,25 +146,6 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 
 #else
 #error RAY_TRACE or RAY_QUERY
-#endif
-}
-
-// This is an entry point for evaluation of all other BRDFs based on selected configuration (for direct light)
-void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
-	// Prepare data needed for BRDF evaluation - unpack material properties and evaluate commonly used terms (e.g. Fresnel, NdotL, ...)
-	const BrdfData data = prepareBRDFData(N, L, V, material);
-
-	// Ignore V and L rays "below" the hemisphere
-	//if (data.Vbackfacing || data.Lbackfacing) return vec3(0.0f, 0.0f, 0.0f);
-
-	// Eval specular and diffuse BRDFs
-	specular = evalSpecular(data);
-	diffuse = evalDiffuse(data);
-
-	// Combine specular and diffuse layers
-#if COMBINE_BRDFS_WITH_FRESNEL
-	// Specular is already multiplied by F, just attenuate diffuse
-	diffuse *= vec3(1.) - data.F;
 #endif
 }
 

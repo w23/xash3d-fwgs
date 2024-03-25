@@ -334,24 +334,6 @@ void Sys_RestoreCrashHandler( void )
 
 static struct sigaction oldFilter;
 
-#ifdef XASH_DYNAMIC_DLADDR
-static int d_dladdr( void *sym, Dl_info *info )
-{
-	static int (*dladdr_real) ( void *sym, Dl_info *info );
-
-	if( !dladdr_real )
-		dladdr_real = dlsym( (void*)(size_t)(-1), "dladdr" );
-
-	memset( info, 0, sizeof( *info ) );
-
-	if( !dladdr_real )
-		return -1;
-
-	return dladdr_real(  sym, info );
-}
-#define dladdr d_dladdr
-#endif
-
 static int Sys_PrintFrame( char *buf, int len, int i, void *addr )
 {
 	Dl_info dlinfo;
@@ -406,9 +388,9 @@ static void Sys_Crash( int signal, siginfo_t *si, void *context)
 		bp = (void**)ucontext->uc_mcontext.mc_ebp;
 		sp = (void**)ucontext->uc_mcontext.mc_esp;
 	#elif XASH_NETBSD
-		pc = (void*)ucontext->uc_mcontext.__gregs[REG_EIP];
-		bp = (void**)ucontext->uc_mcontext.__gregs[REG_EBP];
-		sp = (void**)ucontext->uc_mcontext.__gregs[REG_ESP];
+		pc = (void*)ucontext->uc_mcontext.__gregs[_REG_EIP];
+		bp = (void**)ucontext->uc_mcontext.__gregs[_REG_EBP];
+		sp = (void**)ucontext->uc_mcontext.__gregs[_REG_ESP];
 	#elif XASH_OPENBSD
 		pc = (void*)ucontext->sc_eip;
 		bp = (void**)ucontext->sc_ebp;

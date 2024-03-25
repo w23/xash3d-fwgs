@@ -6,7 +6,7 @@
 #include "xash3d_mathlib.h"
 
 #define MODULE_NAME "studio"
-#define LOG_MODULE LogModule_Studio
+#define LOG_MODULE studio
 
 typedef struct {
 	const studiohdr_t *studio_header_key;
@@ -285,7 +285,8 @@ r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_i
 	}
 
 	subinfo->render_refcount++;
-	DEBUG("%s: submodel=%p(%s) \"%s\" rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, mode, subinfo->submodel_key->name, render, subinfo->render_refcount);
+	DEBUG("%s: submodel=%p(%s) %s rendermodel=%p refcount=%d",
+		__FUNCTION__, subinfo->submodel_key, subinfo->submodel_key->name, mode, render, subinfo->render_refcount);
 	return render;
 }
 
@@ -297,7 +298,8 @@ void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submode
 	render_submodel->_.info->render_refcount--;
 
 	const r_studio_submodel_info_t* const subinfo = render_submodel->_.info;
-	DEBUG("%s: submodel=%p(%s) rendermodel=%p refcount=%d", __FUNCTION__, subinfo->submodel_key, subinfo->submodel_key->name, render_submodel, subinfo->render_refcount);
+	DEBUG("%s: submodel=%p(%s) rendermodel=%p refcount=%d",
+		__FUNCTION__, subinfo->submodel_key, subinfo->submodel_key->name, render_submodel, subinfo->render_refcount);
 
 	if (!render_submodel->_.info->is_dynamic)
 		return;

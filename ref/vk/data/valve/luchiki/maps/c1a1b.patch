@@ -1,0 +1,271 @@
+// section 0
+{
+"_xvk_ent_id" "140" // remove hack lights entity
+}
+{ // TODO: animate texture
+"_xvk_surface_id" "3391 3407" // +0~FIFTS_LGHT4   160 170 220  4000
+"_light" "160 170 220  5000"
+//"_xvk_material" "WHITE1_ANIMATE"
+}
+
+// section 1
+// TODO: correct brightness
+{
+"_xvk_ent_id" "19" // remove hack lights entity
+}
+{
+"_xvk_surface_id" "2298" // +A~FIFTIES_LGT2  160 170 220  5000
+"_light" "160 170 220 0"
+}
+
+
+// section ...
+{
+"_xvk_ent_id" "17 18" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "25" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "20" // remove hack lights entity
+"_light" "80 80 160 500"
+"origin" "1392 -10 35"
+}
+{
+"_xvk_ent_id" "27" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "26" // remove hack lights entity
+"_light" "80 80 160 500"
+"origin" "1761 -1034 57"
+}
+
+{
+"_xvk_ent_id" "110 109 108 23" // remove hack lights entity
+}
+
+{
+"_xvk_ent_id" "22 21 24" // remove hack lights entity
+}
+
+
+// canalization
+{
+"_xvk_ent_id" "366 365 364 363 362 367 368 369 370 371" // remove hack lights entity
+}
+{ // focus
+"_xvk_ent_id" "361"
+"origin" "2348 -1186 -288"
+"_light" "247 249 157 150"
+}
+
+// section ...
+{
+"_xvk_ent_id" "267 266" // remove hack lights entity
+}
+{ // FIXME: color should take from translucent texture
+"_xvk_surface_id" "9" // +0LAB1_W6B       150 160 210  4000
+"_light" "70 200 110 4000" // color from hack light
+}
+
+
+// smooth
+{
+"_xvk_ent_id" "329 321 322 323 324"
+"_xvk_smooth_entire_model" "1"
+}
+//{ // FOR TESTING
+//"_xvk_smoothing_group" "5577 5575 5579 5581 5576 5586 5583 5585 5584 5582 5580 5578 " // 5569 5572 5571 5570 5573 + //5567 5565 5568 5566
+//}
+
+
+{
+//"_xvk_smoothing_excluded_pairs" "2790 2791 2792 2793 3187 2850 2874 2871 2872 2853 2900 2901 3182 3181" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_excluded_pairs" "2792 2790 2793 2791 2871 2850 2872 3187" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_excluded_pairs" "2788 2786 2787 3191 2786 2787 2870 2849 2868" // wall // TODO: bad autosmooth
+}
+{
+//"_xvk_smoothing_threshold" "44" //workaround
+}
+
+{
+"_xvk_smoothing_excluded" "2120 2117 2118 1269 1267 2791 2792 2793"
+}
+
+// wall
+{
+"_xvk_smoothing_excluded" "2302 2480 2540"
+}
+
+// pipes
+{ // pipe1
+"_xvk_smoothing_group" "2262 2263 2261 2259 2186 2257 2258 2260"
+}
+{
+"_xvk_smoothing_group" "2278 2280 2279 2277 2275 2273 2274 2276"
+}
+{
+"_xvk_smoothing_group" "2272 2270 2268 2266 2187 2264 2269 2271"
+}
+{ // water pipe1
+"_xvk_smoothing_group" "3932 3930 3928 3934 3944 3940 3938 3939 3933"
+}
+{
+"_xvk_smoothing_group" "3929 3931 3927 3935 3936 3943 3941 3942 3937 3926"
+}
+{ // pipe2
+"_xvk_smoothing_group" "2212 2214 2216 2215 2213 2211 2208 2210"
+}
+{
+"_xvk_smoothing_group" "2228 2230 2229 2227 2225 2223 2224 2226"
+}
+{
+"_xvk_smoothing_group" "2242 2244 2248 2250 2249 2247 2238 2240"
+}
+{
+"_xvk_smoothing_group" "2717 2719 2721 2723 2724 2722 2715 2705"
+}
+{ // pipe3
+"_xvk_smoothing_group" "2220 2218 2207 2196 2194 2198 2219 2209"
+}
+{
+"_xvk_smoothing_group" "2221 2232 2191 2193 2192 2190 2200 2235 2234"
+}
+{
+"_xvk_smoothing_group" "2253 2252 2243 2241 2239 2237 2251 2245"
+}
+{ // pipe kusok
+"_xvk_smoothing_group" "4405 4407 4409 4408 4406 4404 4402 4403"
+}
+
+// mini pipes
+{
+"_xvk_smoothing_group" "3854 3855 3848"
+}
+{
+"_xvk_smoothing_group" "3850 3872 3000 2988 2999 2987 2998 2986"
+}
+{
+"_xvk_smoothing_group" "2996 2979"
+}
+
+// pipe
+{
+"_xvk_smoothing_group" "2367 2369 2370 2368 2366 2364 2363 2365"
+}
+// pipe
+{
+"_xvk_smoothing_group" "2448 2446 2447 2449 2391 2398 2399 2397"
+}
+{
+"_xvk_smoothing_group" "2402 2403 2446 2447 2450 2454 2391"
+}
+{
+"_xvk_smoothing_group" "2405 2401 2407 2452 2451 2387 2382 2383 2381"
+}
+{
+"_xvk_smoothing_group" "1010 1002 1009 1011 1013 1015 1014 1012"
+}
+
+// pipe
+{
+"_xvk_smoothing_group" "2430 2434 2420 2428 2415 2410 2412 2411"
+}
+{
+"_xvk_smoothing_group" "2432 2431 2433 2425 2424"
+}
+{
+"_xvk_smoothing_group" "2427 2425 2424 2426 2418 2406 2409 2400"
+}
+{
+"_xvk_smoothing_group" "1002 1007 999 998 1004 1006 1008 1003"
+}
+
+// wall
+{
+"_xvk_smoothing_excluded" "2633 3178 2634"
+}
+{
+"_xvk_smoothing_excluded" "2788 2786 2787"
+}
+{
+"_xvk_smoothing_excluded" "2898"
+}
+{
+"_xvk_smoothing_excluded" "2798 2800 2799"
+}
+{
+"_xvk_smoothing_excluded" "1605 1606"
+}
+
+{
+"_xvk_smoothing_excluded" "1258 831 833"
+}
+
+
+{
+"_xvk_smoothing_excluded" "840 837"
+}
+
+{
+"_xvk_smoothing_excluded" "1807 1805 1481 1479"
+}
+
+// mine pipe
+{
+"_xvk_smoothing_group" "2584 2597 2582 2581 2962 2965 2961 2958"
+}
+
+//wall
+{
+"_xvk_smoothing_excluded" "2930 2929"
+}
+
+// wall
+{
+"_xvk_smoothing_excluded" "1076"
+}
+
+// grating
+{
+"_xvk_smoothing_group" "1172 1173 1174 1175 803 800 801 802"
+}
+{
+"_xvk_smoothing_group" "1841 1845 1838 1846 1349 1353 1354 1355"
+}
+{
+"_xvk_smoothing_group" "1842 1844 1839 1847 1350 1357 1358 1352"
+}
+{
+"_xvk_smoothing_group" "1843 1849 1840 1848 1351 1360 1359 1356"
+}
+{
+"_xvk_smoothing_group" "1177 1176 1179 1778 1837 1850 1852 1851"
+}
+{
+"_xvk_smoothing_group" "808 807 799 809 1366 1365 1368 1367"
+}
+{
+"_xvk_smoothing_group" "806 805 798 804 1362 1363 1364 1361"
+}
+
+
+
+// canalization
+{ // bad geometry
+//"_xvk_smoothing_excluded" "629 581 577 583"
+}
+{
+//"_xvk_smoothing_group" "629 581 577 583"
+}
+
+
+
+// wall
+{
+"_xvk_smoothing_excluded" "1781 1782 1783"
+}

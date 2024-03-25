@@ -1,0 +1,98 @@
+// wagonchik
+{
+"_xvk_ent_id" "71 63 70 60 65 61 67 72 64 68 62 66 59 69" // remove hack light entity
+}
+{
+"_xvk_ent_id" "57 58" // remove hack light entity "EXIT"
+}
+// fix texture coordinates
+{
+"_xvk_surface_id" "3124 3125 3208 3207" // subway_lights
+"_xvk_tex_offset" "0 1.4"
+"_xvk_tex_scale" "1 0.9"
+}
+{
+"_xvk_surface_id" "3141 3139 3118 3120" // subway_ceiling (fan box)
+"_xvk_tex_offset" "40 0"
+}
+//{
+//"_xvk_surface_id" "1511" // subway_seat
+//"_xvk_tex_offset" "0 0.3"
+//}
+//{
+//"_xvk_surface_id" "1520" // subway_floor1
+//"_xvk_tex_offset" "0 2.8"
+//}
+{
+"_xvk_surface_id" "3309 3310" // subway_floor2
+"_xvk_tex_offset" "0 1"
+}
+// fix textures
+{
+"_xvk_surface_id" "3074 3073" // subway_inpanel (more correct)
+"_xvk_material" "subway_inpanel_2"
+//"_xvk_tex_offset" "15 0"
+}
+{
+"_xvk_surface_id" "3010	3009 3011 3015 3013 3012 3014 3017 3018 3016 3019 3020 3022 3021" // subway_inend -> subway_outend
+"_xvk_material" "subway_outend_2"
+}
+
+
+// section 0
+{
+"_xvk_ent_id" "13" // remove hack light
+}
+// section 1
+{
+"_xvk_ent_id" "28 31 32 30 29 26 27" // remove hack light
+}
+// correct light
+{
+"_xvk_surface_id" "629 1552" // SKKYLITE         255 110 40   700
+"_light" "255 110 40 100000"
+}
+
+//{ // testing
+//"_xvk_surface_id" "980 975 872 881 999 885 886 1883 1852 1763 1709 1723 1724 1750 1728" // !TOXICGRN2       20 255 0    350
+//"_xvk_material" ""
+//}
+
+
+// correct light for gman
+{
+"_xvk_surface_id" "1295 1294 1436 1437" // SUBWAY_LIGHTS    190 195 255  1500
+"_light" "190 195 255 5000"
+}
+
+// smoothing
+// broken massive "barrel"
+{ 
+"_xvk_smoothing_group" "1061 1017 1057 1062 1018 1058 951 913 949"
+}
+{
+"_xvk_smoothing_group" "1837 1832 1838 1866 1860 1868 1865 1859 1867"
+}
+// pipe 1
+{
+"_xvk_smoothing_group" "920 933 924 931 923 917"
+}
+{
+"_xvk_smoothing_group" "911 919 918 930 934 929 926 925 928 922 921" // FIXME: bad geometry
+}
+{
+"_xvk_smoothing_group" "854 858 860 856 864 862"
+}
+{
+"_xvk_smoothing_group" "853 857 859 855 863 861"
+}
+// pipe 2
+{
+"_xvk_smoothing_group" "916 937 939 0 942 935"
+}
+{
+"_xvk_smoothing_group" "941 936 912 938 940"
+}
+{
+"_xvk_smoothing_group" "1826 1830 1831 1827 1829 1828"
+}

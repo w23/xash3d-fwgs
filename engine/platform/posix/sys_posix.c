@@ -146,22 +146,13 @@ void Posix_Daemonize( void )
 
 }
 
-#if !XASH_SDL && !XASH_ANDROID
-
-void Platform_Init( void )
-{
-	Posix_Daemonize();
-}
-void Platform_Shutdown( void ) {}
-#endif
-
 #if XASH_TIMER == TIMER_POSIX
 double Platform_DoubleTime( void )
 {
 	struct timespec ts;
 #if XASH_IRIX
 	clock_gettime( CLOCK_SGI_CYCLE, &ts );
-#else	
+#else
 	clock_gettime( CLOCK_MONOTONIC, &ts );
 #endif
 	return (double) ts.tv_sec + (double) ts.tv_nsec/1000000000.0;

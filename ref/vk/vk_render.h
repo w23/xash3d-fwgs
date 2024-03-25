@@ -1,4 +1,5 @@
 #pragma once
+#include "vk_materials.h"
 #include "vk_common.h"
 #include "vk_const.h"
 #include "vk_core.h"
@@ -9,25 +10,7 @@ void VK_RenderShutdown( void );
 struct ref_viewpass_s;
 void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp );
 
-// Quirk for passing surface type to the renderer
-// xash3d does not really have a notion of materials. Instead there are custom code paths
-// for different things. There's also render_mode for entities which determine blending mode
-// and stuff.
-// For ray tracing we do need to assing a material to each rendered surface, so we need to
-// figure out what it is given heuristics like render_mode, texture name, surface flags, source entity type, etc.
-typedef enum {
-	kXVkMaterialRegular = 0,
-
-	// Set for SURF_DRAWSKY surfaces in vk_brush.c.
-	// Used: for setting TEX_BASE_SKYBOX for skybox texture sampling and environment shadows.
-	// Remove: pass it as a special texture/material index (e.g. -2).
-	kXVkMaterialSky,
-
-	// Set for chrome studio submodels.
-	// Used: ray tracing sets gray roughness texture to get smooth surface look.
-	// Remove: Have an explicit material for chrome surfaces.
-	kXVkMaterialChrome,
-} XVkMaterialType;
+#define TEX_BASE_SKYBOX 0x0f000000u // FIXME ray_interop.h
 
 typedef struct vk_render_geometry_s {
 	int index_offset, vertex_offset;
@@ -42,11 +25,11 @@ typedef struct vk_render_geometry_s {
 	// Remove: have an explicit list of surfaces with animated textures
 	const struct msurface_s *surf_deprecate;
 
-	// Animated textures will be dynamic and change between frames
-	int texture;
-
 	// If this geometry is special, it will have a material type override
-	XVkMaterialType material;
+	r_vk_material_t material;
+
+	// Olde unpatched texture used for traditional renderer
+	int ye_olde_texture;
 
 	// for kXVkMaterialEmissive{,Glow} and others
 	vec3_t emissive;
@@ -96,6 +79,20 @@ typedef enum {
 	kVkRenderType_COUNT
 } vk_render_type_e;
 
+typedef enum {
+	// MUST be congruent to MATERIAL_MODE_* definitions in shaders/ray_interop.h
+	kMaterialMode_Opaque = 0,
+	kMaterialMode_AlphaTest = 1,
+	kMaterialMode_Translucent = 2,
+	kMaterialMode_BlendAdd = 3,
+	kMaterialMode_BlendMix = 4,
+	kMaterialMode_BlendGlow = 5,
+
+	kMaterialMode_COUNT = 6,
+} material_mode_e;
+
+uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type);
+
 struct rt_light_add_polygon_s;
 struct rt_model_s;
 
@@ -110,16 +107,6 @@ typedef struct vk_render_model_s {
 	vk_render_geometry_t *geometries;
 
 	struct rt_model_s *rt_model;
-
-	// This model will be one-frame only, its buffers are not preserved between frames
-	// TODO deprecate
-	qboolean dynamic;
-
-	// Polylights which need to be added per-frame dynamically
-	// Used for non-worldmodel brush models which are not static
-	// TODO this doesn't belong here at all
-	struct rt_light_add_polygon_s *dynamic_polylights;
-	int dynamic_polylights_count;
 } vk_render_model_t;
 
 // Initialize model from scratch
@@ -138,16 +125,24 @@ void R_RenderModelDestroy( vk_render_model_t* model );
 qboolean R_RenderModelUpdate( const vk_render_model_t *model );
 qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int *geom_indices, int geom_indices_count);
 
+typedef enum {
+	kMaterialFlag_None = 0,
+	kMaterialFlag_CullBackFace_Bit = (1<<0),
+} material_flag_bits_e;
+
 typedef struct {
-	vk_render_type_e render_type;
+	vk_render_type_e render_type; // TODO rename legacy
+	material_mode_e material_mode;
+	uint32_t material_flags; // material_flag_bits_e
 
 	// These are "consumed": copied into internal storage and can be pointers to stack vars
 	const vec4_t *color;
 	const matrix4x4 *transform, *prev_transform;
 
-	// Global texture override if > 0
-	// Used by sprite+quad instancing
-	int textures_override;
+	struct {
+		const r_vk_material_t* material;
+		int old_texture;
+	} override;
 } r_model_draw_t;
 
 void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args);
@@ -159,7 +154,8 @@ typedef struct {
 	int vertices_count, indices_count;
 
 	int render_type;
-	int texture;
+	r_vk_material_t material;
+	int ye_olde_texture;
 	const vec4_t *emissive;
 	const vec4_t *color;
 } r_draw_once_t;
@@ -169,7 +165,7 @@ void VK_RenderDebugLabelBegin( const char *label );
 void VK_RenderDebugLabelEnd( void );
 
 void VK_RenderBegin( qboolean ray_tracing );
-void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw );
+void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32_t height, int frame_index );
 struct vk_combuf_s;
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h );
 

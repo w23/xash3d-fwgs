@@ -1,11 +1,12 @@
 #include "vk_sprite.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "camera.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_scene.h"
 #include "r_speeds.h"
 #include "vk_math.h"
+#include "vk_logs.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -16,6 +17,7 @@
 #include <memory.h>
 
 #define MODULE_NAME "sprite"
+#define LOG_MODULE sprite
 
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
@@ -103,8 +105,8 @@ static qboolean createQuadModel(void) {
 		.element_count = 6,
 		.index_offset = g_sprite.quad.geom.indices.unit_offset,
 
-		.material = kXVkMaterialRegular,
-		.texture = tglob.defaultTexture,
+		.material = R_VkMaterialGetForTexture(tglob.defaultTexture),
+		.ye_olde_texture = tglob.defaultTexture,
 		.emissive = {1,1,1},
 	};
 
@@ -240,12 +242,12 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	if( FBitSet( mod->flags, MODEL_CLIENT )) // it's a HUD sprite
 	{
 		Q_snprintf( texname, sizeof( texname ), "#HUD/%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 	else
 	{
 		Q_snprintf( texname, sizeof( texname ), "#%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 
 	// setup frame description
@@ -417,6 +419,8 @@ void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean 
 	msprite_t		*psprite;
 	SpriteLoadContext ctx = {0};
 
+	DEBUG("%s(%s, %p, %d, %d)", __FUNCTION__, mod->name, buffer, (int)size, (int)*loaded);
+
 	if( loaded ) *loaded = false;
 	Q_snprintf( texname, sizeof( texname ), "#%s", mod->name );
 	gEngine.Image_SetForceFlags( IL_OVERVIEW );
@@ -504,7 +508,7 @@ void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean 
 		pspriteframe->left = -( w >> 1 );
 		pspriteframe->down = ( h >> 1 ) - h;
 		pspriteframe->right = w + -( w >> 1 );
-		pspriteframe->gl_texturenum = VK_LoadTextureInternal( texname, &temp, TF_IMAGE );
+		pspriteframe->gl_texturenum = R_TextureUploadFromBuffer( texname, &temp, TF_IMAGE, false );
 
 		xl += w;
 		if( xl >= pix->width )
@@ -798,13 +802,20 @@ static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *fram
 	Matrix4x4_CreateFromVectors(transform, right, up, v_normal, org);
 
 	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
+	const r_vk_material_t material_override = R_VkMaterialGetForTexture(texture);
+	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
 
 	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
 		.render_type = render_type,
+		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
 		.color = (const vec4_t*)color,
 		.transform = &transform,
 		.prev_transform = &transform,
-		.textures_override = texture,
+		.override = {
+			.material = &material_override,
+			.old_texture = texture,
+		},
 	});
 }
 
@@ -1065,4 +1076,37 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 		pglDepthFunc( GL_LEQUAL );
 	}
 	*/
+}
+
+void Mod_SpriteUnloadTextures( void *data )
+{
+	msprite_t		*psprite;
+	mspritegroup_t	*pspritegroup;
+	mspriteframe_t	*pspriteframe;
+	int		i, j;
+
+	psprite = data;
+
+	if( psprite )
+	{
+		// release all textures
+		for( i = 0; i < psprite->numframes; i++ )
+		{
+			if( psprite->frames[i].type == SPR_SINGLE )
+			{
+				pspriteframe = psprite->frames[i].frameptr;
+				R_TextureFree( pspriteframe->gl_texturenum );
+			}
+			else
+			{
+				pspritegroup = (mspritegroup_t *)psprite->frames[i].frameptr;
+
+				for( j = 0; j < pspritegroup->numframes; j++ )
+				{
+					pspriteframe = pspritegroup->frames[i];
+					R_TextureFree( pspriteframe->gl_texturenum );
+				}
+			}
+		}
+	}
 }

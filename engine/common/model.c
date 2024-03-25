@@ -28,10 +28,9 @@ static model_info_t	mod_crcinfo[MAX_MODELS];
 static model_t	mod_known[MAX_MODELS];
 static int	mod_numknown = 0;
 poolhandle_t      com_studiocache;		// cache for submodels
-convar_t		*mod_studiocache;
-convar_t		*r_wadtextures;
-convar_t		*r_showhull;
-model_t		*loadmodel;
+CVAR_DEFINE( mod_studiocache, "r_studiocache", "1", FCVAR_ARCHIVE, "enables studio cache for speedup tracing hitboxes" );
+CVAR_DEFINE_AUTO( r_wadtextures, "0", 0, "completely ignore textures in the bsp-file if enabled" );
+CVAR_DEFINE_AUTO( r_showhull, "0", 0, "draw collision hulls 1-3" );
 
 /*
 ===============================================================================
@@ -134,9 +133,9 @@ Mod_Init
 void Mod_Init( void )
 {
 	com_studiocache = Mem_AllocPool( "Studio Cache" );
-	mod_studiocache = Cvar_Get( "r_studiocache", "1", FCVAR_ARCHIVE, "enables studio cache for speedup tracing hitboxes" );
-	r_wadtextures = Cvar_Get( "r_wadtextures", "0", 0, "completely ignore textures in the bsp-file if enabled" );
-	r_showhull = Cvar_Get( "r_showhull", "0", 0, "draw collision hulls 1-3" );
+	Cvar_RegisterVariable( &mod_studiocache );
+	Cvar_RegisterVariable( &r_wadtextures );
+	Cvar_RegisterVariable( &r_showhull );
 
 	Cmd_AddCommand( "mapstats", Mod_PrintWorldStats_f, "show stats for currently loaded map" );
 	Cmd_AddCommand( "modellist", Mod_Modellist_f, "display loaded models list" );
@@ -287,7 +286,6 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 	Con_Reportf( "loading %s\n", mod->name );
 	mod->needload = NL_PRESENT;
 	mod->type = mod_bad;
-	loadmodel = mod;
 
 	// call the apropriate loader
 	switch( *(uint *)buf )
@@ -403,7 +401,7 @@ static void Mod_PurgeStudioCache( void )
 	int	i;
 
 	// refresh hull data
-	SetBits( r_showhull->flags, FCVAR_CHANGED );
+	SetBits( r_showhull.flags, FCVAR_CHANGED );
 #if !XASH_DEDICATED
 	Mod_ReleaseHullPolygons();
 #endif

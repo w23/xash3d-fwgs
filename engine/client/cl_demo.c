@@ -372,7 +372,7 @@ void CL_WriteDemoHeader( const char *name )
 	demo.header.id = IDEMOHEADER;
 	demo.header.dem_protocol = DEMO_PROTOCOL;
 	demo.header.net_protocol = cls.legacymode ? PROTOCOL_LEGACY_VERSION : PROTOCOL_VERSION;
-	demo.header.host_fps = bound( MIN_FPS, host_maxfps->value, MAX_FPS );
+	demo.header.host_fps = bound( MIN_FPS, host_maxfps.value, MAX_FPS );
 	Q_strncpy( demo.header.mapname, clgame.mapname, sizeof( demo.header.mapname ));
 	Q_strncpy( demo.header.comment, clgame.maptitle, sizeof( demo.header.comment ));
 	Q_strncpy( demo.header.gamedir, FS_Gamedir(), sizeof( demo.header.gamedir ));
@@ -648,11 +648,13 @@ void CL_DemoStartPlayback( int mode )
 {
 	if( cls.changedemo )
 	{
+		int maxclients = cl.maxclients;
+
 		S_StopAllSounds( true );
 		SCR_BeginLoadingPlaque( false );
 
-		CL_ClearState ();
-		CL_InitEdicts (); // re-arrange edicts
+		CL_ClearState( );
+		CL_InitEdicts( maxclients ); // re-arrange edicts
 	}
 	else
 	{
@@ -698,7 +700,7 @@ void CL_DemoAborted( void )
 	cls.demofile = NULL;
 	cls.demonum = -1;
 
-	Cvar_SetValue( "v_dark", 0.0f );
+	Cvar_DirectSet( &v_dark, "0" );
 }
 
 /*
@@ -716,7 +718,7 @@ void CL_DemoCompleted( void )
 	if( !CL_NextDemo() && !cls.changedemo )
 		UI_SetActiveMenu( true );
 
-	Cvar_SetValue( "v_dark", 0.0f );
+	Cvar_DirectSet( &v_dark, "0" );
 }
 
 /*
@@ -1122,7 +1124,10 @@ void CL_FinishTimeDemo( void )
 	time = host.realtime - cls.td_starttime;
 	if( !time ) time = 1.0;
 
-	Con_Printf( "%i frames %5.3f seconds %5.3f fps\n", frames, time, frames / time );
+	Con_Printf( "timedemo result: %i frames %5.3f seconds %5.3f fps\n", frames, time, frames / time );
+
+	if( Sys_CheckParm( "-timedemo" ))
+		CL_Quit_f();
 }
 
 /*
@@ -1306,7 +1311,7 @@ void CL_CheckStartupDemos( void )
 	}
 
 	// run demos loop in background mode
-	Cvar_SetValue( "v_dark", 1.0f );
+	Cvar_DirectSet( &v_dark, "1" );
 	cls.demos_pending = false;
 	cls.demonum = 0;
 	CL_NextDemo ();
@@ -1322,11 +1327,11 @@ static void CL_DemoGetName( int lastnum, char *filename, size_t size )
 	if( lastnum < 0 || lastnum > 9999 )
 	{
 		// bound
-		Q_strncpy( filename, "demo9999.dem", size );
+		Q_strncpy( filename, "demo9999", size );
 		return;
 	}
 
-	Q_snprintf( filename, size, "demo%04d.dem", lastnum );
+	Q_snprintf( filename, size, "demo%04d", lastnum );
 }
 
 /*
@@ -1381,7 +1386,9 @@ void CL_Record_f( void )
 		for( n = 0; n < 10000; n++ )
 		{
 			CL_DemoGetName( n, demoname, sizeof( demoname ));
-			if( !FS_FileExists( demoname, true ))
+			Q_snprintf( demopath, sizeof( demopath ), "%s.dem", demoname );
+
+			if( !FS_FileExists( demopath, true ))
 				break;
 		}
 
@@ -1468,7 +1475,7 @@ void CL_PlayDemo_f( void )
 	{
 		int	c, neg = false;
 
-		demo.header.host_fps = host_maxfps->value;
+		demo.header.host_fps = host_maxfps.value;
 
 		while(( c = FS_Getc( cls.demofile )) != '\n' )
 		{

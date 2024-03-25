@@ -18,7 +18,6 @@ typedef void *HMODULE;
 
 HMODULE g_hModule;
 FSAPI g_pfnGetFSAPI;
-typedef void *(*pfnCreateInterface_t)( const char *, int * );
 pfnCreateInterface_t g_pfnCreateInterface;
 fs_api_t g_fs;
 fs_globals_t *g_nullglobals;
@@ -48,7 +47,7 @@ static bool LoadFilesystem()
 	if( !g_pfnCreateInterface )
 		return false;
 
-	if( !g_pfnCreateInterface( "VFileSystem009", &temp ) || temp != 0 )
+	if( !g_pfnCreateInterface( FILESYSTEM_INTERFACE_VERSION, &temp ) || temp != 0 )
 		return false;
 
 	temp = -1;

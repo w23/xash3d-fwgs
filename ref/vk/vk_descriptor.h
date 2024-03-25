@@ -4,15 +4,12 @@
 
 #include "vk_const.h"
 
+// Only used for traditional renderer
 typedef struct descriptor_pool_s
 {
 	VkDescriptorPool pool;
 
-	// TODO don't expose this, make a function to alloc desc set with given layout instead
-	int next_free;
-	//uint32_t *free_set;
-
-	VkDescriptorSet sets[MAX_TEXTURES];
+	VkDescriptorSet texture_sets[MAX_TEXTURES];
 	VkDescriptorSetLayout one_texture_layout;
 
 	// FIXME HOW THE F
@@ -20,7 +17,8 @@ typedef struct descriptor_pool_s
 	VkDescriptorSetLayout one_uniform_buffer_layout;
 } descriptor_pool_t;
 
-extern descriptor_pool_t vk_desc;
+// FIXME: move to traditional renderer
+extern descriptor_pool_t vk_desc_fixme;
 
 qboolean VK_DescriptorInit( void );
 void VK_DescriptorShutdown( void );
@@ -29,9 +27,9 @@ struct xvk_image_s;
 typedef union {
 	VkDescriptorBufferInfo buffer;
 	VkDescriptorImageInfo image;
-	VkDescriptorImageInfo *image_array;
+	const VkDescriptorImageInfo *image_array;
 	VkWriteDescriptorSetAccelerationStructureKHR accel;
-	const struct xvk_image_s *image_object;
+	const struct r_vk_image_s *image_object;
 } vk_descriptor_value_t;
 
 typedef struct {
@@ -54,8 +52,3 @@ typedef struct {
 void VK_DescriptorsCreate(vk_descriptors_t *desc);
 void VK_DescriptorsWrite(const vk_descriptors_t *desc, int set_slot);
 void VK_DescriptorsDestroy(const vk_descriptors_t *desc);
-
-// typedef enum {
-// 	VK_DescType_SingleTexture,
-// } vk_desc_type_t;
-// VkDescriptorSet VK_DescriptorGetSet( vk_desc_type_t type );

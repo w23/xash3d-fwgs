@@ -1,5 +1,13 @@
 name: Build & Deploy Engine
-on: [push, pull_request]
+on: 
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'ref/vk/data/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'ref/vk/data/**'
 jobs:
 #  cleanup:
 #    runs-on: self-hosted

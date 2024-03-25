@@ -57,6 +57,7 @@ typedef uint64_t longtime_t;
 #define MAX_USERMSG_LENGTH	2048	// don't modify it's relies on a client-side definitions
 
 #define BIT( n )		( 1U << ( n ))
+#define BIT64( n )		( 1ULL << ( n ))
 #define GAMMA		( 2.2f )		// Valve Software gamma
 #define INVGAMMA		( 1.0f / 2.2f )	// back to 1.0
 #define TEXGAMMA		( 0.9f )		// compensate dim textures
@@ -86,16 +87,19 @@ typedef uint64_t longtime_t;
 	#endif
 	#define _format(x) __attribute__((format(printf, x, x+1)))
 	#define NORETURN __attribute__((noreturn))
+	#define NONNULL __attribute__((nonnull))
 #elif defined(_MSC_VER)
 	#define EXPORT          __declspec( dllexport )
 	#define GAME_EXPORT
 	#define _format(x)
 	#define NORETURN
+	#define NONNULL
 #else
 	#define EXPORT
 	#define GAME_EXPORT
 	#define _format(x)
 	#define NORETURN
+	#define NONNULL
 #endif
 
 #if ( __GNUC__ >= 3 )
@@ -177,6 +181,7 @@ typedef struct dll_info_s
 } dll_info_t;
 
 typedef void (*setpair_t)( const char *key, const void *value, const void *buffer, void *numpairs );
+typedef void *(*pfnCreateInterface_t)( const char *, int * );
 
 // config strings are a general means of communication from
 // the server to all connected clients.

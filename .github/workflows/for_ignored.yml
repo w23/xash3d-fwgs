@@ -1,0 +1,16 @@
+name: Pass through for ignored files
+on: 
+  push:
+    paths:
+      - '**.md'
+      - 'ref/vk/data/**'
+  pull_request:
+    paths:
+      - '**.md'
+      - 'ref/vk/data/**'
+jobs:
+  check:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Always pass
+        run: echo "OK"

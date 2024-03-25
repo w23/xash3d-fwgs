@@ -30,8 +30,8 @@ GNU General Public License for more details.
 #if !XASH_WIN32 && !XASH_MOBILE_PLATFORM && !XASH_LOW_MEMORY
 #define XASH_COLORIZE_CONSOLE true
 // use with caution, running engine in Qt Creator may cause a freeze in read() call
-// I was never encountered this bug anywhere else, so still enable by default
-// #define XASH_USE_SELECT 1
+// I have never encountered this bug anywhere else, so still enable by default
+#define XASH_USE_SELECT 1
 #else
 #define XASH_COLORIZE_CONSOLE false
 #endif
@@ -54,6 +54,7 @@ static LogData s_ld;
 char *Sys_Input( void )
 {
 #if XASH_USE_SELECT
+	if( Host_IsDedicated( ))
 	{
 		fd_set rfds;
 		static char line[1024];
@@ -148,7 +149,7 @@ void Sys_InitLog( void )
 		s_ld.logfileno = fileno( s_ld.logfile );
 
 		fprintf( s_ld.logfile, "=================================================================================\n" );
-		fprintf( s_ld.logfile, "\t%s (build %i) started at %s\n", s_ld.title, Q_buildnum(), Q_timestamp( TIME_FULL ) );
+		fprintf( s_ld.logfile, "\t%s (build %i commit %s (%s-%s)) started at %s\n", s_ld.title, Q_buildnum(), Q_buildcommit(), Q_buildos(), Q_buildarch(), Q_timestamp( TIME_FULL ) );
 		fprintf( s_ld.logfile, "=================================================================================\n" );
 	}
 }

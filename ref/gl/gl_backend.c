@@ -220,6 +220,7 @@ void GL_CleanUpTextureUnits( int last )
 			pglDisable( glState.currentTextureTargets[i] );
 			glState.currentTextureTargets[i] = GL_NONE;
 			glState.currentTextures[i] = -1; // unbind texture
+			glState.currentTexturesIndex[i] = 0;
 		}
 
 		GL_SetTexCoordArrayMode( GL_NONE );
@@ -259,6 +260,27 @@ void GL_MultiTexCoord2f( GLenum texture, GLfloat s, GLfloat t )
 }
 
 /*
+====================
+GL_EnableTextureUnit
+====================
+*/
+void GL_EnableTextureUnit( int tmu, qboolean enable )
+{
+	// only enable fixed-function pipeline units
+	if( tmu < glConfig.max_texture_units )
+	{
+		if( enable )
+		{
+			pglEnable( glState.currentTextureTargets[tmu] );
+		}
+		else if( glState.currentTextureTargets[tmu] != GL_NONE )
+		{
+			pglDisable( glState.currentTextureTargets[tmu] );
+		}
+	}
+}
+
+/*
 =================
 GL_TextureTarget
 =================
@@ -273,11 +295,10 @@ void GL_TextureTarget( uint target )
 
 	if( glState.currentTextureTargets[glState.activeTMU] != target )
 	{
-		if( glState.currentTextureTargets[glState.activeTMU] != GL_NONE )
-			pglDisable( glState.currentTextureTargets[glState.activeTMU] );
+		GL_EnableTextureUnit( glState.activeTMU, false );
 		glState.currentTextureTargets[glState.activeTMU] = target;
 		if( target != GL_NONE )
-			pglEnable( glState.currentTextureTargets[glState.activeTMU] );
+			GL_EnableTextureUnit( glState.activeTMU, true );
 	}
 }
 
@@ -610,7 +631,7 @@ void R_ShowTextures( void )
 	static qboolean	showHelp = true;
 	string		shortname;
 
-	if( !CVAR_TO_BOOL( gl_showtextures ))
+	if( !r_showtextures->value )
 		return;
 
 	if( showHelp )
@@ -628,8 +649,8 @@ void R_ShowTextures( void )
 
 rebuild_page:
 	total = base_w * base_h;
-	start = total * (gl_showtextures->value - 1);
-	end = total * gl_showtextures->value;
+	start = total * (r_showtextures->value - 1);
+	end = total * r_showtextures->value;
 	if( end > MAX_TEXTURES ) end = MAX_TEXTURES;
 
 	w = gpGlobals->width / base_w;
@@ -644,10 +665,10 @@ rebuild_page:
 		if( pglIsTexture( image->texnum )) j++;
 	}
 
-	if( i == MAX_TEXTURES && gl_showtextures->value != 1 )
+	if( i == MAX_TEXTURES && r_showtextures->value != 1 )
 	{
 		// bad case, rewind to one and try again
-		gEngfuncs.Cvar_SetValue( "r_showtextures", Q_max( 1, gl_showtextures->value - 1 ));
+		gEngfuncs.Cvar_SetValue( "r_showtextures", Q_max( 1, r_showtextures->value - 1 ));
 		if( ++numTries < 2 ) goto rebuild_page;	// to prevent infinite loop
 	}
 

@@ -52,6 +52,7 @@ typedef struct {
 
 // Lock staging memory for uploading
 r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range);
+r_geometry_range_lock_t R_GeometryRangeLockSubrange(const r_geometry_range_t *range, int vertices_offset, int vertices_count );
 void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock);
 
 typedef struct {
