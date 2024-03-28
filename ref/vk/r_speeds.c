@@ -118,15 +118,16 @@ static void speedsPrintf( const char *msg, ... ) {
 static void metricTypeSnprintf(char *buf, int buf_size, int value, r_speeds_metric_type_t type) {
 	switch (type) {
 		case kSpeedsMetricCount:
-			Q_snprintf(buf, buf_size, "%d", value);
+			Q_snprintf( buf, buf_size, "%d", value );
 			break;
 		case kSpeedsMetricBytes:
-			// TODO different units for different ranges, e.g. < 10k: bytes, < 10M: KiB, >10M: MiB
-			Q_snprintf(buf, buf_size, "%dKiB", value / 1024);
+			Q_strncpy( buf, Q_memprint( (float) value ), buf_size );
 			break;
-		case kSpeedsMetricMicroseconds:
-			Q_snprintf(buf, buf_size, "%.03fms", value * 1e-3f);
+		case kSpeedsMetricMicroseconds: {
+			float msecs = value * 1e-3f; // us -> ms
+			Q_snprintf( buf, buf_size, "%.03f ms", msecs );
 			break;
+		}
 	}
 }
 
@@ -716,25 +717,6 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 	return "UNKNOWN";
 }
 
-// Returns pointer to filename in filepath string.
-// Maybe function like this should be inside filesystem?
-// Examples:
-// on Windows: C:\Users\User\xash3d-fwgs\ref\vk\vk_rtx.c  ->  vk_rtx.c
-// on Linux:   /home/user/xash3d-fwgs/ref/vk/vk_rtx.c     ->  vk.rtx.c (imaginary example, not tested)
-static const char *get_filename_from_filepath( const char *filepath ) {
-	int cursor = Q_strlen( filepath ) - 1;
-	while ( cursor > 0 ) {
-		char c = filepath[cursor];
-		if ( c == '/' || c == '\\' ) {
-			// Advance by 1 char to skip the folder delimiter symbol itself.
-			return &filepath[cursor + 1];
-		}
-		cursor -= 1;
-	}
-
-	return filepath;
-}
-
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
 // We can't just directly call this function from little command handler ones, because
 // all the metrics calculations happen inside `R_SpeedsDisplayMore` function.
@@ -750,9 +732,9 @@ static void doPrintMetrics( void ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
-		header_format = "  | %-38s | %-10s | %-40s | %21s\n";
-		line_format   = "  | %.38s | %.10s | %.40s | %.21s\n";
-		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-40s^7 | ^6%s:%d^7\n";
+		header_format = "  | %-38s | %-10s | %-46s | %21s\n";
+		line_format   = "  | %.38s | %.10s | %.46s | %.21s\n";
+		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-46s^7 | ^6%s:%d^7\n";
 
 		size_t line_size = sizeof ( line );
 		memset( line, '-', line_size - 1 );
@@ -778,7 +760,7 @@ static void doPrintMetrics( void ) {
 
 		char value_with_unit[16];
 		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
-		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, get_filename_from_filepath( metric->src_file ), metric->src_line );
+		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, COM_FileWithoutPath( metric->src_file ), metric->src_line );
 	}
 	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
 	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );

@@ -69,7 +69,14 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 		SET_DEBUG_NAME(image.image, VK_OBJECT_TYPE_IMAGE, create->debug_name);
 
 	vkGetImageMemoryRequirements(vk_core.device, image.image, &memreq);
-	image.devmem = VK_DevMemAllocate(create->debug_name, memreq, create->memory_props ? create->memory_props : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+
+	vk_devmem_allocate_args_t args = (vk_devmem_allocate_args_t) {
+		.requirements = memreq,
+		.property_flags = (create->memory_props) ? create->memory_props : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		.allocate_flags = 0,
+	};
+	image.devmem = VK_DevMemAllocateImage( create->debug_name, args );
+
 	XVK_CHECK(vkBindImageMemory(vk_core.device, image.image, image.devmem.device_memory, image.devmem.offset));
 
 	if (create->usage & usage_bits_implying_views) {
