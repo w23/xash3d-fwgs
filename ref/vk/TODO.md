@@ -1,5 +1,32 @@
 ## Next
+- [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2024-04-12 E374
+- [x] `-vknort` arg to force-disable RT at init time
+
+## 2024-03-21 E372: agonizig over agenda
+### Player-visible essentials and blockers. Big projects.
+- [ ] Light clusters, sampling, and performance -- 90fps HDR on a Steam Deck
+- [ ] Transparency, refractions: glass, water, etc
+- [ ] Moar and moar correct bounces
+- [ ] Denoiser
+- [ ] Decals
+- [ ] Volumetrics and fog
+- [ ] HDR and tonemapping
+
+### Invisible blockers -- foundation/systems stuff
+- [ ] Render graph and resource tracking -- track textures, buffers+regions ownership and usage, automatic barriers, etc.
+- [ ] Modules and dependencies tracking
+- [ ] Integrate rendertests into CI
+
+### Small things
+- [ ] Material patching refactoring: do not load any patched textures before they are referenced by the engine itself.
+	Only load patched textures for the textures that are in fact used by something.
+
+### Nice-to-have
+- [ ] Split Vulkan+RT from xash specifics, start preparing it for being a standalone thing.
+	- [ ] clang-format for it
 
 # Previously
 ## 2024-02-05 E373
