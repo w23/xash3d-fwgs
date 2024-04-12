@@ -3,7 +3,6 @@
 #include "vk_overlay.h"
 #include "vk_scene.h"
 #include "vk_render.h"
-#include "vk_rtx.h"
 #include "vk_cvar.h"
 #include "vk_devmem.h"
 #include "vk_swapchain.h"
@@ -142,12 +141,50 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.pDepthStencilAttachment = &depth_attachment,
 	};
 
+	BOUNDED_ARRAY(dependencies, VkSubpassDependency, 2) = {0};
+	if (ray_tracing) {
+		const VkSubpassDependency color = {
+			.srcSubpass = VK_SUBPASS_EXTERNAL,
+			.dstSubpass = 0,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+		};
+		BOUNDED_ARRAY_APPEND(dependencies, color);
+	} else {
+		const VkSubpassDependency color = {
+			.srcSubpass = VK_SUBPASS_EXTERNAL,
+			.dstSubpass = 0,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = 0, // VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
+			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
+		};
+		BOUNDED_ARRAY_APPEND(dependencies, color);
+
+		const VkSubpassDependency depth = {
+			.srcSubpass = VK_SUBPASS_EXTERNAL,
+			.dstSubpass = 0,
+			.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+			.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+			.dependencyFlags = 0,
+		};
+		BOUNDED_ARRAY_APPEND(dependencies, depth);
+	}
+
 	const VkRenderPassCreateInfo rpci = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		.attachmentCount = ARRAYSIZE(attachments),
 		.pAttachments = attachments,
 		.subpassCount = 1,
 		.pSubpasses = &subdesc,
+		.dependencyCount = dependencies.count,
+		.pDependencies = dependencies.items,
 	};
 
 	XVK_CHECK(vkCreateRenderPass(vk_core.device, &rpci, NULL, &render_pass));
