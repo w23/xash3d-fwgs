@@ -487,6 +487,9 @@ GL_UpdateSwapInterval
 void GL_UpdateSwapInterval( void )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
+	if (glw_state.context_type != REF_GL)
+		return;
+
 	// disable VSync while level is loading
 	if( cls.state < ca_active )
 	{
