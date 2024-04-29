@@ -3,7 +3,7 @@
 - [ ] performance profiling and comparison
 
 ## 2024-04-12 E374
-- [x] `-vknort` arg to force-disable RT at init time
+- [x] ~~`-vknort` arg to force-disable RT at init time~~ -- reverted on 2024-04-29
 
 ## 2024-03-21 E372: agonizig over agenda
 ### Player-visible essentials and blockers. Big projects.

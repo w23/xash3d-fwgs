@@ -3,6 +3,7 @@
 #include "vk_common.h"
 
 #define LIST_LOG_MODULES(X) \
+	X(core) \
 	X(misc) \
 	X(tex) \
 	X(brush) \

@@ -41,6 +41,8 @@
 #include <string.h>
 #include <errno.h>
 
+#define LOG_MODULE core
+
 #define NULLINST_FUNCS(X) \
 	X(vkEnumerateInstanceVersion) \
 	X(vkCreateInstance) \
@@ -495,7 +497,7 @@ static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props,
 	}
 }
 
-static qboolean createDevice( qboolean vk_no_rt ) {
+static qboolean createDevice( void ) {
 	void *head = NULL;
 	vk_available_device_t *available_devices;
 	const int num_available_devices = enumerateDevices( &available_devices );
@@ -518,8 +520,11 @@ static qboolean createDevice( qboolean vk_no_rt ) {
 			is_target_device_found = true;
 		}
 
-		if (candidate_device->ray_tracing && !vk_no_rt) {
-			vk_core.rtx = true;
+		if (candidate_device->ray_tracing) {
+			const qboolean force_disabled = CVAR_TO_BOOL(rt_force_disable);
+			if (force_disabled)
+				WARN("GPU[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support", i);
+			vk_core.rtx = !force_disabled;
 		}
 
 		VkPhysicalDeviceAccelerationStructureFeaturesKHR accel_feature = {
@@ -729,8 +734,6 @@ qboolean R_VkInit( void )
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
 
-	const qboolean vk_no_rt = gEngine.Sys_CheckParm("-vknort");
-
 	VK_LoadCvars();
 
 	// Force extremely verbose logs at startup.
@@ -785,7 +788,7 @@ qboolean R_VkInit( void )
 	}
 #endif
 
-	if (!createDevice(vk_no_rt))
+	if (!createDevice())
 		return false;
 
 	VK_LoadCvarsAfterInit();
