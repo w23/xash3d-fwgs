@@ -1,8 +1,7 @@
 #include "ray_resources.h"
 #include "vk_core.h"
 #include "vk_image.h"
-
-#include "shaders/ray_interop.h" // FIXME temp for type validation
+#include "vk_common.h"
 
 #include <stdlib.h>
 
@@ -23,9 +22,13 @@ void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_
 		const qboolean write = i >= args.write_begin;
 
 		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+			ASSERT(image_barriers_count < COUNTOF(image_barriers));
+
 			if (write) {
 				// No reads are happening
-				ASSERT(res->read.pipelines == 0);
+				//ASSERT(res->read.pipelines == 0);
+
+				src_stage_mask |= res->read.pipelines;
 
 				res->write = (ray_resource_state_t) {
 					.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
@@ -36,7 +39,7 @@ void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_
 				image_barriers[image_barriers_count++] = (VkImageMemoryBarrier) {
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 					.image = src_value->image_object->image,
-					.srcAccessMask = 0,
+					.srcAccessMask = res->read.access_mask,
 					.dstAccessMask = res->write.access_mask,
 					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 					.newLayout = res->write.image_layout,
@@ -49,6 +52,8 @@ void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_
 					},
 				};
 
+				// Mark that read would need a transition
+				res->read = (ray_resource_state_t){0};
 			} else {
 				// Write happened
 				ASSERT(res->write.pipelines != 0);

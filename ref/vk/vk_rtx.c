@@ -378,7 +378,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
 			continue;
 
-		res->resource.read = res->resource.write = (ray_resource_state_t){0};
+		//res->resource.read = res->resource.write = (ray_resource_state_t){0};
+		res->resource.write = (ray_resource_state_t){0};
 	}
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
