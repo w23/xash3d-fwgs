@@ -141,7 +141,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.pDepthStencilAttachment = &depth_attachment,
 	};
 
-	BOUNDED_ARRAY(dependencies, VkSubpassDependency, 2) = {0};
+	BOUNDED_ARRAY(dependencies, VkSubpassDependency, 2);
 	if (ray_tracing) {
 		const VkSubpassDependency color = {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -377,8 +377,8 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		};
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
 		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
-		BOUNDED_ARRAY(waitophores, VkSemaphore, 2) = {0};
-		BOUNDED_ARRAY(signalphores, VkSemaphore, 2) = {0};
+		BOUNDED_ARRAY(waitophores, VkSemaphore, 2);
+		BOUNDED_ARRAY(signalphores, VkSemaphore, 2);
 
 		if (draw) {
 			BOUNDED_ARRAY_APPEND(waitophores, frame->sem_framebuffer_ready);

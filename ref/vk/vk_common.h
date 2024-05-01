@@ -36,7 +36,7 @@ extern ref_globals_t *gpGlobals;
 		struct { \
 			TYPE items[MAX_SIZE]; \
 			int count; \
-		} NAME
+		} NAME = {0}
 
 #define BOUNDED_ARRAY_APPEND(var, item) \
 		do { \

@@ -191,7 +191,7 @@ static qboolean createInstance( void )
 		.pEngineName = "xash3d-fwgs",
 	};
 
-	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8) = {0};
+	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
 
