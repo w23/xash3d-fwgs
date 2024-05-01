@@ -641,6 +641,7 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
+/*
 static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
 	const VkBufferMemoryBarrier bmb[] = { {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -655,26 +656,27 @@ static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
 		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 		0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
 }
+*/
 
 void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
-	debugBarrier(cmdbuf, geom_buffer);
-	// FIXME
+	//debugBarrier(cmdbuf, geom_buffer);
+	// FIXME: this should be automatic and dynamically depend on actual usage, resolving this with render graph
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			//.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR, // FIXME
-			.dstAccessMask = VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT , // FIXME
+			.dstAccessMask
+				= VK_ACCESS_INDEX_READ_BIT
+				| VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
+				| (vk_core.rtx ? ( VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT) : 0),
 			.buffer = geom_buffer,
-			.offset = 0, // FIXME
-			.size = VK_WHOLE_SIZE, // FIXME
+			.offset = 0,
+			.size = VK_WHOLE_SIZE,
 		} };
 		vkCmdPipelineBarrier(cmdbuf,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			//VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			//VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-			VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+			VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | (vk_core.rtx ? VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR : 0),
 			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
 	}
 }
