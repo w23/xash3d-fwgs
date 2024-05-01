@@ -641,8 +641,24 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
+static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
+	const VkBufferMemoryBarrier bmb[] = { {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+		.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+		.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+		.buffer = buf,
+		.offset = 0,
+		.size = VK_WHOLE_SIZE,
+	} };
+	vkCmdPipelineBarrier(cmdbuf,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
+}
+
 void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
+	debugBarrier(cmdbuf, geom_buffer);
 	// FIXME
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
