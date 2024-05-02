@@ -28,21 +28,22 @@ void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_
 				// No reads are happening
 				//ASSERT(res->read.pipelines == 0);
 
-				src_stage_mask |= res->read.pipelines;
+				src_stage_mask |= res->read.pipelines | res->write.pipelines;
 
-				res->write = (ray_resource_state_t) {
+				const ray_resource_state_t new_state = {
+					.pipelines = args.pipeline,
 					.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
 					.image_layout = VK_IMAGE_LAYOUT_GENERAL,
-					.pipelines = args.pipeline,
 				};
 
 				image_barriers[image_barriers_count++] = (VkImageMemoryBarrier) {
 					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 					.image = src_value->image_object->image,
-					.srcAccessMask = res->read.access_mask,
-					.dstAccessMask = res->write.access_mask,
+					// FIXME MEMORY_WRITE is needed to silence write-after-write layout-transition validation hazard
+					.srcAccessMask = res->read.access_mask | res->write.access_mask | VK_ACCESS_MEMORY_WRITE_BIT,
+					.dstAccessMask = new_state.access_mask,
 					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-					.newLayout = res->write.image_layout,
+					.newLayout = new_state.image_layout,
 					.subresourceRange = (VkImageSubresourceRange) {
 						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 						.baseMipLevel = 0,
@@ -54,17 +55,20 @@ void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_
 
 				// Mark that read would need a transition
 				res->read = (ray_resource_state_t){0};
+				res->write = new_state;
 			} else {
 				// Write happened
 				ASSERT(res->write.pipelines != 0);
 
 				// No barrier was issued
 				if (!(res->read.pipelines & args.pipeline)) {
-					res->read.access_mask = VK_ACCESS_SHADER_READ_BIT;
-					res->read.pipelines |= args.pipeline;
-					res->read.image_layout = VK_IMAGE_LAYOUT_GENERAL;
-
 					src_stage_mask |= res->write.pipelines;
+
+					res->read = (ray_resource_state_t) {
+						.pipelines = res->read.pipelines | args.pipeline,
+						.access_mask = VK_ACCESS_SHADER_READ_BIT,
+						.image_layout = VK_IMAGE_LAYOUT_GENERAL,
+					};
 
 					image_barriers[image_barriers_count++] = (VkImageMemoryBarrier) {
 						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
