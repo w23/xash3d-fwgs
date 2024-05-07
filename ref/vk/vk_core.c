@@ -41,6 +41,8 @@
 #include <string.h>
 #include <errno.h>
 
+#define LOG_MODULE core
+
 #define NULLINST_FUNCS(X) \
 	X(vkEnumerateInstanceVersion) \
 	X(vkCreateInstance) \
@@ -189,7 +191,7 @@ static qboolean createInstance( void )
 		.pEngineName = "xash3d-fwgs",
 	};
 
-	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8) = {0};
+	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
 
@@ -518,8 +520,11 @@ static qboolean createDevice( void ) {
 			is_target_device_found = true;
 		}
 
-		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(rt_force_disable)) {
-			vk_core.rtx = true;
+		if (candidate_device->ray_tracing) {
+			const qboolean force_disabled = CVAR_TO_BOOL(rt_force_disable);
+			if (force_disabled)
+				WARN("GPU[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support", i);
+			vk_core.rtx = !force_disabled;
 		}
 
 		VkPhysicalDeviceAccelerationStructureFeaturesKHR accel_feature = {

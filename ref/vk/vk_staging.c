@@ -5,10 +5,12 @@
 #include "profiler.h"
 #include "r_speeds.h"
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
 #include <memory.h>
 
 #define MODULE_NAME "staging"
+#define LOG_MODULE staging
 
 #define DEFAULT_STAGING_SIZE (128*1024*1024)
 #define MAX_STAGING_ALLOCS (2048)
@@ -197,6 +199,45 @@ static void commitBuffers(vk_combuf_t *combuf) {
 	// TODO better coalescing:
 	// - upload once per buffer
 	// - join adjacent regions
+
+	BOUNDED_ARRAY(barriers, VkBufferMemoryBarrier, 4);
+
+	for (int i = 0; i < g_staging.buffers.count; i++) {
+		const VkBuffer dst_buf = g_staging.buffers.dest[i];
+		for (int j = 0;; ++j) {
+			if (j == COUNTOF(barriers.items)) {
+				ERR("Ran out of buffer barrier slots, oh no");
+				break;
+			}
+
+			// Instert last
+			if (j == barriers.count) {
+				barriers.count++;
+				barriers.items[j] = (VkBufferMemoryBarrier){
+					.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+					.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+					.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+					.buffer = dst_buf,
+					.offset = 0,
+					.size = VK_WHOLE_SIZE,
+				};
+				break;
+			}
+
+			// Already inserted
+			if (barriers.items[j].buffer == dst_buf)
+				break;
+		}
+	}
+
+	if (barriers.count) {
+		vkCmdPipelineBarrier(cmdbuf,
+			// FIXME this should be more concrete. Will need to pass buffer "state" around.
+			// For now it works, but makes validation uhappy.
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			0, 0, NULL, barriers.count, barriers.items, 0, NULL);
+	}
 
 	VkBuffer prev_buffer = VK_NULL_HANDLE;
 	int first_copy = 0;

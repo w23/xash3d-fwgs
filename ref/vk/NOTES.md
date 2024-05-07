@@ -1,3 +1,9 @@
+# cvars
+## `rt_force_disable`
+On GPUs that support ray tracing forcefully disables it as if it wasn't supported at all. I.e. no RT extensions and modules are initialized. Useful for testing sometimes.
+Note: this cvar is read early in `R_VkInit()`, which gets executed before `autoexec.cfg`, `config.cfg`, etc are read. So putting it there will not work.
+`video.cfg` and `vk.cfg` are read before Vk initialization, so this cvar should go there.
+
 # Frame structure wrt calls from the engine
 - (eng) SCR_UpdateScreen()
 	- (eng) V_PreRender()
