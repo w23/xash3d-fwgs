@@ -28,5 +28,3 @@ typedef struct {
 } vk_resources_write_descriptors_args_t;
 
 void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_write_descriptors_args_t args);
-
-

@@ -1,4 +1,4 @@
-#include "ray_resources.h"
+#include "vk_resources.h"
 #include "vk_core.h"
 #include "vk_image.h"
 #include "vk_common.h"

@@ -1160,3 +1160,20 @@ Pro: no special code for shaders/model passing.
 Cons: ridiculous texture explosion
 
 5. Hand-patch things that look weird. E.g. for known sprite/beam textures specify how their alphas should be mapped.
+
+
+# 2024-05-07 E376
+## Resource tables
+### Types
+- `rt_resource_t` [vk_rtx.c]:
+	- name, `vk_resource_t`, image, refcount, source_index_plus_1
+- `vk_resource_t`/`vk_resource_s`/`*vk_resource_p` [ray_resources.h]:
+	- desc `type`, state `read/write`, desc `value`
+
+### Variables
+- `g_rtx.res[]` -- `rt_resource_t`[`MAX_RESOURCES`=32]
+	- `findResource(name)` / `findResourceOrEmptySlot(name)`
+	- access by builtin index names like `g_rtx.res[ExternalResource_...]` for both read and write
+		- `performTracing()` write resource desc values passed from outside on each call
+	- new resources are added in `reloadMainpipe()`
+    - resource with zero refcount are destroyed in `cleanupResources()`

@@ -2,6 +2,12 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2024-05-07 E376
+- [ ] resource manager
+    - [ ] extract all resource mgmt from vk_rtx into a designated file
+    - [ ] register all resources in their modules
+    - [ ] massage resource state tracking (read-write vs write-current; `value` field consistency, etc)
+
 ## 2024-04-12 E374
 - [x] ~~`-vknort` arg to force-disable RT at init time~~ -- reverted on 2024-04-29
 

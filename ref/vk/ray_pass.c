@@ -1,6 +1,6 @@
 #include "ray_pass.h"
 #include "shaders/ray_interop.h" // for SPEC_SBT_RECORD_SIZE_INDEX
-#include "ray_resources.h"
+#include "vk_resources.h"
 #include "vk_pipeline.h"
 #include "vk_descriptor.h"
 #include "vk_combuf.h"

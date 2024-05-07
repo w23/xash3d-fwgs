@@ -1,6 +1,6 @@
 #include "vk_rtx.h"
 
-#include "ray_resources.h"
+#include "vk_resources.h"
 #include "vk_ray_accel.h"
 
 #include "vk_buffer.h"
@@ -31,7 +31,7 @@
 #define MIN_FRAME_WIDTH 1280
 #define MIN_FRAME_HEIGHT 800
 
-	// TODO each of these should be registered by the provider of the resource:
+// TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
 		X(TLAS, tlas) \
 		X(Buffer, ubo) \
@@ -69,7 +69,9 @@ static struct {
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
+
 	vk_meatpipe_t *mainpipe;
+
 	vk_resource_p *mainpipe_resources;
 	rt_resource_t *mainpipe_out;
 
