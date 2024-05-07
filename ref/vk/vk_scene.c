@@ -159,15 +159,6 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 
 	// TODO should we do something like R_BrushEndLoad?
 	VK_UploadLightmap();
-
-	// This is needed mainly for picking up skybox only after it has been loaded
-	// Most of the things here could be simplified if we had less imperative style for this renderer:
-	// - Group everything into modules with explicit dependencies, then init/shutdown/newmap order could
-	//   be automatic and correct.
-	// - "Rendergraph"-like dependencies for resources (like textures, materials, skybox, ...). Then they
-	//   could be loaded lazily when needed, and after all the needed info for them has been collected.
-	if (vk_core.rtx)
-		VK_RayNewMapEnd();
 }
 
 static void reloadPatches( void ) {
