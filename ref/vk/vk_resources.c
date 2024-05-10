@@ -174,107 +174,93 @@ void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean di
 	}
 }
 
-#define MAX_BARRIERS 16
-
-void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_write_descriptors_args_t args) {
-	VkImageMemoryBarrier image_barriers[MAX_BARRIERS];
-	int image_barriers_count = 0;
-	VkPipelineStageFlags src_stage_mask = VK_PIPELINE_STAGE_NONE_KHR;
-
-	for (int i = 0; i < args.count; ++i) {
-		const int index = args.resources_map ? args.resources_map[i] : i;
-		vk_resource_t* const res = args.resources[index];
-
-		const vk_descriptor_value_t *const src_value = &res->value;
-		vk_descriptor_value_t *const dst_value = args.values + i;
-
-		const qboolean write = i >= args.write_begin;
-
-		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-			ASSERT(image_barriers_count < COUNTOF(image_barriers));
-
-			if (write) {
-				// No reads are happening
-				//ASSERT(res->read.pipelines == 0);
-
-				src_stage_mask |= res->read.pipelines | res->write.pipelines;
-
-				const ray_resource_state_t new_state = {
-					.pipelines = args.pipeline,
-					.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
-					.image_layout = VK_IMAGE_LAYOUT_GENERAL,
-				};
-
-				image_barriers[image_barriers_count++] = (VkImageMemoryBarrier) {
-					.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-					.image = src_value->image_object->image,
-					// FIXME MEMORY_WRITE is needed to silence write-after-write layout-transition validation hazard
-					.srcAccessMask = res->read.access_mask | res->write.access_mask | VK_ACCESS_MEMORY_WRITE_BIT,
-					.dstAccessMask = new_state.access_mask,
-					.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-					.newLayout = new_state.image_layout,
-					.subresourceRange = (VkImageSubresourceRange) {
-						.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-						.baseMipLevel = 0,
-						.levelCount = 1,
-						.baseArrayLayer = 0,
-						.layerCount = 1,
-					},
-				};
-
-				// Mark that read would need a transition
-				res->read = (ray_resource_state_t){0};
-				res->write = new_state;
-			} else {
-				// Write happened
-				ASSERT(res->write.pipelines != 0);
-
-				// No barrier was issued
-				if (!(res->read.pipelines & args.pipeline)) {
-					src_stage_mask |= res->write.pipelines;
-
-					res->read = (ray_resource_state_t) {
-						.pipelines = res->read.pipelines | args.pipeline,
-						.access_mask = VK_ACCESS_SHADER_READ_BIT,
-						.image_layout = VK_IMAGE_LAYOUT_GENERAL,
-					};
-
-					image_barriers[image_barriers_count++] = (VkImageMemoryBarrier) {
-						.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-						.image = src_value->image_object->image,
-						.srcAccessMask = res->write.access_mask,
-						.dstAccessMask = res->read.access_mask,
-						.oldLayout = res->write.image_layout,
-						.newLayout = res->read.image_layout,
-						.subresourceRange = (VkImageSubresourceRange) {
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.baseMipLevel = 0,
-							.levelCount = 1,
-							.baseArrayLayer = 0,
-							.layerCount = 1,
-						},
-					};
-				}
-			}
-
-			dst_value->image = (VkDescriptorImageInfo) {
-				.imageLayout = write ? res->write.image_layout : res->read.image_layout,
-				.imageView = src_value->image_object->view,
-				.sampler = VK_NULL_HANDLE,
-			};
-		} else {
-			*dst_value = *src_value;
-		}
+void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags dst_stage_mask, r_vk_barrier_t *barrier) {
+	if (res->type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+		// TODO
+		return;
 	}
 
-	if (image_barriers_count) {
-		if (!src_stage_mask)
-			src_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	if (write) {
+		// No reads are happening
+		//ASSERT(res->read.pipelines == 0);
 
-		vkCmdPipelineBarrier(cmdbuf,
-			src_stage_mask,
-			args.pipeline,
-			0, 0, NULL, 0, NULL, image_barriers_count, image_barriers);
+		const ray_resource_state_t new_state = {
+			.pipelines = dst_stage_mask,
+			.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
+			.image_layout = VK_IMAGE_LAYOUT_GENERAL,
+		};
+
+		R_VkBarrierAddImage(barrier, (r_vk_barrier_image_t){
+			.image = res->value.image_object->image,
+			.src_stage_mask = res->read.pipelines | res->write.pipelines,
+			// FIXME MEMORY_WRITE is needed to silence write-after-write layout-transition validation hazard
+			.src_access_mask = res->read.access_mask | res->write.access_mask | VK_ACCESS_MEMORY_WRITE_BIT,
+			.dst_access_mask = new_state.access_mask,
+			.old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.new_layout = new_state.image_layout,
+		});
+
+		// Mark that read would need a transition
+		res->read = (ray_resource_state_t){0};
+		res->write = new_state;
+	} else {
+		// Write happened
+		ASSERT(res->write.pipelines != 0);
+
+		// Check if no more barriers needed
+		if ((res->read.pipelines & dst_stage_mask) == dst_stage_mask)
+			return;
+
+		res->read = (ray_resource_state_t) {
+			.pipelines = res->read.pipelines | dst_stage_mask,
+			.access_mask = VK_ACCESS_SHADER_READ_BIT,
+			.image_layout = VK_IMAGE_LAYOUT_GENERAL,
+		};
+
+		R_VkBarrierAddImage(barrier, (r_vk_barrier_image_t){
+			.image = res->value.image_object->image,
+			.src_stage_mask = res->write.pipelines,
+			.src_access_mask = res->write.access_mask,
+			.dst_access_mask = res->read.access_mask,
+			.old_layout = res->write.image_layout,
+			.new_layout = res->read.image_layout,
+		});
 	}
 }
 
+void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image) {
+	barrier->src_stage_mask |= image.src_stage_mask;
+	const VkImageMemoryBarrier ib = (VkImageMemoryBarrier) {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.image = image.image,
+		.srcAccessMask = image.src_access_mask,
+		.dstAccessMask = image.dst_access_mask,
+		.oldLayout = image.old_layout,
+		.newLayout = image.new_layout,
+		.subresourceRange = (VkImageSubresourceRange) {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		},
+	};
+	BOUNDED_ARRAY_APPEND(barrier->images, ib);
+}
+
+void R_VkBarrierCommit(VkCommandBuffer cmdbuf, r_vk_barrier_t *barrier, VkPipelineStageFlags dst_stage_mask) {
+	if (barrier->images.count == 0)
+		return;
+
+	// TODO vkCmdPipelineBarrier2()
+	vkCmdPipelineBarrier(cmdbuf,
+		barrier->src_stage_mask == 0
+			? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+			: barrier->src_stage_mask,
+		dst_stage_mask,
+		0, 0, NULL, 0, NULL, barrier->images.count, barrier->images.items);
+
+	// Mark as used
+	barrier->src_stage_mask = 0;
+	barrier->images.count = 0;
+}

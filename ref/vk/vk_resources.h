@@ -5,7 +5,6 @@
 #include "vk_image.h"
 
 // TODO remove
-#include "vk_buffer.h"
 #include "vk_light.h"
 
 // TODO each of these should be registered by the provider of the resource:
@@ -79,13 +78,24 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t builtin);
 
 void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean discontinuity);
 
-typedef struct {
-	VkPipelineStageFlagBits pipeline;
-	const vk_resource_p *resources;
-	const int *resources_map;
-	vk_descriptor_value_t* values;
-	int count;
-	int write_begin; // Entries starting at this index are written into by the pass
-} vk_resources_write_descriptors_args_t;
 
-void R_VkResourcesPrepareDescriptorsValues(VkCommandBuffer cmdbuf, vk_resources_write_descriptors_args_t args);
+typedef struct {
+	// TODO VK_KHR_synchronization2, has a slightly different (better) semantics
+	VkPipelineStageFlags src_stage_mask;
+	BOUNDED_ARRAY_DECLARE(images, VkImageMemoryBarrier, 16);
+	//BOUNDED_ARRAY_DECLARE(buffers, VkBufferMemoryBarrier, 16);
+} r_vk_barrier_t;
+
+typedef struct {
+	VkImage image;
+	VkPipelineStageFlags src_stage_mask;
+	VkAccessFlags src_access_mask;
+	VkAccessFlags dst_access_mask;
+	VkImageLayout old_layout;
+	VkImageLayout new_layout;
+} r_vk_barrier_image_t;
+
+void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image);
+void R_VkBarrierCommit(VkCommandBuffer cmdbuf, r_vk_barrier_t *barrier, VkPipelineStageFlags dst_stage_mask);
+
+void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags dst_stage_mask, r_vk_barrier_t *barrier);

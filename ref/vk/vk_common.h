@@ -32,11 +32,14 @@ extern ref_api_t gEngine;
 extern ref_globals_t *gpGlobals;
 
 // TODO improve and make its own file
-#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
+#define BOUNDED_ARRAY_DECLARE(NAME, TYPE, MAX_SIZE) \
 		struct { \
 			TYPE items[MAX_SIZE]; \
 			int count; \
-		} NAME = {0}
+		} NAME
+
+#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
+	BOUNDED_ARRAY_DECLARE(NAME, TYPE, MAX_SIZE) = {0}
 
 #define BOUNDED_ARRAY_APPEND(var, item) \
 		do { \
