@@ -13,7 +13,8 @@ import os
 parser = argparse.ArgumentParser(description='Build pipeline descriptor')
 parser.add_argument('--path', '-p', help='Directory where to look for .spv shader files')
 parser.add_argument('--output', '-o', type=argparse.FileType('wb'), help='Compiled pipeline')
-parser.add_argument('--depend', '-d', type=argparse.FileType('w'), help='Generate dependency file (json)')
+parser.add_argument('--depend', '-d', type=argparse.FileType('w'), help='Generate dependency file (.json)')
+parser.add_argument('--dot', '-g', type=argparse.FileType('w'), help='Generate graphviz dependency tree (.dot)')
 parser.add_argument('pipelines', type=argparse.FileType('r'))
 # TODO strip debug OpName OpLine etc
 args = parser.parse_args()
@@ -433,6 +434,13 @@ class Resources:
 	def getMappedIndex(self, index):
 		return self.__map.get(index, index)
 
+	def getByIndex(self, index):
+		return self.__storage.getByIndex(index)
+
+	def getByName(self, name):
+		index = self.__storage.getIndex(name)
+		return self.__storage.getByIndex(index)
+
 	def __sortDependencies(self):
 		# We should sort only once at export time
 		assert(not self.__map)
@@ -475,6 +483,7 @@ class Resources:
 			self.name = name
 			self.type = node.getType() if node else None
 			self.dependency = dependency
+			self.producer = None
 
 		def checkSameTypeNode(self, node):
 			if not self.type:
@@ -561,6 +570,9 @@ class Binding:
 
 	def __repr__(self):
 		return self.__str__()
+
+	def getResource(self):
+		return resources.getByIndex(self.__resource_index)
 
 	def serialize(self, out):
 		header = (self.descriptor_set << 8) | self.index
@@ -667,6 +679,7 @@ class Pipeline:
 		self.name = name
 		self.type = type_id
 		self.__shaders = []
+		self.__sorted_bindings = None
 
 	def addShader(self, shader_name, stage):
 		shader = shaders.load(shader_name, stage)
@@ -684,16 +697,20 @@ class Pipeline:
 				bindings[addr].stages |= stage
 		return bindings
 
-	def serialize(self, out):
-		bindings = sorted(self.__mergeBindings().values())
+	def bindings(self):
+		if not self.__sorted_bindings:
+			self.__sorted_bindings = sorted(self.__mergeBindings().values())
 
+		return self.__sorted_bindings
+
+	def serialize(self, out):
 		#print(self.name)
 		#for binding in bindings:
 		#print(f"  ds={binding.descriptor_set}, b={binding.index}, stages={binding.stages:#x}, write={binding.write}")
 
 		out.writeU32(self.type)
 		out.writeString(self.name)
-		out.writeArray(bindings)
+		out.writeArray(self.bindings())
 
 class PipelineRayTracing(Pipeline):
 	__hit2stage = {
@@ -767,3 +784,55 @@ if args.depend:
 if args.output:
 	shaders.parse()
 	writeOutput(args.output, pipelines)
+
+if args.dot:
+	# 1. Mark which pipeline generates which resources
+	for name, pipeline in pipelines.items():
+		for binding in pipeline.bindings():
+			if not binding.create:
+				continue
+
+			resource = binding.getResource()
+			if resource.producer:
+				raise Exception('Resource "%s" already has producer "%s"' % (resource.name, resource.producer))
+
+			resource.producer = name
+
+	# 2. Find destination image
+	dest = resources.getByName('dest')
+	# TODO check that it's an image
+
+	# 3. Walk the tree
+	visited_res = dict()
+	visited_pipe = dict()
+	def visitResource(res):
+		if res.name in visited_res:
+			return
+		visited_res[res.name] = True
+
+		if res.producer:
+			args.dot.write('%s [shape=oval];\n' % res.name)
+		else:
+			args.dot.write('%s [shape=oval,style=filled,color="#ffff80"];\n' % res.name)
+			return
+
+		if res.producer in visited_pipe:
+			return
+		visited_pipe[res.producer] = True
+
+		pipeline = pipelines[res.producer];
+		args.dot.write('%s [shape=box,style=filled,color="#ff9090"];\n' % pipeline.name)
+
+		for binding in pipeline.bindings():
+			resource = binding.getResource()
+
+			if binding.create:
+				args.dot.write('%s -> %s;\n' % (pipeline.name, resource.name))
+			else:
+				args.dot.write('%s -> %s;\n' % (resource.name, pipeline.name))
+				visitResource(resource)
+
+	#args.dot.write('digraph %s {\n' % args.pipelines.name)
+	args.dot.write('digraph rendergraph {\n')
+	visitResource(dest)
+	args.dot.write('}\n')

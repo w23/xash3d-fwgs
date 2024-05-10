@@ -100,7 +100,7 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 			.imageExtent.width = g_swapchain.width,
 			.imageExtent.height = g_swapchain.height,
 			.imageArrayLayers = 1,
-			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | (vk_core.rtx ? VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
+			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | (vk_core.rtx ? /* TODO is it used really? why not? */ VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
 			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 			.preTransform = surface_caps.currentTransform,
 			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
