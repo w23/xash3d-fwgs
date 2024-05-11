@@ -113,9 +113,13 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	// Real correct emissive color
 	//payload.emissive.rgb = kusok.emissive;
 	//payload.emissive.rgb = kusok.emissive * SRGBtoLINEAR(payload.base_color_a.rgb);
+	//payload.emissive.rgb = LINEARtoSRGB(kusok.emissive) * LINEARtoSRGB(payload.base_color_a.rgb);
 	//payload.emissive.rgb = clamp((kusok.emissive * (1.0/3.0) / 20), 0, 1.0) * SRGBtoLINEAR(payload.base_color_a.rgb);
 	//payload.emissive.rgb = (sqrt(sqrt(kusok.emissive)) * (1.0/3.0)) * SRGBtoLINEAR(payload.base_color_a.rgb);
-	payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * payload.base_color_a.rgb;
+	//payload.emissive.rgb = (sqrt(kusok.emissive) / 8) * payload.base_color_a.rgb;
+	payload.emissive.rgb = (sqrt(kusok.emissive) / 6) * payload.base_color_a.rgb; // better for HDR (maybe 4 better)
+	//payload.emissive.rgb = clamp(sqrt(kusok.emissive) / 4, 0.0, 1.5) * payload.base_color_a.rgb;
+	//payload.emissive.rgb = (pow(kusok.emissive, vec3(1/2.2)) / 8) * payload.base_color_a.rgb;
 	//payload.emissive.rgb = kusok.emissive * payload.base_color_a.rgb;
 #else
 	// Fake texture color

@@ -2,6 +2,7 @@
 
 #include "vk_buffer.h"
 #include "vk_core.h"
+#include "vk_cvar.h"
 #include "vk_common.h"
 #include "vk_textures.h"
 #include "vk_framectl.h"
@@ -166,6 +167,23 @@ static qboolean createPipelines( void )
 			{.binding = 0, .location = 2, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = offsetof(vertex_2d_t, color)},
 		};
 
+
+		// TODO: ubo
+		struct ShaderSpec {
+			int vk_display_dr_mode;
+		} spec_data = {
+			.vk_display_dr_mode = (vk_core.hdr_output) ? vk_hdr_output->value : 0,
+		};
+		const VkSpecializationMapEntry spec_map[] = {
+			{.constantID = 0, .offset = offsetof(struct ShaderSpec, vk_display_dr_mode), .size = sizeof(int) },
+		};
+		VkSpecializationInfo shader_spec = {
+			.mapEntryCount = ARRAYSIZE(spec_map),
+			.pMapEntries = spec_map,
+			.dataSize = sizeof(struct ShaderSpec),
+			.pData = &spec_data
+		};
+
 		const vk_shader_stage_t shader_stages[] = {
 		{
 			.stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -173,6 +191,7 @@ static qboolean createPipelines( void )
 		}, {
 			.stage = VK_SHADER_STAGE_FRAGMENT_BIT,
 			.filename = "2d.frag.spv",
+			.specialization_info = &shader_spec,
 		}};
 
 		vk_pipeline_graphics_create_info_t pci = {

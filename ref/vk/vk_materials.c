@@ -278,6 +278,7 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} while(0)
 
 			LOAD_TEXTURE_FOR(basecolor_map, tex_base_color, kColorspaceNative);
+			//LOAD_TEXTURE_FOR(basecolor_map, tex_base_color, kColorspaceGamma);
 			LOAD_TEXTURE_FOR(normal_map, tex_normalmap, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(metal_map, tex_metalness, kColorspaceLinear);
 			LOAD_TEXTURE_FOR(roughness_map, tex_roughness, kColorspaceLinear);

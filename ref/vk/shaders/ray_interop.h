@@ -204,6 +204,7 @@ struct UniformBuffer {
 
 	uint debug_display_only;
 	uint debug_flags;
+	uint vk_display_dr_mode;
 };
 
 #undef PAD

@@ -266,6 +266,8 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->debug_flags = g_rtx.debug.rt_debug_flags_value;
 
 	ubo->random_seed = getRandomSeed();
+
+	ubo->vk_display_dr_mode = (vk_core.hdr_output) ? vk_hdr_output->value : 0;
 }
 
 typedef struct {

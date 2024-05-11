@@ -209,10 +209,16 @@ static qboolean createPipelines( void )
 		struct ShaderSpec {
 			float alpha_test_threshold;
 			uint32_t max_dlights;
-		} spec_data = { .25f, MAX_DLIGHTS };
+			int vk_display_dr_mode; // TODO: ubo
+		} spec_data = {
+			.alpha_test_threshold = .25f,
+			.max_dlights = MAX_DLIGHTS,
+			.vk_display_dr_mode = (vk_core.hdr_output) ? vk_hdr_output->value : 0,
+		};
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, alpha_test_threshold), .size = sizeof(float) },
 			{.constantID = 1, .offset = offsetof(struct ShaderSpec, max_dlights), .size = sizeof(uint32_t) },
+			{.constantID = 2, .offset = offsetof(struct ShaderSpec, vk_display_dr_mode), .size = sizeof(int) },
 		};
 
 		VkSpecializationInfo shader_spec = {

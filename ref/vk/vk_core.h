@@ -23,6 +23,8 @@ void R_VkSemaphoreDestroy(VkSemaphore sema);
 VkFence R_VkFenceCreate( qboolean signaled );
 void R_VkFenceDestroy(VkFence fence);
 
+void setSurfaceFormat( qboolean hdr_output_enabled );
+
 // TODO move all these to vk_device.{h,c} or something
 typedef struct physical_device_s {
 	VkPhysicalDevice device;
@@ -45,7 +47,7 @@ typedef struct vulkan_core_s {
 
 	// TODO store important capabilities that affect render code paths
 	// (as rtx, dedicated gpu memory, bindless, etc) separately in a struct
-	qboolean debug, validate, rtx, nv_checkpoint;
+	qboolean debug, validate, rtx, nv_checkpoint, hdr_output;
 	struct {
 		VkSurfaceKHR surface;
 		uint32_t num_surface_formats;
@@ -54,6 +56,8 @@ typedef struct vulkan_core_s {
 		uint32_t num_present_modes;
 		VkPresentModeKHR *present_modes;
 	} surface;
+
+	VkSurfaceFormatKHR output_surface;
 
 	physical_device_t physical_device;
 	VkDevice device;

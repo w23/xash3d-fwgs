@@ -20,3 +20,5 @@ typedef struct {
 r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire( VkSemaphore sem_image_available );
 
 void R_VkSwapchainPresent( uint32_t index, VkSemaphore done );
+
+void switchSwapchain( void );

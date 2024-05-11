@@ -3,7 +3,7 @@
 
 #include "debug.glsl"
 #include "utils.glsl"
-#include "color_spaces.glsl"
+//#include "color_spaces.glsl"
 
 // Taken from Journal of Computer Graphics Techniques, Vol. 10, No. 1, 2021.
 // Improved Shader and Texture Level of Detail Using Ray Cones,

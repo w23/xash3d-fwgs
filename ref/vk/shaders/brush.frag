@@ -1,7 +1,12 @@
 #version 450
 
+//#define SRGB_FAST_APPROXIMATION
+#include "color_spaces.glsl"
+//#include "tonemapping.glsl"
+
 layout (constant_id = 0) const float alpha_test_threshold = 0.;
 layout (constant_id = 1) const uint max_dlights = 1;
+layout (constant_id = 2) const int vk_display_dr_mode = 0; // TODO: ubo
 
 layout(set=1,binding=0) uniform sampler2D sTexture0;
 layout(set=2,binding=0) uniform sampler2D sLightmap;
@@ -41,6 +46,7 @@ void main() {
 	outColor.a = baseColor.a;
 	outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
+
 	for (uint i = 0; i < ubo.num_lights; ++i) {
 		const vec4 light_pos_r = ubo.lights[i].pos_r;
 		const vec3 light_dir = light_pos_r.xyz - vPos;
@@ -53,4 +59,25 @@ void main() {
 
 	if (ubo.debug_r_lightmap == 0)
 		outColor.rgb *= baseColor.rgb;
+
+	switch (vk_display_dr_mode) {
+		// LDR: VK_FORMAT_B8G8R8A8_UNORM(44) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		//case LDR_B8G8R8A8_UNORM_SRGB_NONLINEAR:
+			//break;
+
+		// LDR: VK_FORMAT_R8G8B8A8_SRGB(43) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_R8G8B8A8_UNORM(37) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_B8G8R8A8_SRGB(50) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+		// LDR: VK_FORMAT_A2B10G10R10_UNORM_PACK32(64) VK_COLOR_SPACE_SRGB_NONLINEAR_KHR(0)
+
+		// HDR: VK_FORMAT_R16G16B16A16_SFLOAT(97) VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT(1000104002)
+		case HDR_R16G16B16A16_SFLOAT_EXTENDED_SRGB_LINEAR:
+			outColor.rgb = SRGBtoLINEAR(outColor.rgb); // standard
+			break;
+
+		// HDR: VK_FORMAT_A2B10G10R10_UNORM_PACK32(64) VK_COLOR_SPACE_HDR10_ST2084_EXT(1000104008)
+		case HDR_A2B10G10R10_UNORM_PACK32_HDR10_ST2084:
+			outColor.rgb = linearToPQ(SRGBtoLINEAR(outColor.rgb)); // standard
+			break;
+	}
 }
