@@ -1,14 +1,9 @@
 #include "vk_ray_internal.h"
 
 #include "vk_rtx.h"
-#include "r_textures.h"
 #include "vk_materials.h"
-#include "vk_geometry.h"
 #include "vk_render.h"
 #include "vk_staging.h"
-#include "vk_light.h"
-#include "vk_math.h"
-#include "vk_combuf.h"
 #include "vk_logs.h"
 #include "profiler.h"
 
@@ -221,17 +216,18 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 		return NULL;
 	}
 
-	struct rt_blas_s* blas = RT_BlasCreate(args.debug_name, args.usage);
+	struct rt_blas_s *blas = RT_BlasCreate((rt_blas_create_t){
+		.name = args.debug_name,
+		.usage = args.usage,
+		.geoms = args.geometries,
+		.geoms_count = args.geometries_count,
+	});
 	if (!blas) {
 		gEngine.Con_Printf(S_ERROR "Cannot create BLAS for %s\n", args.debug_name);
 		goto fail;
 	}
 
-	if (!RT_BlasBuild(blas, args.geometries, args.geometries_count)) {
-		gEngine.Con_Printf(S_ERROR "Cannot build BLAS for %s\n", args.debug_name);
-		goto fail;
-	}
-
+	// Invokes staging, so this should be after all resource creation
 	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
 
 	{
@@ -274,7 +270,7 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 	// stable textures that don't change.
 
 	// Schedule rebuilding blas
-	if (!RT_BlasBuild(model->blas, geometries, geometries_count))
+	if (!RT_BlasUpdate(model->blas, geometries, geometries_count))
 		return false;
 
 	// Also update materials
@@ -408,6 +404,8 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 }
 
 #define MAX_RT_DYNAMIC_GEOMETRIES 256
+#define MAX_RT_DYNAMIC_GEOMETRIES_VERTICES 256
+#define MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES 256
 
 typedef struct {
 	struct rt_blas_s *blas;
@@ -431,27 +429,32 @@ static struct {
 } g_dyn;
 
 qboolean RT_DynamicModelInit(void) {
+	vk_render_geometry_t *const fake_geoms = Mem_Calloc(vk_core.pool, MAX_RT_DYNAMIC_GEOMETRIES * sizeof(*fake_geoms));
+	for (int i = 0; i < MAX_RT_DYNAMIC_GEOMETRIES; ++i) {
+		fake_geoms[i].max_vertex = MAX_RT_DYNAMIC_GEOMETRIES_VERTICES;
+		fake_geoms[i].element_count = MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES * 3;
+	}
+
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
-		struct rt_blas_s *blas = RT_BlasCreate(group_names[i], kBlasBuildDynamicFast);
+		struct rt_blas_s *blas = RT_BlasCreate((rt_blas_create_t){
+			.name = group_names[i],
+			.usage = kBlasBuildDynamicFast,
+			.geoms = fake_geoms,
+			.geoms_count = MAX_RT_DYNAMIC_GEOMETRIES,
+			.dont_build = true,
+		});
+
 		if (!blas) {
 			// FIXME destroy allocated
 			gEngine.Con_Printf(S_ERROR "Couldn't create blas for %s\n", group_names[i]);
 			return false;
 		}
 
-		if (!RT_BlasPreallocate(blas, (rt_blas_preallocate_t){
-			// TODO better estimates for these constants
-			.max_geometries = MAX_RT_DYNAMIC_GEOMETRIES,
-			.max_prims_per_geometry = 256,
-			.max_vertex_per_geometry = 256,
-		})) {
-			// FIXME destroy allocated
-			gEngine.Con_Printf(S_ERROR "Couldn't preallocate blas for %s\n", group_names[i]);
-			return false;
-		}
 		g_dyn.groups[i].blas = blas;
 		g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
 	}
+
+	Mem_Free(fake_geoms);
 
 	return true;
 }
@@ -482,7 +485,7 @@ void RT_DynamicModelProcessFrame(void) {
 			goto tail;
 		}
 
-		if (!RT_BlasBuild(dyn->blas, dyn->geometries, dyn->geometries_count)) {
+		if (!RT_BlasUpdate(dyn->blas, dyn->geometries, dyn->geometries_count)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}

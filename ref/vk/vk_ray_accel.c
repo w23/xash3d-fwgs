@@ -24,9 +24,17 @@ typedef struct rt_blas_s {
 
 	VkAccelerationStructureKHR blas;
 
+	// Max dynamic geoms for usage == kBlasBuildDynamicFast
 	int max_geoms;
-	//uint32_t *max_prim_counts;
-	int blas_size;
+
+	struct {
+		VkAccelerationStructureBuildSizesInfoKHR sizes;
+		VkAccelerationStructureBuildGeometryInfoKHR info;
+		VkAccelerationStructureGeometryKHR *geoms;
+		uint32_t *max_prim_counts;
+		VkAccelerationStructureBuildRangeInfoKHR *ranges;
+		qboolean built;
+	} build;
 } rt_blas_t;
 
 static struct {
@@ -64,6 +72,12 @@ static struct {
 		int instances_count;
 		int accels_built;
 	} stats;
+
+	struct {
+		// TODO two arrays for a single vkCmdBuildAccelerationStructuresKHR() call
+		// FIXME This is for testing only
+		BOUNDED_ARRAY_DECLARE(blas, rt_blas_t*, 256);
+	} build;
 
 	cvar_t *cv_force_culling;
 } g_accel;
@@ -242,9 +256,97 @@ static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
 	}
 }
 
+static qboolean blasPrepareBuild(struct rt_blas_s *blas, VkDeviceAddress geometry_addr) {
+	ASSERT(blas);
+	ASSERT(blas->blas);
+
+	if (blas->build.built && blas->usage == kBlasBuildStatic) {
+		ASSERT(!"Attempting to build static BLAS twice");
+		return false;
+	}
+
+	for (int i = 0; i < blas->build.info.geometryCount; ++i) {
+		VkAccelerationStructureGeometryKHR *const geom = blas->build.geoms + i;
+		geom->geometry.triangles.vertexData.deviceAddress = geometry_addr;
+		geom->geometry.triangles.indexData.deviceAddress = geometry_addr;
+	}
+
+	const qboolean is_update = blas->build.info.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+	const uint32_t scratch_size = is_update ? blas->build.sizes.updateScratchSize : blas->build.sizes.buildScratchSize;
+
+	if (MAX_SCRATCH_BUFFER < g_accel.frame.scratch_offset + scratch_size) {
+		ERR("Scratch buffer overflow: left %u bytes, but need %u",
+			MAX_SCRATCH_BUFFER - g_accel.frame.scratch_offset, scratch_size);
+		// TODO handle this somehow ?!
+		ASSERT(!"Ran out of scratch buffer size");
+		return false;
+	}
+
+	blas->build.info.scratchData.deviceAddress = g_accel.scratch_buffer_addr + g_accel.frame.scratch_offset;
+
+	//uint32_t scratch_offset_initial = g_accel.frame.scratch_offset;
+	g_accel.frame.scratch_offset += scratch_size;
+	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
+
+	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
+
+	g_accel.stats.accels_built++;
+
+	return true;
+}
+
+static void buildBlases(vk_combuf_t *combuf) {
+	(void)(combuf);
+
+	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
+	const VkDeviceAddress geometry_addr = R_VkBufferGetDeviceAddress(geometry_buffer);
+
+	// FIXME get rid of this when staging doesn't own copying ops anymore
+	vk_combuf_t *const combuf_staging_fixme = R_VkStagingCommit();
+
+	// TODO remove, should be handled by render graph
+	{
+		const VkBufferMemoryBarrier bmb[] = { {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT,
+			.buffer = geometry_buffer,
+			.offset = 0,
+			.size = VK_WHOLE_SIZE,
+		} };
+		vkCmdPipelineBarrier(combuf_staging_fixme->cmdbuf,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
+	}
+
+	for (int i = 0; i < g_accel.build.blas.count; ++i) {
+		rt_blas_t *const blas = g_accel.build.blas.items[i];
+		if (!blasPrepareBuild(blas, geometry_addr))
+			// FIXME handle
+			continue;
+
+		static int scope_id = -2;
+		if (scope_id == -2)
+			scope_id = R_VkGpuScope_Register("build_as");
+		const int begin_index = R_VkCombufScopeBegin(combuf_staging_fixme, scope_id);
+		const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = blas->build.ranges;
+		// TODO one call to build them all
+		vkCmdBuildAccelerationStructuresKHR(combuf_staging_fixme->cmdbuf, 1, &blas->build.info, &p_build_ranges);
+		R_VkCombufScopeEnd(combuf_staging_fixme, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+
+		blas->build.built = true;
+	}
+
+	g_accel.build.blas.count = 0;
+}
+
 vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 	ASSERT(g_ray_model_state.frame.instances_count > 0);
+
+	buildBlases(combuf);
+
 	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
@@ -453,28 +555,13 @@ void RT_VkAccelFrameBegin(void) {
 	g_accel.frame.scratch_offset = 0;
 }
 
-struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage) {
-	rt_blas_t *blas = Mem_Calloc(vk_core.pool, sizeof(*blas));
+static void blasFillGeometries(rt_blas_t *blas, const vk_render_geometry_t *geoms, int geoms_count) {
+	for (int i = 0; i < geoms_count; ++i) {
+		const vk_render_geometry_t *mg = geoms + i;
+		const uint32_t prim_count = mg->element_count / 3;
 
-	blas->debug_name = name;
-	blas->usage = usage;
-	blas->blas_size = -1;
-
-	return blas;
-}
-
-qboolean RT_BlasPreallocate(struct rt_blas_s* blas, rt_blas_preallocate_t args) {
-	ASSERT(!blas->blas);
-	ASSERT(blas->usage == kBlasBuildDynamicFast);
-
-	// TODO allocate these from static pool
-	VkAccelerationStructureGeometryKHR *const as_geoms = Mem_Calloc(vk_core.pool, args.max_geometries * sizeof(*as_geoms));
-	uint32_t *const max_prim_counts = Mem_Malloc(vk_core.pool, args.max_geometries * sizeof(*max_prim_counts));
-	VkAccelerationStructureBuildRangeInfoKHR *const build_ranges = Mem_Calloc(vk_core.pool, args.max_geometries * sizeof(*build_ranges));
-
-	for (int i = 0; i < args.max_geometries; ++i) {
-		max_prim_counts[i] = args.max_prims_per_geometry;
-		as_geoms[i] = (VkAccelerationStructureGeometryKHR)
+		blas->build.max_prim_counts[i] = prim_count;
+		blas->build.geoms[i] = (VkAccelerationStructureGeometryKHR)
 			{
 				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
 				.flags = VK_GEOMETRY_OPAQUE_BIT_KHR, // FIXME this is not true. incoming mode might have transparency eventually (and also dynamically)
@@ -483,58 +570,95 @@ qboolean RT_BlasPreallocate(struct rt_blas_s* blas, rt_blas_preallocate_t args) 
 					(VkAccelerationStructureGeometryTrianglesDataKHR){
 						.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
 						.indexType = VK_INDEX_TYPE_UINT16,
-						.maxVertex = args.max_vertex_per_geometry,
+						.maxVertex = mg->max_vertex,
 						.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
 						.vertexStride = sizeof(vk_vertex_t),
+
+						// Will be set to correct value at blas build time
 						.vertexData.deviceAddress = 0,
 						.indexData.deviceAddress = 0,
 					},
 			};
 
-		build_ranges[i] = (VkAccelerationStructureBuildRangeInfoKHR) {
-			.primitiveCount = args.max_prims_per_geometry,
-			.primitiveOffset = 0,
-			.firstVertex = 0,
+		blas->build.ranges[i] = (VkAccelerationStructureBuildRangeInfoKHR) {
+			.primitiveCount = prim_count,
+			.primitiveOffset = mg->index_offset * sizeof(uint16_t),
+			.firstVertex = mg->vertex_offset,
 		};
 	}
+}
 
-	VkAccelerationStructureBuildGeometryInfoKHR build_info = {
+struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args) {
+	rt_blas_t *blas = Mem_Calloc(vk_core.pool, sizeof(*blas));
+
+	blas->debug_name = args.name;
+	blas->usage = args.usage;
+
+	blas->build.info = (VkAccelerationStructureBuildGeometryInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
 		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
 		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR,
-		.geometryCount = args.max_geometries,
+		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
+		.geometryCount = args.geoms_count,
 		.srcAccelerationStructure = VK_NULL_HANDLE,
-		.pGeometries = as_geoms,
 	};
 
-	const VkAccelerationStructureBuildSizesInfoKHR build_size = getAccelSizes(&build_info, max_prim_counts);
-	DEBUG("geoms=%d max_prims=%d max_vertex=%d => blas=%dKiB",
-		args.max_geometries, args.max_prims_per_geometry, args.max_vertex_per_geometry, (int)build_size.accelerationStructureSize / 1024);
+	qboolean is_update = false;
 
-	qboolean retval = false;
-
-	blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
-	if (!blas->blas) {
-		ERR("Couldn't preallocate blas %s", blas->debug_name);
-		goto finalize;
+	switch (blas->usage) {
+		case kBlasBuildStatic:
+			break;
+		case kBlasBuildDynamicUpdate:
+			blas->build.info.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+			break;
+		case kBlasBuildDynamicFast:
+			blas->build.info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
+			break;
 	}
 
-	retval = true;
+	// TODO allocate these from static pool
+	blas->build.geoms = Mem_Calloc(vk_core.pool, args.geoms_count * sizeof(VkAccelerationStructureGeometryKHR));
+	blas->build.max_prim_counts = Mem_Malloc(vk_core.pool, args.geoms_count * sizeof(uint32_t));
+	blas->build.ranges = Mem_Calloc(vk_core.pool, args.geoms_count * sizeof(VkAccelerationStructureBuildRangeInfoKHR));
 
-	blas->blas_size = build_size.accelerationStructureSize;
-	blas->max_geoms = build_info.geometryCount;
+	blasFillGeometries(blas, args.geoms, args.geoms_count);
 
-finalize:
-	Mem_Free(as_geoms);
-	Mem_Free(max_prim_counts);
-	Mem_Free(build_ranges);
-	return retval;
+	blas->build.info.pGeometries = blas->build.geoms;
+
+	blas->build.sizes = getAccelSizes(&blas->build.info, blas->build.max_prim_counts);
+
+	blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, blas->build.sizes.accelerationStructureSize);
+
+	if (!blas->blas) {
+		ERR("Couldn't create vk accel");
+		goto fail;
+	}
+
+	blas->build.info.dstAccelerationStructure = blas->blas;
+	blas->max_geoms = blas->build.info.geometryCount;
+
+	if (!args.dont_build)
+		BOUNDED_ARRAY_APPEND(g_accel.build.blas, blas);
+
+	return blas;
+
+fail:
+	RT_BlasDestroy(blas);
+	return NULL;
 }
 
 void RT_BlasDestroy(struct rt_blas_s* blas) {
 	if (!blas)
 		return;
+
+	if (blas->build.max_prim_counts)
+		Mem_Free(blas->build.max_prim_counts);
+
+	if (blas->build.geoms)
+		Mem_Free(blas->build.geoms);
+
+	if (blas->build.ranges)
+		Mem_Free(blas->build.ranges);
 
 	/* if (blas->max_prims) */
 	/* 	Mem_Free(blas->max_prims); */
@@ -549,114 +673,37 @@ VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas) {
 	return getAccelAddress(blas->blas);
 }
 
-qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count) {
-	if (!blas || !geoms_count)
-		return false;
-
-	VkAccelerationStructureBuildGeometryInfoKHR build_info = {
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-		.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
-		.geometryCount = geoms_count,
-		.srcAccelerationStructure = VK_NULL_HANDLE,
-	};
-
-	qboolean is_update = false;
-
+qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count) {
 	switch (blas->usage) {
 		case kBlasBuildStatic:
-			ASSERT(!blas->blas);
+			ASSERT(!"Updating static BLAS is invalid");
 			break;
 		case kBlasBuildDynamicUpdate:
-			if (blas->blas) {
-				build_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-				build_info.srcAccelerationStructure = blas->blas;
-				is_update = true;
+			ASSERT(geoms_count == blas->max_geoms);
+			if (blas->build.built) {
+				blas->build.info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+				blas->build.info.srcAccelerationStructure = blas->blas;
 			}
-			build_info.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 			break;
 		case kBlasBuildDynamicFast:
-			build_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
 			break;
 	}
 
-	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
-	const VkDeviceAddress buffer_addr = R_VkBufferGetDeviceAddress(geometry_buffer);
+	blasFillGeometries(blas, geoms, geoms_count);
 
-	// TODO allocate these from static pool
-	VkAccelerationStructureGeometryKHR *const as_geoms = Mem_Calloc(vk_core.pool, geoms_count * sizeof(*as_geoms));
-	uint32_t *const max_prim_counts = Mem_Malloc(vk_core.pool, geoms_count * sizeof(*max_prim_counts));
-	VkAccelerationStructureBuildRangeInfoKHR *const build_ranges = Mem_Calloc(vk_core.pool, geoms_count * sizeof(*build_ranges));
+	const VkAccelerationStructureBuildSizesInfoKHR sizes = getAccelSizes(&blas->build.info, blas->build.max_prim_counts);
 
-	for (int i = 0; i < geoms_count; ++i) {
-		const vk_render_geometry_t *mg = geoms + i;
-		const uint32_t prim_count = mg->element_count / 3;
+	if (blas->build.sizes.accelerationStructureSize < sizes.accelerationStructureSize) {
+		ERR("Fast dynamic BLAS %s size exceeded (need %dKiB, have %dKiB, geoms = %d)", blas->debug_name,
+			(int)(sizes.accelerationStructureSize / 1024),
+			(int)(blas->build.sizes.accelerationStructureSize / 1024),
+			geoms_count
+		);
 
-		max_prim_counts[i] = prim_count;
-		as_geoms[i] = (VkAccelerationStructureGeometryKHR)
-			{
-				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-				.flags = VK_GEOMETRY_OPAQUE_BIT_KHR, // FIXME this is not true. incoming mode might have transparency eventually (and also dynamically)
-				.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
-				.geometry.triangles =
-					(VkAccelerationStructureGeometryTrianglesDataKHR){
-						.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
-						.indexType = VK_INDEX_TYPE_UINT16,
-						.maxVertex = mg->max_vertex,
-						.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
-						.vertexStride = sizeof(vk_vertex_t),
-						.vertexData.deviceAddress = buffer_addr,
-						.indexData.deviceAddress = buffer_addr,
-					},
-			};
-
-		build_ranges[i] = (VkAccelerationStructureBuildRangeInfoKHR) {
-			.primitiveCount = prim_count,
-			.primitiveOffset = mg->index_offset * sizeof(uint16_t),
-			.firstVertex = mg->vertex_offset,
-		};
+		// FIXME mark blas as invalid to avoid including it into TLAS
+		return false;
 	}
 
-	build_info.pGeometries = as_geoms;
-
-	const VkAccelerationStructureBuildSizesInfoKHR build_size = getAccelSizes(&build_info, max_prim_counts);
-
-	qboolean retval = false;
-
-	// allocate blas
-	if (!blas->blas) {
-		blas->blas = createAccel(blas->debug_name, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build_size.accelerationStructureSize);
-		if (!blas->blas) {
-			ERR("Couldn't create vk accel");
-			goto finalize;
-		}
-
-		blas->blas_size = build_size.accelerationStructureSize;
-		blas->max_geoms = build_info.geometryCount;
-	} else {
-		if (blas->blas_size < build_size.accelerationStructureSize) {
-			ERR("Fast dynamic BLAS %s size exceeded (need %dKiB, have %dKiB, geoms = %d)", blas->debug_name,
-				(int)build_size.accelerationStructureSize / 1024,
-				blas->blas_size / 1024,
-				geoms_count
-			);
-			goto finalize;
-		}
-	}
-
-	// Build
-	build_info.dstAccelerationStructure = blas->blas;
-	if (!buildAccel(geometry_buffer, &build_info, is_update ? build_size.updateScratchSize : build_size.buildScratchSize, build_ranges)) {
-		ERR("Couldn't build BLAS %s", blas->debug_name);
-		goto finalize;
-	}
-
-	retval = true;
-
-finalize:
-	Mem_Free(as_geoms);
-	Mem_Free(max_prim_counts);
-	Mem_Free(build_ranges);
-	return retval;
+	BOUNDED_ARRAY_APPEND(g_accel.build.blas, blas);
+	return true;
 }

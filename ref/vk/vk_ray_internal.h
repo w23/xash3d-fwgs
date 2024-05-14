@@ -73,24 +73,24 @@ void XVK_RayModel_Validate(void);
 
 void RT_RayModel_Clear(void);
 
-// Just creates an empty BLAS structure, doesn't alloc anything
 // Memory pointed to by name must remain alive until RT_BlasDestroy
-struct rt_blas_s* RT_BlasCreate(const char *name, rt_blas_usage_e usage);
-
-// Preallocate BLAS with given estimates
 typedef struct {
-	int max_geometries;
-	int max_prims_per_geometry;
-	int max_vertex_per_geometry;
-} rt_blas_preallocate_t;
-qboolean RT_BlasPreallocate(struct rt_blas_s* blas, rt_blas_preallocate_t args);
+	const char *name;
+	rt_blas_usage_e usage;
+	const struct vk_render_geometry_s *geoms;
+	int geoms_count;
+	qboolean dont_build; // for dynamic models
+} rt_blas_create_t;
+
+// Creates BLAS and schedules it to be built next frame
+struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args);
 
 void RT_BlasDestroy(struct rt_blas_s* blas);
 
-// 1. Schedules BLAS build (allocates geoms+ranges from a temp pool, etc).
-// 2. Allocates kusochki (if not) and fills them with geom and initial material data
-qboolean RT_BlasBuild(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count);
+// Update dynamic BLAS, schedule it for build/update
+qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count);
 
+// TODO blas struct can have its addr field known
 VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas);
 
 typedef struct rt_kusochki_s {

@@ -686,6 +686,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 
 	if (!R_RenderModelUpdate(&wmodel->render_model)) {
 		ERR("Failed to update brush model \"%s\" water", wmodel->render_model.debug_name);
+		return;
 	}
 
 	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
