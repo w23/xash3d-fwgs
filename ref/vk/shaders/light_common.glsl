@@ -83,6 +83,10 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 	return payload_shadow.hit_type == SHADOW_HIT;
 #elif defined(RAY_QUERY)
 	{
+		dist -= shadow_offset_fudge;
+		if (dist <= 0.)
+			return false;
+
 		const uint flags =  0
 			// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
 			//| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -90,7 +94,7 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 			| gl_RayFlagsTerminateOnFirstHitEXT
 			;
 		rayQueryEXT rq;
-		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, dist - shadow_offset_fudge);
+		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, dist);
 		while (rayQueryProceedEXT(rq)) {}
 
 		if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
