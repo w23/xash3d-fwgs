@@ -111,6 +111,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 		}
 	}
 
+	Q_strncpy(image.name, create->debug_name, sizeof(image.name));
 	image.width = create->width;
 	image.height = create->height;
 	image.depth = create->depth;
@@ -309,14 +310,19 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	// 1. Phase I: prepare all images to be transferred into
 	// 1.a Set up barriers for every valid image
+	int barriers_count = 0;
 	for (int i = 0; i < images_count; ++i) {
 		image_upload_t *const up = g_image_upload.images.items + i;
-		if (!up->image)
+		if (!up->image) {
+			DEBUG("Skipping image upload slot %d", i);
 			continue;
+		}
+
+		DEBUG("Uploading image \"%s\"", up->image->name);
 
 		ASSERT(up->image->upload_slot == i);
 
-		g_image_upload.barriers.items[i] = (VkImageMemoryBarrier) {
+		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.image = up->image->image,
 			.srcAccessMask = 0,
@@ -338,7 +344,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, 0, NULL, 0, NULL,
-		images_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
+		barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
 	);
 
 	// 2. Phase 2: issue copy commands for each valid image
@@ -359,12 +365,13 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	// 3. Phase 3: change all images layout to shader read only optimal
 	// 3.a Set up barriers for layout transition
+	barriers_count = 0;
 	for (int i = 0; i < images_count; ++i) {
 		image_upload_t *const up = g_image_upload.images.items + i;
 		if (!up->image)
 			continue;
 
-		g_image_upload.barriers.items[i] = (VkImageMemoryBarrier) {
+		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 			.image = up->image->image,
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -383,8 +390,8 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		R_VkStagingReleaseAfterNextFrame(up->staging.lock.handle);
 
 		// Mark image as uploaded
-		up->image = NULL;
 		up->image->upload_slot = -1;
+		up->image = NULL;
 
 		// TODO it would be nice to track uploading status further:
 		// 1. When uploading cmdbuf has been submitted to the GPU
@@ -400,7 +407,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 	vkCmdPipelineBarrier(combuf->cmdbuf,
 		VK_PIPELINE_STAGE_TRANSFER_BIT, dst_stages,
 		0, 0, NULL, 0, NULL,
-		images_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
+		barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
 	);
 
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -466,7 +473,7 @@ void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, cons
 	ASSERT(up->staging.cursor < img->image_size);
 	ASSERT(img->image_size - up->staging.cursor >= size);
 
-	memcpy(up->staging.lock.ptr + up->staging.cursor, data, size);
+	memcpy((char*)up->staging.lock.ptr + up->staging.cursor, data, size);
 
 	g_image_upload.slices.items[up->slices.cursor] = (VkBufferImageCopy) {
 		.bufferOffset = up->staging.lock.offset + up->staging.cursor,
@@ -504,6 +511,8 @@ void R_VkImageUploadCancel( r_vk_image_t *img ) {
 	// Skip already uploaded (or never uploaded) images
 	if (img->upload_slot < 0)
 		return;
+
+	WARN("Canceling uploading image \"%s\"", img->name);
 
 	image_upload_t *const up = g_image_upload.images.items + img->upload_slot;
 	ASSERT(up->image == img);

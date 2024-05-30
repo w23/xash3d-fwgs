@@ -285,8 +285,6 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	R_VkCombufBegin( frame->combuf );
 
-	R_VkImageUploadCommit(frame->combuf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
-
 	g_frame.current.phase = Phase_FrameBegan;
 	APROF_SCOPE_END(begin_frame);
 }
@@ -306,6 +304,9 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	};
 
 	ASSERT(g_frame.current.phase == Phase_FrameBegan);
+
+	// FIXME, should be done by rendering when it requests textures
+	R_VkImageUploadCommit(combuf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	VK_Render_FIXME_Barrier(cmdbuf);

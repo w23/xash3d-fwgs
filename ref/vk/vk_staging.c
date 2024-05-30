@@ -13,7 +13,8 @@
 #define MODULE_NAME "staging"
 #define LOG_MODULE staging
 
-#define DEFAULT_STAGING_SIZE (128*1024*1024)
+// FIXME don't do this, mkay
+#define DEFAULT_STAGING_SIZE (2*128*1024*1024)
 #define MAX_STAGING_ALLOCS (2048)
 #define MAX_CONCURRENT_FRAMES 2
 #define COMMAND_BUFFER_COUNT (MAX_CONCURRENT_FRAMES + 1) // to accommodate two frames in flight plus something trying to upload data before waiting for the next frame to complete
@@ -321,7 +322,7 @@ r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
 		.handle = 31337, // FAKE
 		.offset = offset,
 		.buffer = g_staging.buffer.buffer,
-		.ptr = g_staging.buffer.mapped + offset,
+		.ptr = (char*)g_staging.buffer.mapped + offset,
 	};
 }
 

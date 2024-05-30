@@ -2,7 +2,12 @@
 #include "vk_core.h"
 #include "vk_devmem.h"
 
+qboolean R_VkImageInit(void);
+void R_VkImageShutdown(void);
+
 typedef struct r_vk_image_s {
+	char name[64];
+
 	vk_devmem_t devmem;
 	VkImage image;
 	VkImageView view;

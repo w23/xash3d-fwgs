@@ -3,7 +3,7 @@
 #include "vk_common.h"
 #include "r_textures.h"
 #include "vk_overlay.h"
-#include "vk_renderstate.h"
+#include "vk_image.h"
 #include "vk_staging.h"
 #include "vk_framectl.h"
 #include "vk_brush.h"
@@ -40,7 +40,6 @@
 #include "debugbreak.h"
 
 #include <string.h>
-#include <errno.h>
 
 #define LOG_MODULE core
 
@@ -793,6 +792,9 @@ qboolean R_VkInit( void )
 		return false;
 
 	VK_LoadCvarsAfterInit();
+
+	if (!R_VkImageInit())
+		return false;
 
 	if (!R_VkCombuf_Init())
 		return false;

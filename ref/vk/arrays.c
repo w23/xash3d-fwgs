@@ -44,7 +44,9 @@ void arrayDynamicAppend(array_dynamic_t *array, void *item) {
 	const int new_count = array->count + 1;
 	arrayDynamicEnsureCapacity(array, new_count);
 
-	memcpy(array->items + array->count * array->item_size, item, array->item_size);
+	if (item)
+		memcpy((char*)array->items + array->count * array->item_size, item, array->item_size);
+
 	array->count = new_count;
 }
 
