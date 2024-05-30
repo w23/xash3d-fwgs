@@ -24,21 +24,35 @@ typedef struct {
 	size_t size; // for stats only
 } staging_image_t;
 
+/* TODO
+typedef enum {
+	RegionState_Locked,
+	RegionState_Released,
+} region_state_e;
+
+typedef struct {
+	region_state_e debug_state;
+	//int buffer_index;
+	VkDeviceSize begin, end;
+	uint32_t cmdbuf_sequence;
+} region_t;
+*/
+
 static struct {
 	vk_buffer_t buffer;
 	r_flipping_buffer_t buffer_alloc;
+
+	/* TODO
+	struct {
+		ARRAY_DYNAMIC_DECLARE(region_t, regions);
+	} regions;
+	*/
 
 	struct {
 		VkBuffer dest[MAX_STAGING_ALLOCS];
 		VkBufferCopy copy[MAX_STAGING_ALLOCS];
 		int count;
 	} buffers;
-
-	struct {
-		staging_image_t dest[MAX_STAGING_ALLOCS];
-		VkBufferImageCopy copy[MAX_STAGING_ALLOCS];
-		int count;
-	} images;
 
 	vk_combuf_t *combuf[3];
 
@@ -114,7 +128,6 @@ void R_VkStagingFlushSync( void ) {
 	}
 
 	g_staging.buffers.count = 0;
-	g_staging.images.count = 0;
 	R_FlippingBuffer_Clear(&g_staging.buffer_alloc);
 
 end:
@@ -158,32 +171,7 @@ vk_staging_region_t R_VkStagingLockForBuffer(vk_staging_buffer_args_t args) {
 	};
 }
 
-vk_staging_region_t R_VkStagingLockForImage(vk_staging_image_args_t args) {
-	if ( g_staging.images.count >= MAX_STAGING_ALLOCS )
-		R_VkStagingFlushSync();
-
-	const uint32_t offset = allocateInRing(args.size, args.alignment);
-	if (offset == ALO_ALLOC_FAILED)
-		return (vk_staging_region_t){0};
-
-	const int index = g_staging.images.count;
-	staging_image_t *const dest = g_staging.images.dest + index;
-
-	dest->image = args.image;
-	dest->layout = args.layout;
-	dest->size = args.size;
-	g_staging.images.copy[index] = args.region;
-	g_staging.images.copy[index].bufferOffset += offset;
-
-	g_staging.images.count++;
-
-	return (vk_staging_region_t){
-		.ptr = (char*)g_staging.buffer.mapped + offset,
-		.handle = index + MAX_STAGING_ALLOCS,
-	};
-}
-
-void R_VkStagingUnlock(staging_handle_t handle) {
+void R_VkStagingUnlock(r_vkstaging_handle_t handle) {
 	ASSERT(handle >= 0);
 	ASSERT(handle < MAX_STAGING_ALLOCS * 2);
 
@@ -278,31 +266,6 @@ static void commitBuffers(vk_combuf_t *combuf) {
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }
 
-static void commitImages(vk_combuf_t *combuf) {
-	if (!g_staging.images.count)
-		return;
-
-	const VkCommandBuffer cmdbuf = g_staging.current->cmdbuf;
-	const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.image_upload_scope_id);
-	for (int i = 0; i < g_staging.images.count; i++) {
-		/* { */
-		/* 	const VkBufferImageCopy *const copy = g_staging.images.copy + i; */
-		/* 	gEngine.Con_Reportf("  i%d: [%08llx, ?) => %p\n", i, copy->bufferOffset, g_staging.images.dest[i].image); */
-		/* } */
-
-		g_staging.stats.images++;
-		g_staging.stats.images_size += g_staging.images.dest[i].size;
-
-		vkCmdCopyBufferToImage(cmdbuf, g_staging.buffer.buffer,
-			g_staging.images.dest[i].image,
-			g_staging.images.dest[i].layout,
-			1, g_staging.images.copy + i);
-	}
-
-	g_staging.images.count = 0;
-	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
-}
-
 static vk_combuf_t *getCurrentCombuf(void) {
 	if (!g_staging.current) {
 		g_staging.current = g_staging.combuf[0];
@@ -317,12 +280,11 @@ VkCommandBuffer R_VkStagingGetCommandBuffer(void) {
 }
 
 vk_combuf_t *R_VkStagingCommit(void) {
-	if (!g_staging.images.count && !g_staging.buffers.count && !g_staging.current)
+	if (!g_staging.buffers.count && !g_staging.current)
 		return VK_NULL_HANDLE;
 
 	getCurrentCombuf();
 	commitBuffers(g_staging.current);
-	commitImages(g_staging.current);
 	return g_staging.current;
 }
 
@@ -330,7 +292,6 @@ void R_VkStagingFrameBegin(void) {
 	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
 
 	g_staging.buffers.count = 0;
-	g_staging.images.count = 0;
 }
 
 vk_combuf_t *R_VkStagingFrameEnd(void) {
@@ -350,4 +311,20 @@ vk_combuf_t *R_VkStagingFrameEnd(void) {
 	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
 
 	return current;
+}
+
+r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
+	const uint32_t alignment = 4;
+	const uint32_t offset = R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment);
+	ASSERT(offset != ALO_ALLOC_FAILED);
+	return (r_vkstaging_region_t){
+		.handle = 31337, // FAKE
+		.offset = offset,
+		.buffer = g_staging.buffer.buffer,
+		.ptr = g_staging.buffer.mapped + offset,
+	};
+}
+
+void R_VkStagingReleaseAfterNextFrame(r_vkstaging_handle_t handle) {
+	// FIXME
 }

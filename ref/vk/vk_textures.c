@@ -2,7 +2,6 @@
 
 #include "vk_core.h"
 #include "vk_descriptor.h"
-#include "vk_staging.h"
 #include "vk_logs.h"
 #include "r_textures.h"
 #include "r_speeds.h"
@@ -614,12 +613,6 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 
 	if (tex->vk.image.image == VK_NULL_HANDLE)
 		return;
-
-	// Need to make sure that there are no references to this texture anywhere.
-	// It might have been added to staging and then immediately deleted, leaving references to its vkimage
-	// in the staging command buffer. See https://github.com/w23/xash3d-fwgs/issues/464
-	R_VkStagingFlushSync();
-	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
 	R_VkImageDestroy(&tex->vk.image);
 	g_vktextures.stats.size_total -= tex->total_size;

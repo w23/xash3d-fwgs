@@ -5,11 +5,28 @@
 qboolean R_VkStagingInit(void);
 void R_VkStagingShutdown(void);
 
-typedef int staging_handle_t;
+typedef int r_vkstaging_handle_t;
 
 typedef struct {
 	void *ptr;
-	staging_handle_t handle;
+	r_vkstaging_handle_t handle;
+
+	// TODO maybe return these on lock?
+	VkBuffer buffer;
+	VkDeviceSize offset;
+} r_vkstaging_region_t;
+
+// Allocate CPU-accessible memory in staging buffer
+r_vkstaging_region_t R_VkStagingLock(uint32_t size);
+
+// Release when next frame is done
+// TODO synch with specific combuf: void R_VkStagingRelease(r_vkstaging_handle_t handle, uint32_t gen);
+void R_VkStagingReleaseAfterNextFrame(r_vkstaging_handle_t handle);
+
+
+typedef struct {
+	void *ptr;
+	r_vkstaging_handle_t handle;
 } vk_staging_region_t;
 
 // Allocate region for uploadting to buffer
@@ -21,18 +38,8 @@ typedef struct {
 } vk_staging_buffer_args_t;
 vk_staging_region_t R_VkStagingLockForBuffer(vk_staging_buffer_args_t args);
 
-// Allocate region for uploading to image
-typedef struct {
-	VkImage image;
-	VkImageLayout layout;
-	VkBufferImageCopy region;
-	uint32_t size;
-	uint32_t alignment;
-} vk_staging_image_args_t;
-vk_staging_region_t R_VkStagingLockForImage(vk_staging_image_args_t args);
-
 // Mark allocated region as ready for upload
-void R_VkStagingUnlock(staging_handle_t handle);
+void R_VkStagingUnlock(r_vkstaging_handle_t handle);
 
 // Append copy commands to command buffer.
 struct vk_combuf_s* R_VkStagingCommit(void);

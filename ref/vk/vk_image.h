@@ -15,6 +15,9 @@ typedef struct r_vk_image_s {
 	int mips, layers;
 	VkFormat format;
 	uint32_t flags;
+	uint32_t image_size;
+
+	int upload_slot;
 } r_vk_image_t;
 
 enum {
@@ -53,6 +56,14 @@ void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args
 
 uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
 
+// Expects *img to be pinned and valid until either cancel or commit is called
 void R_VkImageUploadBegin( r_vk_image_t *img );
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
 void R_VkImageUploadEnd( r_vk_image_t *img );
+
+// If this image has its upload scheduled, it should be cancelled
+void R_VkImageUploadCancel( r_vk_image_t *img );
+
+// Upload all enqueued images using the given command buffer
+struct vk_combuf_s;
+void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

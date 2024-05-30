@@ -285,6 +285,8 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	R_VkCombufBegin( frame->combuf );
 
+	R_VkImageUploadCommit(frame->combuf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
+
 	g_frame.current.phase = Phase_FrameBegan;
 	APROF_SCOPE_END(begin_frame);
 }
@@ -366,10 +368,12 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 
 	frame->staging_combuf = R_VkStagingFrameEnd();
 
-	const VkCommandBuffer cmdbufs[] = {
-		frame->staging_combuf ? frame->staging_combuf->cmdbuf : NULL,
-		cmdbuf,
-	};
+	BOUNDED_ARRAY(VkCommandBuffer, cmdbufs, 2);
+
+	if (frame->staging_combuf)
+		BOUNDED_ARRAY_APPEND(cmdbufs, frame->staging_combuf->cmdbuf);
+
+	BOUNDED_ARRAY_APPEND(cmdbufs, cmdbuf);
 
 	{
 		const VkPipelineStageFlags stageflags[] = {
@@ -395,8 +399,8 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 			.waitSemaphoreCount = waitophores.count,
 			.pWaitSemaphores = waitophores.items,
 			.pWaitDstStageMask = stageflags,
-			.commandBufferCount = cmdbufs[0] ? 2 : 1,
-			.pCommandBuffers = cmdbufs[0] ? cmdbufs : cmdbufs + 1,
+			.commandBufferCount = cmdbufs.count,
+			.pCommandBuffers = cmdbufs.items,
 			.signalSemaphoreCount = signalphores.count,
 			.pSignalSemaphores = signalphores.items,
 		};

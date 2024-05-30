@@ -2,6 +2,24 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2024-05-24 E379
+- [ ] refactor staging:
+	- [ ] move destination image tracking to outside of staging
+		- [x] vk_image ← vk_texture (E380)
+		- [x] implement generic staging regions (E380)
+		- [ ] implement stricter staging regions tracking
+	- [ ] move destination buffer tracking to outside of staging:
+		- [ ] vk_geometry
+		- [ ] vk_light: grid, metadata
+		- [ ] vk_ray_accel: TLAS geometries
+		- [ ] vk_ray_model: kusochki
+	- [ ] staging should not be aware of cmdbuf either
+		- [ ] `R_VkStagingCommit()`:
+			- [ ] vk_image
+			- [ ] vk_ray_accel
+		- [ ] `R_VkStagingGetCommandBuffer()`
+			- [ ] vk_image
+
 ## 2024-05-07 E376
 - [ ] resource manager
     - [x] extract all resource mgmt from vk_rtx into a designated file
