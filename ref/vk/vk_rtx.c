@@ -69,6 +69,8 @@ static struct {
 } g_rtx = {0};
 
 void VK_RayNewMapBegin( void ) {
+	// TODO it seems like these are unnecessary leftovers. Moreover, they are actively harmful,
+	// as they recreate things that are in fact pretty much static. Untangle this.
 	RT_VkAccelNewMap();
 	RT_RayModel_Clear();
 }

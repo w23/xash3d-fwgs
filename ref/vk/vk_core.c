@@ -24,6 +24,7 @@
 #include "vk_combuf.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
+#include "arrays.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -191,7 +192,7 @@ static qboolean createInstance( void )
 		.pEngineName = "xash3d-fwgs",
 	};
 
-	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8);
+	BOUNDED_ARRAY(VkValidationFeatureEnableEXT, validation_features, 8);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
 	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
 

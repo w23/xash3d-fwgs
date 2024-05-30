@@ -3,6 +3,7 @@
 #include "vk_core.h"
 #include "vk_descriptor.h"
 #include "vk_image.h"
+#include "arrays.h"
 
 // TODO remove
 #include "vk_light.h"
@@ -82,7 +83,7 @@ void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean di
 typedef struct {
 	// TODO VK_KHR_synchronization2, has a slightly different (better) semantics
 	VkPipelineStageFlags src_stage_mask;
-	BOUNDED_ARRAY_DECLARE(images, VkImageMemoryBarrier, 16);
+	BOUNDED_ARRAY_DECLARE(VkImageMemoryBarrier, images, 16);
 	//BOUNDED_ARRAY_DECLARE(buffers, VkBufferMemoryBarrier, 16);
 } r_vk_barrier_t;
 

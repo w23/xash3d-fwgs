@@ -6,6 +6,7 @@
 #include "r_speeds.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "arrays.h"
 
 #include <memory.h>
 
@@ -200,7 +201,7 @@ static void commitBuffers(vk_combuf_t *combuf) {
 	// - upload once per buffer
 	// - join adjacent regions
 
-	BOUNDED_ARRAY(barriers, VkBufferMemoryBarrier, 4);
+	BOUNDED_ARRAY(VkBufferMemoryBarrier, barriers, 4);
 
 	for (int i = 0; i < g_staging.buffers.count; i++) {
 		const VkBuffer dst_buf = g_staging.buffers.dest[i];

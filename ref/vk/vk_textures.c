@@ -395,6 +395,7 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 			.height = header->pixelHeight,
 			.depth = Q_max(1, header->pixelDepth),
 			.mips = header->levelCount,
+			// header->layerCount? header->faceCount?
 			.layers = 1, // TODO or 6 for cubemap; header->faceCount
 			.format = header->vkFormat,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -408,7 +409,6 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	{
 		R_VkImageUploadBegin(&tex->vk.image);
 
-		// TODO layers
 		for (int mip = 0; mip < header->levelCount; ++mip) {
 			const ktx2_level_t* const level = levels + mip;
 			const size_t mip_size = level->byteLength;

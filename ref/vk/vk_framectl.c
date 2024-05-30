@@ -11,6 +11,7 @@
 #include "vk_commandpool.h"
 #include "vk_combuf.h"
 
+#include "arrays.h"
 #include "profiler.h"
 #include "r_speeds.h"
 
@@ -141,7 +142,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.pDepthStencilAttachment = &depth_attachment,
 	};
 
-	BOUNDED_ARRAY(dependencies, VkSubpassDependency, 2);
+	BOUNDED_ARRAY(VkSubpassDependency, dependencies, 2);
 	if (vk_core.rtx) {
 		const VkSubpassDependency color = {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -376,9 +377,9 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 		};
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
-		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
-		BOUNDED_ARRAY(waitophores, VkSemaphore, 2);
-		BOUNDED_ARRAY(signalphores, VkSemaphore, 2);
+		// Can we postpone waiting for framebuffer semaphore until we actually need it.
+		BOUNDED_ARRAY(VkSemaphore, waitophores, 2);
+		BOUNDED_ARRAY(VkSemaphore, signalphores, 2);
 
 		if (draw) {
 			BOUNDED_ARRAY_APPEND(waitophores, frame->sem_framebuffer_ready);

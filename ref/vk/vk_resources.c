@@ -3,6 +3,7 @@
 #include "vk_image.h"
 #include "vk_common.h"
 #include "vk_logs.h"
+#include "arrays.h"
 
 #define LOG_MODULE rt
 

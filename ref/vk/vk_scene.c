@@ -138,6 +138,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 
 	RT_LightsNewMap(map);
 
+	// TODO doesn't really need to exist: sprite instance models are static
 	R_SpriteNewMapFIXME();
 
 	// Load light entities and patch data prior to loading map brush model

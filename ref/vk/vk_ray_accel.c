@@ -11,6 +11,7 @@
 #include "vk_render.h"
 #include "vk_logs.h"
 
+#include "arrays.h"
 #include "profiler.h"
 
 #include "xash3d_mathlib.h"
@@ -76,7 +77,7 @@ static struct {
 	struct {
 		// TODO two arrays for a single vkCmdBuildAccelerationStructuresKHR() call
 		// FIXME This is for testing only
-		BOUNDED_ARRAY_DECLARE(blas, rt_blas_t*, 256);
+		BOUNDED_ARRAY_DECLARE(rt_blas_t*, blas, 256);
 	} build;
 
 	cvar_t *cv_force_culling;

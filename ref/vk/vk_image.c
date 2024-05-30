@@ -2,6 +2,7 @@
 #include "vk_staging.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "arrays.h"
 
 #include "xash3d_mathlib.h" // Q_max
 
