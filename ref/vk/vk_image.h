@@ -45,7 +45,7 @@ typedef struct {
 r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
 void R_VkImageDestroy(r_vk_image_t *img);
 
-void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image);
+void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image, VkAccessFlags src_access, VkPipelineStageFlags from_stage);
 
 typedef struct {
 	VkPipelineStageFlags in_stage;

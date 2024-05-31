@@ -157,7 +157,7 @@ void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean di
 		if (discontinuity || res->resource.write.pipelines == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
 			DEBUG("discontinuity: %s", res->name);
-			R_VkImageClear( cmdbuf, res->image.image );
+			R_VkImageClear( cmdbuf, res->image.image, 0, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT );
 			res->resource.write.pipelines = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			res->resource.write.image_layout = VK_IMAGE_LAYOUT_GENERAL;
 			res->resource.write.access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;

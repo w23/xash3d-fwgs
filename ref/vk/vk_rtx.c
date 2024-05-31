@@ -574,7 +574,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			},
 		};
 
-		R_VkImageClear( cmdbuf, g_rtx.mainpipe_out->image.image );
+		R_VkImageClear( cmdbuf, g_rtx.mainpipe_out->image.image, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT );
 		R_VkImageBlit( cmdbuf, &blit_args );
 	} else {
 		const perform_tracing_args_t trace_args = {

@@ -150,11 +150,11 @@ void R_VkImageDestroy(r_vk_image_t *img) {
 	*img = (r_vk_image_t){0};
 }
 
-void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image) {
+void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image, VkAccessFlags src_access, VkPipelineStageFlags from_stage) {
 	const VkImageMemoryBarrier image_barriers[] = { {
 		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.image = image,
-		.srcAccessMask = 0,
+		.srcAccessMask = src_access,
 		.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 		.newLayout = VK_IMAGE_LAYOUT_GENERAL,
@@ -168,7 +168,7 @@ void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image) {
 
 	const VkClearColorValue clear_value = {0};
 
-	vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+	vkCmdPipelineBarrier(cmdbuf, from_stage, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
 		0, NULL, 0, NULL, COUNTOF(image_barriers), image_barriers);
 
 	vkCmdClearColorImage(cmdbuf, image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &image_barriers->subresourceRange);
