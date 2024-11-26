@@ -126,13 +126,18 @@ VkBool32 VKAPI_PTR debugCallback(
 	if (Q_strcmp(pCallbackData->pMessageIdName, "VUID-vkMapMemory-memory-00683") == 0)
 		return VK_FALSE;
 
+	// FIXME: remove this when new buffer staging is done, see https://github.com/w23/xash3d-fwgs/issues/743
+	// For now, ignore a firehose of "inefficient srcStageMask using VK_PIPELINE_STAGE_ALL_COMMANDS_BIT" messages.
+	if (Q_strcmp(pCallbackData->pMessageIdName, "BestPractices-pipeline-stage-flags-compute") == 0)
+		return VK_FALSE;
+
 	/* if (messageSeverity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) { */
 	/* 	gEngine.Con_Printf(S_WARN "Validation: %s\n", pCallbackData->pMessage); */
 	/* } */
 
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+		gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
 #ifdef _MSC_VER
 		__debugbreak();
 #else
@@ -140,9 +145,9 @@ VkBool32 VKAPI_PTR debugCallback(
 #endif
 	} else {
 		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
-			gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+			gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
 		} else {
-			gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+			gEngine.Con_Printf(S_WARN "vk/dbg: %s\n", pCallbackData->pMessage);
 		}
 	}
 
