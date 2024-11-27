@@ -155,6 +155,8 @@ vk_staging_region_t R_VkStagingLockForBuffer(vk_staging_buffer_args_t args) {
 	if (offset == ALO_ALLOC_FAILED)
 		return (vk_staging_region_t){0};
 
+	DEBUG("Lock buf alignment=%d size=%d region=%d..%d", args.alignment, args.size, offset, offset + args.size);
+
 	const int index = g_staging.buffers.count;
 
 	g_staging.buffers.dest[index] = args.buffer;
@@ -318,6 +320,9 @@ r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
 	const uint32_t alignment = 4;
 	const uint32_t offset = R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment);
 	ASSERT(offset != ALO_ALLOC_FAILED);
+
+	DEBUG("Lock alignment=%d size=%d region=%d..%d", alignment, size, offset, offset + size);
+
 	return (r_vkstaging_region_t){
 		.handle = 31337, // FAKE
 		.offset = offset,

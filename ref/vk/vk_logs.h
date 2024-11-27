@@ -16,6 +16,7 @@
 	X(rmain) \
 	X(sprite) \
 	X(img) \
+	X(staging) \
 
 enum {
 #define X(m) LogModule_##m,

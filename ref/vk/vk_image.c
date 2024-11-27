@@ -318,8 +318,6 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 			continue;
 		}
 
-		DEBUG("Uploading image \"%s\"", up->image->name);
-
 		ASSERT(up->image->upload_slot == i);
 
 		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
@@ -353,13 +351,30 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		if (!up->image)
 			continue;
 
+		const int slices_count = up->slices.end - up->slices.begin;
+		DEBUG("Uploading image \"%s\": buffer=%p slices=%d", up->image->name, up->staging.lock.buffer, slices_count);
+
 		ASSERT(up->staging.lock.buffer != VK_NULL_HANDLE);
 		ASSERT(up->slices.end == up->slices.cursor);
+		ASSERT(slices_count > 0);
+
+		for (int j = 0; j < slices_count; ++j) {
+			const VkBufferImageCopy *const slice = g_image_upload.slices.items + up->slices.begin + j;
+			DEBUG("  slice[%d]: off=%d rowl=%d height=%d off=(%d,%d,%d) ext=(%d,%d,%d)",
+				j, slice->bufferOffset, slice->bufferRowLength, slice->bufferImageHeight,
+				slice->imageOffset.x,
+				slice->imageOffset.y,
+				slice->imageOffset.z,
+				slice->imageExtent.width,
+				slice->imageExtent.height,
+				slice->imageExtent.depth
+			);
+		}
 
 		vkCmdCopyBufferToImage(combuf->cmdbuf,
 			up->staging.lock.buffer,
 			up->image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			up->slices.end - up->slices.begin,
+			slices_count,
 			g_image_upload.slices.items + up->slices.begin);
 	}
 

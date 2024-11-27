@@ -1177,3 +1177,26 @@ Cons: ridiculous texture explosion
 		- `performTracing()` write resource desc values passed from outside on each call
 	- new resources are added in `reloadMainpipe()`
     - resource with zero refcount are destroyed in `cleanupResources()`
+
+
+# 2024-11-26
+`./waf clangdb` produces `compile_commands.json` file inside of the build directory. All the paths in the file are relative to that directory.
+If the build directory is something 2nd level, like `build/amd64-debug`, and the file is then symlinked to (as nvim/lsp/clangd only looks for the file in the root and in the `./build` dir), then it confuses nvim/lsp/clangd.
+Solution: make build dir literally just `./build`.
+
+
+# 2024-11-27 E381
+## Removing staging flush
+
+### vk_scene.c/reloadPatches()
+- Can ignore for now
+
+### Staging full
+- (I) Just allocate another buffer for staging
+- (II) Figure out why the hell do we need so much staging memory
+	- PBR/remastered textures
+		- possible solution: lazy/ondemand loading
+
+### vk_brush.c / collect emissive surfaces
+- (I) try to merge emissive collection with surface loading
+- (II) convert from pushing material data to pulling. Not really clear how to do easily.
