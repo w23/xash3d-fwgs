@@ -13,8 +13,8 @@
 #define MODULE_NAME "staging"
 #define LOG_MODULE staging
 
-// FIXME don't do this, mkay
-#define DEFAULT_STAGING_SIZE (2*128*1024*1024)
+// FIXME decrease size to something reasonable, see https://github.com/w23/xash3d-fwgs/issues/746
+#define DEFAULT_STAGING_SIZE (4*128*1024*1024)
 #define MAX_STAGING_ALLOCS (2048)
 #define MAX_CONCURRENT_FRAMES 2
 #define COMMAND_BUFFER_COUNT (MAX_CONCURRENT_FRAMES + 1) // to accommodate two frames in flight plus something trying to upload data before waiting for the next frame to complete
@@ -102,6 +102,7 @@ void R_VkStagingShutdown(void) {
 // FIXME There's a severe race condition here. Submitting things manually and prematurely (before framectl had a chance to synchronize with the previous frame)
 // may lead to data races and memory corruption (e.g. writing into memory that's being read in some pipeline stage still going)
 void R_VkStagingFlushSync( void ) {
+	ASSERT(!"SHOULD NEVER HAPPEN");
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
 	vk_combuf_t *combuf = R_VkStagingCommit();
@@ -283,6 +284,8 @@ VkCommandBuffer R_VkStagingGetCommandBuffer(void) {
 }
 
 vk_combuf_t *R_VkStagingCommit(void) {
+	DEBUG("%s: buffers.count=%d current=%p", __FUNCTION__, g_staging.buffers.count, g_staging.current);
+
 	if (!g_staging.buffers.count && !g_staging.current)
 		return VK_NULL_HANDLE;
 
@@ -292,6 +295,8 @@ vk_combuf_t *R_VkStagingCommit(void) {
 }
 
 void R_VkStagingFrameBegin(void) {
+	R_VkStagingCommit(); // .... ugh
+
 	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
 
 	g_staging.buffers.count = 0;

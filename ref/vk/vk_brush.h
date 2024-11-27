@@ -18,6 +18,4 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 
 const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s );
 
-void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel );
-
 void R_BrushUnloadTextures( model_t *mod );
