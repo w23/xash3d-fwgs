@@ -360,8 +360,8 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 		for (int j = 0; j < slices_count; ++j) {
 			const VkBufferImageCopy *const slice = g_image_upload.slices.items + up->slices.begin + j;
-			DEBUG("  slice[%d]: off=%d rowl=%d height=%d off=(%d,%d,%d) ext=(%d,%d,%d)",
-				j, slice->bufferOffset, slice->bufferRowLength, slice->bufferImageHeight,
+			DEBUG("  slice[%d]: off=%llu rowl=%d height=%d off=(%d,%d,%d) ext=(%d,%d,%d)",
+				j, (unsigned long long)slice->bufferOffset, slice->bufferRowLength, slice->bufferImageHeight,
 				slice->imageOffset.x,
 				slice->imageOffset.y,
 				slice->imageOffset.z,
