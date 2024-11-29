@@ -352,7 +352,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 			continue;
 
 		const int slices_count = up->slices.end - up->slices.begin;
-		DEBUG("Uploading image \"%s\": buffer=%p slices=%d", up->image->name, up->staging.lock.buffer, slices_count);
+		DEBUG("Uploading image \"%s\": buffer=%08llx slices=%d", up->image->name, (unsigned long long)up->staging.lock.buffer, slices_count);
 
 		ASSERT(up->staging.lock.buffer != VK_NULL_HANDLE);
 		ASSERT(up->slices.end == up->slices.cursor);
