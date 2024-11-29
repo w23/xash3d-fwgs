@@ -76,7 +76,7 @@ r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
 
 	return (r_geometry_range_lock_t){
 		.vertices = (vk_vertex_t *)staging.ptr,
-		.indices = (uint16_t *)((char*)staging.ptr + vertices_size),
+		.indices = PTR_CAST(uint16_t, (char*)staging.ptr + vertices_size),
 		.impl_ = {
 			.staging_handle = staging.handle,
 		},
@@ -150,7 +150,7 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 			},
 			.indices = {
 				.count = index_count,
-				.ptr = (uint16_t *)((char*)staging.ptr + vertices_size),
+				.ptr = PTR_CAST(uint16_t, (char*)staging.ptr + vertices_size),
 				.unit_offset = indices_offset,
 			},
 			.impl_ = {

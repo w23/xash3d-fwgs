@@ -22,6 +22,10 @@
 
 #define COUNTOF(a) (sizeof(a)/sizeof((a)[0]))
 
+// Sliences -Werror=cast-align
+// TODO assert for proper alignment for type_
+#define PTR_CAST(type_, ptr_) ((type_*)(void*)(ptr_))
+
 inline static int clampi32(int v, int min, int max) {
 	if (v < min) return min;
 	if (v > max) return max;

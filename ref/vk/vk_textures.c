@@ -58,7 +58,7 @@ static void generateFallbackNoiseTextures( const rgbdata_t *pic ) {
 	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
 
 	const int blue_noise_count = pic->size / sizeof(uint32_t);
-	uint32_t *const scratch = (uint32_t*)pic->buffer;
+	uint32_t *const scratch = PTR_CAST(uint32_t, pic->buffer);
 
 	// Fill with random data
 	{
@@ -348,9 +348,9 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	const ktx2_index_t* index;
 	const ktx2_level_t* levels;
 
-	header = (const ktx2_header_t*)(data + KTX2_IDENTIFIER_SIZE);
-	index = (const ktx2_index_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t));
-	levels = (const ktx2_level_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t));
+	header = PTR_CAST(const ktx2_header_t, data + KTX2_IDENTIFIER_SIZE);
+	index = PTR_CAST(const ktx2_index_t, data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t));
+	levels = PTR_CAST(const ktx2_level_t, data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t));
 
 	DEBUG(" header:");
 #define X(field) DEBUG("  " # field "=%d", header->field);

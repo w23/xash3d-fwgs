@@ -552,7 +552,7 @@ static uint32_t getUboOffset_FIXME( void ) {
 		if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
 			return UINT32_MAX;
 
-		uniform_data_t *const ubo = (uniform_data_t*)((byte*)g_render.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
+		uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_render.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
 		memcpy(&g_render_state.current_uniform_data, &g_render_state.dirty_uniform_data, sizeof(g_render_state.dirty_uniform_data));
 		memcpy(ubo, &g_render_state.current_uniform_data, sizeof(*ubo));
 		g_render_state.uniform_data_set_mask |= UNIFORM_UPLOADED;
@@ -613,7 +613,7 @@ static uint32_t writeDlightsToUBO( void )
 		gEngine.Con_Printf(S_ERROR "Cannot allocate UBO for DLights\n");
 		return UINT32_MAX;
 	}
-	ubo_lights = (vk_ubo_lights_t*)((byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
+	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
 
 	// TODO this should not be here (where? vk_scene?)
 	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
@@ -747,7 +747,7 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32
 
 					// Compute and upload UBO stuff
 					{
-						sky_uniform_data_t* const sky_ubo = (sky_uniform_data_t*)((byte*)g_render.uniform_buffer.mapped + ubo_offset);
+						sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_render.uniform_buffer.mapped + ubo_offset);
 
 						// FIXME model matrix
 						Matrix4x4_ToArrayFloatGL(g_render_state.projection_view, (float*)sky_ubo->mvp);

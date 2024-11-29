@@ -177,14 +177,15 @@ static void createDefaultTextures( void )
 
 	// emo-texture from quake1
 	pic = Common_FakeImage( 16, 16, 1, IMAGE_HAS_COLOR );
+	uint *const buffer = PTR_CAST(uint, pic->buffer);
 
 	for( y = 0; y < 16; y++ )
 	{
 		for( x = 0; x < 16; x++ )
 		{
 			if(( y < 8 ) ^ ( x < 8 ))
-				((uint *)pic->buffer)[y*16+x] = 0xFFFF00FF;
-			else ((uint *)pic->buffer)[y*16+x] = 0xFF000000;
+				buffer[y*16+x] = 0xFFFF00FF;
+			else buffer[y*16+x] = 0xFF000000;
 		}
 	}
 
@@ -211,19 +212,19 @@ static void createDefaultTextures( void )
 	// white texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFFFFFFFF;
+		buffer[x] = 0xFFFFFFFF;
 	tglob.whiteTexture = R_TextureUploadFromBufferNew( REF_WHITE_TEXTURE, pic, TF_COLORMAP );
 
 	// gray texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFF7F7F7F;
+		buffer[x] = 0xFF7F7F7F;
 	tglob.grayTexture = R_TextureUploadFromBufferNew( REF_GRAY_TEXTURE, pic, TF_COLORMAP );
 
 	// black texture
 	pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR );
 	for( x = 0; x < 16; x++ )
-		((uint *)pic->buffer)[x] = 0xFF000000;
+		buffer[x] = 0xFF000000;
 	tglob.blackTexture = R_TextureUploadFromBufferNew( REF_BLACK_TEXTURE, pic, TF_COLORMAP );
 
 	// cinematic dummy
