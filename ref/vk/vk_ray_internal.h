@@ -93,19 +93,6 @@ qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s
 // TODO blas struct can have its addr field known
 VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas);
 
-typedef struct rt_kusochki_s {
-	uint32_t offset;
-	int count;
-	int internal_index__;
-} rt_kusochki_t;
-
-rt_kusochki_t RT_KusochkiAllocLong(int count);
-uint32_t RT_KusochkiAllocOnce(int count);
-void RT_KusochkiFree(const rt_kusochki_t*);
-
-//struct vk_render_geometry_s;
-//qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, int override_texture_id, const vec4_t *override_color);
-
 qboolean RT_DynamicModelInit(void);
 void RT_DynamicModelShutdown(void);
 
