@@ -114,7 +114,7 @@ static const char* device_extensions_extra[] = {
 	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 };
 
-VkBool32 VKAPI_PTR debugCallback(
+static VkBool32 VKAPI_PTR debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
     const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,

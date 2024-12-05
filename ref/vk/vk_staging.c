@@ -19,35 +19,9 @@
 #define MAX_CONCURRENT_FRAMES 2
 #define COMMAND_BUFFER_COUNT (MAX_CONCURRENT_FRAMES + 1) // to accommodate two frames in flight plus something trying to upload data before waiting for the next frame to complete
 
-typedef struct {
-	VkImage image;
-	VkImageLayout layout;
-	size_t size; // for stats only
-} staging_image_t;
-
-/* TODO
-typedef enum {
-	RegionState_Locked,
-	RegionState_Released,
-} region_state_e;
-
-typedef struct {
-	region_state_e debug_state;
-	//int buffer_index;
-	VkDeviceSize begin, end;
-	uint32_t cmdbuf_sequence;
-} region_t;
-*/
-
 static struct {
 	vk_buffer_t buffer;
 	r_flipping_buffer_t buffer_alloc;
-
-	/* TODO
-	struct {
-		ARRAY_DYNAMIC_DECLARE(region_t, regions);
-	} regions;
-	*/
 
 	struct {
 		VkBuffer dest[MAX_STAGING_ALLOCS];
@@ -277,10 +251,6 @@ static vk_combuf_t *getCurrentCombuf(void) {
 	}
 
 	return g_staging.current;
-}
-
-VkCommandBuffer R_VkStagingGetCommandBuffer(void) {
-	return getCurrentCombuf()->cmdbuf;
 }
 
 vk_combuf_t *R_VkStagingCommit(void) {

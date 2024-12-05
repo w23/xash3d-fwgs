@@ -51,10 +51,6 @@ void R_VkStagingFrameBegin(void);
 // Can return NULL if there's nothing to upload.
 struct vk_combuf_s *R_VkStagingFrameEnd(void);
 
-// Gets the current command buffer.
-// WARNING: Can be invalidated by any of the Lock calls
-VkCommandBuffer R_VkStagingGetCommandBuffer(void);
-
 // Commit all staging data into current cmdbuf, submit it and wait for completion.
 // Needed for CPU-GPU sync
 void R_VkStagingFlushSync( void );
