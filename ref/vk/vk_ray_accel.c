@@ -126,7 +126,10 @@ static VkDeviceAddress getAccelAddress(VkAccelerationStructureKHR as) {
 
 static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuildGeometryInfoKHR *build_info, uint32_t scratch_buffer_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
 	// FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
-	vk_combuf_t *const combuf = R_VkStagingCommit();
+	//vk_combuf_t *const combuf = R_VkStagingCommit();
+	ASSERT(!"AS build is broken, needs to be rewritten to support the new sync");
+	return false;
+#if 0
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -171,6 +174,7 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 	return true;
+#endif
 }
 
 // TODO split this into smaller building blocks in a separate module
@@ -302,9 +306,6 @@ static void buildBlases(vk_combuf_t *combuf) {
 	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
 	const VkDeviceAddress geometry_addr = R_VkBufferGetDeviceAddress(geometry_buffer);
 
-	// FIXME get rid of this when staging doesn't own copying ops anymore
-	vk_combuf_t *const combuf_staging_fixme = R_VkStagingCommit();
-
 	// TODO remove, should be handled by render graph
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
@@ -315,7 +316,7 @@ static void buildBlases(vk_combuf_t *combuf) {
 			.offset = 0,
 			.size = VK_WHOLE_SIZE,
 		} };
-		vkCmdPipelineBarrier(combuf_staging_fixme->cmdbuf,
+		vkCmdPipelineBarrier(combuf->cmdbuf,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
 			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
@@ -330,11 +331,11 @@ static void buildBlases(vk_combuf_t *combuf) {
 		static int scope_id = -2;
 		if (scope_id == -2)
 			scope_id = R_VkGpuScope_Register("build_as");
-		const int begin_index = R_VkCombufScopeBegin(combuf_staging_fixme, scope_id);
+		const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
 		const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = blas->build.ranges;
 		// TODO one call to build them all
-		vkCmdBuildAccelerationStructuresKHR(combuf_staging_fixme->cmdbuf, 1, &blas->build.info, &p_build_ranges);
-		R_VkCombufScopeEnd(combuf_staging_fixme, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &blas->build.info, &p_build_ranges);
+		R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 		blas->build.built = true;
 	}
@@ -357,11 +358,10 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 
 	// Upload all blas instances references to GPU mem
 	{
-		const vk_staging_region_t headers_lock = R_VkStagingLockForBuffer((vk_staging_buffer_args_t){
-			.buffer = g_ray_model_state.model_headers_buffer.buffer,
-			.offset = 0,
-			.size = g_ray_model_state.frame.instances_count * sizeof(struct ModelHeader),
-			.alignment = 16,
+		const vk_buffer_locked_t headers_lock = R_VkBufferLock(&g_ray_model_state.model_headers_buffer,
+			(vk_buffer_lock_t){
+				.offset = 0,
+				.size = g_ray_model_state.frame.instances_count * sizeof(struct ModelHeader),
 		});
 
 		ASSERT(headers_lock.ptr);
@@ -420,7 +420,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
 		}
 
-		R_VkStagingUnlock(headers_lock.handle);
+		R_VkBufferUnlock(headers_lock);
 	}
 
 	g_accel.stats.instances_count = g_ray_model_state.frame.instances_count;
@@ -639,7 +639,7 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args) {
 	blas->max_geoms = blas->build.info.geometryCount;
 
 	if (!args.dont_build)
-		BOUNDED_ARRAY_APPEND(g_accel.build.blas, blas);
+		BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.blas, blas);
 
 	return blas;
 
@@ -705,6 +705,6 @@ qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s
 		return false;
 	}
 
-	BOUNDED_ARRAY_APPEND(g_accel.build.blas, blas);
+	BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.blas, blas);
 	return true;
 }

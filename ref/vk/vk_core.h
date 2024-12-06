@@ -224,6 +224,7 @@ do { \
 	X(vkGetImageMemoryRequirements) \
 	X(vkBindImageMemory) \
 	X(vkCmdPipelineBarrier) \
+	X(vkCmdPipelineBarrier2) \
 	X(vkCmdCopyBufferToImage) \
 	X(vkCmdCopyBuffer) \
 	X(vkQueueWaitIdle) \

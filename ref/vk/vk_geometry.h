@@ -1,6 +1,8 @@
 #pragma once
 #include "vk_common.h"
 #include "r_block.h"
+#include "vk_staging.h"
+#include "vk_buffer.h" // FIXME vk_buffer_locked_t should not be exposed
 #include "vk_core.h"
 
 #include <stdint.h>
@@ -41,12 +43,15 @@ typedef struct {
 r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices);
 void R_GeometryRangeFree(const r_geometry_range_t*);
 
+// TODO combine with r_geometry_buffer_lock_t
 typedef struct {
 	vk_vertex_t *vertices;
 	uint16_t *indices;
 
 	struct {
-		int staging_handle;
+		// FIXME hide behind some index in geometry buffer
+		// Think: what's the max simultaneously locked regions count
+		vk_buffer_locked_t staging_handle;
 	} impl_;
 } r_geometry_range_lock_t;
 
@@ -69,7 +74,9 @@ typedef struct {
 	} indices;
 
 	struct {
-		int staging_handle;
+		// FIXME hide behind some index in geometry buffer
+		// Think: what's the max simultaneously locked regions count
+		vk_buffer_locked_t handle_;
 	} impl_;
 } r_geometry_buffer_lock_t;
 

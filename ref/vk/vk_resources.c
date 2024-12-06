@@ -246,7 +246,7 @@ void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image) {
 			.layerCount = 1,
 		},
 	};
-	BOUNDED_ARRAY_APPEND(barrier->images, ib);
+	BOUNDED_ARRAY_APPEND_ITEM(barrier->images, ib);
 }
 
 void R_VkBarrierCommit(VkCommandBuffer cmdbuf, r_vk_barrier_t *barrier, VkPipelineStageFlags dst_stage_mask) {

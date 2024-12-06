@@ -144,7 +144,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 static void reloadPatches( void ) {
 	INFO("Reloading patches and materials");
 
-	R_VkStagingFlushSync();
+	// FIXME R_VkStagingFlushSync();
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
@@ -153,8 +153,6 @@ static void reloadPatches( void ) {
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	const qboolean force_reload = true;
 	loadMap(map, force_reload);
-
-	R_VkStagingFlushSync();
 }
 
 void VK_SceneInit( void )

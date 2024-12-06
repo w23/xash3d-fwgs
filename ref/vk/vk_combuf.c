@@ -1,10 +1,13 @@
 #include "vk_combuf.h"
 #include "vk_commandpool.h"
+#include "vk_buffer.h"
 
 #include "profiler.h"
 
 #define MAX_COMMANDBUFFERS 6
 #define MAX_QUERY_COUNT 128
+
+#define MAX_BUFFER_BARRIERS 16
 
 #define BEGIN_INDEX_TAG 0x10000000
 
@@ -16,6 +19,8 @@ typedef struct {
 		int scopes[MAX_GPU_SCOPES];
 		int scopes_count;
 	} profiler;
+
+	uint32_t tag;
 } vk_combuf_impl_t;
 
 static struct {
@@ -31,6 +36,8 @@ static struct {
 	int scopes_count;
 
 	int entire_combuf_scope_id;
+
+	uint32_t tag;
 } g_combuf;
 
 qboolean R_VkCombuf_Init( void ) {
@@ -58,6 +65,7 @@ qboolean R_VkCombuf_Init( void ) {
 	}
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
+	g_combuf.tag = 1; // Do not start with special value of zero
 
 	return true;
 }
@@ -94,6 +102,13 @@ void R_VkCombufClose( vk_combuf_t* pub ) {
 void R_VkCombufBegin( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
 
+	g_combuf.tag++;
+	// Skip zero as special initial value for objects meaning "not yet used in combuf"
+	if (g_combuf.tag == 0)
+		g_combuf.tag = 1;
+
+	cb->tag = g_combuf.tag;
+
 	cb->profiler.scopes_count = 0;
 
 	const VkCommandBufferBeginInfo beginfo = {
@@ -119,6 +134,126 @@ static const char* myStrdup(const char *src) {
 	ret[len] = '\0';
 	return ret;
 }
+
+#define ACCESS_WRITE_BITS 0 \
+	| VK_ACCESS_2_SHADER_WRITE_BIT \
+	| VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT \
+	| VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT \
+	| VK_ACCESS_2_TRANSFER_WRITE_BIT \
+	| VK_ACCESS_2_HOST_WRITE_BIT \
+	| VK_ACCESS_2_MEMORY_WRITE_BIT \
+	| VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT \
+	| VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR \
+
+#define ACCESS_READ_BITS 0 \
+	| VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT \
+	| VK_ACCESS_2_INDEX_READ_BIT \
+	| VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT \
+	| VK_ACCESS_2_UNIFORM_READ_BIT \
+	| VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT \
+	| VK_ACCESS_2_SHADER_READ_BIT \
+	| VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT \
+	| VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT \
+	| VK_ACCESS_2_TRANSFER_READ_BIT \
+	| VK_ACCESS_2_HOST_READ_BIT \
+	| VK_ACCESS_2_MEMORY_READ_BIT \
+	| VK_ACCESS_2_SHADER_SAMPLED_READ_BIT \
+	| VK_ACCESS_2_SHADER_STORAGE_READ_BIT \
+	| VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR \
+
+#define ACCESS_KNOWN_BITS (ACCESS_WRITE_BITS | ACCESS_READ_BITS)
+
+void R_VkCombufIssueBarrier(vk_combuf_t* combuf, r_vkcombuf_barrier_t bar) {
+	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)combuf;
+	ASSERT(bar.images.count == 0 && "TODO");
+
+	BOUNDED_ARRAY(VkBufferMemoryBarrier2, buffer_barriers, MAX_BUFFER_BARRIERS);
+
+	for (int i = 0; i < bar.buffers.count; ++i) {
+		const r_vkcombuf_barrier_buffer_t *const bufbar = bar.buffers.items + i;
+		vk_buffer_t *const buf = bufbar->buffer;
+		const qboolean is_write = (bufbar->access & ACCESS_WRITE_BITS) != 0;
+		const qboolean is_read = (bufbar->access & ACCESS_READ_BITS) != 0;
+		ASSERT((bufbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
+
+		if (buf->sync.combuf_tag != cb->tag) {
+			// This buffer hasn't been yet used in this command buffer, no need to issue a barrier
+			buf->sync.combuf_tag = cb->tag;
+			buf->sync.write = is_write
+				? (r_vksync_scope_t){.access = bufbar->access & ACCESS_WRITE_BITS, .stage = bar.stage}
+				: (r_vksync_scope_t){.access = 0, .stage = 0 };
+			buf->sync.read = is_read
+				? (r_vksync_scope_t){.access = bufbar->access & ACCESS_READ_BITS, .stage = bar.stage}
+				: (r_vksync_scope_t){.access = 0, .stage = 0 };
+			continue;
+		}
+
+		VkBufferMemoryBarrier2 bmb = {
+			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+			.pNext = NULL,
+			.buffer = buf->buffer,
+			.offset = 0,
+			.size = VK_WHOLE_SIZE,
+			.dstStageMask = bar.stage,
+			.dstAccessMask = bufbar->access,
+		};
+
+		// TODO: support read-and-write scenarios
+		ASSERT(is_read ^ is_write);
+		if (is_write) {
+			// Write is synchronized with previous reads and writes
+			bmb.srcStageMask = buf->sync.write.stage | buf->sync.read.stage;
+			bmb.srcAccessMask = buf->sync.write.access | buf->sync.read.access;
+
+			// Store where write happened
+			buf->sync.write.access = bufbar->access;
+			buf->sync.write.stage = bar.stage;
+
+			// If there were no previous reads, there no reason to synchronize with anything
+			if (buf->sync.read.stage == 0)
+				continue;
+
+			// Reset read state
+			buf->sync.read.access = 0;
+			buf->sync.read.stage = 0;
+		}
+
+		if (is_read) {
+			// Read is synchronized with previous writes only
+			bmb.srcStageMask = buf->sync.write.stage;
+			bmb.srcAccessMask = buf->sync.write.access;
+
+			// Check whether this is a new barrier
+			if ((buf->sync.read.access & bufbar->access) != bufbar->access
+				&& (buf->sync.read.stage & bar.stage) != bar.stage) {
+				// Remember this read happened
+				buf->sync.read.access |= bufbar->access;
+				buf->sync.read.stage |= bar.stage;
+			} else {
+				// Already synchronized, no need to do anything
+				continue;
+			}
+
+			// Also skip issuing a barrier, if there were no previous writes -- nothing to sync with
+			// Note that this needs to happen late, as all reads must still be recorded in sync.read fields
+			if (buf->sync.write.stage == 0)
+				continue;
+		}
+
+		BOUNDED_ARRAY_APPEND_ITEM(buffer_barriers, bmb);
+	}
+
+	if (buffer_barriers.count) {
+		vkCmdPipelineBarrier2(combuf->cmdbuf, &(VkDependencyInfo) {
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.pNext = NULL,
+			.dependencyFlags = 0,
+			.bufferMemoryBarrierCount = buffer_barriers.count,
+			.pBufferMemoryBarriers = buffer_barriers.items,
+		});
+	}
+}
+
 
 int R_VkGpuScope_Register(const char *name) {
 	// Find existing scope with the same name

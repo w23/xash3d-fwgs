@@ -44,7 +44,7 @@ typedef struct {
 	// so we can't reuse the same one for two purposes and need to mnozhit sunchnosti
 	VkSemaphore sem_done2;
 
-	vk_combuf_t *staging_combuf;
+	uint32_t staging_generation_tag;
 } vk_framectl_frame_t;
 
 static struct {
@@ -153,7 +153,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		};
-		BOUNDED_ARRAY_APPEND(dependencies, color);
+		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
 	} else {
 		const VkSubpassDependency color = {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -164,7 +164,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		};
-		BOUNDED_ARRAY_APPEND(dependencies, color);
+		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
 	}
 
 	const VkSubpassDependency depth = {
@@ -176,7 +176,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
 		.dependencyFlags = 0,
 	};
-	BOUNDED_ARRAY_APPEND(dependencies, depth);
+	BOUNDED_ARRAY_APPEND_ITEM(dependencies, depth);
 
 	const VkRenderPassCreateInfo rpci = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -258,12 +258,8 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_BEGIN(begin_frame);
 
 	{
-		const vk_combuf_scopes_t gpurofl[] = {
-			frame->staging_combuf ? R_VkCombufScopesGet(frame->staging_combuf) : (vk_combuf_scopes_t){.entries_count=0},
-			R_VkCombufScopesGet(frame->combuf),
-		};
-
-		R_SpeedsDisplayMore(prev_frame_event_index, frame->staging_combuf ? gpurofl : gpurofl + 1, frame->staging_combuf ? 2 : 1);
+		const vk_combuf_scopes_t gpurofl[] = { R_VkCombufScopesGet(frame->combuf) };
+		R_SpeedsDisplayMore(prev_frame_event_index, gpurofl, COUNTOF(gpurofl));
 	}
 
 	if (vk_core.rtx && FBitSet( rt_enable->flags, FCVAR_CHANGED )) {
@@ -275,7 +271,8 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 
-	R_VkStagingFrameBegin();
+	// TODO explicit frame dependency synced on frame-end-event/sema
+	R_VkStagingGenerationRelease(frame->staging_generation_tag);
 
 	g_frame.current.framebuffer = R_VkSwapchainAcquire( frame->sem_framebuffer_ready );
 	vk_frame.width = g_frame.current.framebuffer.width;
@@ -367,14 +364,10 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 
 	R_VkCombufEnd(combuf);
 
-	frame->staging_combuf = R_VkStagingFrameEnd();
+	frame->staging_generation_tag = R_VkStagingGenerationCommit();
 
 	BOUNDED_ARRAY(VkCommandBuffer, cmdbufs, 2);
-
-	if (frame->staging_combuf)
-		BOUNDED_ARRAY_APPEND(cmdbufs, frame->staging_combuf->cmdbuf);
-
-	BOUNDED_ARRAY_APPEND(cmdbufs, cmdbuf);
+	BOUNDED_ARRAY_APPEND_ITEM(cmdbufs, cmdbuf);
 
 	{
 		const VkPipelineStageFlags stageflags[] = {
@@ -387,12 +380,12 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		BOUNDED_ARRAY(VkSemaphore, signalphores, 2);
 
 		if (draw) {
-			BOUNDED_ARRAY_APPEND(waitophores, frame->sem_framebuffer_ready);
-			BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done);
+			BOUNDED_ARRAY_APPEND_ITEM(waitophores, frame->sem_framebuffer_ready);
+			BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done);
 		}
 
-		BOUNDED_ARRAY_APPEND(waitophores, prev_frame->sem_done2);
-		BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done2);
+		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
+		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
 
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,

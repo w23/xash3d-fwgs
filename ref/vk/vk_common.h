@@ -7,7 +7,7 @@
 #include "com_strings.h"
 #include "crtlib.h"
 
-#define ASSERT(x) if(!( x )) gEngine.Host_Error( "assert %s failed at %s:%d\n", #x, __FILE__, __LINE__ )
+#define ASSERT(x) do { if(!( x )) gEngine.Host_Error( "assert %s failed at %s:%d\n", #x, __FILE__, __LINE__ ); } while (0)
 // TODO ASSERTF(x, fmt, ...)
 
 #define Mem_Malloc( pool, size ) gEngine._Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
