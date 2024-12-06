@@ -2,8 +2,19 @@
 
 #include "vk_core.h"
 #include "vk_devmem.h"
+#include "vk_staging.h"
 #include "r_flipping.h"
-#include "alolcator.h"
+
+typedef struct {
+	VkAccessFlags2 access;
+	VkPipelineStageFlagBits2 stage;
+	//VkImageLayout layout;
+} r_vksync_scope_t;
+
+typedef struct {
+	uint32_t combuf_tag;
+	r_vksync_scope_t write, read;
+} r_vksync_state_t;
 
 typedef struct vk_buffer_s {
 	vk_devmem_t devmem;
@@ -11,6 +22,8 @@ typedef struct vk_buffer_s {
 
 	void *mapped;
 	uint32_t size;
+
+	r_vksync_state_t sync;
 } vk_buffer_t;
 
 qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags);
@@ -31,3 +44,25 @@ typedef enum {
 void R_DEBuffer_Init(r_debuffer_t *debuf, uint32_t static_size, uint32_t dynamic_size);
 uint32_t R_DEBuffer_Alloc(r_debuffer_t* debuf, r_lifetime_t lifetime, uint32_t size, uint32_t align);
 void R_DEBuffer_Flip(r_debuffer_t* debuf);
+
+typedef struct {
+	void *ptr;
+
+	struct {
+		vk_buffer_t *buf;
+		r_vkstaging_handle_t handle;
+	} impl_;
+} vk_buffer_locked_t;
+
+typedef struct {
+	uint32_t offset;
+	uint32_t size;
+} vk_buffer_lock_t;
+
+vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock);
+
+void R_VkBufferUnlock(vk_buffer_locked_t lock);
+
+// Commits any staged regions for the specified buffer
+struct vk_combuf_s;
+void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf);

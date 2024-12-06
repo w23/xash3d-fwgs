@@ -2,8 +2,13 @@
 
 #include <stddef.h> // size_t
 
-// Array with compile-time maximum size
+#define VIEW_DECLARE_CONST(TYPE, NAME) \
+	struct { \
+		const TYPE *items; \
+		int count; \
+	} NAME
 
+// Array with compile-time maximum size
 #define BOUNDED_ARRAY_DECLARE(TYPE, NAME, MAX_SIZE) \
 		struct { \
 			TYPE items[MAX_SIZE]; \
@@ -13,9 +18,15 @@
 #define BOUNDED_ARRAY(TYPE, NAME, MAX_SIZE) \
 	BOUNDED_ARRAY_DECLARE(TYPE, NAME, MAX_SIZE) = {0}
 
-#define BOUNDED_ARRAY_APPEND(var, item) \
+#define BOUNDED_ARRAY_HAS_SPACE(array_, space_) \
+	((COUNTOF((array_).items) - (array_).count) >= space_)
+
+#define BOUNDED_ARRAY_APPEND_UNSAFE(array_) \
+	((array_).items[(array_).count++])
+
+#define BOUNDED_ARRAY_APPEND_ITEM(var, item) \
 		do { \
-			ASSERT(var.count < COUNTOF(var.items)); \
+			ASSERT(BOUNDED_ARRAY_HAS_SPACE(var, 1)); \
 			var.items[var.count++] = item; \
 		} while(0)
 

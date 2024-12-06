@@ -402,7 +402,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 			},
 		};
 
-		R_VkStagingReleaseAfterNextFrame(up->staging.lock.handle);
+		R_VkStagingUnlock(up->staging.lock.handle);
 
 		// Mark image as uploaded
 		up->image->upload_slot = -1;
@@ -534,7 +534,7 @@ void R_VkImageUploadCancel( r_vk_image_t *img ) {
 
 	// Technically we won't need that staging region anymore at all, but it doesn't matter,
 	// it's just easier to mark it to be freed this way.
-	R_VkStagingReleaseAfterNextFrame(up->staging.lock.handle);
+	R_VkStagingUnlock(up->staging.lock.handle);
 
 	// Mark upload slot as unused, and image as not subjet to uploading
 	up->image = NULL;

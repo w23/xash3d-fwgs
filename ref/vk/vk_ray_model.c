@@ -3,7 +3,6 @@
 #include "vk_rtx.h"
 #include "vk_materials.h"
 #include "vk_render.h"
-#include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
 
@@ -192,26 +191,24 @@ static void kusochkiFree(const rt_kusochki_t *kusochki) {
 
 // TODO this function can't really fail. It'd mean that staging is completely broken.
 qboolean kusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
-	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_ray_model_state.kusochki_buffer.buffer,
+	const vk_buffer_lock_t lock_args = {
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
 		.size = geoms_count * sizeof(vk_kusok_data_t),
-		.alignment = 16,
 	};
-	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
+	const vk_buffer_locked_t lock = R_VkBufferLock(&g_ray_model_state.kusochki_buffer, lock_args);
 
-	if (!kusok_staging.ptr) {
+	if (!lock.ptr) {
 		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov\n", geoms_count);
 		return false;
 	}
 
-	vk_kusok_data_t *const p = kusok_staging.ptr;
+	vk_kusok_data_t *const p = lock.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
 		applyMaterialToKusok(p + i, geom, override_material, override_colors ? override_colors[i] : NULL);
 	}
 
-	R_VkStagingUnlock(kusok_staging.handle);
+	R_VkBufferUnlock(lock);
 	return true;
 }
 
