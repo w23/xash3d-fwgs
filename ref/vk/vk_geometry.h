@@ -1,7 +1,6 @@
 #pragma once
 #include "vk_common.h"
 #include "r_block.h"
-#include "vk_staging.h"
 #include "vk_buffer.h" // FIXME vk_buffer_locked_t should not be exposed
 #include "vk_core.h"
 
@@ -95,6 +94,4 @@ void R_GeometryBuffer_Shutdown(void);
 
 void R_GeometryBuffer_Flip(void);
 
-// FIXME is there a better way?
-VkBuffer R_GeometryBuffer_Get(void);
-
+vk_buffer_t* R_GeometryBuffer_Get(void);

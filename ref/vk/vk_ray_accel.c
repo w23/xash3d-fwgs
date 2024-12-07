@@ -124,18 +124,26 @@ static VkDeviceAddress getAccelAddress(VkAccelerationStructureKHR as) {
 	return vkGetAccelerationStructureDeviceAddressKHR(vk_core.device, &asdai);
 }
 
-static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuildGeometryInfoKHR *build_info, uint32_t scratch_buffer_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
-	// FIXME this is definitely not the right place. We should upload everything in bulk, and only then build blases in bulk too
-	//vk_combuf_t *const combuf = R_VkStagingCommit();
-	ASSERT(!"AS build is broken, needs to be rewritten to support the new sync");
-	return false;
-#if 0
+static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeometryInfoKHR *build_info, uint32_t scratch_buffer_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
+	vk_buffer_t* const geom = R_GeometryBuffer_Get();
+	R_VkBufferStagingCommit(geom, combuf);
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+		.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		.buffers = {
+			.count = 1,
+			.items = &(r_vkcombuf_barrier_buffer_t){
+				.buffer = geom,
+				.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+			},
+		},
+	});
+
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT, // FIXME
-			.buffer = geometry_buffer,
+			.buffer = geom->buffer,
 			.offset = 0, // FIXME
 			.size = VK_WHOLE_SIZE, // FIXME
 		} };
@@ -170,11 +178,11 @@ static qboolean buildAccel(VkBuffer geometry_buffer, VkAccelerationStructureBuil
 		scope_id = R_VkGpuScope_Register("build_as");
 	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
 	const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = build_ranges;
+	// FIXME upload everything in bulk, and only then build blases in bulk too
 	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, build_info, &p_build_ranges);
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
 	return true;
-#endif
 }
 
 // TODO split this into smaller building blocks in a separate module
@@ -220,8 +228,7 @@ qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build
 		ASSERT(*args->inout_size >= build_size.accelerationStructureSize);
 
 	build_info.dstAccelerationStructure = *args->p_accel;
-	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
-	return buildAccel(geometry_buffer, &build_info, build_size.buildScratchSize, args->build_ranges);
+	return buildAccel(combuf, &build_info, build_size.buildScratchSize, args->build_ranges);
 }
 
 static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
@@ -303,24 +310,20 @@ static qboolean blasPrepareBuild(struct rt_blas_s *blas, VkDeviceAddress geometr
 static void buildBlases(vk_combuf_t *combuf) {
 	(void)(combuf);
 
-	const VkBuffer geometry_buffer = R_GeometryBuffer_Get();
-	const VkDeviceAddress geometry_addr = R_VkBufferGetDeviceAddress(geometry_buffer);
+	vk_buffer_t* const geom = R_GeometryBuffer_Get();
+	R_VkBufferStagingCommit(geom, combuf);
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+		.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		.buffers = {
+			.count = 1,
+			.items = &(r_vkcombuf_barrier_buffer_t){
+				.buffer = geom,
+				.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+			},
+		},
+	});
 
-	// TODO remove, should be handled by render graph
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT,
-			.buffer = geometry_buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(combuf->cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
-	}
+	const VkDeviceAddress geometry_addr = R_VkBufferGetDeviceAddress(geom->buffer);
 
 	for (int i = 0; i < g_accel.build.blas.count; ++i) {
 		rt_blas_t *const blas = g_accel.build.blas.items[i];

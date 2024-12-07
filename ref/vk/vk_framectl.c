@@ -11,6 +11,9 @@
 #include "vk_commandpool.h"
 #include "vk_combuf.h"
 
+#include "vk_buffer.h"
+#include "vk_geometry.h"
+
 #include "arrays.h"
 #include "profiler.h"
 #include "r_speeds.h"
@@ -306,12 +309,26 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	R_VkImageUploadCommit(combuf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-	VK_Render_FIXME_Barrier(cmdbuf);
 
 	if (vk_frame.rtx_enabled)
 		VK_RenderEndRTX( combuf, g_frame.current.framebuffer.view, g_frame.current.framebuffer.image, g_frame.current.framebuffer.width, g_frame.current.framebuffer.height );
 
 	if (draw) {
+		// FIXME: how to do this properly before render pass?
+		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
+		vk_buffer_t* const geom = R_GeometryBuffer_Get();
+		R_VkBufferStagingCommit(geom, combuf);
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+			.stage = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
+			.buffers = {
+				.count = 1,
+				.items = &(r_vkcombuf_barrier_buffer_t){
+					.buffer = geom,
+					.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+				},
+			},
+		});
+
 		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
@@ -338,7 +355,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( cmdbuf, draw,
+		VK_RenderEnd( combuf, draw,
 			g_frame.current.framebuffer.width, g_frame.current.framebuffer.height,
 			g_frame.current.index
 			);
