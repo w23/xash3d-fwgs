@@ -197,6 +197,6 @@ void R_GeometryBuffer_Flip(void) {
 	R_BlocksClearOnce(&g_geom.alloc);
 }
 
-VkBuffer R_GeometryBuffer_Get(void) {
-	return g_geom.buffer.buffer;
+vk_buffer_t* R_GeometryBuffer_Get(void) {
+	return &g_geom.buffer;
 }

@@ -3,6 +3,7 @@
 #include "vk_core.h"
 #include "vk_buffer.h"
 #include "vk_geometry.h"
+#include "vk_combuf.h"
 #include "vk_const.h"
 #include "vk_common.h"
 #include "vk_cvar.h"
@@ -658,9 +659,10 @@ static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
 }
 */
 
+/* OBSOLETE, remove
 void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
-	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
-	//debugBarrier(cmdbuf, geom_buffer);
+	const VkBuffer geom = R_GeometryBuffer_Get();
+	//debugBarrier(cmdbuf, geom);
 	// FIXME: this should be automatic and dynamically depend on actual usage, resolving this with render graph
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
@@ -670,7 +672,7 @@ void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 				= VK_ACCESS_INDEX_READ_BIT
 				| VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
 				| (vk_core.rtx ? ( VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT) : 0),
-			.buffer = geom_buffer,
+			.buffer = geom,
 			.offset = 0,
 			.size = VK_WHOLE_SIZE,
 		} };
@@ -684,11 +686,14 @@ void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
 			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
 	}
 }
+*/
 
-void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
+void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
 {
 	if (!draw)
 		return;
+
+	VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
 	// TODO we can sort collected draw commands for more efficient and correct rendering
 	// that requires adding info about distance to camera for correct order-dependent blending
@@ -712,10 +717,10 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32
 	ASSERT(!g_render_state.current_frame_is_ray_traced);
 
 	{
-		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
+		vk_buffer_t* const geom = R_GeometryBuffer_Get();
 		const VkDeviceSize offset = 0;
-		vkCmdBindVertexBuffers(cmdbuf, 0, 1, &geom_buffer, &offset);
-		vkCmdBindIndexBuffer(cmdbuf, geom_buffer, 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindVertexBuffers(cmdbuf, 0, 1, &geom->buffer, &offset);
+		vkCmdBindIndexBuffer(cmdbuf, geom->buffer, 0, VK_INDEX_TYPE_UINT16);
 	}
 
 	for (int i = 0; i < g_render_state.num_draw_commands; ++i) {
@@ -849,8 +854,10 @@ void VK_RenderDebugLabelEnd( void )
 
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h )
 {
-	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
+	vk_buffer_t *const geom = R_GeometryBuffer_Get();
 	ASSERT(vk_core.rtx);
+
+	R_VkBufferStagingCommit(geom, combuf);
 
 	{
 		const vk_ray_frame_render_args_t args = {
@@ -866,7 +873,7 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 			.view = &g_camera.viewMatrix,
 
 			.geometry_data = {
-				.buffer = geom_buffer,
+				.buffer = geom->buffer,
 				.size = VK_WHOLE_SIZE,
 			},
 
