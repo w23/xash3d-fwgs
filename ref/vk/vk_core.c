@@ -189,7 +189,7 @@ static qboolean createInstance( void )
 		// TODO support versions 1.0 and 1.1 for simple traditional rendering
 		// This would require using older physical device features and props query structures
 		// .apiVersion = vk_core.rtx ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1,
-		.apiVersion = VK_API_VERSION_1_2,
+		.apiVersion = VK_API_VERSION_1_3,
 		.applicationVersion = VK_MAKE_VERSION(0, 0, 0), // TODO
 		.engineVersion = VK_MAKE_VERSION(0, 0, 0),
 		.pApplicationName = "",
@@ -571,6 +571,13 @@ static qboolean createDevice( void ) {
 		} else {
 			head = NULL;
 		}
+
+		VkPhysicalDeviceVulkan13Features vk13_features = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+			.pNext = head,
+			.synchronization2 = VK_TRUE,
+		};
+		head = &vk13_features;
 
 		VkPhysicalDeviceFeatures2 features = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
