@@ -390,21 +390,21 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	BOUNDED_ARRAY_APPEND_ITEM(cmdbufs, cmdbuf);
 
 	{
-		const VkPipelineStageFlags stageflags[] = {
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		};
 		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
 		// Can we postpone waiting for framebuffer semaphore until we actually need it.
 		BOUNDED_ARRAY(VkSemaphore, waitophores, 2);
+		BOUNDED_ARRAY(VkPipelineStageFlags, wait_stageflags, 2);
 		BOUNDED_ARRAY(VkSemaphore, signalphores, 2);
 
 		if (draw) {
 			BOUNDED_ARRAY_APPEND_ITEM(waitophores, frame->sem_framebuffer_ready);
+			BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
 			BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done);
 		}
 
 		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
+		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
 
 		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%p, %p}, signal semaphores[%d]={%p, %p}\n",
@@ -419,18 +419,19 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 			signalphores.items[1]
 		);
 
+		ASSERT(waitophores.count == wait_stageflags.count);
+
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.pNext = NULL,
 			.waitSemaphoreCount = waitophores.count,
 			.pWaitSemaphores = waitophores.items,
-			.pWaitDstStageMask = stageflags,
+			.pWaitDstStageMask = wait_stageflags.items,
 			.commandBufferCount = cmdbufs.count,
 			.pCommandBuffers = cmdbufs.items,
 			.signalSemaphoreCount = signalphores.count,
 			.pSignalSemaphores = signalphores.items,
 		};
-		//gEngine.Con_Printf("SYNC: wait for semaphore %d, signal semaphore %d\n", (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES, g_frame.current.index);
 		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, frame->fence_done));
 		g_frame.current.phase = Phase_Submitted;
 	}
@@ -505,7 +506,6 @@ qboolean VK_FrameCtlInit( void )
 
 	// Signal first frame semaphore as done
 	{
-		const VkPipelineStageFlags stageflags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.pNext = NULL,
@@ -513,7 +513,7 @@ qboolean VK_FrameCtlInit( void )
 			.pCommandBuffers = NULL,
 			.waitSemaphoreCount = 0,
 			.pWaitSemaphores = NULL,
-			.pWaitDstStageMask = &stageflags,
+			.pWaitDstStageMask = NULL,
 			.signalSemaphoreCount = 1,
 			.pSignalSemaphores = &g_frame.frames[0].sem_done2,
 		};
