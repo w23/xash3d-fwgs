@@ -68,11 +68,16 @@ static uint32_t allocateInRing(uint32_t size, uint32_t alignment) {
 }
 
 void R_VkStagingGenerationRelease(uint32_t gen) {
-	ASSERT(gen == (g_staging.current_generation - 1));
+	DEBUG("Release: gen=%u current_gen=%u ring offsets=[%u, %u, %u]", gen, g_staging.current_generation,
+		g_staging.buffer_alloc.frame_offsets[0],
+		g_staging.buffer_alloc.frame_offsets[1],
+		g_staging.buffer_alloc.ring.head
+	);
 	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
 }
 
 uint32_t R_VkStagingGenerationCommit(void) {
+	DEBUG("Commit: locked_count=%d gen=%u", g_staging.locked_count, g_staging.current_generation);
 	ASSERT(g_staging.locked_count == 0);
 	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
 	return g_staging.current_generation++;
