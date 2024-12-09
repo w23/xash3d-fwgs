@@ -303,7 +303,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	{
 		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
 				.width = args->frame_width,
@@ -316,7 +316,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 				.width = args->render_args->dst.width,
 				.height = args->render_args->dst.height,
 				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
+				.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
 			},
 		};
 
@@ -557,7 +557,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	if (g_ray_model_state.frame.instances_count == 0) {
 		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
+			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 			.src = {
 				.image = g_rtx.mainpipe_out->image.image,
 				.width = frame_width,
@@ -570,7 +570,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 				.width = args->dst.width,
 				.height = args->dst.height,
 				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
+				.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
 			},
 		};
 
