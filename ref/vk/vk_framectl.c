@@ -10,6 +10,7 @@
 #include "vk_staging.h"
 #include "vk_commandpool.h"
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
 #include "vk_buffer.h"
 #include "vk_geometry.h"
@@ -21,6 +22,8 @@
 #include "eiface.h" // ARRAYSIZE
 
 #include <string.h>
+
+#define LOG_MODULE fctl
 
 extern ref_globals_t *gpGlobals;
 
@@ -403,6 +406,18 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 
 		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
 		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
+
+		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%p, %p}, signal semaphores[%d]={%p, %p}\n",
+			g_frame.current.index,
+			frame->staging_generation_tag,
+			frame->combuf->cmdbuf,
+			waitophores.count,
+			waitophores.items[0],
+			waitophores.items[1],
+			signalphores.count,
+			signalphores.items[0],
+			signalphores.items[1]
+		);
 
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,

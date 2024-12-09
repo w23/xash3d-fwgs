@@ -164,7 +164,7 @@ static r_vk_staging_buffer_t *findOrCreateStagingSlotForBuffer(vk_buffer_t *buf)
 }
 
 vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock) {
-	DEBUG("Lock buf=%p size=%d region=%d..%d", buf, lock.size, lock.offset, lock.offset + lock.size);
+	//DEBUG("Lock buf=%p size=%d region=%d..%d", buf, lock.size, lock.offset, lock.offset + lock.size);
 
 	r_vk_staging_buffer_t *const stb = findOrCreateStagingSlotForBuffer(buf);
 	ASSERT(stb);
@@ -219,6 +219,7 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	DEBUG_NV_CHECKPOINTF(cmdbuf, "staging dst_buffer=%p count=%d", buf->buffer, stb->regions.count);
+	//DEBUG("buffer=%p copy %d regions from staging buffer=%p", buf->buffer, stb->regions.count, stb->staging);
 	vkCmdCopyBuffer(cmdbuf, stb->staging, buf->buffer, stb->regions.count, stb->regions.items);
 
 	stb->regions.count = 0;

@@ -693,5 +693,8 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 	memcpy( &gEngine, engfuncs, sizeof( ref_api_t ));
 	gpGlobals = globals;
 
+	INFO("GetRefAPI version=%d (REF_API_VERSION=%d) funcs=%p engfuncs=%p globals=%p",
+		version, REF_API_VERSION, funcs, engfuncs, globals);
+
 	return REF_API_VERSION;
 }

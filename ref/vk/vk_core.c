@@ -741,6 +741,7 @@ static const r_vk_module_t *const modules[] = {
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
+	INFO("R_VkInit");
 
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
@@ -862,6 +863,7 @@ qboolean R_VkInit( void )
 	R_SpriteInit();
 	R_BeamInit();
 
+	INFO("R_VkInit done");
 	return true;
 }
 
