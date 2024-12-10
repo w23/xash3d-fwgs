@@ -345,7 +345,7 @@ void R_VkCombufIssueBarrier(vk_combuf_t* combuf, r_vkcombuf_barrier_t bar) {
 		}
 
 		if (LOG_VERBOSE) {
-			DEBUG(" buf[%d]: buf=%p barrier:", i, buf->buffer);
+			DEBUG(" buf[%d]: buf=%llx barrier:", i, (unsigned long long)buf->buffer);
 			DEBUG("  srcAccessMask = %llx", (unsigned long long)bmb.srcAccessMask);
 			printAccessMask("   ", bmb.srcAccessMask);
 			DEBUG("  srcStageMask = %llx", (unsigned long long)bmb.srcStageMask);
