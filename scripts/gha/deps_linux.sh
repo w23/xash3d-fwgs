@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 cd $GITHUB_WORKSPACE
 
