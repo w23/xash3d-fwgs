@@ -5,7 +5,6 @@
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
 #include "vk_combuf.h"
-#include "vk_staging.h"
 #include "vk_math.h"
 #include "vk_geometry.h"
 #include "vk_render.h"
@@ -560,6 +559,11 @@ void RT_VkAccelFrameBegin(void) {
 }
 
 static void blasFillGeometries(rt_blas_t *blas, const vk_render_geometry_t *geoms, int geoms_count) {
+	// geoms_count is not constant for dynamic models, and it shouldn't exceed max_geoms by design
+	ASSERT(geoms_count <= blas->max_geoms);
+
+	blas->build.info.geometryCount = geoms_count;
+
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *mg = geoms + i;
 		const uint32_t prim_count = mg->element_count / 3;
@@ -597,6 +601,7 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args) {
 
 	blas->debug_name = args.name;
 	blas->usage = args.usage;
+	blas->max_geoms = args.geoms_count;
 
 	blas->build.info = (VkAccelerationStructureBuildGeometryInfoKHR){
 		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
