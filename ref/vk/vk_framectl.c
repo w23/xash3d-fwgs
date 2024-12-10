@@ -313,10 +313,9 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	if (vk_frame.rtx_enabled)
+	if (vk_frame.rtx_enabled) {
 		VK_RenderEndRTX( combuf, g_frame.current.framebuffer.view, g_frame.current.framebuffer.image, g_frame.current.framebuffer.width, g_frame.current.framebuffer.height );
-
-	if (draw) {
+	} else {
 		// FIXME: how to do this properly before render pass?
 		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
 		vk_buffer_t* const geom = R_GeometryBuffer_Get();
@@ -331,7 +330,9 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 				},
 			},
 		});
+	}
 
+	if (draw) {
 		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
