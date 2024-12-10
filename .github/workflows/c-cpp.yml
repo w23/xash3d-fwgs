@@ -21,10 +21,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             targetos: linux
             targetarch: amd64
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04
             targetos: linux
             targetarch: i386
 # TODO enable and test ref_vk for it too
