@@ -391,8 +391,6 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	BOUNDED_ARRAY_APPEND_ITEM(cmdbufs, cmdbuf);
 
 	{
-		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
-		// Can we postpone waiting for framebuffer semaphore until we actually need it.
 		BOUNDED_ARRAY(VkSemaphore, waitophores, 2);
 		BOUNDED_ARRAY(VkPipelineStageFlags, wait_stageflags, 2);
 		BOUNDED_ARRAY(VkSemaphore, signalphores, 2);
@@ -405,7 +403,9 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		}
 
 		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
-		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+		// TODO remove this second semaphore altogether, replace it with properly tracked barriers.
+		// Why: would allow more parallelizm between consecutive frames.
+		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
 		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
 
 		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}\n",

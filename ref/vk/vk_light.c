@@ -1295,7 +1295,7 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 	}
 }
 
-vk_lights_bindings_t VK_LightsUpload( void ) {
+vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
 	const vk_buffer_locked_t locked = R_VkBufferLock(&g_lights_.buffer,
 		(vk_buffer_lock_t) {
@@ -1322,8 +1322,10 @@ vk_lights_bindings_t VK_LightsUpload( void ) {
 
 	APROF_SCOPE_END(upload);
 
+	R_VkBufferStagingCommit(&g_lights_.buffer, combuf);
+
 	return (vk_lights_bindings_t){
-		.buffer = g_lights_.buffer.buffer,
+		.buffer = &g_lights_.buffer,
 		.metadata = {
 			.offset = 0,
 			.size = sizeof(struct LightsMetadata),

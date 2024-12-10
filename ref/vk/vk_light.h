@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vk_buffer.h"
 #include "vk_const.h"
 #include "vk_core.h"
 
@@ -81,12 +82,13 @@ void RT_LightsFrameBegin( void );
 void RT_LightsFrameEnd( void );
 
 typedef struct {
-	VkBuffer buffer;
+	vk_buffer_t *buffer;
 	struct {
 		uint32_t offset, size;
 	} metadata, grid;
 } vk_lights_bindings_t;
-vk_lights_bindings_t VK_LightsUpload( void );
+struct vk_combuf_s;
+vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s* );
 
 qboolean RT_GetEmissiveForTexture( vec3_t out, int texture_id );
 

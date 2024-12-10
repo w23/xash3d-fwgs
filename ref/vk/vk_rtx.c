@@ -225,6 +225,10 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.light_bindings = args->light_bindings,
 	});
 
+	// FIXME what's the right place for these
+	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, combuf);
+	R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
+
 	// Upload kusochki updates
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
@@ -272,7 +276,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
 			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = args->light_bindings->buffer,
+			.buffer = args->light_bindings->buffer->buffer,
 			.offset = 0,
 			.size = VK_WHOLE_SIZE,
 		}};
@@ -507,7 +511,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
 
 	RT_LightsFrameEnd();
-	const vk_lights_bindings_t light_bindings = VK_LightsUpload();
+	const vk_lights_bindings_t light_bindings = VK_LightsUpload(args->combuf);
 
 	g_rtx.frame_number++;
 
