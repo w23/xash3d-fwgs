@@ -225,10 +225,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.light_bindings = args->light_bindings,
 	});
 
-	// FIXME what's the right place for these
-	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, combuf);
-	R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
-
 	// Upload kusochki updates
 	{
 		const VkBufferMemoryBarrier bmb[] = { {
@@ -265,6 +261,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	{
 		rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
 		tlas->resource = RT_VkAccelPrepareTlas(combuf);
+		R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
 	}
 
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
@@ -547,6 +544,13 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
+
+	// FIXME what's the right place for this?
+	// This needs to happen every frame where we might've locked staging for kusochki
+	// - After dynamic stuff (might upload kusochki)
+	// - Before performTracing(), even if it is not called
+	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
+	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
 
 	ASSERT(args->dst.width <= g_rtx.max_frame_width);
 	ASSERT(args->dst.height <= g_rtx.max_frame_height);

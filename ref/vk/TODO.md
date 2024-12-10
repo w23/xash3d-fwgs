@@ -1,4 +1,6 @@
 ## Next
+- [ ] Fix glitch geometry
+	- [ ] Which specific models produce it? Use nsight btw
 - [ ] Proper staging-vs-frame tracking, replace tag with something sensitive
 	- currently assert fails because there's 2 frame latency, not one.
 	- [ ] comment for future: full staging might want to wait for previous frame to finish
@@ -18,7 +20,6 @@
 ## 2024-12-10 E383
 - [x] Add transfer stage to submit semaphore separating command buffer: fixes sync for rt
 - [x] Issue staging commit for a bunch of RT buffers (likely not all of them)
-- [ ] Go through all staged buffers and make sure that they are committed
 - [x] move destination buffer tracking to outside of staging:
 	- [x] vk_geometry
 	- [x] vk_light: grid, metadata
@@ -27,6 +28,9 @@
 - [x] staging should not be aware of cmdbuf either
 	- [x] `R_VkStagingCommit()`: -- removed
 	- [x] `R_VkStagingGetCommandBuffer()` -- removed
+- [x] Go through all staged buffers and make sure that they are committed
+- [x] Commit staging in right places for right buffers
+- [x] Add mode staging debug tracking/logs
 
 ## 2024-05-24 E379
 - [ ] refactor staging:

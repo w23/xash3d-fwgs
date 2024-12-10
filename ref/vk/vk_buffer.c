@@ -37,6 +37,8 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 
 	buf->size = size;
 
+	INFO("Created buffer=%llx, name=\"%s\", size=%u", (unsigned long long)buf->buffer, debug_name, size);
+
 	return true;
 }
 
@@ -196,6 +198,7 @@ vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock) {
 }
 
 void R_VkBufferUnlock(vk_buffer_locked_t lock) {
+	DEBUG("buf=%llx staging pending++", (unsigned long long)lock.impl_.buf->buffer);
 	R_VkStagingUnlock(lock.impl_.handle);
 }
 
@@ -222,6 +225,8 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	//DEBUG("buffer=%p copy %d regions from staging buffer=%p", buf->buffer, stb->regions.count, stb->staging);
 	vkCmdCopyBuffer(cmdbuf, stb->staging, buf->buffer, stb->regions.count, stb->regions.items);
 
+	DEBUG("buf=%llx staging pending-=%u", (unsigned long long)buf->buffer, stb->regions.count);
+	R_VkStagingCopied(stb->regions.count);
 	stb->regions.count = 0;
 
 	//FIXME R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);

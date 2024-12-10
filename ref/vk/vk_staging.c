@@ -21,6 +21,8 @@ static struct {
 	r_flipping_buffer_t buffer_alloc;
 
 	uint32_t locked_count;
+	uint32_t pending_count;
+
 	uint32_t current_generation;
 
 	struct {
@@ -67,22 +69,6 @@ static uint32_t allocateInRing(uint32_t size, uint32_t alignment) {
 	return R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment );
 }
 
-void R_VkStagingGenerationRelease(uint32_t gen) {
-	DEBUG("Release: gen=%u current_gen=%u ring offsets=[%u, %u, %u]", gen, g_staging.current_generation,
-		g_staging.buffer_alloc.frame_offsets[0],
-		g_staging.buffer_alloc.frame_offsets[1],
-		g_staging.buffer_alloc.ring.head
-	);
-	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
-}
-
-uint32_t R_VkStagingGenerationCommit(void) {
-	DEBUG("Commit: locked_count=%d gen=%u", g_staging.locked_count, g_staging.current_generation);
-	ASSERT(g_staging.locked_count == 0);
-	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
-	return g_staging.current_generation++;
-}
-
 r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
 	const uint32_t alignment = 4;
 	const uint32_t offset = R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment);
@@ -100,8 +86,33 @@ r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
 }
 
 void R_VkStagingUnlock(r_vkstaging_handle_t handle) {
+	DEBUG("Unlock: locked_count=%u pending_count=%u gen=%u", g_staging.locked_count, g_staging.pending_count, g_staging.current_generation);
 	ASSERT(g_staging.current_generation == handle.generation);
 	ASSERT(g_staging.locked_count > 0);
 	g_staging.locked_count--;
+	g_staging.pending_count++;
 }
 
+void R_VkStagingCopied(uint32_t count) {
+	ASSERT(g_staging.pending_count >= count);
+	g_staging.pending_count -= count;
+}
+
+void R_VkStagingGenerationRelease(uint32_t gen) {
+	DEBUG("Release: gen=%u current_gen=%u ring offsets=[%u, %u, %u]", gen, g_staging.current_generation,
+		g_staging.buffer_alloc.frame_offsets[0],
+		g_staging.buffer_alloc.frame_offsets[1],
+		g_staging.buffer_alloc.ring.head
+	);
+	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
+}
+
+uint32_t R_VkStagingGenerationCommit(void) {
+	DEBUG("Commit: locked_count=%u pending_count=%u gen=%u", g_staging.locked_count, g_staging.pending_count, g_staging.current_generation);
+
+	ASSERT(g_staging.locked_count == 0);
+	ASSERT(g_staging.pending_count == 0);
+
+	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
+	return g_staging.current_generation++;
+}
