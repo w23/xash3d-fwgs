@@ -1687,8 +1687,10 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	}
 
 	// Apply all emissive surfaces found
-	INFO("Loaded %d polylights, %d dynamic for %s model %s",
-		emissive_surfaces_count, (int)args.bmodel->dynamic_polylights.count, args.is_static ? "static" : "movable", args.mod->name);
+	if (emissive_surfaces_count > 0) {
+		INFO("Loaded %d polylights, %d dynamic for %s model %s",
+			emissive_surfaces_count, (int)args.bmodel->dynamic_polylights.count, args.is_static ? "static" : "movable", args.mod->name);
+	}
 
 	ASSERT(args.sizes.num_surfaces == num_geometries);
 	ASSERT(args.sizes.animated_count == animated_count);
