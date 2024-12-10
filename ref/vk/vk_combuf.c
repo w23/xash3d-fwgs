@@ -313,11 +313,12 @@ void R_VkCombufIssueBarrier(vk_combuf_t* combuf, r_vkcombuf_barrier_t bar) {
 			buf->sync.write.access = bufbar->access;
 			buf->sync.write.stage = bar.stage;
 
-			// If there were no previous reads, there no reason to synchronize with anything
-			if (buf->sync.read.stage == 0)
+			// If there were no previous reads or writes, there no reason to synchronize with anything
+			if (bmb.srcStageMask == 0)
 				continue;
 
 			// Reset read state
+			// TOOD is_read? for read-and-write
 			buf->sync.read.access = 0;
 			buf->sync.read.stage = 0;
 		}

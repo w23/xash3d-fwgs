@@ -226,4 +226,3 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 
 	//FIXME R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }
-

@@ -1,6 +1,32 @@
 ## Next
+- [ ] Proper staging-vs-frame tracking, replace tag with something sensitive
+	- currently assert fails because there's 2 frame latency, not one.
+	- [ ] comment for future: full staging might want to wait for previous frame to finish
+
+## Upcoming
+- [ ] framectl frame tracking, e.g.:
+	- [ ] wait for frame fence only really before actually starting to build combuf in R_BeginFrame()
+		- why: there should be nothing to synchronize with
+		- why: more straightforward dependency tracking
+- [ ] Remove second semaphore from submit, replace it with explicit barriers for e.g. geom buffer
+	- why: best practice validation complains about too wide ALL_COMMANDS semaphore
+	- why: explicit barriers are more clear, better perf possible too
+	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2024-12-10 E383
+- [x] Add transfer stage to submit semaphore separating command buffer: fixes sync for rt
+- [x] Issue staging commit for a bunch of RT buffers (likely not all of them)
+- [ ] Go through all staged buffers and make sure that they are committed
+- [x] move destination buffer tracking to outside of staging:
+	- [x] vk_geometry
+	- [x] vk_light: grid, metadata
+	- [x] vk_ray_accel: TLAS geometries
+	- [x] vk_ray_model: kusochki
+- [x] staging should not be aware of cmdbuf either
+	- [x] `R_VkStagingCommit()`: -- removed
+	- [x] `R_VkStagingGetCommandBuffer()` -- removed
 
 ## 2024-05-24 E379
 - [ ] refactor staging:
@@ -8,17 +34,6 @@
 		- [x] vk_image ← vk_texture (E380)
 		- [x] implement generic staging regions (E380)
 		- [ ] implement stricter staging regions tracking
-	- [ ] move destination buffer tracking to outside of staging:
-		- [ ] vk_geometry
-		- [ ] vk_light: grid, metadata
-		- [ ] vk_ray_accel: TLAS geometries
-		- [ ] vk_ray_model: kusochki
-	- [ ] staging should not be aware of cmdbuf either
-		- [ ] `R_VkStagingCommit()`:
-			- [ ] vk_image
-			- [ ] vk_ray_accel
-		- [ ] `R_VkStagingGetCommandBuffer()`
-			- [ ] vk_image
 
 ## 2024-05-07 E376
 - [ ] resource manager

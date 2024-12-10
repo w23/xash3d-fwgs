@@ -1,6 +1,5 @@
 #include "vk_scene.h"
 #include "vk_brush.h"
-#include "vk_staging.h"
 #include "vk_studio.h"
 #include "vk_lightmap.h"
 #include "vk_const.h"
