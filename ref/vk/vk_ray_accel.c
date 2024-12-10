@@ -77,7 +77,7 @@ static struct {
 	struct {
 		// TODO two arrays for a single vkCmdBuildAccelerationStructuresKHR() call
 		// FIXME This is for testing only
-		BOUNDED_ARRAY_DECLARE(rt_blas_t*, blas, 256);
+		BOUNDED_ARRAY_DECLARE(rt_blas_t*, blas, 2048);
 	} build;
 
 	cvar_t *cv_force_culling;
