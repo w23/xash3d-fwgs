@@ -408,16 +408,16 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
 
-		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%p, %p}, signal semaphores[%d]={%p, %p}\n",
+		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}\n",
 			g_frame.current.index,
 			frame->staging_generation_tag,
 			frame->combuf->cmdbuf,
 			waitophores.count,
-			waitophores.items[0],
-			waitophores.items[1],
+			(unsigned long long)waitophores.items[0],
+			(unsigned long long)waitophores.items[1],
 			signalphores.count,
-			signalphores.items[0],
-			signalphores.items[1]
+			(unsigned long long)signalphores.items[0],
+			(unsigned long long)signalphores.items[1]
 		);
 
 		ASSERT(waitophores.count == wait_stageflags.count);
