@@ -861,7 +861,11 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 
 		if( !GL_UpdateContext( ))
 		return false;
-
+	}
+	else if( glw_state.context_type == REF_VULKAN )
+	{
+		// FIXME this is probably not correct place or way to do it, just copypasting GL stuff
+		VID_StartupGamma();
 	}
 
 #else // SDL_VERSION_ATLEAST( 2, 0, 0 )
