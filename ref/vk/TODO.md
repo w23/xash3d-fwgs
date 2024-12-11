@@ -1,6 +1,4 @@
 ## Next
-- [ ] Fix glitch geometry
-	- [ ] Which specific models produce it? Use nsight btw
 - [ ] Proper staging-vs-frame tracking, replace tag with something sensitive
 	- currently assert fails because there's 2 frame latency, not one.
 	- [ ] comment for future: full staging might want to wait for previous frame to finish
@@ -31,6 +29,10 @@
 - [x] Go through all staged buffers and make sure that they are committed
 - [x] Commit staging in right places for right buffers
 - [x] Add mode staging debug tracking/logs
+
+### After stream
+- [x] Fix glitch geometry
+	- [x] Which specific models produce it? Use nsight btw
 
 ## 2024-05-24 E379
 - [ ] refactor staging:
