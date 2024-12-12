@@ -66,9 +66,6 @@ void R_VkImageUploadBegin( r_vk_image_t *img );
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
 void R_VkImageUploadEnd( r_vk_image_t *img );
 
-// If this image has its upload scheduled, it should be cancelled
-void R_VkImageUploadCancel( r_vk_image_t *img );
-
 // Upload all enqueued images using the given command buffer
 struct vk_combuf_s;
 void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

@@ -124,11 +124,13 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 	return image;
 }
 
+static void cancelUpload( r_vk_image_t *img );
+
 void R_VkImageDestroy(r_vk_image_t *img) {
 	// Need to make sure that there are no references to this image anywhere.
 	// It might have been added to upload queue, but then immediately deleted, leaving references
 	// in the queue. See https://github.com/w23/xash3d-fwgs/issues/464
-	R_VkImageUploadCancel(img);
+	cancelUpload(img);
 
 	// Image destroy calls are not explicitly synchronized with rendering. GPU might still be
 	// processing previous frame. We need to make sure that GPU is done by the time we start
@@ -523,7 +525,7 @@ void R_VkImageUploadEnd( r_vk_image_t *img ) {
 	ASSERT(up->staging.cursor <= img->image_size);
 }
 
-void R_VkImageUploadCancel( r_vk_image_t *img ) {
+static void cancelUpload( r_vk_image_t *img ) {
 	// Skip already uploaded (or never uploaded) images
 	if (img->upload_slot < 0)
 		return;
