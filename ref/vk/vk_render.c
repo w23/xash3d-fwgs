@@ -58,8 +58,6 @@ enum {
 	kVkPipeline_AT,       // no blend, depth RW, alpha test
 	kVkPipeline_1_1_R,    // blend: src + dst, depth test
 
-	// Special pipeline for skybox (tex = TEX_BASE_SKYBOX)
-	//kVkPipeline_Sky,
 	kVkPipeline_COUNT,
 };
 
@@ -182,12 +180,6 @@ static qboolean createSkyboxPipeline( void ) {
 
 static qboolean createPipelines( void )
 {
-	/* VkPushConstantRange push_const = { */
-	/* 	.offset = 0, */
-	/* 	.size = sizeof(AVec3f), */
-	/* 	.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, */
-	/* }; */
-
 	VkDescriptorSetLayout descriptor_layouts[] = {
 		vk_desc_fixme.one_uniform_buffer_layout,
 		vk_desc_fixme.one_texture_layout,
@@ -199,8 +191,6 @@ static qboolean createPipelines( void )
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = ARRAYSIZE(descriptor_layouts),
 		.pSetLayouts = descriptor_layouts,
-		/* .pushConstantRangeCount = 1, */
-		/* .pPushConstantRanges = &push_const, */
 	};
 
 	// FIXME store layout separately
@@ -642,52 +632,6 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
-/*
-static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
-	const VkBufferMemoryBarrier bmb[] = { {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-		.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-		.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-		.buffer = buf,
-		.offset = 0,
-		.size = VK_WHOLE_SIZE,
-	} };
-	vkCmdPipelineBarrier(cmdbuf,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-}
-*/
-
-/* OBSOLETE, remove
-void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
-	const VkBuffer geom = R_GeometryBuffer_Get();
-	//debugBarrier(cmdbuf, geom);
-	// FIXME: this should be automatic and dynamically depend on actual usage, resolving this with render graph
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask
-				= VK_ACCESS_INDEX_READ_BIT
-				| VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
-				| (vk_core.rtx ? ( VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT) : 0),
-			.buffer = geom,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | (vk_core.rtx
-				? VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
-				| VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-				| VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-				: 0),
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
-}
-*/
-
 void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
 {
 	if (!draw)
@@ -873,7 +817,7 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 			.view = &g_camera.viewMatrix,
 
 			.geometry_data = {
-				.buffer = geom->buffer,
+				.buffer = geom,
 				.size = VK_WHOLE_SIZE,
 			},
 
