@@ -276,7 +276,7 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 
 		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 			dst_value->image = (VkDescriptorImageInfo) {
-				.imageLayout = write ? res->write.image_layout : res->read.image_layout,
+				.imageLayout = write ? res->deprecate.write.image_layout : res->deprecate.read.image_layout,
 				.imageView = src_value->image_object->view,
 				.sampler = VK_NULL_HANDLE,
 			};
@@ -288,7 +288,7 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
 
 	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
-	R_VkBarrierCommit(combuf->cmdbuf, &barrier, pass->pipeline_type);
+	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
 
 	switch (pass->type) {
 		case RayPassType_Tracing:

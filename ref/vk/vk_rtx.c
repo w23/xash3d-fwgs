@@ -218,36 +218,12 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	R_VkResourcesSetBuiltinFIXME((r_vk_resources_builtin_fixme_t){
 		.frame_index = args->frame_index,
-		.uniform_buffer = g_rtx.uniform_buffer.buffer,
+		.uniform_buffer = &g_rtx.uniform_buffer,
 		.uniform_unit_size = g_rtx.uniform_unit_size,
 		.geometry_data.buffer = args->render_args->geometry_data.buffer,
 		.geometry_data.size = args->render_args->geometry_data.size,
 		.light_bindings = args->light_bindings,
 	});
-
-	// Upload kusochki updates
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-			.buffer = g_ray_model_state.kusochki_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}, {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = g_ray_model_state.model_headers_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
 
 	R_VkResourcesFrameBeginStateChangeFIXME(cmdbuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
@@ -265,23 +241,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	}
 
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
-
-	{ // FIXME this should be done automatically inside meatpipe, TODO
-		//const uint32_t size = sizeof(struct Lights);
-		//const uint32_t size = sizeof(struct LightsMetadata); // + 8 * sizeof(uint32_t);
-		const VkBufferMemoryBarrier bmb[] = {{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = args->light_bindings->buffer->buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}};
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
 
 	// Update image resource links after the prev_-related swap above
 	// TODO Preserve the indexes somewhere to avoid searching
@@ -325,7 +284,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 		// TODO this is to make sure we remember image layout after image_blit
 		// The proper way to do this would be to teach R_VkImageBlit to properly track the image metadata (i.e. vk_resource_t state)
-		g_rtx.mainpipe_out->resource.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		g_rtx.mainpipe_out->resource.deprecate.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	}
 	DEBUG_END(cmdbuf);
 
@@ -429,7 +388,7 @@ static void reloadMainpipe(void) {
 			}
 
 			// TODO full r/w initialization
-			res->resource.write.pipelines = 0;
+			res->resource.deprecate.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit

@@ -3,6 +3,7 @@
 #include "vk_core.h"
 #include "vk_descriptor.h"
 #include "vk_image.h"
+#include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
 #include "arrays.h"
 
 // TODO remove
@@ -32,14 +33,20 @@ enum {
 typedef struct {
 	VkAccessFlags access_mask;
 	VkImageLayout image_layout;
-	VkPipelineStageFlagBits pipelines;
+	VkPipelineStageFlagBits2 pipelines;
 } ray_resource_state_t;
 
 struct xvk_image_s;
 typedef struct vk_resource_s {
 	VkDescriptorType type;
-	ray_resource_state_t write, read;
+	struct {
+		ray_resource_state_t write, read;
+	} deprecate;
 	vk_descriptor_value_t value;
+	union {
+		vk_buffer_t *buffer;
+		r_vk_image_t *image;
+	} ref;
 } vk_resource_t;
 
 typedef struct vk_resource_s *vk_resource_p;
@@ -48,6 +55,7 @@ typedef struct {
 		char name[64];
 		vk_resource_t resource;
 		r_vk_image_t image;
+		vk_buffer_t *buffer;
 		int refcount;
 		int source_index_plus_1;
 } rt_resource_t;
@@ -66,11 +74,11 @@ void R_VkResourcesCleanup(void);
 typedef struct {
 	uint32_t frame_index;
 
-	VkBuffer uniform_buffer;
+	vk_buffer_t *uniform_buffer;
 	uint32_t uniform_unit_size;
 
 	struct {
-		VkBuffer buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
+		vk_buffer_t *buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
 		uint64_t size;
 	} geometry_data;
 	const vk_lights_bindings_t *light_bindings;
@@ -79,12 +87,11 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t builtin);
 
 void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean discontinuity);
 
-
 typedef struct {
 	// TODO VK_KHR_synchronization2, has a slightly different (better) semantics
-	VkPipelineStageFlags src_stage_mask;
+	VkPipelineStageFlags2 src_stage_mask;
 	BOUNDED_ARRAY_DECLARE(VkImageMemoryBarrier, images, 16);
-	//BOUNDED_ARRAY_DECLARE(buffers, VkBufferMemoryBarrier, 16);
+	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
 } r_vk_barrier_t;
 
 typedef struct {
@@ -97,6 +104,8 @@ typedef struct {
 } r_vk_barrier_image_t;
 
 void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image);
-void R_VkBarrierCommit(VkCommandBuffer cmdbuf, r_vk_barrier_t *barrier, VkPipelineStageFlags dst_stage_mask);
 
-void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags dst_stage_mask, r_vk_barrier_t *barrier);
+struct vk_combuf_s;
+void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
+
+void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags2 dst_stage_mask, r_vk_barrier_t *barrier);

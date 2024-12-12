@@ -137,22 +137,6 @@ static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeom
 		},
 	});
 
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT, // FIXME
-			.buffer = geom->buffer,
-			.offset = 0, // FIXME
-			.size = VK_WHOLE_SIZE, // FIXME
-		} };
-		vkCmdPipelineBarrier(combuf->cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			//VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
-	}
-
 	//gEngine.Con_Reportf("sratch offset = %d, req=%d", g_accel.frame.scratch_offset, scratch_buffer_size);
 
 	if (MAX_SCRATCH_BUFFER < g_accel.frame.scratch_offset + scratch_buffer_size) {
@@ -427,6 +411,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 
 	g_accel.stats.instances_count = g_ray_model_state.frame.instances_count;
 
+	// FIXME use combuf barrier
 	// Barrier for building all BLASes
 	// BLAS building is now in cmdbuf, need to synchronize with results
 	{
@@ -448,23 +433,6 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	// 2. Build TLAS
 	createTlas(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
 	DEBUG_END(combuf->cmdbuf);
-
-	// TODO return vk_resource_t with callback to all this "do the preparation and barriers" crap, instead of doing it here
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			// FIXME also incorrect -- here we must barrier on tlas_geom_buffer, not accels_buffer
-			.buffer = g_accel.accels_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(combuf->cmdbuf,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
-	}
 
 	APROF_SCOPE_END(prepare);
 	return (vk_resource_t){
