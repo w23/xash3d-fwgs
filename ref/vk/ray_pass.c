@@ -270,13 +270,23 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 
 		const qboolean write = i >= pass->desc.write_from;
 		R_VkResourceAddToBarrier(res, write, pass->pipeline_type, &barrier);
+	}
+
+	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
+	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
+
+	for (int i = 0; i < num_bindings; ++i) {
+		const int index = args.resources_map ? args.resources_map[i] : i;
+		vk_resource_t* const res = args.resources[index];
 
 		const vk_descriptor_value_t *const src_value = &res->value;
 		vk_descriptor_value_t *const dst_value = pass->desc.riptors.values + i;
 
+		// layout is only known after barrier
+		// FIXME this is not true, it can be known earlier
 		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 			dst_value->image = (VkDescriptorImageInfo) {
-				.imageLayout = write ? res->deprecate.write.image_layout : res->deprecate.read.image_layout,
+				.imageLayout = src_value->image_object->sync.layout,
 				.imageView = src_value->image_object->view,
 				.sampler = VK_NULL_HANDLE,
 			};
@@ -286,9 +296,6 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 	}
 
 	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
-
-	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
-	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
 
 	switch (pass->type) {
 		case RayPassType_Tracing:

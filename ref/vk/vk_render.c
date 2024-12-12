@@ -796,8 +796,7 @@ void VK_RenderDebugLabelEnd( void )
 	drawCmdPushDebugLabelEnd();
 }
 
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h )
-{
+void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
 	vk_buffer_t *const geom = R_GeometryBuffer_Get();
 	ASSERT(vk_core.rtx);
 
@@ -806,12 +805,7 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkIm
 	{
 		const vk_ray_frame_render_args_t args = {
 			.combuf = combuf,
-			.dst = {
-				.image_view = img_dst_view,
-				.image = img_dst,
-				.width = w,
-				.height = h,
-			},
+			.dst = dst,
 
 			.projection = &g_render_state.vk_projection,
 			.view = &g_camera.viewMatrix,

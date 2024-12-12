@@ -6,12 +6,6 @@
 #include "r_flipping.h"
 
 typedef struct {
-	VkAccessFlags2 access;
-	VkPipelineStageFlagBits2 stage;
-	//VkImageLayout layout;
-} r_vksync_scope_t;
-
-typedef struct {
 	uint32_t combuf_tag;
 	r_vksync_scope_t write, read;
 } r_vksync_state_t;

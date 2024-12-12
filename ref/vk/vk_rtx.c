@@ -225,7 +225,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.light_bindings = args->light_bindings,
 	});
 
-	R_VkResourcesFrameBeginStateChangeFIXME(cmdbuf, g_rtx.discontinuity);
+	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
 		DEBUG("discontinuity => false");
 		g_rtx.discontinuity = false;
@@ -261,31 +261,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.resources = g_rtx.mainpipe_resources,
 	});
 
-	{
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = args->frame_width,
-				.height = args->frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->render_args->dst.image,
-				.width = args->render_args->dst.width,
-				.height = args->render_args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			},
-		};
-
-		R_VkImageBlit( cmdbuf, &blit_args );
-
-		// TODO this is to make sure we remember image layout after image_blit
-		// The proper way to do this would be to teach R_VkImageBlit to properly track the image metadata (i.e. vk_resource_t state)
-		g_rtx.mainpipe_out->resource.deprecate.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	}
 	DEBUG_END(cmdbuf);
 
 	APROF_SCOPE_END(perform);
@@ -388,7 +363,7 @@ static void reloadMainpipe(void) {
 			}
 
 			// TODO full r/w initialization
-			res->resource.deprecate.write.pipelines = 0;
+			// FIXME not sure if not needed res->resource.deprecate.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit
@@ -476,15 +451,15 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	qboolean need_reload = g_rtx.reload_pipeline;
 
-	if (g_rtx.max_frame_width < args->dst.width) {
-		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
+	if (g_rtx.max_frame_width < args->dst->width) {
+		g_rtx.max_frame_width = ALIGN_UP(args->dst->width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
 	}
 
-	if (g_rtx.max_frame_height < args->dst.height) {
-		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
+	if (g_rtx.max_frame_height < args->dst->height) {
+		g_rtx.max_frame_height = ALIGN_UP(args->dst->height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
@@ -511,38 +486,19 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
 	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
 
-	ASSERT(args->dst.width <= g_rtx.max_frame_width);
-	ASSERT(args->dst.height <= g_rtx.max_frame_height);
+	ASSERT(args->dst->width <= g_rtx.max_frame_width);
+	ASSERT(args->dst->height <= g_rtx.max_frame_height);
 
 	// TODO dynamic scaling based on perf
-	const int frame_width = args->dst.width;
-	const int frame_height = args->dst.height;
+	const int frame_width = args->dst->width;
+	const int frame_height = args->dst->height;
 
 	// Do not draw when we have no swapchain
-	if (args->dst.image_view == VK_NULL_HANDLE)
+	if (!args->dst->image)
 		goto tail;
 
 	if (g_ray_model_state.frame.instances_count == 0) {
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = frame_width,
-				.height = frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->dst.image,
-				.width = args->dst.width,
-				.height = args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			},
-		};
-
-		R_VkImageClear( cmdbuf, g_rtx.mainpipe_out->image.image, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT );
-		R_VkImageBlit( cmdbuf, &blit_args );
+		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
@@ -554,6 +510,21 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_height = frame_height,
 		};
 		performTracing( args->combuf, &trace_args );
+	}
+
+	{
+		const r_vkimage_blit_args blit_args = {
+			.src = {
+				.image = &g_rtx.mainpipe_out->image,
+				.width = frame_width,
+				.height = frame_height,
+			},
+			.dst = {
+				.image = args->dst,
+			},
+		};
+
+		R_VkImageBlit( args->combuf, &blit_args );
 	}
 
 tail:

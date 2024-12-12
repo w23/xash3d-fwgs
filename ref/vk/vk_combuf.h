@@ -25,9 +25,9 @@ typedef struct {
 	VkAccessFlags2 access;
 } r_vkcombuf_barrier_buffer_t;
 
-struct vk_image_s;
+struct r_vk_image_s;
 typedef struct {
-	struct vk_image_s *image;
+	struct r_vk_image_s *image;
 	VkImageLayout layout;
 	VkAccessFlags2 access;
 } r_vkcombuf_barrier_image_t;

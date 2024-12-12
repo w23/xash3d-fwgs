@@ -15,6 +15,12 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2024-12-12 E384
+- [ ] zero vkCmdPipelineBarriers calls
+	- [ ] track image sync state with image (and not with resource)
+		- [x] the code is there, but it's broken and remains to be debugged
+	- [ ] grep for anything else
+
 ## 2024-12-10 E383
 - [x] Add transfer stage to submit semaphore separating command buffer: fixes sync for rt
 - [x] Issue staging commit for a bunch of RT buffers (likely not all of them)

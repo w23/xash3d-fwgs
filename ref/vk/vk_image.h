@@ -23,6 +23,11 @@ typedef struct r_vk_image_s {
 	uint32_t image_size;
 
 	int upload_slot;
+
+	struct {
+		VkImageLayout layout;
+		r_vksync_scope_t write, read;
+	} sync;
 } r_vk_image_t;
 
 enum {
@@ -45,19 +50,17 @@ typedef struct {
 r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
 void R_VkImageDestroy(r_vk_image_t *img);
 
-void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image, VkAccessFlags src_access, VkPipelineStageFlags from_stage);
+struct vk_combuf_s;
+void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf);
 
 typedef struct {
-	VkPipelineStageFlags in_stage;
 	struct {
-		VkImage image;
-		int width, height;
-		VkImageLayout oldLayout;
-		VkAccessFlags srcAccessMask;
+		r_vk_image_t *image;
+		int width, height, depth;
 	} src, dst;
 } r_vkimage_blit_args;
 
-void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args );
+void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *blit_args );
 
 uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
 
@@ -67,5 +70,4 @@ void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, cons
 void R_VkImageUploadEnd( r_vk_image_t *img );
 
 // Upload all enqueued images using the given command buffer
-struct vk_combuf_s;
 void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

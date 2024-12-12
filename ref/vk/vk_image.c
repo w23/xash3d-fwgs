@@ -152,109 +152,67 @@ void R_VkImageDestroy(r_vk_image_t *img) {
 	*img = (r_vk_image_t){0};
 }
 
-void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image, VkAccessFlags src_access, VkPipelineStageFlags from_stage) {
-	const VkImageMemoryBarrier image_barriers[] = { {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.image = image,
-		.srcAccessMask = src_access,
-		.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-		.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-		.subresourceRange = (VkImageSubresourceRange) {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1,
-	}} };
+void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf) {
+	const VkImageSubresourceRange ranges[] = {{
+		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		.baseMipLevel = 0,
+		.levelCount = VK_REMAINING_MIP_LEVELS,
+		.baseArrayLayer = 0,
+		.layerCount = VK_REMAINING_ARRAY_LAYERS,
+	}};
+	const r_vkcombuf_barrier_image_t ib[] = {{
+		.image = img,
+		// Could be VK_IMAGE_LAYOUT_GENERAL too
+		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+	}};
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+		.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.images = {
+			.items = ib,
+			.count = COUNTOF(ib),
+		},
+	});
 
 	const VkClearColorValue clear_value = {0};
-
-	vkCmdPipelineBarrier(cmdbuf, from_stage, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-		0, NULL, 0, NULL, COUNTOF(image_barriers), image_barriers);
-
-	vkCmdClearColorImage(cmdbuf, image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &image_barriers->subresourceRange);
+	vkCmdClearColorImage(combuf->cmdbuf, img->image, img->sync.layout, &clear_value, COUNTOF(ranges), ranges);
 }
 
-void R_VkImageBlit(VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args) {
-	{
-		const VkImageMemoryBarrier image_barriers[] = { {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = blit_args->src.image,
-			.srcAccessMask = blit_args->src.srcAccessMask,
-			.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.oldLayout = blit_args->src.oldLayout,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.subresourceRange =
-				(VkImageSubresourceRange){
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
-				},
-		}, {
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = blit_args->dst.image,
-			.srcAccessMask = blit_args->dst.srcAccessMask,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = blit_args->dst.oldLayout,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.subresourceRange =
-				(VkImageSubresourceRange){
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
-				},
-		} };
-
-		vkCmdPipelineBarrier(cmdbuf,
-			blit_args->in_stage,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			0, 0, NULL, 0, NULL, COUNTOF(image_barriers), image_barriers);
-	}
+void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *args ) {
+	const r_vkcombuf_barrier_image_t ib[] = {{
+		.image = args->src.image,
+		.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		.access = VK_ACCESS_2_TRANSFER_READ_BIT,
+	}, {
+		.image = args->dst.image,
+		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+	}};
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+		.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.images = {
+			.items = ib,
+			.count = COUNTOF(ib),
+		},
+	});
 
 	{
 		VkImageBlit region = {0};
-		region.srcOffsets[1].x = blit_args->src.width;
-		region.srcOffsets[1].y = blit_args->src.height;
-		region.srcOffsets[1].z = 1;
-		region.dstOffsets[1].x = blit_args->dst.width;
-		region.dstOffsets[1].y = blit_args->dst.height;
-		region.dstOffsets[1].z = 1;
+		region.srcOffsets[1].x = args->src.width ? args->src.width : args->src.image->width;
+		region.srcOffsets[1].y = args->src.height ? args->src.height : args->src.image->height;
+		region.srcOffsets[1].z = args->src.depth ? args->src.depth : args->src.image->depth;
+
+		region.dstOffsets[1].x = args->dst.width ? args->dst.width : args->dst.image->width;
+		region.dstOffsets[1].y = args->dst.height ? args->dst.height : args->dst.image->height;
+		region.dstOffsets[1].z = args->dst.depth ? args->dst.depth : args->dst.image->depth;
+
 		region.srcSubresource.aspectMask = region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		region.srcSubresource.layerCount = region.dstSubresource.layerCount = 1;
-		vkCmdBlitImage(cmdbuf,
-			blit_args->src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			blit_args->dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		region.srcSubresource.layerCount = region.dstSubresource.layerCount = 1; // VK_REMAINING_ARRAY_LAYERS requires maintenance5. No need to use it now.
+		vkCmdBlitImage(combuf->cmdbuf,
+			args->src.image->image, args->src.image->sync.layout,
+			args->dst.image->image, args->dst.image->sync.layout,
 			1, &region,
 			VK_FILTER_NEAREST);
-	}
-
-	{
-		VkImageMemoryBarrier image_barriers[] = {
-		{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = blit_args->dst.image,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.subresourceRange =
-				(VkImageSubresourceRange){
-					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-					.baseMipLevel = 0,
-					.levelCount = 1,
-					.baseArrayLayer = 0,
-					.layerCount = 1,
-				},
-		}};
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			0, 0, NULL, 0, NULL, COUNTOF(image_barriers), image_barriers);
 	}
 }
 
@@ -341,10 +299,11 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	// 1.b Invoke the barriers
 	vkCmdPipelineBarrier(combuf->cmdbuf,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, 0, NULL, 0, NULL,
-		barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
+		barriers_count, g_image_upload.barriers.items
 	);
 
 	// 2. Phase 2: issue copy commands for each valid image
@@ -387,6 +346,13 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		image_upload_t *const up = g_image_upload.images.items + i;
 		if (!up->image)
 			continue;
+
+		// Update image tracking state
+		up->image->sync.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		up->image->sync.read.access = VK_ACCESS_SHADER_READ_BIT;
+		up->image->sync.read.stage = dst_stages;
+		up->image->sync.write.access = VK_ACCESS_TRANSFER_WRITE_BIT;
+		up->image->sync.write.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
 
 		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

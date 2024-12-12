@@ -2,6 +2,7 @@
 #include "vk_commandpool.h"
 #include "vk_buffer.h"
 #include "vk_logs.h"
+#include "vk_image.h"
 
 #include "profiler.h"
 
@@ -11,6 +12,7 @@
 #define MAX_QUERY_COUNT 128
 
 #define MAX_BUFFER_BARRIERS 16
+#define MAX_IMAGE_BARRIERS 16
 
 #define BEGIN_INDEX_TAG 0x10000000
 
@@ -267,108 +269,213 @@ static void printStageMask(const char *prefix, VkPipelineStageFlags2 stages) {
 	PRINT_FLAG(stages, VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV);
 }
 
+static qboolean makeBufferBarrier(VkBufferMemoryBarrier2* out_bmb, const r_vkcombuf_barrier_buffer_t *const bufbar, VkPipelineStageFlags2 dst_stage, uint32_t cb_tag) {
+	vk_buffer_t *const buf = bufbar->buffer;
+	const qboolean is_write = (bufbar->access & ACCESS_WRITE_BITS) != 0;
+	const qboolean is_read = (bufbar->access & ACCESS_READ_BITS) != 0;
+	ASSERT((bufbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
+
+	if (buf->sync.combuf_tag != cb_tag) {
+		// This buffer hasn't been yet used in this command buffer, no need to issue a barrier
+		buf->sync.combuf_tag = cb_tag;
+		buf->sync.write = is_write
+			? (r_vksync_scope_t){.access = bufbar->access & ACCESS_WRITE_BITS, .stage = dst_stage}
+			: (r_vksync_scope_t){.access = 0, .stage = 0 };
+		buf->sync.read = is_read
+			? (r_vksync_scope_t){.access = bufbar->access & ACCESS_READ_BITS, .stage = dst_stage}
+			: (r_vksync_scope_t){.access = 0, .stage = 0 };
+		return false;
+	}
+
+	*out_bmb = (VkBufferMemoryBarrier2) {
+		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+		.pNext = NULL,
+		.buffer = buf->buffer,
+		.offset = 0,
+		.size = VK_WHOLE_SIZE,
+		.dstStageMask = dst_stage,
+		.dstAccessMask = bufbar->access,
+	};
+
+	// TODO: support read-and-write scenarios
+	ASSERT(is_read ^ is_write);
+	if (is_write) {
+		// Write is synchronized with previous reads and writes
+		out_bmb->srcStageMask = buf->sync.write.stage | buf->sync.read.stage;
+		out_bmb->srcAccessMask = buf->sync.write.access | buf->sync.read.access;
+
+		// Store where write happened
+		buf->sync.write.access = bufbar->access;
+		buf->sync.write.stage = dst_stage;
+
+		// If there were no previous reads or writes, there no reason to synchronize with anything
+		if (out_bmb->srcStageMask == 0)
+			return false;
+
+		// Reset read state
+		// TOOD is_read? for read-and-write
+		buf->sync.read.access = 0;
+		buf->sync.read.stage = 0;
+	}
+
+	if (is_read) {
+		// Read is synchronized with previous writes only
+		out_bmb->srcStageMask = buf->sync.write.stage;
+		out_bmb->srcAccessMask = buf->sync.write.access;
+
+		// Check whether this is a new barrier
+		if ((buf->sync.read.access & bufbar->access) != bufbar->access
+			&& (buf->sync.read.stage & dst_stage) != dst_stage) {
+			// Remember this read happened
+			buf->sync.read.access |= bufbar->access;
+			buf->sync.read.stage |= dst_stage;
+		} else {
+			// Already synchronized, no need to do anything
+			return false;
+		}
+
+		// Also skip issuing a barrier, if there were no previous writes -- nothing to sync with
+		// Note that this needs to happen late, as all reads must still be recorded in sync.read fields
+		if (buf->sync.write.stage == 0)
+			return false;
+	}
+
+	if (LOG_VERBOSE) {
+		DEBUG("  srcAccessMask = %llx", (unsigned long long)out_bmb->srcAccessMask);
+		printAccessMask("   ", out_bmb->srcAccessMask);
+		DEBUG("  srcStageMask = %llx", (unsigned long long)out_bmb->srcStageMask);
+		printStageMask("   ", out_bmb->srcStageMask);
+		DEBUG("  dstAccessMask = %llx", (unsigned long long)out_bmb->dstAccessMask);
+		printAccessMask("   ", out_bmb->dstAccessMask);
+		DEBUG("  dstStageMask = %llx", (unsigned long long)out_bmb->dstStageMask);
+		printStageMask("   ", out_bmb->dstStageMask);
+	}
+
+	return true;
+}
+
+static qboolean makeImageBarrier(VkImageMemoryBarrier2* out_imb, const r_vkcombuf_barrier_image_t *const imgbar, VkPipelineStageFlags2 dst_stage) {
+	r_vk_image_t *const img = imgbar->image;
+	const qboolean is_write = (imgbar->access & ACCESS_WRITE_BITS) != 0;
+	const qboolean is_read = (imgbar->access & ACCESS_READ_BITS) != 0;
+	const VkImageLayout old_layout = is_write ? VK_IMAGE_LAYOUT_UNDEFINED : img->sync.layout;
+	const qboolean is_layout_transfer = imgbar->layout != old_layout;
+	ASSERT((imgbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
+
+	*out_imb = (VkImageMemoryBarrier2) {
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		.pNext = NULL,
+		.srcStageMask = img->sync.write.stage,
+		.srcAccessMask = img->sync.write.access,
+		.dstStageMask = dst_stage,
+		.dstAccessMask = imgbar->access,
+		.oldLayout = old_layout,
+		.newLayout = imgbar->layout,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image = img->image,
+		.subresourceRange = (VkImageSubresourceRange) {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1,
+		},
+	};
+
+	// TODO: support read-and-write scenarios
+	//ASSERT(is_read ^ is_write);
+
+	if (is_write || is_layout_transfer) {
+		out_imb->srcStageMask |= img->sync.read.stage;
+		out_imb->srcAccessMask |= img->sync.read.access;
+
+		img->sync.write.access = imgbar->access;
+		img->sync.write.stage = dst_stage;
+
+		img->sync.read.access = 0;
+		img->sync.read.stage = 0;
+	}
+
+	if (is_read) {
+		const qboolean same_access = (img->sync.read.access & imgbar->access) != imgbar->access;
+		const qboolean same_stage = (img->sync.read.stage & dst_stage) != dst_stage;
+
+		if (same_access && same_stage && !is_layout_transfer)
+			return false;
+
+		img->sync.read.access |= imgbar->access;
+		img->sync.read.stage |= dst_stage;
+	}
+
+	if (!is_layout_transfer && out_imb->srcAccessMask == 0 && out_imb->srcStageMask == 0) {
+		return false;
+	}
+
+	if (LOG_VERBOSE) {
+		DEBUG("  srcAccessMask = %llx", (unsigned long long)out_imb->srcAccessMask);
+		printAccessMask("   ", out_imb->srcAccessMask);
+		DEBUG("  srcStageMask = %llx", (unsigned long long)out_imb->srcStageMask);
+		printStageMask("   ", out_imb->srcStageMask);
+		DEBUG("  dstAccessMask = %llx", (unsigned long long)out_imb->dstAccessMask);
+		printAccessMask("   ", out_imb->dstAccessMask);
+		DEBUG("  dstStageMask = %llx", (unsigned long long)out_imb->dstStageMask);
+		printStageMask("   ", out_imb->dstStageMask);
+		DEBUG("  oldLayout = %s (%llx)", R_VkImageLayoutName(out_imb->oldLayout), (unsigned long long)out_imb->oldLayout);
+		DEBUG("  newLayout = %s (%llx)", R_VkImageLayoutName(out_imb->newLayout), (unsigned long long)out_imb->newLayout);
+	}
+
+	// Store new layout
+	img->sync.layout = imgbar->layout;
+
+	return true;
+}
+
 void R_VkCombufIssueBarrier(vk_combuf_t* combuf, r_vkcombuf_barrier_t bar) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)combuf;
-	ASSERT(bar.images.count == 0 && "TODO");
 
 	BOUNDED_ARRAY(VkBufferMemoryBarrier2, buffer_barriers, MAX_BUFFER_BARRIERS);
-
 	for (int i = 0; i < bar.buffers.count; ++i) {
 		const r_vkcombuf_barrier_buffer_t *const bufbar = bar.buffers.items + i;
-		vk_buffer_t *const buf = bufbar->buffer;
-		const qboolean is_write = (bufbar->access & ACCESS_WRITE_BITS) != 0;
-		const qboolean is_read = (bufbar->access & ACCESS_READ_BITS) != 0;
-		ASSERT((bufbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
-
-		if (buf->sync.combuf_tag != cb->tag) {
-			// This buffer hasn't been yet used in this command buffer, no need to issue a barrier
-			buf->sync.combuf_tag = cb->tag;
-			buf->sync.write = is_write
-				? (r_vksync_scope_t){.access = bufbar->access & ACCESS_WRITE_BITS, .stage = bar.stage}
-				: (r_vksync_scope_t){.access = 0, .stage = 0 };
-			buf->sync.read = is_read
-				? (r_vksync_scope_t){.access = bufbar->access & ACCESS_READ_BITS, .stage = bar.stage}
-				: (r_vksync_scope_t){.access = 0, .stage = 0 };
-			continue;
-		}
-
-		VkBufferMemoryBarrier2 bmb = {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-			.pNext = NULL,
-			.buffer = buf->buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-			.dstStageMask = bar.stage,
-			.dstAccessMask = bufbar->access,
-		};
-
-		// TODO: support read-and-write scenarios
-		ASSERT(is_read ^ is_write);
-		if (is_write) {
-			// Write is synchronized with previous reads and writes
-			bmb.srcStageMask = buf->sync.write.stage | buf->sync.read.stage;
-			bmb.srcAccessMask = buf->sync.write.access | buf->sync.read.access;
-
-			// Store where write happened
-			buf->sync.write.access = bufbar->access;
-			buf->sync.write.stage = bar.stage;
-
-			// If there were no previous reads or writes, there no reason to synchronize with anything
-			if (bmb.srcStageMask == 0)
-				continue;
-
-			// Reset read state
-			// TOOD is_read? for read-and-write
-			buf->sync.read.access = 0;
-			buf->sync.read.stage = 0;
-		}
-
-		if (is_read) {
-			// Read is synchronized with previous writes only
-			bmb.srcStageMask = buf->sync.write.stage;
-			bmb.srcAccessMask = buf->sync.write.access;
-
-			// Check whether this is a new barrier
-			if ((buf->sync.read.access & bufbar->access) != bufbar->access
-				&& (buf->sync.read.stage & bar.stage) != bar.stage) {
-				// Remember this read happened
-				buf->sync.read.access |= bufbar->access;
-				buf->sync.read.stage |= bar.stage;
-			} else {
-				// Already synchronized, no need to do anything
-				continue;
-			}
-
-			// Also skip issuing a barrier, if there were no previous writes -- nothing to sync with
-			// Note that this needs to happen late, as all reads must still be recorded in sync.read fields
-			if (buf->sync.write.stage == 0)
-				continue;
-		}
-
 		if (LOG_VERBOSE) {
-			DEBUG(" buf[%d]: buf=%llx barrier:", i, (unsigned long long)buf->buffer);
-			DEBUG("  srcAccessMask = %llx", (unsigned long long)bmb.srcAccessMask);
-			printAccessMask("   ", bmb.srcAccessMask);
-			DEBUG("  srcStageMask = %llx", (unsigned long long)bmb.srcStageMask);
-			printStageMask("   ", bmb.srcStageMask);
-			DEBUG("  dstAccessMask = %llx", (unsigned long long)bmb.dstAccessMask);
-			printAccessMask("   ", bmb.dstAccessMask);
-			DEBUG("  dstStageMask = %llx", (unsigned long long)bmb.dstStageMask);
-			printStageMask("   ", bmb.dstStageMask);
+			DEBUG(" buf[%d]: buf=%llx barrier:", i, (unsigned long long)bufbar->buffer->buffer);
+		}
+
+		VkBufferMemoryBarrier2 bmb;
+		if (!makeBufferBarrier(&bmb, bufbar, bar.stage, cb->tag)) {
+			continue;
 		}
 
 		BOUNDED_ARRAY_APPEND_ITEM(buffer_barriers, bmb);
 	}
 
-	if (buffer_barriers.count) {
-		vkCmdPipelineBarrier2(combuf->cmdbuf, &(VkDependencyInfo) {
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.pNext = NULL,
-			.dependencyFlags = 0,
-			.bufferMemoryBarrierCount = buffer_barriers.count,
-			.pBufferMemoryBarriers = buffer_barriers.items,
-		});
+	BOUNDED_ARRAY(VkImageMemoryBarrier2, image_barriers, MAX_IMAGE_BARRIERS);
+	for (int i = 0; i < bar.images.count; ++i) {
+		const r_vkcombuf_barrier_image_t *const imgbar = bar.images.items + i;
+		if (LOG_VERBOSE) {
+			DEBUG(" img[%d]: img=%llx (%s) barrier:", i, (unsigned long long)imgbar->image->image, imgbar->image->name);
+		}
+
+		VkImageMemoryBarrier2 imb;
+		if (!makeImageBarrier(&imb, imgbar, bar.stage)) {
+			continue;
+		}
+
+		BOUNDED_ARRAY_APPEND_ITEM(image_barriers, imb);
 	}
+
+	if (buffer_barriers.count == 0 && image_barriers.count == 0)
+		return;
+
+	vkCmdPipelineBarrier2(combuf->cmdbuf, &(VkDependencyInfo) {
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.pNext = NULL,
+		.dependencyFlags = 0,
+		.bufferMemoryBarrierCount = buffer_barriers.count,
+		.pBufferMemoryBarriers = buffer_barriers.items,
+		.imageMemoryBarrierCount = image_barriers.count,
+		.pImageMemoryBarriers = image_barriers.items,
+	});
 }
 
 

@@ -69,6 +69,7 @@ const char *R_VkResultName(VkResult result);
 const char *R_VkPresentModeName(VkPresentModeKHR present_mode);
 const char *R_VkFormatName(VkFormat format);
 const char *R_VkColorSpaceName(VkColorSpaceKHR colorspace);
+const char *R_VkImageLayoutName(VkImageLayout);
 
 #define SET_DEBUG_NAME(object, type, name) \
 do { \
@@ -277,3 +278,9 @@ do { \
 	INSTANCE_FUNCS(X)
 	INSTANCE_DEBUG_FUNCS(X)
 #undef X
+
+// TODO is there a better place for this, vk_utils.h?
+typedef struct {
+	VkAccessFlags2 access;
+	VkPipelineStageFlagBits2 stage;
+} r_vksync_scope_t;

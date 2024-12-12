@@ -165,7 +165,9 @@ void VK_RenderDebugLabelBegin( const char *label );
 void VK_RenderDebugLabelEnd( void );
 
 void VK_RenderBegin( qboolean ray_tracing );
+
 struct vk_combuf_s;
 void VK_RenderEnd( struct vk_combuf_s*, qboolean draw, uint32_t width, uint32_t height, int frame_index );
-struct vk_combuf_s;
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h );
+
+struct r_vk_image_s;
+void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst);

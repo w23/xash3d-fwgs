@@ -313,8 +313,37 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
+	// This is temporary non-owning placeholder object.
+	// It is used only for combuf barrier tracking.
+	r_vk_image_t tmp_dst_image = {
+		.image = g_frame.current.framebuffer.image,
+		.view = g_frame.current.framebuffer.view,
+		.width = g_frame.current.framebuffer.width,
+		.height = g_frame.current.framebuffer.height,
+		.depth = 1,
+		.mips = 1,
+		.layers = 1,
+
+		// TODO .format = g_frame.current.framebuffer.???
+		// TODO .image_size = ???
+
+		// TODO is this correct?
+		.sync = {
+			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			.write = {
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+			},
+			.read = {
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
+				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+			},
+		},
+	};
+	snprintf(tmp_dst_image.name, sizeof(tmp_dst_image.name), "framebuffer[%d]", g_frame.current.framebuffer.index);
+
 	if (vk_frame.rtx_enabled) {
-		VK_RenderEndRTX( combuf, g_frame.current.framebuffer.view, g_frame.current.framebuffer.image, g_frame.current.framebuffer.width, g_frame.current.framebuffer.height );
+		VK_RenderEndRTX( combuf, &tmp_dst_image );
 	} else {
 		// FIXME: how to do this properly before render pass?
 		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
@@ -333,6 +362,19 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (draw) {
+		const r_vkcombuf_barrier_image_t dst_use[] = {{
+			.image = &tmp_dst_image,
+			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
+			.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.images = {
+				.items = dst_use,
+				.count = COUNTOF(dst_use),
+			},
+		});
+
 		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
@@ -408,7 +450,7 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
 		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
 
-		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}\n",
+		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}",
 			g_frame.current.index,
 			frame->staging_generation_tag,
 			frame->combuf->cmdbuf,

@@ -30,18 +30,9 @@ enum {
 	ExternalResource_COUNT,
 };
 
-typedef struct {
-	VkAccessFlags access_mask;
-	VkImageLayout image_layout;
-	VkPipelineStageFlagBits2 pipelines;
-} ray_resource_state_t;
-
 struct xvk_image_s;
 typedef struct vk_resource_s {
 	VkDescriptorType type;
-	struct {
-		ray_resource_state_t write, read;
-	} deprecate;
 	vk_descriptor_value_t value;
 	union {
 		vk_buffer_t *buffer;
@@ -85,27 +76,14 @@ typedef struct {
 } r_vk_resources_builtin_fixme_t;
 void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t builtin);
 
-void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean discontinuity);
+struct vk_combuf_s;
+void R_VkResourcesFrameBeginStateChangeFIXME(struct vk_combuf_s* combuf, qboolean discontinuity);
 
 typedef struct {
-	// TODO VK_KHR_synchronization2, has a slightly different (better) semantics
-	VkPipelineStageFlags2 src_stage_mask;
-	BOUNDED_ARRAY_DECLARE(VkImageMemoryBarrier, images, 16);
+	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 16);
 	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
 } r_vk_barrier_t;
 
-typedef struct {
-	VkImage image;
-	VkPipelineStageFlags src_stage_mask;
-	VkAccessFlags src_access_mask;
-	VkAccessFlags dst_access_mask;
-	VkImageLayout old_layout;
-	VkImageLayout new_layout;
-} r_vk_barrier_image_t;
-
-void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image);
-
-struct vk_combuf_s;
 void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
 
 void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags2 dst_stage_mask, r_vk_barrier_t *barrier);

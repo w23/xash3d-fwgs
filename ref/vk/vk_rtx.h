@@ -5,14 +5,12 @@
 
 void VK_RayFrameBegin( void );
 
+struct vk_combuf_s;
+struct r_vk_image_s;
 typedef struct {
 	struct vk_combuf_s *combuf;
 
-	struct {
-		VkImageView image_view;
-		VkImage image;
-		uint32_t width, height;
-	} dst;
+	struct r_vk_image_s *dst;
 
 	const matrix4x4 *projection, *view;
 
