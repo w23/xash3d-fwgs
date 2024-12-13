@@ -80,7 +80,7 @@ struct vk_combuf_s;
 void R_VkResourcesFrameBeginStateChangeFIXME(struct vk_combuf_s* combuf, qboolean discontinuity);
 
 typedef struct {
-	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 16);
+	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 32);
 	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
 } r_vk_barrier_t;
 

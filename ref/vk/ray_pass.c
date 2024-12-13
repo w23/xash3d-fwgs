@@ -286,8 +286,8 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 		// FIXME this is not true, it can be known earlier
 		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 			dst_value->image = (VkDescriptorImageInfo) {
-				.imageLayout = src_value->image_object->sync.layout,
-				.imageView = src_value->image_object->view,
+				.imageLayout = res->ref.image->sync.layout,
+				.imageView = res->ref.image->view,
 				.sampler = VK_NULL_HANDLE,
 			};
 		} else {

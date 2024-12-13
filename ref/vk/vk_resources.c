@@ -186,16 +186,13 @@ void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStag
 	switch (res->type) {
 		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
 			{
-				r_vkcombuf_barrier_image_t image_barrier = {
+				const r_vkcombuf_barrier_image_t image_barrier = {
 					.image = res->ref.image,
+					// Image must remain in GENERAL layout regardless of r/w.
+					// Storage image reads still require GENERAL, not SHADER_READ_ONLY_OPTIMAL
+					.layout = VK_IMAGE_LAYOUT_GENERAL,
+					.access = write ? VK_ACCESS_2_SHADER_WRITE_BIT : VK_ACCESS_2_SHADER_READ_BIT,
 				};
-				if (write) {
-					image_barrier.access = VK_ACCESS_2_SHADER_WRITE_BIT;
-					image_barrier.layout = VK_IMAGE_LAYOUT_GENERAL;
-				} else {
-					image_barrier.access = VK_ACCESS_2_SHADER_READ_BIT;
-					image_barrier.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				}
 				BOUNDED_ARRAY_APPEND_ITEM(barrier->images, image_barrier);
 			}
 			break;
@@ -223,6 +220,8 @@ void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineS
 		.stage = dst_stage_mask,
 		.buffers.items = barrier->buffers.items,
 		.buffers.count = barrier->buffers.count,
+		.images.items = barrier->images.items,
+		.images.count = barrier->images.count,
 	});
 
 	// Mark as used

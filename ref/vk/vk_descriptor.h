@@ -29,7 +29,6 @@ typedef union {
 	VkDescriptorImageInfo image;
 	const VkDescriptorImageInfo *image_array;
 	VkWriteDescriptorSetAccelerationStructureKHR accel;
-	const struct r_vk_image_s *image_object;
 } vk_descriptor_value_t;
 
 typedef struct {

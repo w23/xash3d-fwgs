@@ -19,7 +19,6 @@
 
 #include "profiler.h"
 
-#include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
@@ -251,7 +250,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			// THIS FAILS WHY?! ASSERT(g_rtx.mainpipe_resources[i]->value.image_object == &res->image);
-			g_rtx.mainpipe_resources[i]->value.image_object = &res->image;
+			g_rtx.mainpipe_resources[i]->ref.image = &res->image;
 	}
 
 	R_VkMeatpipePerform(g_rtx.mainpipe, combuf, (vk_meatpipe_perfrom_args_t) {
@@ -347,7 +346,10 @@ static void reloadMainpipe(void) {
 					.tiling = VK_IMAGE_TILING_OPTIMAL,
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
-					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+					.usage = VK_IMAGE_USAGE_STORAGE_BIT
+						//| VK_IMAGE_USAGE_SAMPLED_BIT // required by VK_IMAGE_LAYOUT_SHADER_READ_OPTIMAL
+						| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+						| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
@@ -359,7 +361,7 @@ static void reloadMainpipe(void) {
 
 		if (create) {
 			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-				newpipe_resources[i]->value.image_object = &res->image;
+				newpipe_resources[i]->ref.image = &res->image;
 			}
 
 			// TODO full r/w initialization
