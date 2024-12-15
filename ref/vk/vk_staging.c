@@ -23,8 +23,8 @@ typedef struct r_vkstaging_user_t {
 	uint32_t pending_count;
 
 	struct {
-		uint32_t allocs;
-		uint32_t size;
+		int allocs;
+		int size;
 	} stats;
 } r_vkstaging_user_t;
 
@@ -37,10 +37,6 @@ static struct {
 	struct {
 		int total_size;
 		int total_chunks;
-		//int buffers_size;
-		//int images_size;
-		//int buffer_chunks;
-		//int images;
 	} stats;
 
 	//int buffer_upload_scope_id;
@@ -48,19 +44,14 @@ static struct {
 } g_staging = {0};
 
 qboolean R_VkStagingInit(void) {
-	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 		return false;
 
 	aloRingInit(&g_staging.buffer_alloc_ring, g_staging.buffer.size);
 
 	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
 	R_SPEEDS_COUNTER(g_staging.stats.total_chunks, "total_chunks", kSpeedsMetricBytes);
-
-	//R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
-	//R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
-
-	//R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
-	//R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
 
 	//g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
 	//g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
@@ -75,18 +66,25 @@ void R_VkStagingShutdown(void) {
 
 r_vkstaging_user_t *R_VkStagingUserCreate(r_vkstaging_user_create_t info) {
 	ASSERT(g_staging.users.count < MAX_STAGING_USERS);
-	g_staging.users.items[g_staging.users.count] = (r_vkstaging_user_t) {
+
+	r_vkstaging_user_t *const user = g_staging.users.items + (g_staging.users.count++);
+	*user = (r_vkstaging_user_t) {
 		.info = info,
 	};
 
-	// TODO register counters
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%s.size", info.name);
+	R_SPEEDS_COUNTER(user->stats.size, buf, kSpeedsMetricBytes);
 
-	return g_staging.users.items + (g_staging.users.count++);
+	snprintf(buf, sizeof(buf), "%s.allocs", info.name);
+	R_SPEEDS_COUNTER(user->stats.allocs, buf, kSpeedsMetricCount);
+
+	return user;
 }
 
 void R_VkStagingUserDestroy(r_vkstaging_user_t *user) {
 	ASSERT(user->pending_count == 0);
-	// TODO destroy
+	// TODO remove from the table
 }
 
 r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_t* user, uint32_t size) {
@@ -100,6 +98,9 @@ r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_t* user, uint32_t size) {
 
 	user->stats.allocs++;
 	user->stats.size += size;
+
+	g_staging.stats.total_chunks++;
+	g_staging.stats.total_size += size;
 
 	return (r_vkstaging_region_t){
 		.offset = offset,
