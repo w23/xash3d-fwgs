@@ -11,6 +11,7 @@ typedef struct {
 } r_vksync_state_t;
 
 typedef struct vk_buffer_s {
+	const char *name; // static
 	vk_devmem_t devmem;
 	VkBuffer buffer;
 
@@ -44,7 +45,6 @@ typedef struct {
 
 	struct {
 		vk_buffer_t *buf;
-		r_vkstaging_handle_t handle;
 	} impl_;
 } vk_buffer_locked_t;
 

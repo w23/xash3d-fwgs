@@ -50,7 +50,7 @@ typedef struct {
 	// so we can't reuse the same one for two purposes and need to mnozhit sunchnosti
 	VkSemaphore sem_done2;
 
-	uint32_t staging_generation_tag;
+	uint32_t staging_frame_tag;
 } vk_framectl_frame_t;
 
 static struct {
@@ -278,7 +278,7 @@ void R_BeginFrame( qboolean clearScene ) {
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 
 	// TODO explicit frame dependency synced on frame-end-event/sema
-	R_VkStagingGenerationRelease(frame->staging_generation_tag);
+	R_VkStagingFrameCompleted(frame->staging_frame_tag);
 
 	g_frame.current.framebuffer = R_VkSwapchainAcquire( frame->sem_framebuffer_ready );
 	vk_frame.width = g_frame.current.framebuffer.width;
@@ -425,9 +425,11 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	vk_framectl_frame_t *const frame = g_frame.frames + g_frame.current.index;
 	vk_framectl_frame_t *const prev_frame = g_frame.frames + (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES;
 
+	// Push things from staging that weren't explicitly pulled by frame builder
+	frame->staging_frame_tag = R_VkStagingFrameEpilogue(combuf);
+
 	R_VkCombufEnd(combuf);
 
-	frame->staging_generation_tag = R_VkStagingGenerationCommit();
 
 	BOUNDED_ARRAY(VkCommandBuffer, cmdbufs, 2);
 	BOUNDED_ARRAY_APPEND_ITEM(cmdbufs, cmdbuf);
@@ -452,7 +454,7 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 
 		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}",
 			g_frame.current.index,
-			frame->staging_generation_tag,
+			frame->staging_frame_tag,
 			frame->combuf->cmdbuf,
 			waitophores.count,
 			(unsigned long long)waitophores.items[0],

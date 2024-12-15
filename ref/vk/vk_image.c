@@ -233,21 +233,37 @@ typedef struct {
 } image_upload_t;
 
 static struct {
+	r_vkstaging_user_handle_t staging;
+
 	ARRAY_DYNAMIC_DECLARE(image_upload_t, images);
 	ARRAY_DYNAMIC_DECLARE(VkBufferImageCopy, slices);
 	ARRAY_DYNAMIC_DECLARE(VkImageMemoryBarrier, barriers);
 } g_image_upload;
+
+static void imageStagingPush(void* userptr, struct vk_combuf_s *combuf, uint32_t allocations) {
+	(void)userptr;
+	const VkPipelineStageFlags2 assume_stage
+		= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+	R_VkImageUploadCommit(combuf, assume_stage);
+}
 
 qboolean R_VkImageInit(void) {
 	arrayDynamicInitT(&g_image_upload.images);
 	arrayDynamicInitT(&g_image_upload.slices);
 	arrayDynamicInitT(&g_image_upload.barriers);
 
+	g_image_upload.staging = R_VkStagingUserCreate((r_vkstaging_user_create_t){
+		.name = "image",
+		.userptr = NULL,
+		.push = imageStagingPush,
+	});
+
 	return true;
 }
 
 void R_VkImageShutdown(void) {
 	ASSERT(g_image_upload.images.count == 0);
+	R_VkStagingUserDestroy(g_image_upload.staging);
 	arrayDynamicDestroyT(&g_image_upload.images);
 	arrayDynamicDestroyT(&g_image_upload.slices);
 	arrayDynamicDestroyT(&g_image_upload.barriers);
@@ -370,9 +386,6 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 			},
 		};
 
-		R_VkStagingUnlock(up->staging.lock.handle);
-		R_VkStagingCopied(1);
-
 		// Mark image as uploaded
 		up->image->upload_slot = -1;
 		up->image = NULL;
@@ -393,6 +406,8 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		0, 0, NULL, 0, NULL,
 		barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
 	);
+
+	R_VkStagingMarkFree(g_image_upload.staging, barriers_count);
 
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
@@ -423,7 +438,7 @@ void R_VkImageUploadBegin( r_vk_image_t *img ) {
 	// would notify other modules that they'd need to commit their staging data, and thus we'd return to this module's
 	// R_VkImageUploadCommit(), which needs to see valid data. Therefore, don't touch its state until
 	// R_VkStagingLock returns.
-	const r_vkstaging_region_t staging_lock = R_VkStagingLock(staging_size);
+	const r_vkstaging_region_t staging_lock = R_VkStagingAlloc(g_image_upload.staging, staging_size);
 
 	img->upload_slot = g_image_upload.images.count;
 	arrayDynamicAppendT(&g_image_upload.images, NULL);
@@ -503,8 +518,7 @@ static void cancelUpload( r_vk_image_t *img ) {
 
 	// Technically we won't need that staging region anymore at all, but it doesn't matter,
 	// it's just easier to mark it to be freed this way.
-	R_VkStagingUnlock(up->staging.lock.handle);
-	R_VkStagingCopied(1);
+	R_VkStagingMarkFree(g_image_upload.staging, 1);
 
 	// Mark upload slot as unused, and image as not subjet to uploading
 	up->image = NULL;

@@ -287,7 +287,7 @@ uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment) {
 
 	// 1. Check if we have enough space immediately in front of head
 	if (pos + size <= ring->size) {
-		ring->head = (pos + size) % ring->size;
+		ring->head = pos + size;
 		return pos;
 	}
 

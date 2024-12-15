@@ -1,11 +1,11 @@
 #include "vk_staging.h"
+
 #include "vk_buffer.h"
-#include "alolcator.h"
-#include "vk_commandpool.h"
-#include "profiler.h"
-#include "r_speeds.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "r_speeds.h"
+
+#include "alolcator.h"
 #include "arrays.h"
 
 #include <memory.h>
@@ -16,103 +16,127 @@
 // FIXME decrease size to something reasonable, see https://github.com/w23/xash3d-fwgs/issues/746
 #define DEFAULT_STAGING_SIZE (4*128*1024*1024)
 
-static struct {
-	vk_buffer_t buffer;
-	r_flipping_buffer_t buffer_alloc;
+#define MAX_STAGING_USERS 8
 
-	uint32_t locked_count;
+typedef struct r_vkstaging_user_t {
+	r_vkstaging_user_create_t info;
 	uint32_t pending_count;
 
-	uint32_t current_generation;
+	struct {
+		uint32_t allocs;
+		uint32_t size;
+	} stats;
+} r_vkstaging_user_t;
+
+static struct {
+	vk_buffer_t buffer;
+	alo_ring_t buffer_alloc_ring;
+
+	BOUNDED_ARRAY_DECLARE(r_vkstaging_user_t, users, MAX_STAGING_USERS);
 
 	struct {
 		int total_size;
-		int buffers_size;
-		int images_size;
-		int buffer_chunks;
-		int images;
+		int total_chunks;
+		//int buffers_size;
+		//int images_size;
+		//int buffer_chunks;
+		//int images;
 	} stats;
 
-	int buffer_upload_scope_id;
-	int image_upload_scope_id;
+	//int buffer_upload_scope_id;
+	//int image_upload_scope_id;
 } g_staging = {0};
 
 qboolean R_VkStagingInit(void) {
 	if (!VK_BufferCreate("staging", &g_staging.buffer, DEFAULT_STAGING_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 		return false;
 
-	R_FlippingBuffer_Init(&g_staging.buffer_alloc, DEFAULT_STAGING_SIZE);
+	aloRingInit(&g_staging.buffer_alloc_ring, g_staging.buffer.size);
 
 	R_SPEEDS_COUNTER(g_staging.stats.total_size, "total_size", kSpeedsMetricBytes);
-	R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
-	R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
+	R_SPEEDS_COUNTER(g_staging.stats.total_chunks, "total_chunks", kSpeedsMetricBytes);
 
-	R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
-	R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
+	//R_SPEEDS_COUNTER(g_staging.stats.buffers_size, "buffers_size", kSpeedsMetricBytes);
+	//R_SPEEDS_COUNTER(g_staging.stats.images_size, "images_size", kSpeedsMetricBytes);
 
-	g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
-	g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
+	//R_SPEEDS_COUNTER(g_staging.stats.buffer_chunks, "buffer_chunks", kSpeedsMetricCount);
+	//R_SPEEDS_COUNTER(g_staging.stats.images, "images", kSpeedsMetricCount);
+
+	//g_staging.buffer_upload_scope_id = R_VkGpuScope_Register("staging_buffers");
+	//g_staging.image_upload_scope_id = R_VkGpuScope_Register("staging_images");
 
 	return true;
 }
 
 void R_VkStagingShutdown(void) {
+	// TODO ASSERT(g_staging.users.count == 0);
 	VK_BufferDestroy(&g_staging.buffer);
 }
 
-static uint32_t allocateInRing(uint32_t size, uint32_t alignment) {
-	alignment = alignment < 1 ? 1 : alignment;
+r_vkstaging_user_t *R_VkStagingUserCreate(r_vkstaging_user_create_t info) {
+	ASSERT(g_staging.users.count < MAX_STAGING_USERS);
+	g_staging.users.items[g_staging.users.count] = (r_vkstaging_user_t) {
+		.info = info,
+	};
 
-	const uint32_t offset = R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment );
-	ASSERT(offset != ALO_ALLOC_FAILED && "FIXME increase staging buffer size as a quick fix");
+	// TODO register counters
 
-	return R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment );
+	return g_staging.users.items + (g_staging.users.count++);
 }
 
-r_vkstaging_region_t R_VkStagingLock(uint32_t size) {
+void R_VkStagingUserDestroy(r_vkstaging_user_t *user) {
+	ASSERT(user->pending_count == 0);
+	// TODO destroy
+}
+
+r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_t* user, uint32_t size) {
 	const uint32_t alignment = 4;
-	const uint32_t offset = R_FlippingBuffer_Alloc(&g_staging.buffer_alloc, size, alignment);
-	ASSERT(offset != ALO_ALLOC_FAILED);
+	const uint32_t offset = aloRingAlloc(&g_staging.buffer_alloc_ring, size, alignment);
+	ASSERT(offset != ALO_ALLOC_FAILED && "FIXME: workaround: increase staging buffer size");
 
 	DEBUG("Lock alignment=%d size=%d region=%d..%d", alignment, size, offset, offset + size);
 
-	g_staging.locked_count++;
+	user->pending_count++;
+
+	user->stats.allocs++;
+	user->stats.size += size;
+
 	return (r_vkstaging_region_t){
-		.handle.generation = g_staging.current_generation,
 		.offset = offset,
 		.buffer = g_staging.buffer.buffer,
 		.ptr = (char*)g_staging.buffer.mapped + offset,
 	};
 }
 
-void R_VkStagingUnlock(r_vkstaging_handle_t handle) {
-	DEBUG("Unlock: locked_count=%u pending_count=%u gen=%u", g_staging.locked_count, g_staging.pending_count, g_staging.current_generation);
-	ASSERT(g_staging.current_generation == handle.generation);
-	ASSERT(g_staging.locked_count > 0);
-	g_staging.locked_count--;
-	g_staging.pending_count++;
+void R_VkStagingMarkFree(r_vkstaging_user_t* user, uint32_t count) {
+	ASSERT(user->pending_count >= count);
+	user->pending_count -= count;
 }
 
-void R_VkStagingCopied(uint32_t count) {
-	ASSERT(g_staging.pending_count >= count);
-	g_staging.pending_count -= count;
+uint32_t R_VkStagingFrameEpilogue(vk_combuf_t* combuf) {
+	for (int i = 0; i < g_staging.users.count; ++i) {
+		r_vkstaging_user_t *const user = g_staging.users.items + i;
+		if (user->pending_count == 0)
+			continue;
+
+		WARN("%s has %u pending staging items, pushing", user->info.name, user->pending_count);
+		user->info.push(user->info.userptr, combuf, user->pending_count);
+		ASSERT(user->pending_count == 0);
+	}
+
+	return g_staging.buffer_alloc_ring.head;
 }
 
-void R_VkStagingGenerationRelease(uint32_t gen) {
-	DEBUG("Release: gen=%u current_gen=%u ring offsets=[%u, %u, %u]", gen, g_staging.current_generation,
-		g_staging.buffer_alloc.frame_offsets[0],
-		g_staging.buffer_alloc.frame_offsets[1],
-		g_staging.buffer_alloc.ring.head
-	);
-	R_FlippingBuffer_Flip(&g_staging.buffer_alloc);
-}
+void R_VkStagingFrameCompleted(uint32_t frame_boundary_addr) {
+	// Note that these stats are for latest frame, not the one for which the frame boundary is.
+	g_staging.stats.total_size = 0;
+	g_staging.stats.total_chunks = 0;
 
-uint32_t R_VkStagingGenerationCommit(void) {
-	DEBUG("Commit: locked_count=%u pending_count=%u gen=%u", g_staging.locked_count, g_staging.pending_count, g_staging.current_generation);
+	for (int i = 0; i < g_staging.users.count; ++i) {
+		r_vkstaging_user_t *const user = g_staging.users.items + i;
+		user->stats.allocs = 0;
+		user->stats.size = 0;
+	}
 
-	ASSERT(g_staging.locked_count == 0);
-	ASSERT(g_staging.pending_count == 0);
-
-	g_staging.stats.total_size = g_staging.stats.images_size + g_staging.stats.buffers_size;
-	return g_staging.current_generation++;
+	aloRingFree(&g_staging.buffer_alloc_ring, frame_boundary_addr);
 }
