@@ -649,7 +649,7 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		}};
 		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-				.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+				.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
 				.images = {
 					.count = COUNTOF(image_barriers),
 					.items = image_barriers,
@@ -686,7 +686,7 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 		}};
 		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_HOST_BIT,
 				.images = {
 					.count = COUNTOF(image_barriers),
 					.items = image_barriers,

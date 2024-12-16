@@ -167,7 +167,7 @@ void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf) {
 		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	}};
 	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.stage = VK_PIPELINE_STAGE_2_CLEAR_BIT,
 		.images = {
 			.items = ib,
 			.count = COUNTOF(ib),
@@ -189,7 +189,7 @@ void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *args )
 		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
 	}};
 	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.stage = VK_PIPELINE_STAGE_2_BLIT_BIT,
 		.images = {
 			.items = ib,
 			.count = COUNTOF(ib),
@@ -316,7 +316,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 	// 1.b Invoke the barriers
 	vkCmdPipelineBarrier(combuf->cmdbuf,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, // TODO VK_PIPELINE_STAGE_2_COPY_BIT
 		0, 0, NULL, 0, NULL,
 		barriers_count, g_image_upload.barriers.items
 	);

@@ -225,12 +225,12 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	}};
 
 	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
-		.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
 		.buffers = { barrier, COUNTOF(barrier) },
 		.images = { NULL, 0 },
 	});
 
-	//FIXME const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
+	//TODO const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	DEBUG_NV_CHECKPOINTF(cmdbuf, "staging dst_buffer=%p count=%d", buf->buffer, stb->regions.count);
@@ -241,5 +241,5 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	R_VkStagingMarkFree(stb->staging_handle, stb->regions.count);
 	stb->regions.count = 0;
 
-	//FIXME R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
+	//TODO R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }
