@@ -382,8 +382,14 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
 
-	if (draw)
+	if (draw) {
 		vkCmdEndRenderPass(cmdbuf);
+
+		// Render pass's finalLayout transitions the image into this one
+		g_frame.current.framebuffer.image.sync.read.access = 0;
+		g_frame.current.framebuffer.image.sync.write.access = 0;
+		g_frame.current.framebuffer.image.sync.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	}
 
 	g_frame.current.phase = Phase_RenderingEnqueued;
 	APROF_SCOPE_END(enqueue);
@@ -581,15 +587,15 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 
 static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
-	r_vk_image_t dest_image;
-	const VkImage frame_image = g_frame.current.framebuffer.image.image;
+	r_vk_image_t temp_image;
+	r_vk_image_t *const framebuffer_image = &g_frame.current.framebuffer.image;
 	rgbdata_t *r_shot = NULL;
 	qboolean blit = canBlitFromSwapchainToFormat( dest_format );
 
 	vk_combuf_t *const combuf = g_frame.frames[g_frame.current.index].combuf;
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	if (frame_image == VK_NULL_HANDLE) {
+	if (framebuffer_image->image == VK_NULL_HANDLE) {
 		gEngine.Con_Printf(S_ERROR "no current image, can't take screenshot\n");
 		return NULL;
 	}
@@ -609,63 +615,47 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.flags = 0,
 			.memory_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 		};
-		dest_image = R_VkImageCreate(&xic);
+		temp_image = R_VkImageCreate(&xic);
 	}
 
 	// Make sure that all rendering ops are enqueued
 	const qboolean draw = true;
 	enqueueRendering( combuf, draw );
 
-	{
-		// Barrier 1: dest image
-		const VkImageMemoryBarrier image_barrier[2] = {{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = dest_image.image,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			}}, { // Barrier 2: source swapchain image
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = frame_image,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-		}}};
-
-		vkCmdPipelineBarrier(cmdbuf,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
-	}
-
 	// Blit/transfer
 	if (blit) {
-		const VkImageBlit blit = {
-			.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.srcSubresource.layerCount = 1,
-			.dstSubresource.layerCount = 1,
-			.srcOffsets = {{0}, {vk_frame.width, vk_frame.height, 1}},
-			.dstOffsets = {{0}, {vk_frame.width, vk_frame.height, 1}}
-		};
-		vkCmdBlitImage(cmdbuf,
-			frame_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			dest_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+		R_VkImageBlit(combuf, &(r_vkimage_blit_args){
+			.src = {
+				.image = framebuffer_image,
+				.width = vk_frame.width,
+				.height = vk_frame.height,
+				.depth = 1,
+			},
+			.dst = {
+				.image = &temp_image,
+				.width = vk_frame.width,
+				.height = vk_frame.height,
+				.depth = 1,
+			},
+		});
 	} else {
+		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+			.image = &temp_image,
+			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			}, {
+			.image = framebuffer_image,
+			.access = VK_ACCESS_2_TRANSFER_READ_BIT,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+				.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+				.images = {
+					.count = COUNTOF(image_barriers),
+					.items = image_barriers,
+				},
+		});
+
 		const VkImageCopy copy = {
 			.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -677,46 +667,31 @@ static rgbdata_t *R_VkReadPixels( void ) {
 		};
 
 		vkCmdCopyImage(cmdbuf,
-			frame_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			dest_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+			framebuffer_image->image, framebuffer_image->sync.layout,
+			temp_image.image, temp_image.sync.layout, 1, &copy);
 
 		gEngine.Con_Printf(S_WARN "Blit is not supported, screenshot will likely have mixed components; TODO: swizzle in software\n");
 	}
 
 	{
-		// Barrier 1: dest image
-		VkImageMemoryBarrier image_barrier[2] = {{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = dest_image.image,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			}}, { // Barrier 2: source swapchain image
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = frame_image,
-			.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-		}}};
-
-		vkCmdPipelineBarrier(cmdbuf,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
+		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+			// Temp image: prepare for reading on CPU
+			.image = &temp_image,
+			.access = VK_ACCESS_2_MEMORY_READ_BIT,
+			.layout = VK_IMAGE_LAYOUT_GENERAL,
+			}, {
+			// Framebuffer image: prepare for displaying
+			.image = framebuffer_image,
+			.access = 0,
+			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+				.images = {
+					.count = COUNTOF(image_barriers),
+					.items = image_barriers,
+				},
+		});
 	}
 
 	{
@@ -730,8 +705,8 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		};
 		VkSubresourceLayout layout;
-		const char *mapped = dest_image.devmem.mapped;
-		vkGetImageSubresourceLayout(vk_core.device, dest_image.image, &subres, &layout);
+		const char *mapped = temp_image.devmem.mapped;
+		vkGetImageSubresourceLayout(vk_core.device, temp_image.image, &subres, &layout);
 
 		mapped += layout.offset;
 
@@ -774,7 +749,7 @@ static rgbdata_t *R_VkReadPixels( void ) {
 		}
 	}
 
-	R_VkImageDestroy( &dest_image );
+	R_VkImageDestroy( &temp_image );
 
 	return r_shot;
 }
