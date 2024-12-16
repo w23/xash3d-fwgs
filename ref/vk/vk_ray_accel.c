@@ -353,7 +353,7 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
 	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, count,
 		g_accel.build.geometry_infos.items,
-		g_accel.build.range_infos.items);
+		(const VkAccelerationStructureBuildRangeInfoKHR* const *)g_accel.build.range_infos.items);
 
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 
@@ -705,10 +705,6 @@ void RT_BlasDestroy(struct rt_blas_s* blas) {
 		vkDestroyAccelerationStructureKHR(vk_core.device, blas->blas, NULL);
 
 	Mem_Free(blas);
-}
-
-VkDeviceAddress RT_BlasGetDeviceAddress(struct rt_blas_s *blas) {
-	return getAccelAddress(blas->blas);
 }
 
 qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s *geoms, int geoms_count) {

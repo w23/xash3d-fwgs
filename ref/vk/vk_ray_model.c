@@ -21,7 +21,6 @@ typedef struct rt_kusochki_s {
 
 typedef struct rt_model_s {
 	struct rt_blas_s *blas;
-	VkDeviceAddress blas_addr;
 	rt_kusochki_t kusochki;
 } rt_model_t;
 
@@ -235,7 +234,6 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
 		ret->blas = blas;
-		ret->blas_addr = RT_BlasGetDeviceAddress(ret->blas);
 		ret->kusochki = kusochki;
 		return ret;
 	}
@@ -461,6 +459,8 @@ void RT_DynamicModelProcessFrame(void) {
 	APROF_SCOPE_DECLARE_BEGIN(process, __FUNCTION__);
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		rt_dynamic_t *const dyn = g_dyn.groups + i;
+		rt_draw_instance_t draw_instance;
+
 		if (!dyn->geometries_count)
 			continue;
 
@@ -480,7 +480,7 @@ void RT_DynamicModelProcessFrame(void) {
 			goto tail;
 		}
 
-		rt_draw_instance_t draw_instance = {
+		draw_instance = (rt_draw_instance_t){
 			.blas = dyn->blas,
 			.kusochki_offset = kusochki_offset,
 			.material_mode = i,
