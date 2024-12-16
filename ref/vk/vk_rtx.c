@@ -232,13 +232,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
-	// FIXME move this to "TLAS producer"
-	{
-		rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
-		tlas->resource = RT_VkAccelPrepareTlas(combuf);
-		R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
-	}
-
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
 
 	// Update image resource links after the prev_-related swap above
@@ -499,7 +492,10 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	if (!args->dst->image)
 		goto tail;
 
-	if (g_ray_model_state.frame.instances_count == 0) {
+	// TODO move this to "TLAS producer"
+	rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
+	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
+	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
 		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf );
 	} else {
 		const perform_tracing_args_t trace_args = {

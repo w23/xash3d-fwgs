@@ -4,9 +4,9 @@
 #include "vk_materials.h"
 #include "vk_render.h"
 #include "vk_logs.h"
+#include "vk_ray_accel.h"
 #include "profiler.h"
 
-#include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
@@ -152,7 +152,6 @@ void RT_RayModel_Clear(void) {
 }
 
 void XVK_RayModel_ClearForNextFrame( void ) {
-	g_ray_model_state.frame.instances_count = 0;
 	R_DEBuffer_Flip(&g_ray_model_state.kusochki_alloc);
 }
 
@@ -321,15 +320,6 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 	return true;
 }
 
-rt_draw_instance_t *getDrawInstance(void) {
-	if (g_ray_model_state.frame.instances_count >= ARRAYSIZE(g_ray_model_state.frame.instances)) {
-		gEngine.Con_Printf(S_ERROR "Too many RT draw instances, max = %d\n", (int)(ARRAYSIZE(g_ray_model_state.frame.instances)));
-		return NULL;
-	}
-
-	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
-}
-
 static qboolean isLegacyBlendingMode(int material_mode) {
 	switch (material_mode) {
 		case MATERIAL_MODE_BLEND_ADD:
@@ -387,23 +377,23 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 		}
 	}
 
-	rt_draw_instance_t *const draw_instance = getDrawInstance();
-	if (!draw_instance)
-		return;
-
-	draw_instance->blas_addr = model->blas_addr;
-	draw_instance->kusochki_offset = kusochki_offset;
-	draw_instance->material_mode = args.material_mode;
-	draw_instance->material_flags = args.material_flags;
+	rt_draw_instance_t draw_instance = {
+		.blas = model->blas,
+		.kusochki_offset = kusochki_offset,
+		.material_mode = args.material_mode,
+		.material_flags = args.material_flags,
+	};
 
 	// Legacy blending is done in sRGB-γ space
 	if (isLegacyBlendingMode(args.material_mode))
-		Vector4Copy(*args.color_srgb, draw_instance->color);
+		Vector4Copy(*args.color_srgb, draw_instance.color);
 	else
-		sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
+		sRGBtoLinearVec4(*args.color_srgb, draw_instance.color);
 
-	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
-	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
+	Matrix3x4_Copy(draw_instance.transform_row, args.transform);
+	Matrix4x4_Copy(draw_instance.prev_transform_row, args.prev_transform);
+
+	RT_VkAccelAddDrawInstance(&draw_instance);
 }
 
 #define MAX_RT_DYNAMIC_GEOMETRIES 256
@@ -444,7 +434,6 @@ qboolean RT_DynamicModelInit(void) {
 			.usage = kBlasBuildDynamicFast,
 			.geoms = fake_geoms,
 			.geoms_count = MAX_RT_DYNAMIC_GEOMETRIES,
-			.dont_build = true,
 		});
 
 		if (!blas) {
@@ -454,7 +443,6 @@ qboolean RT_DynamicModelInit(void) {
 		}
 
 		g_dyn.groups[i].blas = blas;
-		g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
 	}
 
 	Mem_Free(fake_geoms);
@@ -476,7 +464,6 @@ void RT_DynamicModelProcessFrame(void) {
 		if (!dyn->geometries_count)
 			continue;
 
-		rt_draw_instance_t* draw_instance;
 		const uint32_t kusochki_offset = kusochkiAllocOnce(dyn->geometries_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED) {
 			gEngine.Con_Printf(S_ERROR "Couldn't allocate kusochki once for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
@@ -493,17 +480,20 @@ void RT_DynamicModelProcessFrame(void) {
 			goto tail;
 		}
 
-		draw_instance = getDrawInstance();
-		if (!draw_instance)
-			goto tail;
+		rt_draw_instance_t draw_instance = {
+			.blas = dyn->blas,
+			.kusochki_offset = kusochki_offset,
+			.material_mode = i,
+			.material_flags = 0,
+			.color = {1, 1, 1, 1},
+		};
 
-		draw_instance->blas_addr = dyn->blas_addr;
-		draw_instance->kusochki_offset = kusochki_offset;
-		draw_instance->material_mode = i;
-		draw_instance->material_flags = 0;
-		Vector4Set(draw_instance->color, 1, 1, 1, 1);
-		Matrix3x4_LoadIdentity(draw_instance->transform_row);
-		Matrix4x4_LoadIdentity(draw_instance->prev_transform_row);
+		// xash3d_mathlib is weird, can't just assign these
+		// TODO: make my own mathlib of perfectly assignable structs
+		Matrix3x4_LoadIdentity(draw_instance.transform_row);
+		Matrix4x4_LoadIdentity(draw_instance.prev_transform_row);
+
+		RT_VkAccelAddDrawInstance(&draw_instance);
 
 tail:
 		dyn->geometries_count = 0;
