@@ -330,16 +330,22 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 
 static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	R_VkBufferStagingCommit(geom, combuf);
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		.buffers = {
-			.count = 1,
-			.items = &(r_vkcombuf_barrier_buffer_t){
-				.buffer = geom,
-				.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+	{
+		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+			.buffer = &g_accel.accels_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+		}, {
+			.buffer = geom,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			.buffers = {
+				.count = COUNTOF(buffers),
+				.items = buffers,
 			},
-		},
-	});
+		});
+	}
 
 	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
 	const uint32_t count = g_accel.build.geometry_infos.count;
@@ -468,23 +474,18 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	// Build all scheduled BLASes
 	blasBuildPerform(combuf, geom);
 
-	// FIXME use combuf barrier
-	// Barrier for building all BLASes
-	// BLAS building is now in cmdbuf, need to synchronize with results
 	{
-		VkBufferMemoryBarrier bmb[] = {{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR, // | VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-			.buffer = g_accel.accels_buffer.buffer,
-			// FIXME this is completely wrong. Offset ans size are BLAS-specifig
-			.offset = instance_offset * sizeof(VkAccelerationStructureInstanceKHR),
-			.size = instances_count * sizeof(VkAccelerationStructureInstanceKHR),
+		r_vkcombuf_barrier_buffer_t buffers[] = {{
+			.buffer = &g_accel.accels_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
 		}};
-		vkCmdPipelineBarrier(combuf->cmdbuf,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			0, 0, NULL, COUNTOF(bmb), bmb, 0, NULL);
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			.buffers = {
+				.count = COUNTOF(buffers),
+				.items = buffers,
+			},
+		});
 	}
 
 	// 2. Build TLAS
