@@ -343,10 +343,10 @@ static qboolean makeBufferBarrier(VkBufferMemoryBarrier2* out_bmb, const r_vkcom
 	if (LOG_VERBOSE) {
 		DEBUG("  srcAccessMask = %llx", (unsigned long long)out_bmb->srcAccessMask);
 		printAccessMask("   ", out_bmb->srcAccessMask);
-		DEBUG("  srcStageMask = %llx", (unsigned long long)out_bmb->srcStageMask);
-		printStageMask("   ", out_bmb->srcStageMask);
 		DEBUG("  dstAccessMask = %llx", (unsigned long long)out_bmb->dstAccessMask);
 		printAccessMask("   ", out_bmb->dstAccessMask);
+		DEBUG("  srcStageMask = %llx", (unsigned long long)out_bmb->srcStageMask);
+		printStageMask("   ", out_bmb->srcStageMask);
 		DEBUG("  dstStageMask = %llx", (unsigned long long)out_bmb->dstStageMask);
 		printStageMask("   ", out_bmb->dstStageMask);
 	}
@@ -415,10 +415,10 @@ static qboolean makeImageBarrier(VkImageMemoryBarrier2* out_imb, const r_vkcombu
 	if (LOG_VERBOSE) {
 		DEBUG("  srcAccessMask = %llx", (unsigned long long)out_imb->srcAccessMask);
 		printAccessMask("   ", out_imb->srcAccessMask);
-		DEBUG("  srcStageMask = %llx", (unsigned long long)out_imb->srcStageMask);
-		printStageMask("   ", out_imb->srcStageMask);
 		DEBUG("  dstAccessMask = %llx", (unsigned long long)out_imb->dstAccessMask);
 		printAccessMask("   ", out_imb->dstAccessMask);
+		DEBUG("  srcStageMask = %llx", (unsigned long long)out_imb->srcStageMask);
+		printStageMask("   ", out_imb->srcStageMask);
 		DEBUG("  dstStageMask = %llx", (unsigned long long)out_imb->dstStageMask);
 		printStageMask("   ", out_imb->dstStageMask);
 		DEBUG("  oldLayout = %s (%llx)", R_VkImageLayoutName(out_imb->oldLayout), (unsigned long long)out_imb->oldLayout);
