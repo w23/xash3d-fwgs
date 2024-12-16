@@ -125,6 +125,10 @@ uint32_t R_VkStagingFrameEpilogue(vk_combuf_t* combuf) {
 		ASSERT(user->pending_count == 0);
 	}
 
+	// TODO it would be nice to attach a finalization callback to combuf
+	// So that when the combuf is done on GPU, the callback is called and we can clean its memory
+	// instead of depending on framectl calling Completed function manually.
+
 	return g_staging.buffer_alloc_ring.head;
 }
 

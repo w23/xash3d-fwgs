@@ -315,8 +315,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	// 1.b Invoke the barriers
 	vkCmdPipelineBarrier(combuf->cmdbuf,
-		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0, 0, NULL, 0, NULL,
 		barriers_count, g_image_upload.barriers.items
@@ -397,10 +396,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 	}
 
 	// 3.b Submit the barriers
-	/* const VkPipelineStageFlagBits dest_stages = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | ( */
-	/* 	vk_core.rtx */
-	/* 	? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR */
-	/* 	: 0); */
+	// It's a massive set of barriers (1e3+), so using manual barriers instead of automatic combuf ones
 	vkCmdPipelineBarrier(combuf->cmdbuf,
 		VK_PIPELINE_STAGE_TRANSFER_BIT, dst_stages,
 		0, 0, NULL, 0, NULL,

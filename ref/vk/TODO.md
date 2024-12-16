@@ -1,7 +1,4 @@
 ## Next
-- [ ] Proper staging-vs-frame tracking, replace tag with something sensitive
-	- currently assert fails because there's 2 frame latency, not one.
-	- [ ] comment for future: full staging might want to wait for previous frame to finish
 
 ## Upcoming
 - [ ] framectl frame tracking, e.g.:
@@ -16,9 +13,14 @@
 - [ ] performance profiling and comparison
 
 ## 2024-12-12 E384
-- [ ] zero vkCmdPipelineBarriers calls
-	- [x] track image sync state with image (and not with resource)
-	- [ ] grep for anything else
+- [x] track image sync state with the image object itself (and not with vk_resource)
+
+### After stream
+- [x] Proper staging-vs-frame tracking, replace tag with something sensitive
+	- currently assert fails because there's 1 frame latency, not one.
+	- [x] comment for future: full staging might want to wait for previous frame to finish
+- [x] zero vkCmdPipelineBarriers calls
+	- [x] grep for anything else
 
 ## 2024-12-10 E383
 - [x] Add transfer stage to submit semaphore separating command buffer: fixes sync for rt
