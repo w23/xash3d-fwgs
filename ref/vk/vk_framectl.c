@@ -281,8 +281,8 @@ void R_BeginFrame( qboolean clearScene ) {
 	R_VkStagingFrameCompleted(frame->staging_frame_tag);
 
 	g_frame.current.framebuffer = R_VkSwapchainAcquire( frame->sem_framebuffer_ready );
-	vk_frame.width = g_frame.current.framebuffer.width;
-	vk_frame.height = g_frame.current.framebuffer.height;
+	vk_frame.width = g_frame.current.framebuffer.image.width;
+	vk_frame.height = g_frame.current.framebuffer.image.height;
 
 	VK_RenderBegin( vk_frame.rtx_enabled );
 
@@ -301,49 +301,19 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 
 static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	APROF_SCOPE_DECLARE_BEGIN(enqueue, __FUNCTION__);
-	const VkClearValue clear_value[] = {
-		{.color = {{1., 0., 0., 0.}}},
-		{.depthStencil = {1., 0.}} // TODO reverse-z
-	};
+	const uint32_t frame_width = g_frame.current.framebuffer.image.width;
+	const uint32_t frame_height = g_frame.current.framebuffer.image.height;
 
 	ASSERT(g_frame.current.phase == Phase_FrameBegan);
 
-	// FIXME, should be done by rendering when it requests textures
-	R_VkImageUploadCommit(combuf, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
+	// TODO: should be done by rendering when it requests textures
+	R_VkImageUploadCommit(combuf,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
 
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	// This is temporary non-owning placeholder object.
-	// It is used only for combuf barrier tracking.
-	r_vk_image_t tmp_dst_image = {
-		.image = g_frame.current.framebuffer.image,
-		.view = g_frame.current.framebuffer.view,
-		.width = g_frame.current.framebuffer.width,
-		.height = g_frame.current.framebuffer.height,
-		.depth = 1,
-		.mips = 1,
-		.layers = 1,
-
-		// TODO .format = g_frame.current.framebuffer.???
-		// TODO .image_size = ???
-
-		// TODO is this correct?
-		.sync = {
-			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.write = {
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-			},
-			.read = {
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-			},
-		},
-	};
-	snprintf(tmp_dst_image.name, sizeof(tmp_dst_image.name), "framebuffer[%d]", g_frame.current.framebuffer.index);
-
 	if (vk_frame.rtx_enabled) {
-		VK_RenderEndRTX( combuf, &tmp_dst_image );
+		VK_RenderEndRTX( combuf, &g_frame.current.framebuffer.image );
 	} else {
 		// FIXME: how to do this properly before render pass?
 		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
@@ -363,7 +333,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	if (draw) {
 		const r_vkcombuf_barrier_image_t dst_use[] = {{
-			.image = &tmp_dst_image,
+			.image = &g_frame.current.framebuffer.image,
 			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
 		}};
@@ -375,11 +345,15 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 			},
 		});
 
+		const VkClearValue clear_value[] = {
+			{.color = {{1., 0., 0., 0.}}},
+			{.depthStencil = {1., 0.}} // TODO reverse-z
+		};
 		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
-			.renderArea.extent.width = g_frame.current.framebuffer.width,
-			.renderArea.extent.height = g_frame.current.framebuffer.height,
+			.renderArea.extent.width = frame_width,
+			.renderArea.extent.height = frame_height,
 			.clearValueCount = ARRAYSIZE(clear_value),
 			.pClearValues = clear_value,
 			.framebuffer = g_frame.current.framebuffer.framebuffer,
@@ -388,11 +362,11 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 		{
 			const VkViewport viewport[] = {
-				{0.f, 0.f, (float)g_frame.current.framebuffer.width, (float)g_frame.current.framebuffer.height, 0.f, 1.f},
+				{0.f, 0.f, (float)frame_width, (float)frame_height, 0.f, 1.f},
 			};
 			const VkRect2D scissor[] = {{
 				{0, 0},
-				{g_frame.current.framebuffer.width, g_frame.current.framebuffer.height},
+				{frame_width, frame_height},
 			}};
 
 			vkCmdSetViewport(cmdbuf, 0, ARRAYSIZE(viewport), viewport);
@@ -402,7 +376,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	if (!vk_frame.rtx_enabled)
 		VK_RenderEnd( combuf, draw,
-			g_frame.current.framebuffer.width, g_frame.current.framebuffer.height,
+			frame_width, frame_height,
 			g_frame.current.index
 			);
 
@@ -608,7 +582,7 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
 	r_vk_image_t dest_image;
-	const VkImage frame_image = g_frame.current.framebuffer.image;
+	const VkImage frame_image = g_frame.current.framebuffer.image.image;
 	rgbdata_t *r_shot = NULL;
 	qboolean blit = canBlitFromSwapchainToFormat( dest_format );
 

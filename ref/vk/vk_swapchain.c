@@ -259,11 +259,34 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 		break;
 	}
 
+	// This is temporary non-owning placeholder object.
+	// It is used only for combuf barrier tracking.
+	ret.image = (r_vk_image_t) {
+		.image = g_swapchain.images[ret.index],
+		.view = g_swapchain.image_views[ret.index],
+		.width = g_swapchain.width,
+		.height = g_swapchain.height,
+		.depth = 1,
+		.mips = 1,
+		.layers = 1,
+
+		.format = g_swapchain.image_format,
+		// TODO? .image_size = ???
+
+		.sync = {
+			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			.write = {
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+			},
+			.read = {
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
+				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+			},
+		},
+	};
+	snprintf(ret.image.name, sizeof(ret.image.name), "framebuffer[%u]", ret.index);
 	ret.framebuffer = g_swapchain.framebuffers[ret.index];
-	ret.width = g_swapchain.width;
-	ret.height = g_swapchain.height;
-	ret.image = g_swapchain.images[ret.index];
-	ret.view = g_swapchain.image_views[ret.index];
 
 finalize:
 	APROF_SCOPE_END(function);
