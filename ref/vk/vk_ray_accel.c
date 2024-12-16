@@ -85,8 +85,8 @@ static struct {
 	} stats;
 
 	struct {
-		// TODO two arrays for a single vkCmdBuildAccelerationStructuresKHR() call
-		BOUNDED_ARRAY_DECLARE(rt_blas_t*, queue, MAX_INSTANCES);
+		BOUNDED_ARRAY_DECLARE(VkAccelerationStructureBuildGeometryInfoKHR, geometry_infos, MAX_INSTANCES);
+		BOUNDED_ARRAY_DECLARE(VkAccelerationStructureBuildRangeInfoKHR*, range_infos, MAX_INSTANCES);
 	} build;
 
 	cvar_t *cv_force_culling;
@@ -164,11 +164,9 @@ static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeom
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
-	g_accel.stats.accels_built++;
-
 	static int scope_id = -2;
 	if (scope_id == -2)
-		scope_id = R_VkGpuScope_Register("build_as");
+		scope_id = R_VkGpuScope_Register("build_tlas");
 	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
 	const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = build_ranges;
 	// FIXME upload everything in bulk, and only then build blases in bulk too
@@ -192,6 +190,7 @@ typedef struct {
 	uint32_t *inout_size;
 } as_build_args_t;
 
+// FIXME this function isn't really needed anymore, it's for TLAS creation only
 // TODO split this into smaller building blocks in a separate module
 qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args) {
 	ASSERT(args->geoms);
@@ -309,8 +308,6 @@ static qboolean blasPrepareBuild(struct rt_blas_s *blas, VkDeviceAddress geometr
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
-	g_accel.stats.accels_built++;
-
 	return true;
 }
 
@@ -326,7 +323,9 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 	blas->build.is_built = true;
 	blas->build.needs_to_be_built = false;
 
-	BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.queue, blas);
+	BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.geometry_infos, blas->build.info);
+	BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.range_infos, blas->build.ranges);
+	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
 }
 
 static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
@@ -342,20 +341,25 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 		},
 	});
 
-	for (int i = 0; i < g_accel.build.queue.count; ++i) {
-		rt_blas_t *const blas = g_accel.build.queue.items[i];
+	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
+	const uint32_t count = g_accel.build.geometry_infos.count;
+	if (count == 0)
+		return; // Nothing to build
 
-		static int scope_id = -2;
-		if (scope_id == -2)
-			scope_id = R_VkGpuScope_Register("build_as");
-		const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
-		const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = blas->build.ranges;
-		// TODO one call to build them all
-		vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &blas->build.info, &p_build_ranges);
-		R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-	}
+	static int scope_id = -2;
+	if (scope_id == -2)
+		scope_id = R_VkGpuScope_Register("build_blases");
 
-	g_accel.build.queue.count = 0;
+	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
+	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, count,
+		g_accel.build.geometry_infos.items,
+		g_accel.build.range_infos.items);
+
+	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+
+	g_accel.stats.accels_built = count;
+	g_accel.build.geometry_infos.count = 0;
+	g_accel.build.range_infos.count = 0;
 }
 
 vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
@@ -723,8 +727,6 @@ qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s
 			break;
 	}
 
-	blas->build.needs_to_be_built = true;
-
 	blasFillGeometries(blas, geoms, geoms_count);
 
 	const VkAccelerationStructureBuildSizesInfoKHR sizes = getAccelSizes(&blas->build.info, blas->build.max_prim_counts);
@@ -740,8 +742,7 @@ qboolean RT_BlasUpdate(struct rt_blas_s *blas, const struct vk_render_geometry_s
 		return false;
 	}
 
-	// TODO infos and ranges separately
-	BOUNDED_ARRAY_APPEND_ITEM(g_accel.build.queue, blas);
+	blas->build.needs_to_be_built = true;
 	return true;
 }
 
