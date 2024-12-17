@@ -346,7 +346,8 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 		});
 
 		const VkClearValue clear_value[] = {
-			{.color = {{1., 0., 0., 0.}}},
+			// *_UNORM is float
+			{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
 			{.depthStencil = {1., 0.}} // TODO reverse-z
 		};
 		const VkRenderPassBeginInfo rpbi = {

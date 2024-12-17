@@ -51,7 +51,7 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
 void R_VkImageDestroy(r_vk_image_t *img);
 
 struct vk_combuf_s;
-void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf);
+void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClearColorValue*);
 
 typedef struct {
 	struct {

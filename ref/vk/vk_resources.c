@@ -159,7 +159,7 @@ void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean disco
 		if (discontinuity || res->image.sync.write.stage == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
 			WARN("discontinuity: %s", res->name);
-			R_VkImageClear( &res->image, combuf );
+			R_VkImageClear( &res->image, combuf, NULL );
 		}
 	}
 

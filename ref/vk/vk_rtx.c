@@ -496,7 +496,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// TODO move this to "TLAS producer"
 	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
 	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
-		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf );
+		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,

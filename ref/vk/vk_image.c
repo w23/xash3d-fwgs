@@ -152,7 +152,7 @@ void R_VkImageDestroy(r_vk_image_t *img) {
 	*img = (r_vk_image_t){0};
 }
 
-void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf) {
+void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClearColorValue* value) {
 	const VkImageSubresourceRange ranges[] = {{
 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		.baseMipLevel = 0,
@@ -174,8 +174,10 @@ void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf) {
 		},
 	});
 
-	const VkClearColorValue clear_value = {0};
-	vkCmdClearColorImage(combuf->cmdbuf, img->image, img->sync.layout, &clear_value, COUNTOF(ranges), ranges);
+	const VkClearColorValue zero = {0};
+	vkCmdClearColorImage(combuf->cmdbuf, img->image, img->sync.layout,
+		value ? value : &zero,
+		COUNTOF(ranges), ranges);
 }
 
 void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *args ) {
