@@ -24,7 +24,7 @@ layout(set = 0, binding = 6, rgba16f) uniform readonly image2D sh2_pong;
 #include "ray_interop.h"
 #undef GLSL
 
-layout(set = 0, binding = 17) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 7) uniform UBO { UniformBuffer ubo; } ubo;
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = FIX_NAN(imageLoad(normals_gs, uv));
@@ -36,15 +36,15 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 void main() {
 	ivec2 res = ivec2(imageSize(base_color_a));
 	ivec2 pix = ivec2(gl_GlobalInvocationID);
-	const vec2 uv = (vec2(pix) + .5) / res * 2. - 1.;
 
 	if (any(greaterThanEqual(pix, res))) {
 		return;
 	}
 
-	const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
-	const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
-	const vec3 direction = normalize((ubo.ubo.inv_view * vec4(target.xyz, 0)).xyz);
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
+		imageStore(out_indirect_diffuse_denoised_by_sh, pix, vec4(0.));
+		return;
+	}
 
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);

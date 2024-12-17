@@ -36,10 +36,19 @@ layout(set = 0, binding = 4, rgba8)   uniform readonly image2D material_rmxx;
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 6, rgba16f) uniform readonly image2D normals_gs;
 
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(set = 0, binding = 7) uniform UBO { UniformBuffer ubo; } ubo;
 
 void main() {
 	ivec2 res = ivec2(imageSize(INPUT_GI_1));
 	ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
+		return;
+	}
 
 	const vec4 gi_sh2_src = FIX_NAN(imageLoad(INPUT_GI_2, pix));
 	const float depth = FIX_NAN(imageLoad(position_t, pix)).w;
