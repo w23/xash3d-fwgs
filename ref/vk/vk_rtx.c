@@ -77,7 +77,6 @@ void VK_RayNewMapBegin( void ) {
 void VK_RayFrameBegin( void ) {
 	ASSERT(vk_core.rtx);
 
-	RT_VkAccelFrameBegin();
 	XVK_RayModel_ClearForNextFrame();
 	RT_LightsFrameBegin();
 }

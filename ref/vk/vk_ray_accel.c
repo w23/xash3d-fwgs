@@ -494,6 +494,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 
 	// Consume instances into this frame, no further instances are expected
 	g_accel.frame.instances.count = 0;
+	g_accel.frame.scratch_offset = 0;
 
 	APROF_SCOPE_END(prepare);
 	return (vk_resource_t){
@@ -581,10 +582,6 @@ void RT_VkAccelNewMap(void) {
 
 		createTlas(VK_NULL_HANDLE, g_accel.tlas_geom_buffer_addr);
 	}
-}
-
-void RT_VkAccelFrameBegin(void) {
-	g_accel.frame.scratch_offset = 0;
 }
 
 static void blasFillGeometries(rt_blas_t *blas, const vk_render_geometry_t *geoms, int geoms_count) {
@@ -698,9 +695,6 @@ void RT_BlasDestroy(struct rt_blas_s* blas) {
 
 	if (blas->build.ranges)
 		Mem_Free(blas->build.ranges);
-
-	/* if (blas->max_prims) */
-	/* 	Mem_Free(blas->max_prims); */
 
 	if (blas->blas)
 		vkDestroyAccelerationStructureKHR(vk_core.device, blas->blas, NULL);
