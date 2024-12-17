@@ -357,7 +357,7 @@ static qboolean makeImageBarrier(VkImageMemoryBarrier2* out_imb, const r_vkcombu
 	r_vk_image_t *const img = imgbar->image;
 	const qboolean is_write = (imgbar->access & ACCESS_WRITE_BITS) != 0;
 	const qboolean is_read = (imgbar->access & ACCESS_READ_BITS) != 0;
-	const VkImageLayout old_layout = is_write ? VK_IMAGE_LAYOUT_UNDEFINED : img->sync.layout;
+	const VkImageLayout old_layout = (!is_read) ? VK_IMAGE_LAYOUT_UNDEFINED : img->sync.layout;
 	const qboolean is_layout_transfer = imgbar->layout != old_layout;
 	ASSERT((imgbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
 
