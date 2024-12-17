@@ -1,10 +1,10 @@
 
 #ifndef KERNEL_X
-#define KERNEL_X 2
+#define KERNEL_X 1
 #endif
 
 #ifndef KERNEL_Y
-#define KERNEL_Y 3
+#define KERNEL_Y 1
 #endif
 
 
