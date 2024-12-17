@@ -403,7 +403,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 		barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
 	);
 
-	R_VkStagingMarkFree(g_image_upload.staging, barriers_count);
+	R_VkStagingUnlockBulk(g_image_upload.staging, barriers_count);
 
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
@@ -434,7 +434,7 @@ void R_VkImageUploadBegin( r_vk_image_t *img ) {
 	// would notify other modules that they'd need to commit their staging data, and thus we'd return to this module's
 	// R_VkImageUploadCommit(), which needs to see valid data. Therefore, don't touch its state until
 	// R_VkStagingLock returns.
-	const r_vkstaging_region_t staging_lock = R_VkStagingAlloc(g_image_upload.staging, staging_size);
+	const r_vkstaging_region_t staging_lock = R_VkStagingLock(g_image_upload.staging, staging_size);
 
 	img->upload_slot = g_image_upload.images.count;
 	arrayDynamicAppendT(&g_image_upload.images, NULL);
@@ -514,7 +514,7 @@ static void cancelUpload( r_vk_image_t *img ) {
 
 	// Technically we won't need that staging region anymore at all, but it doesn't matter,
 	// it's just easier to mark it to be freed this way.
-	R_VkStagingMarkFree(g_image_upload.staging, 1);
+	R_VkStagingUnlockBulk(g_image_upload.staging, 1);
 
 	// Mark upload slot as unused, and image as not subjet to uploading
 	up->image = NULL;

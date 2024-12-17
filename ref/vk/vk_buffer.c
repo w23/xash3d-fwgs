@@ -183,7 +183,7 @@ vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock) {
 	r_vk_staging_buffer_t *const stb = findOrCreateStagingSlotForBuffer(buf);
 	ASSERT(stb);
 
-	r_vkstaging_region_t staging_lock = R_VkStagingAlloc(stb->staging_handle, lock.size);
+	r_vkstaging_region_t staging_lock = R_VkStagingLock(stb->staging_handle, lock.size);
 	ASSERT(staging_lock.ptr);
 
 	// TODO perf: adjacent region coalescing
@@ -238,7 +238,7 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	vkCmdCopyBuffer(cmdbuf, stb->staging_buffer, buf->buffer, stb->regions.count, stb->regions.items);
 
 	DEBUG("buf=%llx staging pending-=%u", (unsigned long long)buf->buffer, stb->regions.count);
-	R_VkStagingMarkFree(stb->staging_handle, stb->regions.count);
+	R_VkStagingUnlockBulk(stb->staging_handle, stb->regions.count);
 	stb->regions.count = 0;
 
 	//TODO R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);

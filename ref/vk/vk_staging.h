@@ -31,11 +31,11 @@ typedef struct {
 } r_vkstaging_region_t;
 
 // Allocate CPU-accessible memory in staging buffer
-r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_handle_t, uint32_t size);
+r_vkstaging_region_t R_VkStagingLock(r_vkstaging_user_handle_t, uint32_t size);
 
 // Notify staging that this amount of regions are about to be consumed when the next combuf ends
 // I.e. they're "free" from the staging standpoint
-void R_VkStagingMarkFree(r_vkstaging_user_handle_t, uint32_t count);
+void R_VkStagingUnlockBulk(r_vkstaging_user_handle_t, uint32_t count);
 
 // This gets called just before the combuf is ended and submitted.
 // Gives the last chance for the users that haven't yet used their data.

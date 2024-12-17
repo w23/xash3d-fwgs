@@ -20,7 +20,7 @@
 
 typedef struct r_vkstaging_user_t {
 	r_vkstaging_user_create_t info;
-	uint32_t pending_count;
+	uint32_t locked_count;
 
 	struct {
 		int allocs;
@@ -83,18 +83,18 @@ r_vkstaging_user_t *R_VkStagingUserCreate(r_vkstaging_user_create_t info) {
 }
 
 void R_VkStagingUserDestroy(r_vkstaging_user_t *user) {
-	ASSERT(user->pending_count == 0);
+	ASSERT(user->locked_count == 0);
 	// TODO remove from the table
 }
 
-r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_t* user, uint32_t size) {
+r_vkstaging_region_t R_VkStagingLock(r_vkstaging_user_t* user, uint32_t size) {
 	const uint32_t alignment = 4;
 	const uint32_t offset = aloRingAlloc(&g_staging.buffer_alloc_ring, size, alignment);
 	ASSERT(offset != ALO_ALLOC_FAILED && "FIXME: workaround: increase staging buffer size");
 
 	DEBUG("Lock alignment=%d size=%d region=%d..%d", alignment, size, offset, offset + size);
 
-	user->pending_count++;
+	user->locked_count++;
 
 	user->stats.allocs++;
 	user->stats.size += size;
@@ -109,20 +109,20 @@ r_vkstaging_region_t R_VkStagingAlloc(r_vkstaging_user_t* user, uint32_t size) {
 	};
 }
 
-void R_VkStagingMarkFree(r_vkstaging_user_t* user, uint32_t count) {
-	ASSERT(user->pending_count >= count);
-	user->pending_count -= count;
+void R_VkStagingUnlockBulk(r_vkstaging_user_t* user, uint32_t count) {
+	ASSERT(user->locked_count >= count);
+	user->locked_count -= count;
 }
 
 uint32_t R_VkStagingFrameEpilogue(vk_combuf_t* combuf) {
 	for (int i = 0; i < g_staging.users.count; ++i) {
 		r_vkstaging_user_t *const user = g_staging.users.items + i;
-		if (user->pending_count == 0)
+		if (user->locked_count == 0)
 			continue;
 
-		WARN("%s has %u pending staging items, pushing", user->info.name, user->pending_count);
-		user->info.push(user->info.userptr, combuf, user->pending_count);
-		ASSERT(user->pending_count == 0);
+		WARN("%s has %u locked staging items, pushing", user->info.name, user->locked_count);
+		user->info.push(user->info.userptr, combuf, user->locked_count);
+		ASSERT(user->locked_count == 0);
 	}
 
 	// TODO it would be nice to attach a finalization callback to combuf
