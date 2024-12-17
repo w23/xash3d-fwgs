@@ -212,7 +212,6 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					if (do_indirect) {
 						weight_total_indirect_diffuse += weight;
 						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
-						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
 					}
 				}
 			}
@@ -253,7 +252,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	const vec3 d0 = indirect_diffuse_c1 - indirect_diffuse_c0;
 	const vec3 d1 = indirect_diffuse_c2 - indirect_diffuse_c1;
 
-	// TODO(or not todo): The ?-Trous paper mentions that it should be c2 + d1 + d0, but
+	// TODO(or not todo): The Á-Trous paper mentions that it should be c2 + d1 + d0, but
 	// it gives horrible artifacts. Either I'm misreading the paper, or something else is broken here,
 	// Using just c2 seems fine enough (although still not up to original paper image quality)
 	c.indirect_diffuse = indirect_diffuse_c2;// + d1 + d0;
