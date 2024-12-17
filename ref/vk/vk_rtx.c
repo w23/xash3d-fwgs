@@ -52,7 +52,7 @@ enum {
 	ExternalResource_COUNT,
 };
 
-#define MAX_RESOURCES 32
+#define MAX_RESOURCES 128
 
 typedef struct {
 		char name[64];
