@@ -32,6 +32,7 @@ layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
+layout(set = 0, binding = 22, rgba16f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -94,6 +95,8 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		payload.hit_t.w = L;
 		payload.emissive.rgb = sampleSkybox(direction);
 		return false;
+	} else {
+		payload.emissive.rgb = vec3(0.); // emissive polygons already calculated in directional polygon lighting pass (remove fireflyes here)
 	}
 
 	primaryRayHit(rq, payload);
@@ -218,6 +221,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 			diffuse += contribution;
 		else
 			specular += contribution;
+
+		if (i == 0)
+			imageStore(out_first_bounce_direction, pix, vec4(normalize(bounce_direction), 0.f)); // for spherical harmonics denoising
 
 		if (!did_hit)
 			break;

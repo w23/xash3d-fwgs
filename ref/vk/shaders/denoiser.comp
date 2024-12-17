@@ -30,22 +30,23 @@ layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
 layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
 layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular;
+layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
 
-layout(set = 0, binding = 15, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 16, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 18, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 19, rgba16f) uniform image2D prev_temporal_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 19) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 20) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 20, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 21, rgba16f) uniform readonly image2D legacy_blend;
 
-//layout(set = 0, binding = 21) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 22) uniform sampler2D textures[MAX_TEXTURES];
 
 #include "atrous.glsl"
 
@@ -99,6 +100,7 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
 	c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb;
 	c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb;
+	c.indirect_diffuse += imageLoad(indirect_diffuse_denoised_by_sh, p).rgb;
 	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
 	c.direct_specular += imageLoad(light_point_specular, p).rgb;
 	c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb;
@@ -210,6 +212,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					if (do_indirect) {
 						weight_total_indirect_diffuse += weight;
 						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
+						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
 					}
 				}
 			}
@@ -250,7 +253,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	const vec3 d0 = indirect_diffuse_c1 - indirect_diffuse_c0;
 	const vec3 d1 = indirect_diffuse_c2 - indirect_diffuse_c1;
 
-	// TODO(or not todo): The Á-Trous paper mentions that it should be c2 + d1 + d0, but
+	// TODO(or not todo): The ?-Trous paper mentions that it should be c2 + d1 + d0, but
 	// it gives horrible artifacts. Either I'm misreading the paper, or something else is broken here,
 	// Using just c2 seems fine enough (although still not up to original paper image quality)
 	c.indirect_diffuse = indirect_diffuse_c2;// + d1 + d0;
@@ -306,7 +309,6 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				direct_diffuse_total += direct_diffuse_scale;
 
 				c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb * direct_diffuse_scale;
-				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
@@ -450,7 +452,9 @@ void main() {
 		return;
 	}
 
-	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
+	vec3 indirect_diffuse_sh = imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+
+	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse + indirect_diffuse_sh;
 	vec3 specular = c.direct_specular + c.indirect_specular;
 	{
 //#define DISABLE_TEMPORAL_DENOISER
@@ -553,7 +557,7 @@ void main() {
 	colour = LINEARtoSRGB(colour);
 
 // See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
-// Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
+// Adding emissive_blend to the final color in the *incorrect* sRGB-? space. It makes
 // it look much more like the original. Adding emissive in the *correct* linear space differs
 // from the original a lot, and looks perceptively worse.
 	colour += legacy_blend.rgb;
