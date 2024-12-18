@@ -1,7 +1,6 @@
 #include "vk_brush.h"
 
 #include "vk_core.h"
-#include "vk_const.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
@@ -10,7 +9,6 @@
 #include "vk_light.h"
 #include "vk_mapents.h"
 #include "r_speeds.h"
-#include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
 #include "arrays.h"
@@ -1408,6 +1406,24 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
 
 			const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
+
+			// Check whether this surface is emissive early, before bailing out on surface type.
+			// TODO consider moving this to outside of this loop, as it still might skip some surfaces
+			// e.g. if the model doesn't have any static surfaces at all.
+			surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
+				.mod = args.mod,
+				.func_any = args.func_any,
+				.is_static = args.is_static,
+				.bmodel = args.bmodel,
+				.surf = surf,
+				.surface_index = surface_index,
+				.type = type,
+				.tex_id = tex_id,
+				.psurf = psurf,
+				.model_geometry = model_geometry,
+				.emissive_surfaces_count = &emissive_surfaces_count,
+			});
+
 			switch (type) {
 			case BrushSurface_Water:
 			case BrushSurface_WaterSide:
@@ -1494,20 +1510,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			// To update emissive and other texture states
 			if (type == BrushSurface_Animated)
 				model_geometry->ye_olde_texture = -1;
-
-			surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
-				.mod = args.mod,
-				.func_any = args.func_any,
-				.is_static = args.is_static,
-				.bmodel = args.bmodel,
-				.surf = surf,
-				.surface_index = surface_index,
-				.type = type,
-				.tex_id = tex_id,
-				.psurf = psurf,
-				.model_geometry = model_geometry,
-				.emissive_surfaces_count = &emissive_surfaces_count,
-			});
 
 			model_geometry->surf_deprecate = surf;
 
