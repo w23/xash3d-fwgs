@@ -173,7 +173,7 @@ void VK_DescriptorsCreate(vk_descriptors_t *desc)
 
 void VK_DescriptorsWrite(const vk_descriptors_t *desc, int set_slot)
 {
-	VkWriteDescriptorSet wds[32];
+	VkWriteDescriptorSet wds[64];
 	ASSERT(ARRAYSIZE(wds) >= desc->num_bindings);
 	for (int i = 0; i < desc->num_bindings; ++i){
 		const VkDescriptorSetLayoutBinding *binding = desc->bindings + i;

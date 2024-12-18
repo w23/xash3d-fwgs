@@ -26,6 +26,10 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_force_disable) \
 	X(rt_enable) \
 	X(rt_bounces) \
+	X(rt_only_diffuse_gi) \
+	X(rt_separated_reflection) \
+	X(rt_denoise_gi_by_sh) \
+	X(rt_disable_gi) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

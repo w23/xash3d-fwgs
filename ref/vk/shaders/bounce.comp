@@ -32,6 +32,7 @@ layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
+layout(set = 0, binding = 22, rgba16f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -94,6 +95,8 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		payload.hit_t.w = L;
 		payload.emissive.rgb = sampleSkybox(direction);
 		return false;
+	} else {
+		payload.emissive.rgb = vec3(0.); // emissive polygons already calculated in directional polygon lighting pass (remove fireflyes here)
 	}
 
 	primaryRayHit(rq, payload);
@@ -219,6 +222,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		else
 			specular += contribution;
 
+		if (i == 0)
+			imageStore(out_first_bounce_direction, pix, vec4(normalize(bounce_direction), 0.f)); // for spherical harmonics denoising
+
 		if (!did_hit)
 			break;
 
@@ -243,6 +249,12 @@ void main() {
 		return;
 	}
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
+	
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_GI) != 0) {
+		imageStore(out_indirect_diffuse, pix, vec4(0.));
+		imageStore(out_indirect_specular, pix, vec4(0.));
+		return;
+	}
 
 #ifdef BRDF_COMPARE
 	g_mat_gltf2 = pix.x > ubo.ubo.res.x / INDIRECT_SCALE / 2.;
@@ -265,10 +277,16 @@ void main() {
 
 		MaterialEx mat;
 		mat.prop.base_color = base_a.rgb;
-		mat.prop.metalness = material_data.g;
-		mat.prop.roughness = material_data.r;
 		mat.geometry_normal = geometry_normal;
 		mat.shading_normal = shading_normal;
+
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
+			mat.prop.metalness = 0.0;
+			mat.prop.roughness = 1.0;
+		} else {
+			mat.prop.metalness = material_data.g;
+			mat.prop.roughness = material_data.r;
+		}
 
 		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
 	}
@@ -287,6 +305,11 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.diffuse", diffuse, 0., 1e6);
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.specular", specular, 0., 1e6);
 #endif
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
+		diffuse += specular;
+		specular = vec3(0.);
+	}
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));

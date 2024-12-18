@@ -193,6 +193,11 @@ struct LightCluster {
 
 #define DEBUG_FLAG_WHITE_FURNACE (1<<0)
 
+#define RENDERER_FLAG_ONLY_DIFFUSE_GI (1<<0)
+#define RENDERER_FLAG_SEPARATED_REFLECTION (1<<1)
+#define RENDERER_FLAG_DENOISE_GI_BY_SH (1<<2)
+#define RENDERER_FLAG_DISABLE_GI (1<<3)
+
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
@@ -204,6 +209,8 @@ struct UniformBuffer {
 
 	uint debug_display_only;
 	uint debug_flags;
+
+	uint renderer_flags;
 };
 
 #undef PAD
