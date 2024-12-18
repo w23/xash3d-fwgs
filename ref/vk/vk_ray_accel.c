@@ -69,8 +69,16 @@ static struct {
 	VkDeviceAddress tlas_geom_buffer_addr;
 	r_flipping_buffer_t tlas_geom_buffer_alloc;
 
-	// TODO need several TLASes for N frames in flight
-	VkAccelerationStructureKHR tlas;
+	struct {
+		VkAccelerationStructureKHR handle;
+
+		VkAccelerationStructureGeometryKHR geometry;
+		uint32_t max_prim_count;
+		VkAccelerationStructureBuildRangeInfoKHR range_info;
+		VkAccelerationStructureBuildGeometryInfoKHR geometry_info;
+		VkAccelerationStructureBuildSizesInfoKHR sizes_info;
+	} tlas;
+
 
 	// Per-frame data that is accumulated between RayFrameBegin and End calls
 	struct {
@@ -133,19 +141,56 @@ static VkDeviceAddress getAccelAddress(VkAccelerationStructureKHR as) {
 	return vkGetAccelerationStructureDeviceAddressKHR(vk_core.device, &asdai);
 }
 
-static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeometryInfoKHR *build_info, uint32_t scratch_buffer_size, const VkAccelerationStructureBuildRangeInfoKHR *build_ranges) {
-	vk_buffer_t* const geom = R_GeometryBuffer_Get();
-	R_VkBufferStagingCommit(geom, combuf);
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-		.buffers = {
-			.count = 1,
-			.items = &(r_vkcombuf_barrier_buffer_t){
-				.buffer = geom,
-				.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+static void tlasCreate(void) {
+	g_accel.tlas.geometry = (VkAccelerationStructureGeometryKHR) {
+		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+		.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
+		.geometry.instances =
+			(VkAccelerationStructureGeometryInstancesDataKHR){
+				.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+				.data.deviceAddress = 0,
+				.arrayOfPointers = VK_FALSE,
 			},
-		},
-	});
+	};
+	g_accel.tlas.max_prim_count = MAX_INSTANCES;
+	g_accel.tlas.range_info = (VkAccelerationStructureBuildRangeInfoKHR) {
+		.primitiveCount = g_accel.frame.instances.count,
+	};
+	g_accel.tlas.geometry_info = (VkAccelerationStructureBuildGeometryInfoKHR) {
+		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+		.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
+		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+		.geometryCount = 1,
+		.pGeometries = &g_accel.tlas.geometry,
+		.srcAccelerationStructure = VK_NULL_HANDLE,
+	};
+	g_accel.tlas.sizes_info = getAccelSizes(&g_accel.tlas.geometry_info, &g_accel.tlas.max_prim_count);
+	g_accel.tlas.handle = createAccel("TLAS", g_accel.tlas.geometry_info.type, g_accel.tlas.sizes_info.accelerationStructureSize);
+	ASSERT(g_accel.tlas.handle != VK_NULL_HANDLE);
+	g_accel.tlas.geometry_info.dstAccelerationStructure = g_accel.tlas.handle;
+}
+
+static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
+	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
+	{
+		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+			.buffer = &g_accel.accels_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
+		}, {
+			.buffer = &g_accel.tlas_geom_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+			.buffers = {
+				.count = COUNTOF(buffers),
+				.items = buffers,
+			},
+		});
+	}
+
+	const uint32_t scratch_buffer_size = g_accel.tlas.sizes_info.buildScratchSize;
 
 	//gEngine.Con_Reportf("sratch offset = %d, req=%d", g_accel.frame.scratch_offset, scratch_buffer_size);
 
@@ -153,10 +198,12 @@ static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeom
 		ERR("Scratch buffer overflow: left %u bytes, but need %u",
 			MAX_SCRATCH_BUFFER - g_accel.frame.scratch_offset,
 			scratch_buffer_size);
-		return false;
+		ASSERT(!"Scratch buffer overflow");
 	}
 
-	build_info->scratchData.deviceAddress = g_accel.scratch_buffer_addr + g_accel.frame.scratch_offset;
+	g_accel.tlas.geometry.geometry.instances.data.deviceAddress = instances_addr;
+	g_accel.tlas.range_info.primitiveCount = g_accel.frame.instances.count;
+	g_accel.tlas.geometry_info.scratchData.deviceAddress = g_accel.scratch_buffer_addr + g_accel.frame.scratch_offset;
 
 	//uint32_t scratch_offset_initial = g_accel.frame.scratch_offset;
 	g_accel.frame.scratch_offset += scratch_buffer_size;
@@ -168,110 +215,9 @@ static qboolean buildAccel(vk_combuf_t* combuf, VkAccelerationStructureBuildGeom
 	if (scope_id == -2)
 		scope_id = R_VkGpuScope_Register("build_tlas");
 	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
-	const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = build_ranges;
-	// FIXME upload everything in bulk, and only then build blases in bulk too
-	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, build_info, &p_build_ranges);
+	const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = &g_accel.tlas.range_info;
+	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &g_accel.tlas.geometry_info, &p_build_ranges);
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-
-	return true;
-}
-
-typedef struct {
-	const char *debug_name;
-	VkAccelerationStructureKHR *p_accel;
-	const VkAccelerationStructureGeometryKHR *geoms;
-	const uint32_t *max_prim_counts;
-	const VkAccelerationStructureBuildRangeInfoKHR *build_ranges;
-	uint32_t n_geoms;
-	VkAccelerationStructureTypeKHR type;
-	qboolean dynamic;
-
-	VkDeviceAddress *out_accel_addr;
-	uint32_t *inout_size;
-} as_build_args_t;
-
-// FIXME this function isn't really needed anymore, it's for TLAS creation only
-// TODO split this into smaller building blocks in a separate module
-qboolean createOrUpdateAccelerationStructure(vk_combuf_t *combuf, const as_build_args_t *args) {
-	ASSERT(args->geoms);
-	ASSERT(args->n_geoms > 0);
-	ASSERT(args->p_accel);
-
-	const qboolean should_create = *args->p_accel == VK_NULL_HANDLE;
-
-	VkAccelerationStructureBuildGeometryInfoKHR build_info = {
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-		.type = args->type,
-		.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
-		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-		.geometryCount = args->n_geoms,
-		.pGeometries = args->geoms,
-		.srcAccelerationStructure = VK_NULL_HANDLE,
-	};
-
-	const VkAccelerationStructureBuildSizesInfoKHR build_size = getAccelSizes(&build_info, args->max_prim_counts);
-
-	if (should_create) {
-		*args->p_accel = createAccel(args->debug_name, args->type, build_size.accelerationStructureSize);
-
-		if (!args->p_accel)
-			return false;
-
-		if (args->out_accel_addr)
-			*args->out_accel_addr = getAccelAddress(*args->p_accel);
-
-		if (args->inout_size)
-			*args->inout_size = build_size.accelerationStructureSize;
-
-		// gEngine.Con_Reportf("AS=%p, n_geoms=%u, build: %#x %d %#x", *args->p_accel, args->n_geoms, buffer_offset, asci.size, buffer_offset + asci.size);
-	}
-
-	// If not enough data for building, just create
-	if (!combuf || !args->build_ranges)
-		return true;
-
-	if (args->inout_size)
-		ASSERT(*args->inout_size >= build_size.accelerationStructureSize);
-
-	build_info.dstAccelerationStructure = *args->p_accel;
-	return buildAccel(combuf, &build_info, build_size.buildScratchSize, args->build_ranges);
-}
-
-static void createTlas( vk_combuf_t *combuf, VkDeviceAddress instances_addr ) {
-	const VkAccelerationStructureGeometryKHR tl_geom[] = {
-		{
-			.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
-			//.flags = VK_GEOMETRY_OPAQUE_BIT,
-			.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
-			.geometry.instances =
-				(VkAccelerationStructureGeometryInstancesDataKHR){
-					.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
-					.data.deviceAddress = instances_addr,
-					.arrayOfPointers = VK_FALSE,
-				},
-		},
-	};
-	const uint32_t tl_max_prim_counts[COUNTOF(tl_geom)] = { MAX_INSTANCES };
-	const VkAccelerationStructureBuildRangeInfoKHR tl_build_range = {
-		.primitiveCount = g_accel.frame.instances.count,
-	};
-	const as_build_args_t asrgs = {
-		.geoms = tl_geom,
-		.max_prim_counts = tl_max_prim_counts,
-		.build_ranges = !combuf ? NULL : &tl_build_range,
-		.n_geoms = COUNTOF(tl_geom),
-		.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-		// we can't really rebuild TLAS because instance count changes are not allowed .dynamic = true,
-		.dynamic = false,
-		.p_accel = &g_accel.tlas,
-		.debug_name = "TLAS",
-		.out_accel_addr = NULL,
-		.inout_size = NULL,
-	};
-	if (!createOrUpdateAccelerationStructure(combuf, &asrgs)) {
-		gEngine.Host_Error("Could not create/update TLAS\n");
-		return;
-	}
 }
 
 static qboolean blasPrepareBuild(struct rt_blas_s *blas, VkDeviceAddress geometry_addr) {
@@ -474,22 +420,8 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	// Build all scheduled BLASes
 	blasBuildPerform(combuf, geom);
 
-	{
-		r_vkcombuf_barrier_buffer_t buffers[] = {{
-			.buffer = &g_accel.accels_buffer,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			.buffers = {
-				.count = COUNTOF(buffers),
-				.items = buffers,
-			},
-		});
-	}
-
 	// 2. Build TLAS
-	createTlas(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
+	tlasBuild(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
 	DEBUG_END(combuf->cmdbuf);
 
 	// Consume instances into this frame, no further instances are expected
@@ -503,7 +435,7 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
 				.accelerationStructureCount = 1,
-				.pAccelerationStructures = &g_accel.tlas,
+				.pAccelerationStructures = &g_accel.tlas.handle,
 				.pNext = NULL,
 			},
 		},
@@ -550,8 +482,8 @@ qboolean RT_VkAccelInit(void) {
 }
 
 void RT_VkAccelShutdown(void) {
-	if (g_accel.tlas != VK_NULL_HANDLE)
-		vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas, NULL);
+	if (g_accel.tlas.handle != VK_NULL_HANDLE)
+		vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas.handle, NULL);
 
 	VK_BufferDestroy(&g_accel.scratch_buffer);
 	VK_BufferDestroy(&g_accel.accels_buffer);
@@ -575,12 +507,12 @@ void RT_VkAccelNewMap(void) {
 	// Recreate tlas
 	// Why here and not in init: to make sure that its memory is preserved. Map init will clear all memory regions.
 	{
-		if (g_accel.tlas != VK_NULL_HANDLE) {
-			vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas, NULL);
-			g_accel.tlas = VK_NULL_HANDLE;
+		if (g_accel.tlas.handle != VK_NULL_HANDLE) {
+			vkDestroyAccelerationStructureKHR(vk_core.device, g_accel.tlas.handle, NULL);
+			g_accel.tlas.handle = VK_NULL_HANDLE;
 		}
 
-		createTlas(VK_NULL_HANDLE, g_accel.tlas_geom_buffer_addr);
+		tlasCreate();
 	}
 }
 
