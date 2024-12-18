@@ -14,7 +14,7 @@
 
 #include <stdlib.h>
 
-#define MAX_RESOURCES 32
+#define MAX_RESOURCES 64
 
 static struct {
 	rt_resource_t res[MAX_RESOURCES];
