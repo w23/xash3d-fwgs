@@ -5,12 +5,18 @@
 	- [ ] wait for frame fence only really before actually starting to build combuf in R_BeginFrame()
 		- why: there should be nothing to synchronize with
 		- why: more straightforward dependency tracking
+		- why not: waiting on frame fence allows freeing up staging and other temp memory
 - [ ] Remove second semaphore from submit, replace it with explicit barriers for e.g. geom buffer
-	- why: best practice validation complains about too wide ALL_COMMANDS semaphore
+	- [x] why: best practice validation complains about too wide ALL_COMMANDS semaphore
 	- why: explicit barriers are more clear, better perf possible too
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2024-12-17 E385
+- [x] fix rendering on amdgpu+radv
+### After stream
+- [x] cleanup TLAS creation and building code
 
 ## 2024-12-12 E384
 - [x] track image sync state with the image object itself (and not with vk_resource)
