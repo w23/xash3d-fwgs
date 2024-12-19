@@ -276,12 +276,12 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 		.sync = {
 			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			.write = {
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+				.access = VK_ACCESS_2_NONE,
+				.stage = VK_PIPELINE_STAGE_2_NONE,
 			},
 			.read = {
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_MEMORY_READ_BIT,
-				.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+				.access = VK_ACCESS_2_NONE,
+				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
 			},
 		},
 	};
