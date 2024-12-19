@@ -123,9 +123,6 @@ static VkBool32 VKAPI_PTR debugCallback(
 	(void)(messageTypes);
 	(void)(messageSeverity);
 
-	if (Q_strcmp(pCallbackData->pMessageIdName, "VUID-vkMapMemory-memory-00683") == 0)
-		return VK_FALSE;
-
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
 		gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
