@@ -52,7 +52,7 @@ enum {
 	ExternalResource_COUNT,
 };
 
-#define MAX_RESOURCES 32
+#define MAX_RESOURCES 128
 
 typedef struct {
 		char name[64];
@@ -266,6 +266,15 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->debug_flags = g_rtx.debug.rt_debug_flags_value;
 
 	ubo->random_seed = getRandomSeed();
+
+#define SET_RENDERER_FLAG(cvar,flag) (CVAR_TO_BOOL(cvar) ? flag : 0)
+
+	ubo->renderer_flags = SET_RENDERER_FLAG(rt_only_diffuse_gi, RENDERER_FLAG_ONLY_DIFFUSE_GI) |
+						  SET_RENDERER_FLAG(rt_separated_reflection, RENDERER_FLAG_SEPARATED_REFLECTION) |
+						  SET_RENDERER_FLAG(rt_denoise_gi_by_sh, RENDERER_FLAG_DENOISE_GI_BY_SH) |
+						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI);
+
+#undef SET_RENDERER_FLAG
 }
 
 typedef struct {

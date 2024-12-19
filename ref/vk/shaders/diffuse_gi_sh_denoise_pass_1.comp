@@ -1,0 +1,12 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define OFFSET ivec2(1, 1)
+
+#define INPUT_GI_1 sh1_ping
+#define INPUT_GI_2 sh2_ping
+
+#define OUTPUT_GI_1 out_sh1_pong
+#define OUTPUT_GI_2 out_sh2_pong
+
+#include "diffuse_gi_sh_atrous.glsl"

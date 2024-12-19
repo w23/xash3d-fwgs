@@ -30,22 +30,23 @@ layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
 layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
 layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular;
+layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
 
-layout(set = 0, binding = 15, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 16, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 18, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 19, rgba16f) uniform image2D prev_temporal_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 19) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 20) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 20, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 21, rgba16f) uniform readonly image2D legacy_blend;
 
-//layout(set = 0, binding = 21) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 22) uniform sampler2D textures[MAX_TEXTURES];
 
 #include "atrous.glsl"
 
@@ -98,7 +99,11 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	const ivec2 p_indirect = pix / INDIRECT_SCALE;
 	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
 	c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb;
+	} else {
+		c.indirect_diffuse += imageLoad(indirect_diffuse_denoised_by_sh, p).rgb;
+	}
 	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
 	c.direct_specular += imageLoad(light_point_specular, p).rgb;
 	c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb;
@@ -142,7 +147,11 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 
 	res /= 2;
 	pix /= 2;
+	
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	BOX_BLUR(c.indirect_diffuse, indirect_diffuse, res, pix, INDIRECT_DIFFUSE_KERNEL);
+	}
+
 	BOX_BLUR(c.indirect_specular, indirect_specular, res, pix, INDIRECT_SPECULAR_KERNEL);
 
 	return c;
@@ -309,7 +318,8 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
-			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
+			if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 &&
+				all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
 			{
 				// TODO indirect operates at different scale, do a separate pass
 				const float indirect_diffuse_scale = scale
@@ -452,6 +462,11 @@ void main() {
 
 	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
 	vec3 specular = c.direct_specular + c.indirect_specular;
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		diffuse += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+	}
+
 	{
 //#define DISABLE_TEMPORAL_DENOISER
 #ifndef DISABLE_TEMPORAL_DENOISER

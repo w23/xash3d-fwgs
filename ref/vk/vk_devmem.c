@@ -2,7 +2,7 @@
 #include "alolcator.h"
 #include "r_speeds.h"
 
-#define MAX_DEVMEM_ALLOC_SLOTS 32
+#define MAX_DEVMEM_ALLOC_SLOTS 128
 #define DEFAULT_ALLOCATION_SIZE (64 * 1024 * 1024)
 
 #define MODULE_NAME "devmem"

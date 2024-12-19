@@ -1,0 +1,66 @@
+#version 460
+
+#include "brdf.h"
+#include "noise.glsl"
+#include "utils.glsl"
+#include "color_spaces.glsl"
+#include "denoiser_config.glsl"
+#include "denoiser_utils.glsl"
+#include "spherical_harmonics.glsl"
+
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_indirect_diffuse_denoised_by_sh;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D out_indirect_diffuse;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D out_indirect_diffuse_atrous1;
+
+layout(set = 0, binding = 3, rgba8)   uniform readonly image2D base_color_a;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D sh1_pong;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D sh2_pong;
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(set = 0, binding = 7) uniform UBO { UniformBuffer ubo; } ubo;
+
+void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
+	const vec4 n = FIX_NAN(imageLoad(normals_gs, uv));
+	geometry_normal = normalDecode(n.xy);
+	shading_normal = normalDecode(n.zw);
+}
+
+
+void main() {
+	ivec2 res = ivec2(imageSize(base_color_a));
+	ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
+		imageStore(out_indirect_diffuse_denoised_by_sh, pix, vec4(0.));
+		return;
+	}
+
+	vec3 geometry_normal, shading_normal;
+	readNormals(pix, geometry_normal, shading_normal);
+
+	// albedo
+	const vec4 base_color_src = FIX_NAN(imageLoad(base_color_a, pix));
+	const vec3 base_color = SRGBtoLINEAR(base_color_src.rgb);
+
+	// global illumination re-light
+	SH low_freq;
+	low_freq.shY = FIX_NAN(imageLoad(sh1_pong, pix));
+	low_freq.CoCg = FIX_NAN(imageLoad(sh2_pong, pix)).xy;
+
+	const vec3 diffuse_gi = project_SH_irradiance(low_freq, shading_normal) / STORAGE_SCALE_LF;
+
+	imageStore(out_indirect_diffuse_denoised_by_sh, pix, vec4(diffuse_gi, 0.));
+	imageStore(out_indirect_diffuse, pix, vec4(0.));
+	imageStore(out_indirect_diffuse_atrous1, pix, vec4(0.));
+}
