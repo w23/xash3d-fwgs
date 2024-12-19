@@ -2,7 +2,6 @@
 
 #include "vk_core.h"
 #include "vk_descriptor.h"
-#include "vk_staging.h"
 #include "vk_logs.h"
 #include "r_textures.h"
 #include "r_speeds.h"
@@ -59,7 +58,7 @@ static void generateFallbackNoiseTextures( const rgbdata_t *pic ) {
 	ERR("Generating bad quality regular noise textures as a fallback for blue noise textures");
 
 	const int blue_noise_count = pic->size / sizeof(uint32_t);
-	uint32_t *const scratch = (uint32_t*)pic->buffer;
+	uint32_t *const scratch = PTR_CAST(uint32_t, pic->buffer);
 
 	// Fill with random data
 	{
@@ -349,9 +348,9 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	const ktx2_index_t* index;
 	const ktx2_level_t* levels;
 
-	header = (const ktx2_header_t*)(data + KTX2_IDENTIFIER_SIZE);
-	index = (const ktx2_index_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t));
-	levels = (const ktx2_level_t*)(data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t));
+	header = PTR_CAST(const ktx2_header_t, data + KTX2_IDENTIFIER_SIZE);
+	index = PTR_CAST(const ktx2_index_t, data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t));
+	levels = PTR_CAST(const ktx2_level_t, data + KTX2_IDENTIFIER_SIZE + sizeof(ktx2_header_t) + sizeof(ktx2_index_t));
 
 	DEBUG(" header:");
 #define X(field) DEBUG("  " # field "=%d", header->field);
@@ -395,6 +394,7 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 			.height = header->pixelHeight,
 			.depth = Q_max(1, header->pixelDepth),
 			.mips = header->levelCount,
+			// header->layerCount? header->faceCount?
 			.layers = 1, // TODO or 6 for cubemap; header->faceCount
 			.format = header->vkFormat,
 			.tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -408,7 +408,6 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	{
 		R_VkImageUploadBegin(&tex->vk.image);
 
-		// TODO layers
 		for (int mip = 0; mip < header->levelCount; ++mip) {
 			const ktx2_level_t* const level = levels + mip;
 			const size_t mip_size = level->byteLength;
@@ -614,12 +613,6 @@ void R_VkTextureDestroy( int index, vk_texture_t *tex ) {
 
 	if (tex->vk.image.image == VK_NULL_HANDLE)
 		return;
-
-	// Need to make sure that there are no references to this texture anywhere.
-	// It might have been added to staging and then immediately deleted, leaving references to its vkimage
-	// in the staging command buffer. See https://github.com/w23/xash3d-fwgs/issues/464
-	R_VkStagingFlushSync();
-	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
 	R_VkImageDestroy(&tex->vk.image);
 	g_vktextures.stats.size_total -= tex->total_size;

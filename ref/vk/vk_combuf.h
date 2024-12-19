@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vk_core.h"
+#include "arrays.h"
 
 #define MAX_GPU_SCOPES 64
 
@@ -18,6 +19,30 @@ void R_VkCombufBegin( vk_combuf_t* );
 void R_VkCombufEnd( vk_combuf_t* );
 
 
+struct vk_buffer_s;
+typedef struct {
+	struct vk_buffer_s *buffer;
+	VkAccessFlags2 access;
+} r_vkcombuf_barrier_buffer_t;
+
+struct r_vk_image_s;
+typedef struct {
+	struct r_vk_image_s *image;
+	VkImageLayout layout;
+	VkAccessFlags2 access;
+} r_vkcombuf_barrier_image_t;
+
+typedef struct {
+	VkPipelineStageFlags2 stage;
+	VIEW_DECLARE_CONST(r_vkcombuf_barrier_buffer_t, buffers);
+	VIEW_DECLARE_CONST(r_vkcombuf_barrier_image_t, images);
+} r_vkcombuf_barrier_t;
+
+// Immediately issues a barrier for the set of resources given desired usage and resources states
+void R_VkCombufIssueBarrier(vk_combuf_t*, r_vkcombuf_barrier_t);
+
+
+// TODO rename consistently
 int R_VkGpuScope_Register(const char *name);
 
 int R_VkCombufScopeBegin(vk_combuf_t*, int scope_id);

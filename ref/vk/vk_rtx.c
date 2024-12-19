@@ -19,7 +19,6 @@
 
 #include "profiler.h"
 
-#include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
@@ -69,6 +68,8 @@ static struct {
 } g_rtx = {0};
 
 void VK_RayNewMapBegin( void ) {
+	// TODO it seems like these are unnecessary leftovers. Moreover, they are actively harmful,
+	// as they recreate things that are in fact pretty much static. Untangle this.
 	RT_VkAccelNewMap();
 	RT_RayModel_Clear();
 }
@@ -76,7 +77,6 @@ void VK_RayNewMapBegin( void ) {
 void VK_RayFrameBegin( void ) {
 	ASSERT(vk_core.rtx);
 
-	RT_VkAccelFrameBegin();
 	XVK_RayModel_ClearForNextFrame();
 	RT_LightsFrameBegin();
 }
@@ -165,7 +165,7 @@ static uint32_t getRandomSeed( void ) {
 }
 
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
-	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
+	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -216,38 +216,14 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	R_VkResourcesSetBuiltinFIXME((r_vk_resources_builtin_fixme_t){
 		.frame_index = args->frame_index,
-		.uniform_buffer = g_rtx.uniform_buffer.buffer,
+		.uniform_buffer = &g_rtx.uniform_buffer,
 		.uniform_unit_size = g_rtx.uniform_unit_size,
 		.geometry_data.buffer = args->render_args->geometry_data.buffer,
 		.geometry_data.size = args->render_args->geometry_data.size,
 		.light_bindings = args->light_bindings,
 	});
 
-	// Upload kusochki updates
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-			.buffer = g_ray_model_state.kusochki_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}, {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = g_ray_model_state.model_headers_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
-
-	R_VkResourcesFrameBeginStateChangeFIXME(cmdbuf, g_rtx.discontinuity);
+	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
 		DEBUG("discontinuity => false");
 		g_rtx.discontinuity = false;
@@ -255,30 +231,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
-	// FIXME move this to "TLAS producer"
-	{
-		rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
-		tlas->resource = RT_VkAccelPrepareTlas(combuf);
-	}
-
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
-
-	{ // FIXME this should be done automatically inside meatpipe, TODO
-		//const uint32_t size = sizeof(struct Lights);
-		//const uint32_t size = sizeof(struct LightsMetadata); // + 8 * sizeof(uint32_t);
-		const VkBufferMemoryBarrier bmb[] = {{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = args->light_bindings->buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}};
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
 
 	// Update image resource links after the prev_-related swap above
 	// TODO Preserve the indexes somewhere to avoid searching
@@ -289,7 +242,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			// THIS FAILS WHY?! ASSERT(g_rtx.mainpipe_resources[i]->value.image_object == &res->image);
-			g_rtx.mainpipe_resources[i]->value.image_object = &res->image;
+			g_rtx.mainpipe_resources[i]->ref.image = &res->image;
 	}
 
 	R_VkMeatpipePerform(g_rtx.mainpipe, combuf, (vk_meatpipe_perfrom_args_t) {
@@ -299,31 +252,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.resources = g_rtx.mainpipe_resources,
 	});
 
-	{
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = args->frame_width,
-				.height = args->frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->render_args->dst.image,
-				.width = args->render_args->dst.width,
-				.height = args->render_args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
-			},
-		};
-
-		R_VkImageBlit( cmdbuf, &blit_args );
-
-		// TODO this is to make sure we remember image layout after image_blit
-		// The proper way to do this would be to teach R_VkImageBlit to properly track the image metadata (i.e. vk_resource_t state)
-		g_rtx.mainpipe_out->resource.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	}
 	DEBUG_END(cmdbuf);
 
 	APROF_SCOPE_END(perform);
@@ -410,7 +338,10 @@ static void reloadMainpipe(void) {
 					.tiling = VK_IMAGE_TILING_OPTIMAL,
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
-					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+					.usage = VK_IMAGE_USAGE_STORAGE_BIT
+						//| VK_IMAGE_USAGE_SAMPLED_BIT // required by VK_IMAGE_LAYOUT_SHADER_READ_OPTIMAL
+						| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+						| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
@@ -422,11 +353,11 @@ static void reloadMainpipe(void) {
 
 		if (create) {
 			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-				newpipe_resources[i]->value.image_object = &res->image;
+				newpipe_resources[i]->ref.image = &res->image;
 			}
 
 			// TODO full r/w initialization
-			res->resource.write.pipelines = 0;
+			// FIXME not sure if not needed res->resource.deprecate.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit
@@ -505,7 +436,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
 
 	RT_LightsFrameEnd();
-	const vk_lights_bindings_t light_bindings = VK_LightsUpload();
+	const vk_lights_bindings_t light_bindings = VK_LightsUpload(args->combuf);
 
 	g_rtx.frame_number++;
 
@@ -514,15 +445,15 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	qboolean need_reload = g_rtx.reload_pipeline;
 
-	if (g_rtx.max_frame_width < args->dst.width) {
-		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
+	if (g_rtx.max_frame_width < args->dst->width) {
+		g_rtx.max_frame_width = ALIGN_UP(args->dst->width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
 	}
 
-	if (g_rtx.max_frame_height < args->dst.height) {
-		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
+	if (g_rtx.max_frame_height < args->dst->height) {
+		g_rtx.max_frame_height = ALIGN_UP(args->dst->height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
@@ -542,38 +473,30 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
-	ASSERT(args->dst.width <= g_rtx.max_frame_width);
-	ASSERT(args->dst.height <= g_rtx.max_frame_height);
+	// FIXME what's the right place for this?
+	// This needs to happen every frame where we might've locked staging for kusochki
+	// - After dynamic stuff (might upload kusochki)
+	// - Before performTracing(), even if it is not called
+	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
+	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
+
+	ASSERT(args->dst->width <= g_rtx.max_frame_width);
+	ASSERT(args->dst->height <= g_rtx.max_frame_height);
 
 	// TODO dynamic scaling based on perf
-	const int frame_width = args->dst.width;
-	const int frame_height = args->dst.height;
+	const int frame_width = args->dst->width;
+	const int frame_height = args->dst->height;
+
+	rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
 
 	// Do not draw when we have no swapchain
-	if (args->dst.image_view == VK_NULL_HANDLE)
+	if (!args->dst->image)
 		goto tail;
 
-	if (g_ray_model_state.frame.instances_count == 0) {
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = frame_width,
-				.height = frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->dst.image,
-				.width = args->dst.width,
-				.height = args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
-			},
-		};
-
-		R_VkImageClear( cmdbuf, g_rtx.mainpipe_out->image.image );
-		R_VkImageBlit( cmdbuf, &blit_args );
+	// TODO move this to "TLAS producer"
+	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
+	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
+		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
@@ -585,6 +508,21 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_height = frame_height,
 		};
 		performTracing( args->combuf, &trace_args );
+	}
+
+	{
+		const r_vkimage_blit_args blit_args = {
+			.src = {
+				.image = &g_rtx.mainpipe_out->image,
+				.width = frame_width,
+				.height = frame_height,
+			},
+			.dst = {
+				.image = args->dst,
+			},
+		};
+
+		R_VkImageBlit( args->combuf, &blit_args );
 	}
 
 tail:

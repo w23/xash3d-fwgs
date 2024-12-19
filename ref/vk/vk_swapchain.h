@@ -1,4 +1,5 @@
 #include "vk_core.h"
+#include "vk_image.h"
 
 // TODO this needs to be negotiated by swapchain creation
 // however, currently render pass also needs it so ugh
@@ -11,10 +12,9 @@ void R_VkSwapchainShutdown( void );
 
 typedef struct {
 	uint32_t index;
-	uint32_t width, height;
-	VkFramebuffer framebuffer; // TODO move out
-	VkImage image;
-	VkImageView view;
+	// Non-owned image mostly for for sync/barrier tracking purposes
+	r_vk_image_t image;
+	VkFramebuffer framebuffer;
 } r_vk_swapchain_framebuffer_t;
 
 r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire( VkSemaphore sem_image_available );

@@ -119,7 +119,7 @@ static qboolean isBoneSame(int b) {
 /* } */
 
 static void studioModelProcessBonesAnimations(const model_t *const model, const studiohdr_t *const hdr, r_studio_submodel_info_t *submodels, int submodels_count) {
-	const mstudiobone_t* const pbone = (mstudiobone_t *)((byte *)hdr + hdr->boneindex);
+	const mstudiobone_t* const pbone = PTR_CAST(const mstudiobone_t, (byte *)hdr + hdr->boneindex);
 
 	/* for (int i = 0; i < hdr->numbones; ++i) { */
 	/* 	const mstudiobone_t* const bone = pbone + i; */
@@ -127,7 +127,7 @@ static void studioModelProcessBonesAnimations(const model_t *const model, const 
 	/* } */
 
 	for (int i = 0; i < hdr->numseq; ++i) {
-		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
+		const mstudioseqdesc_t *const pseqdesc = PTR_CAST(const mstudioseqdesc_t, (byte *)hdr + hdr->seqindex) + i;
 
 		const mstudioanim_t* const panim = gEngine.R_StudioGetAnim( (studiohdr_t*)hdr, (model_t*)model, (mstudioseqdesc_t*)pseqdesc );
 
@@ -187,11 +187,11 @@ static void studioModelProcessBonesAnimations(const model_t *const model, const 
 static int studioModelGetSubmodels(const studiohdr_t *hdr, r_studio_submodel_info_t *out_submodels) {
 	int count = 0;
 	for (int i = 0; i < hdr->numbodyparts; ++i) {
-		const mstudiobodyparts_t* const bodypart = (mstudiobodyparts_t *)((byte *)hdr + hdr->bodypartindex) + i;
+		const mstudiobodyparts_t* const bodypart = PTR_CAST(const mstudiobodyparts_t, (byte *)hdr + hdr->bodypartindex) + i;
 		if (out_submodels) {
 			DEBUG(" Bodypart %d/%d: %s (nummodels=%d)", i, hdr->numbodyparts - 1, bodypart->name, bodypart->nummodels);
 			for (int j = 0; j < bodypart->nummodels; ++j) {
-				const mstudiomodel_t * const submodel = (mstudiomodel_t *)((byte *)hdr + bodypart->modelindex) + j;
+				const mstudiomodel_t * const submodel = PTR_CAST(const mstudiomodel_t, (byte *)hdr + bodypart->modelindex) + j;
 				DEBUG("  Submodel %d: %s", j, submodel->name);
 				out_submodels[count++].submodel_key = submodel;
 			}
@@ -212,7 +212,7 @@ const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 
 	DEBUG("Studio model %p(%s) hdr=%p(%s), sequences=%d:", mod, mod->name, hdr, hdr->name, hdr->numseq);
 	for (int i = 0; i < hdr->numseq; ++i) {
-		const mstudioseqdesc_t *const pseqdesc = (mstudioseqdesc_t *)((byte *)hdr + hdr->seqindex) + i;
+		const mstudioseqdesc_t *const pseqdesc = PTR_CAST(const mstudioseqdesc_t, (byte *)hdr + hdr->seqindex) + i;
 		DEBUG("  %d: fps=%f numframes=%d", i, pseqdesc->fps, pseqdesc->numframes);
 	}
 

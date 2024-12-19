@@ -946,6 +946,7 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 		speedsPrintf( "Driver: %u.%u.%u, Vulkan: %u.%u.%u\n",
 			XVK_PARSE_VERSION(vk_core.physical_device.properties.driverVersion),
 			XVK_PARSE_VERSION(vk_core.physical_device.properties.apiVersion));
+		speedsPrintf( "Resolution: %ux%u\n", vk_frame.width, vk_frame.height);
 	}
 
 	const uint32_t events = g_aprof.events_last_frame - prev_frame_index;

@@ -3,6 +3,8 @@
 #include "vk_image.h"
 #include "vk_common.h"
 #include "vk_logs.h"
+#include "vk_combuf.h"
+#include "arrays.h"
 
 #define LOG_MODULE rt
 
@@ -100,9 +102,10 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 #define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
 	g_res.res[ExternalResource_##name].resource = (vk_resource_t){ \
 		.type = type_, \
+		.ref.buffer = (source_), \
 		.value = (vk_descriptor_value_t) { \
 			.buffer = (VkDescriptorBufferInfo) { \
-				.buffer = (source_), \
+				.buffer = (source_)->buffer, \
 				.offset = (offset_), \
 				.range = (size_), \
 			} \
@@ -112,15 +115,15 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 	RES_SET_BUFFER(ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, args.uniform_buffer, args.frame_index * args.uniform_unit_size, sizeof(struct UniformBuffer));
 
 #define RES_SET_SBUFFER_FULL(name, source_) \
-	RES_SET_BUFFER(name, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, source_.buffer, 0, source_.size)
+	RES_SET_BUFFER(name, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, source_, 0, (source_)->size)
 
 	// TODO move this to ray model producer
-	RES_SET_SBUFFER_FULL(kusochki, g_ray_model_state.kusochki_buffer);
-	RES_SET_SBUFFER_FULL(model_headers, g_ray_model_state.model_headers_buffer);
+	RES_SET_SBUFFER_FULL(kusochki, &g_ray_model_state.kusochki_buffer);
+	RES_SET_SBUFFER_FULL(model_headers, &g_ray_model_state.model_headers_buffer);
 
 	// TODO move these to vk_geometry
-	RES_SET_SBUFFER_FULL(indices, args.geometry_data);
-	RES_SET_SBUFFER_FULL(vertices, args.geometry_data);
+	RES_SET_SBUFFER_FULL(indices, args.geometry_data.buffer);
+	RES_SET_SBUFFER_FULL(vertices, args.geometry_data.buffer);
 
 	// TODO move this to lights
 	RES_SET_BUFFER(lights, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, args.light_bindings->buffer, args.light_bindings->metadata.offset, args.light_bindings->metadata.size);
@@ -130,7 +133,7 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 }
 
 // FIXME not even sure what this functions is supposed to do in the end
-void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean discontinuity) {
+void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean discontinuity) {
 	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
 	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
 		rt_resource_t* const res = g_res.res + i;
@@ -153,13 +156,10 @@ void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean di
 		src->image = tmp_img;
 
 		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (discontinuity || res->resource.write.pipelines == 0) {
+		if (discontinuity || res->image.sync.write.stage == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
-			DEBUG("discontinuity: %s", res->name);
-			R_VkImageClear( cmdbuf, res->image.image );
-			res->resource.write.pipelines = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			res->resource.write.image_layout = VK_IMAGE_LAYOUT_GENERAL;
-			res->resource.write.access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			WARN("discontinuity: %s", res->name);
+			R_VkImageClear( &res->image, combuf, NULL );
 		}
 	}
 
@@ -169,98 +169,62 @@ void R_VkResourcesFrameBeginStateChangeFIXME(VkCommandBuffer cmdbuf, qboolean di
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
 			continue;
 
-		//res->resource.read = res->resource.write = (ray_resource_state_t){0};
-		res->resource.write = (ray_resource_state_t){0};
+		// 2024-12-12 E384 1:56:00 Commented out: Try not clearing this state. Could be beneficial for later barrier-based extra-cmdbuf sync
+		//res->resource.deprecate.write = (ray_resource_state_t){0};
 	}
 }
 
-void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags dst_stage_mask, r_vk_barrier_t *barrier) {
-	if (res->type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-		// TODO
-		return;
-	}
-
-	if (write) {
-		// No reads are happening
-		//ASSERT(res->read.pipelines == 0);
-
-		const ray_resource_state_t new_state = {
-			.pipelines = dst_stage_mask,
-			.access_mask = VK_ACCESS_SHADER_WRITE_BIT,
-			.image_layout = VK_IMAGE_LAYOUT_GENERAL,
-		};
-
-		R_VkBarrierAddImage(barrier, (r_vk_barrier_image_t){
-			.image = res->value.image_object->image,
-			.src_stage_mask = res->read.pipelines | res->write.pipelines,
-			// FIXME MEMORY_WRITE is needed to silence write-after-write layout-transition validation hazard
-			.src_access_mask = res->read.access_mask | res->write.access_mask | VK_ACCESS_MEMORY_WRITE_BIT,
-			.dst_access_mask = new_state.access_mask,
-			.old_layout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.new_layout = new_state.image_layout,
-		});
-
-		// Mark that read would need a transition
-		res->read = (ray_resource_state_t){0};
-		res->write = new_state;
-	} else {
-		// Write happened
-		ASSERT(res->write.pipelines != 0);
-
-		// Check if no more barriers needed
-		if ((res->read.pipelines & dst_stage_mask) == dst_stage_mask)
-			return;
-
-		res->read = (ray_resource_state_t) {
-			.pipelines = res->read.pipelines | dst_stage_mask,
-			.access_mask = VK_ACCESS_SHADER_READ_BIT,
-			.image_layout = VK_IMAGE_LAYOUT_GENERAL,
-		};
-
-		R_VkBarrierAddImage(barrier, (r_vk_barrier_image_t){
-			.image = res->value.image_object->image,
-			.src_stage_mask = res->write.pipelines,
-			.src_access_mask = res->write.access_mask,
-			.dst_access_mask = res->read.access_mask,
-			.old_layout = res->write.image_layout,
-			.new_layout = res->read.image_layout,
-		});
-	}
-}
-
-void R_VkBarrierAddImage(r_vk_barrier_t *barrier, r_vk_barrier_image_t image) {
-	barrier->src_stage_mask |= image.src_stage_mask;
-	const VkImageMemoryBarrier ib = (VkImageMemoryBarrier) {
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.image = image.image,
-		.srcAccessMask = image.src_access_mask,
-		.dstAccessMask = image.dst_access_mask,
-		.oldLayout = image.old_layout,
-		.newLayout = image.new_layout,
-		.subresourceRange = (VkImageSubresourceRange) {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1,
-		},
+static void barrierAddBuffer(r_vk_barrier_t *barrier, vk_buffer_t *buf, VkAccessFlags access) {
+	const r_vkcombuf_barrier_buffer_t bb = {
+		.buffer = buf,
+		.access = access,
 	};
-	BOUNDED_ARRAY_APPEND(barrier->images, ib);
+	BOUNDED_ARRAY_APPEND_ITEM(barrier->buffers, bb);
 }
 
-void R_VkBarrierCommit(VkCommandBuffer cmdbuf, r_vk_barrier_t *barrier, VkPipelineStageFlags dst_stage_mask) {
-	if (barrier->images.count == 0)
+void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags2 dst_stage_mask, r_vk_barrier_t *barrier) {
+	switch (res->type) {
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			{
+				const r_vkcombuf_barrier_image_t image_barrier = {
+					.image = res->ref.image,
+					// Image must remain in GENERAL layout regardless of r/w.
+					// Storage image reads still require GENERAL, not SHADER_READ_ONLY_OPTIMAL
+					.layout = VK_IMAGE_LAYOUT_GENERAL,
+					.access = write ? VK_ACCESS_2_SHADER_WRITE_BIT : VK_ACCESS_2_SHADER_READ_BIT,
+				};
+				BOUNDED_ARRAY_APPEND_ITEM(barrier->images, image_barrier);
+			}
+			break;
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			ASSERT(!write);
+			barrierAddBuffer(barrier, res->ref.buffer, VK_ACCESS_2_SHADER_READ_BIT);
+			break;
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			// nothing for now, as all textures are static at this point
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+			// nop
+			break;
+		default:
+			ASSERT(!"Unsupported descriptor type");
+	}
+}
+
+void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask) {
+	if (barrier->images.count == 0 && barrier->buffers.count == 0)
 		return;
 
-	// TODO vkCmdPipelineBarrier2()
-	vkCmdPipelineBarrier(cmdbuf,
-		barrier->src_stage_mask == 0
-			? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
-			: barrier->src_stage_mask,
-		dst_stage_mask,
-		0, 0, NULL, 0, NULL, barrier->images.count, barrier->images.items);
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+		.stage = dst_stage_mask,
+		.buffers.items = barrier->buffers.items,
+		.buffers.count = barrier->buffers.count,
+		.images.items = barrier->images.items,
+		.images.count = barrier->images.count,
+	});
 
 	// Mark as used
-	barrier->src_stage_mask = 0;
 	barrier->images.count = 0;
+	barrier->buffers.count = 0;
 }

@@ -7,7 +7,7 @@
 #include "com_strings.h"
 #include "crtlib.h"
 
-#define ASSERT(x) if(!( x )) gEngine.Host_Error( "assert %s failed at %s:%d\n", #x, __FILE__, __LINE__ )
+#define ASSERT(x) do { if(!( x )) gEngine.Host_Error( "assert %s failed at %s:%d\n", #x, __FILE__, __LINE__ ); } while (0)
 // TODO ASSERTF(x, fmt, ...)
 
 #define Mem_Malloc( pool, size ) gEngine._Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
@@ -22,6 +22,10 @@
 
 #define COUNTOF(a) (sizeof(a)/sizeof((a)[0]))
 
+// Sliences -Werror=cast-align
+// TODO assert for proper alignment for type_
+#define PTR_CAST(type_, ptr_) ((type_*)(void*)(ptr_))
+
 inline static int clampi32(int v, int min, int max) {
 	if (v < min) return min;
 	if (v > max) return max;
@@ -30,19 +34,3 @@ inline static int clampi32(int v, int min, int max) {
 
 extern ref_api_t gEngine;
 extern ref_globals_t *gpGlobals;
-
-// TODO improve and make its own file
-#define BOUNDED_ARRAY_DECLARE(NAME, TYPE, MAX_SIZE) \
-		struct { \
-			TYPE items[MAX_SIZE]; \
-			int count; \
-		} NAME
-
-#define BOUNDED_ARRAY(NAME, TYPE, MAX_SIZE) \
-	BOUNDED_ARRAY_DECLARE(NAME, TYPE, MAX_SIZE) = {0}
-
-#define BOUNDED_ARRAY_APPEND(var, item) \
-		do { \
-			ASSERT(var.count < COUNTOF(var.items)); \
-			var.items[var.count++] = item; \
-		} while(0)

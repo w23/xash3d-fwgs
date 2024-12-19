@@ -1200,11 +1200,10 @@ static void uploadGridRange( int begin, int end ) {
 	ASSERT( count > 0 );
 
 	const int size = count * sizeof(struct LightCluster);
-	const vk_staging_region_t locked = R_VkStagingLockForBuffer( (vk_staging_buffer_args_t) {
-		.buffer = g_lights_.buffer.buffer,
-		.offset = sizeof(struct LightsMetadata) + begin * sizeof(struct LightCluster),
-		.size = size,
-		.alignment = 16, // WHY?
+	const vk_buffer_locked_t locked = R_VkBufferLock(&g_lights_.buffer,
+		(vk_buffer_lock_t) {
+			.offset = sizeof(struct LightsMetadata) + begin * sizeof(struct LightCluster),
+			.size = size,
 	} );
 
 	ASSERT(locked.ptr);
@@ -1222,7 +1221,7 @@ static void uploadGridRange( int begin, int end ) {
 		memcpy(dst->polygons, src->polygons, sizeof(uint8_t) * src->num_polygons);
 	}
 
-	R_VkStagingUnlock( locked.handle );
+	R_VkBufferUnlock( locked );
 
 	g_lights_.stats.ranges_uploaded++;
 }
@@ -1296,13 +1295,12 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 	}
 }
 
-vk_lights_bindings_t VK_LightsUpload( void ) {
+vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
-	const vk_staging_region_t locked = R_VkStagingLockForBuffer( (vk_staging_buffer_args_t) {
-		.buffer = g_lights_.buffer.buffer,
-		.offset = 0,
-		.size = sizeof(struct LightsMetadata),
-		.alignment = 16, // WHY?
+	const vk_buffer_locked_t locked = R_VkBufferLock(&g_lights_.buffer,
+		(vk_buffer_lock_t) {
+			.offset = 0,
+			.size = sizeof(struct LightsMetadata),
 	} );
 
 	ASSERT(locked.ptr);
@@ -1316,7 +1314,7 @@ vk_lights_bindings_t VK_LightsUpload( void ) {
 	uploadPolygonLights( metadata );
 	uploadPointLights( metadata );
 
-	R_VkStagingUnlock( locked.handle );
+	R_VkBufferUnlock( locked );
 
 	uploadGrid();
 
@@ -1324,8 +1322,10 @@ vk_lights_bindings_t VK_LightsUpload( void ) {
 
 	APROF_SCOPE_END(upload);
 
+	R_VkBufferStagingCommit(&g_lights_.buffer, combuf);
+
 	return (vk_lights_bindings_t){
-		.buffer = g_lights_.buffer.buffer,
+		.buffer = &g_lights_.buffer,
 		.metadata = {
 			.offset = 0,
 			.size = sizeof(struct LightsMetadata),

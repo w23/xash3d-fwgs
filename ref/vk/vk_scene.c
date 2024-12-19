@@ -1,6 +1,5 @@
 #include "vk_scene.h"
 #include "vk_brush.h"
-#include "vk_staging.h"
 #include "vk_studio.h"
 #include "vk_lightmap.h"
 #include "vk_const.h"
@@ -65,28 +64,6 @@ static struct {
 	draw_list_t	*draw_list;
 } g_lists;
 
-static void loadLights( const model_t *const map ) {
-	RT_LightsLoadBegin(map);
-
-	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
-	for( int i = 0; i < num_models; i++ ) {
-		const model_t	*const mod = gEngine.pfnGetModelByIndex( i + 1 );
-
-		if (!mod)
-			continue;
-
-		if( mod->type != mod_brush )
-			continue;
-
-		const qboolean is_worldmodel = i == 0;
-		R_VkBrushModelCollectEmissiveSurfaces(mod, is_worldmodel);
-	}
-
-	// Load static map lights
-	// Reads surfaces from loaded brush models (must happen after all brushes are loaded)
-	RT_LightsLoadEnd();
-}
-
 static void preloadModels( void ) {
 	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
 
@@ -138,6 +115,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 
 	RT_LightsNewMap(map);
 
+	// TODO doesn't really need to exist: sprite instance models are static
 	R_SpriteNewMapFIXME();
 
 	// Load light entities and patch data prior to loading map brush model
@@ -150,12 +128,13 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 	// Depends on loaded materials. Must preceed loading brush models.
 	XVK_ParseMapPatches();
 
+	RT_LightsLoadBegin(map);
 	preloadModels();
+	// Marks all loaded lights as static. Should happen after preloadModels(), where brush models are loaded.
+	RT_LightsLoadEnd();
 
 	// Can only do after preloadModels(), as we need to know whether there are SURF_DRAWSKY
 	R_TextureSetupSky( gEngine.pfnGetMoveVars()->skyName, force_reload );
-
-	loadLights(map);
 
 	// TODO should we do something like R_BrushEndLoad?
 	VK_UploadLightmap();
@@ -164,7 +143,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 static void reloadPatches( void ) {
 	INFO("Reloading patches and materials");
 
-	R_VkStagingFlushSync();
+	// FIXME R_VkStagingFlushSync();
 
 	XVK_CHECK(vkDeviceWaitIdle( vk_core.device ));
 
@@ -173,8 +152,6 @@ static void reloadPatches( void ) {
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
 	const qboolean force_reload = true;
 	loadMap(map, force_reload);
-
-	R_VkStagingFlushSync();
 }
 
 void VK_SceneInit( void )

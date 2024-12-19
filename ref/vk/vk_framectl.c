@@ -10,13 +10,20 @@
 #include "vk_staging.h"
 #include "vk_commandpool.h"
 #include "vk_combuf.h"
+#include "vk_logs.h"
 
+#include "vk_buffer.h"
+#include "vk_geometry.h"
+
+#include "arrays.h"
 #include "profiler.h"
 #include "r_speeds.h"
 
 #include "eiface.h" // ARRAYSIZE
 
 #include <string.h>
+
+#define LOG_MODULE fctl
 
 extern ref_globals_t *gpGlobals;
 
@@ -43,7 +50,7 @@ typedef struct {
 	// so we can't reuse the same one for two purposes and need to mnozhit sunchnosti
 	VkSemaphore sem_done2;
 
-	vk_combuf_t *staging_combuf;
+	uint32_t staging_frame_tag;
 } vk_framectl_frame_t;
 
 static struct {
@@ -141,7 +148,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.pDepthStencilAttachment = &depth_attachment,
 	};
 
-	BOUNDED_ARRAY(dependencies, VkSubpassDependency, 2);
+	BOUNDED_ARRAY(VkSubpassDependency, dependencies, 2);
 	if (vk_core.rtx) {
 		const VkSubpassDependency color = {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -152,7 +159,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		};
-		BOUNDED_ARRAY_APPEND(dependencies, color);
+		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
 	} else {
 		const VkSubpassDependency color = {
 			.srcSubpass = VK_SUBPASS_EXTERNAL,
@@ -163,7 +170,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
 		};
-		BOUNDED_ARRAY_APPEND(dependencies, color);
+		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
 	}
 
 	const VkSubpassDependency depth = {
@@ -175,7 +182,7 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 		.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
 		.dependencyFlags = 0,
 	};
-	BOUNDED_ARRAY_APPEND(dependencies, depth);
+	BOUNDED_ARRAY_APPEND_ITEM(dependencies, depth);
 
 	const VkRenderPassCreateInfo rpci = {
 		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -257,12 +264,8 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_BEGIN(begin_frame);
 
 	{
-		const vk_combuf_scopes_t gpurofl[] = {
-			frame->staging_combuf ? R_VkCombufScopesGet(frame->staging_combuf) : (vk_combuf_scopes_t){.entries_count=0},
-			R_VkCombufScopesGet(frame->combuf),
-		};
-
-		R_SpeedsDisplayMore(prev_frame_event_index, frame->staging_combuf ? gpurofl : gpurofl + 1, frame->staging_combuf ? 2 : 1);
+		const vk_combuf_scopes_t gpurofl[] = { R_VkCombufScopesGet(frame->combuf) };
+		R_SpeedsDisplayMore(prev_frame_event_index, gpurofl, COUNTOF(gpurofl));
 	}
 
 	if (vk_core.rtx && FBitSet( rt_enable->flags, FCVAR_CHANGED )) {
@@ -274,11 +277,12 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 
-	R_VkStagingFrameBegin();
+	// TODO explicit frame dependency synced on frame-end-event/sema
+	R_VkStagingFrameCompleted(frame->staging_frame_tag);
 
 	g_frame.current.framebuffer = R_VkSwapchainAcquire( frame->sem_framebuffer_ready );
-	vk_frame.width = g_frame.current.framebuffer.width;
-	vk_frame.height = g_frame.current.framebuffer.height;
+	vk_frame.width = g_frame.current.framebuffer.image.width;
+	vk_frame.height = g_frame.current.framebuffer.image.height;
 
 	VK_RenderBegin( vk_frame.rtx_enabled );
 
@@ -297,25 +301,60 @@ void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 
 static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	APROF_SCOPE_DECLARE_BEGIN(enqueue, __FUNCTION__);
-	const VkClearValue clear_value[] = {
-		{.color = {{1., 0., 0., 0.}}},
-		{.depthStencil = {1., 0.}} // TODO reverse-z
-	};
+	const uint32_t frame_width = g_frame.current.framebuffer.image.width;
+	const uint32_t frame_height = g_frame.current.framebuffer.image.height;
 
 	ASSERT(g_frame.current.phase == Phase_FrameBegan);
 
-	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-	VK_Render_FIXME_Barrier(cmdbuf);
+	// TODO: should be done by rendering when it requests textures
+	R_VkImageUploadCommit(combuf,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
 
-	if (vk_frame.rtx_enabled)
-		VK_RenderEndRTX( combuf, g_frame.current.framebuffer.view, g_frame.current.framebuffer.image, g_frame.current.framebuffer.width, g_frame.current.framebuffer.height );
+	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
+
+	if (vk_frame.rtx_enabled) {
+		VK_RenderEndRTX( combuf, &g_frame.current.framebuffer.image );
+	} else {
+		// FIXME: how to do this properly before render pass?
+		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
+		vk_buffer_t* const geom = R_GeometryBuffer_Get();
+		R_VkBufferStagingCommit(geom, combuf);
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+			.stage = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
+			.buffers = {
+				.count = 1,
+				.items = &(r_vkcombuf_barrier_buffer_t){
+					.buffer = geom,
+					.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+				},
+			},
+		});
+	}
 
 	if (draw) {
+		const r_vkcombuf_barrier_image_t dst_use[] = {{
+			.image = &g_frame.current.framebuffer.image,
+			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
+			.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.images = {
+				.items = dst_use,
+				.count = COUNTOF(dst_use),
+			},
+		});
+
+		const VkClearValue clear_value[] = {
+			// *_UNORM is float
+			{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
+			{.depthStencil = {1., 0.}} // TODO reverse-z
+		};
 		const VkRenderPassBeginInfo rpbi = {
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
-			.renderArea.extent.width = g_frame.current.framebuffer.width,
-			.renderArea.extent.height = g_frame.current.framebuffer.height,
+			.renderArea.extent.width = frame_width,
+			.renderArea.extent.height = frame_height,
 			.clearValueCount = ARRAYSIZE(clear_value),
 			.pClearValues = clear_value,
 			.framebuffer = g_frame.current.framebuffer.framebuffer,
@@ -324,11 +363,11 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 		{
 			const VkViewport viewport[] = {
-				{0.f, 0.f, (float)g_frame.current.framebuffer.width, (float)g_frame.current.framebuffer.height, 0.f, 1.f},
+				{0.f, 0.f, (float)frame_width, (float)frame_height, 0.f, 1.f},
 			};
 			const VkRect2D scissor[] = {{
 				{0, 0},
-				{g_frame.current.framebuffer.width, g_frame.current.framebuffer.height},
+				{frame_width, frame_height},
 			}};
 
 			vkCmdSetViewport(cmdbuf, 0, ARRAYSIZE(viewport), viewport);
@@ -337,15 +376,21 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( cmdbuf, draw,
-			g_frame.current.framebuffer.width, g_frame.current.framebuffer.height,
+		VK_RenderEnd( combuf, draw,
+			frame_width, frame_height,
 			g_frame.current.index
 			);
 
 	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
 
-	if (draw)
+	if (draw) {
 		vkCmdEndRenderPass(cmdbuf);
+
+		// Render pass's finalLayout transitions the image into this one
+		g_frame.current.framebuffer.image.sync.read.access = 0;
+		g_frame.current.framebuffer.image.sync.write.access = 0;
+		g_frame.current.framebuffer.image.sync.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	}
 
 	g_frame.current.phase = Phase_RenderingEnqueued;
 	APROF_SCOPE_END(enqueue);
@@ -361,45 +406,58 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	vk_framectl_frame_t *const frame = g_frame.frames + g_frame.current.index;
 	vk_framectl_frame_t *const prev_frame = g_frame.frames + (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES;
 
+	// Push things from staging that weren't explicitly pulled by frame builder
+	frame->staging_frame_tag = R_VkStagingFrameEpilogue(combuf);
+
 	R_VkCombufEnd(combuf);
 
-	frame->staging_combuf = R_VkStagingFrameEnd();
 
-	const VkCommandBuffer cmdbufs[] = {
-		frame->staging_combuf ? frame->staging_combuf->cmdbuf : NULL,
-		cmdbuf,
-	};
+	BOUNDED_ARRAY(VkCommandBuffer, cmdbufs, 2);
+	BOUNDED_ARRAY_APPEND_ITEM(cmdbufs, cmdbuf);
 
 	{
-		const VkPipelineStageFlags stageflags[] = {
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		};
-		// TODO for RT renderer we only touch framebuffer at the very end of rendering/cmdbuf.
-		// Can we postpone waitinf for framebuffer semaphore until we actually need it.
-		BOUNDED_ARRAY(waitophores, VkSemaphore, 2);
-		BOUNDED_ARRAY(signalphores, VkSemaphore, 2);
+		BOUNDED_ARRAY(VkSemaphore, waitophores, 2);
+		BOUNDED_ARRAY(VkPipelineStageFlags, wait_stageflags, 2);
+		BOUNDED_ARRAY(VkSemaphore, signalphores, 2);
 
 		if (draw) {
-			BOUNDED_ARRAY_APPEND(waitophores, frame->sem_framebuffer_ready);
-			BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done);
+			BOUNDED_ARRAY_APPEND_ITEM(waitophores, frame->sem_framebuffer_ready);
+			BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+
+			BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done);
 		}
 
-		BOUNDED_ARRAY_APPEND(waitophores, prev_frame->sem_done2);
-		BOUNDED_ARRAY_APPEND(signalphores, frame->sem_done2);
+		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
+		// TODO remove this second semaphore altogether, replace it with properly tracked barriers.
+		// Why: would allow more parallelizm between consecutive frames.
+		BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
+		BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done2);
+
+		DEBUG("submit: frame=%d, staging_tag=%u, combuf=%p, wait for semaphores[%d]={%llx, %llx}, signal semaphores[%d]={%llx, %llx}",
+			g_frame.current.index,
+			frame->staging_frame_tag,
+			frame->combuf->cmdbuf,
+			waitophores.count,
+			(unsigned long long)waitophores.items[0],
+			(unsigned long long)waitophores.items[1],
+			signalphores.count,
+			(unsigned long long)signalphores.items[0],
+			(unsigned long long)signalphores.items[1]
+		);
+
+		ASSERT(waitophores.count == wait_stageflags.count);
 
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.pNext = NULL,
 			.waitSemaphoreCount = waitophores.count,
 			.pWaitSemaphores = waitophores.items,
-			.pWaitDstStageMask = stageflags,
-			.commandBufferCount = cmdbufs[0] ? 2 : 1,
-			.pCommandBuffers = cmdbufs[0] ? cmdbufs : cmdbufs + 1,
+			.pWaitDstStageMask = wait_stageflags.items,
+			.commandBufferCount = cmdbufs.count,
+			.pCommandBuffers = cmdbufs.items,
 			.signalSemaphoreCount = signalphores.count,
 			.pSignalSemaphores = signalphores.items,
 		};
-		//gEngine.Con_Printf("SYNC: wait for semaphore %d, signal semaphore %d\n", (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES, g_frame.current.index);
 		XVK_CHECK(vkQueueSubmit(vk_core.queue, 1, &subinfo, frame->fence_done));
 		g_frame.current.phase = Phase_Submitted;
 	}
@@ -474,7 +532,6 @@ qboolean VK_FrameCtlInit( void )
 
 	// Signal first frame semaphore as done
 	{
-		const VkPipelineStageFlags stageflags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		const VkSubmitInfo subinfo = {
 			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 			.pNext = NULL,
@@ -482,7 +539,7 @@ qboolean VK_FrameCtlInit( void )
 			.pCommandBuffers = NULL,
 			.waitSemaphoreCount = 0,
 			.pWaitSemaphores = NULL,
-			.pWaitDstStageMask = &stageflags,
+			.pWaitDstStageMask = NULL,
 			.signalSemaphoreCount = 1,
 			.pSignalSemaphores = &g_frame.frames[0].sem_done2,
 		};
@@ -531,15 +588,15 @@ static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 
 static rgbdata_t *R_VkReadPixels( void ) {
 	const VkFormat dest_format = VK_FORMAT_R8G8B8A8_UNORM;
-	r_vk_image_t dest_image;
-	const VkImage frame_image = g_frame.current.framebuffer.image;
+	r_vk_image_t temp_image;
+	r_vk_image_t *const framebuffer_image = &g_frame.current.framebuffer.image;
 	rgbdata_t *r_shot = NULL;
 	qboolean blit = canBlitFromSwapchainToFormat( dest_format );
 
 	vk_combuf_t *const combuf = g_frame.frames[g_frame.current.index].combuf;
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	if (frame_image == VK_NULL_HANDLE) {
+	if (framebuffer_image->image == VK_NULL_HANDLE) {
 		gEngine.Con_Printf(S_ERROR "no current image, can't take screenshot\n");
 		return NULL;
 	}
@@ -559,63 +616,47 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.flags = 0,
 			.memory_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
 		};
-		dest_image = R_VkImageCreate(&xic);
+		temp_image = R_VkImageCreate(&xic);
 	}
 
 	// Make sure that all rendering ops are enqueued
 	const qboolean draw = true;
 	enqueueRendering( combuf, draw );
 
-	{
-		// Barrier 1: dest image
-		const VkImageMemoryBarrier image_barrier[2] = {{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = dest_image.image,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			}}, { // Barrier 2: source swapchain image
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = frame_image,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-		}}};
-
-		vkCmdPipelineBarrier(cmdbuf,
-				VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
-	}
-
 	// Blit/transfer
 	if (blit) {
-		const VkImageBlit blit = {
-			.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.srcSubresource.layerCount = 1,
-			.dstSubresource.layerCount = 1,
-			.srcOffsets = {{0}, {vk_frame.width, vk_frame.height, 1}},
-			.dstOffsets = {{0}, {vk_frame.width, vk_frame.height, 1}}
-		};
-		vkCmdBlitImage(cmdbuf,
-			frame_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			dest_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+		R_VkImageBlit(combuf, &(r_vkimage_blit_args){
+			.src = {
+				.image = framebuffer_image,
+				.width = vk_frame.width,
+				.height = vk_frame.height,
+				.depth = 1,
+			},
+			.dst = {
+				.image = &temp_image,
+				.width = vk_frame.width,
+				.height = vk_frame.height,
+				.depth = 1,
+			},
+		});
 	} else {
+		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+			.image = &temp_image,
+			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			}, {
+			.image = framebuffer_image,
+			.access = VK_ACCESS_2_TRANSFER_READ_BIT,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+				.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
+				.images = {
+					.count = COUNTOF(image_barriers),
+					.items = image_barriers,
+				},
+		});
+
 		const VkImageCopy copy = {
 			.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 			.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -627,46 +668,31 @@ static rgbdata_t *R_VkReadPixels( void ) {
 		};
 
 		vkCmdCopyImage(cmdbuf,
-			frame_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			dest_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+			framebuffer_image->image, framebuffer_image->sync.layout,
+			temp_image.image, temp_image.sync.layout, 1, &copy);
 
 		gEngine.Con_Printf(S_WARN "Blit is not supported, screenshot will likely have mixed components; TODO: swizzle in software\n");
 	}
 
 	{
-		// Barrier 1: dest image
-		VkImageMemoryBarrier image_barrier[2] = {{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = dest_image.image,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_GENERAL,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-			}}, { // Barrier 2: source swapchain image
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-			.image = frame_image,
-			.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-			.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			.subresourceRange = (VkImageSubresourceRange) {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.baseMipLevel = 0,
-				.levelCount = 1,
-				.baseArrayLayer = 0,
-				.layerCount = 1,
-		}}};
-
-		vkCmdPipelineBarrier(cmdbuf,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				0, 0, NULL, 0, NULL, ARRAYSIZE(image_barrier), image_barrier);
+		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+			// Temp image: prepare for reading on CPU
+			.image = &temp_image,
+			.access = VK_ACCESS_2_MEMORY_READ_BIT,
+			.layout = VK_IMAGE_LAYOUT_GENERAL,
+			}, {
+			// Framebuffer image: prepare for displaying
+			.image = framebuffer_image,
+			.access = 0,
+			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		}};
+		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
+				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_HOST_BIT,
+				.images = {
+					.count = COUNTOF(image_barriers),
+					.items = image_barriers,
+				},
+		});
 	}
 
 	{
@@ -680,8 +706,8 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		};
 		VkSubresourceLayout layout;
-		const char *mapped = dest_image.devmem.mapped;
-		vkGetImageSubresourceLayout(vk_core.device, dest_image.image, &subres, &layout);
+		const char *mapped = temp_image.devmem.mapped;
+		vkGetImageSubresourceLayout(vk_core.device, temp_image.image, &subres, &layout);
 
 		mapped += layout.offset;
 
@@ -724,7 +750,7 @@ static rgbdata_t *R_VkReadPixels( void ) {
 		}
 	}
 
-	R_VkImageDestroy( &dest_image );
+	R_VkImageDestroy( &temp_image );
 
 	return r_shot;
 }

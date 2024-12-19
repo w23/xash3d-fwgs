@@ -14,7 +14,7 @@ typedef struct r_blocks_block_s {
 //  <--- pool         --><-- ring --->
 //    offset ?       --->
 
-int allocMetablock(r_blocks_t *blocks) {
+static int allocMetablock(r_blocks_t *blocks) {
 	return aloIntPoolAlloc(&blocks->blocks.freelist);
 	// TODO grow if needed
 }

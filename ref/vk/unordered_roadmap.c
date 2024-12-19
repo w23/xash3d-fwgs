@@ -10,6 +10,7 @@
 #define ERR(msg, ...) fprintf(stderr, msg, ##__VA_ARGS__)
 #define ASSERT(...) assert(__VA_ARGS__)
 #define COUNTOF(a) (sizeof(a)/sizeof(a[0]))
+#define PTR_CAST(type, ptr) ((type*)(void*)(ptr))
 #endif
 
 #if defined(_WIN32) && !defined(strcasecmp)
@@ -49,7 +50,7 @@ void urmomInit(const urmom_desc_t* desc) {
 	ASSERT((desc->count & (desc->count - 1)) == 0);
 
 	for (int i = 0; i < desc->count; ++i) {
-		urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * i);
+		urmom_header_t *hdr = PTR_CAST(urmom_header_t, ptr + desc->item_size * i);
 		hdr->state = 0;
 		hdr->hash = 0;
 	}
@@ -92,7 +93,7 @@ int urmomFind(const urmom_desc_t* desc, const char* key) {
 	const int start_index = hash & mask;
 
 	for (int index = start_index;;) {
-		const urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
+		const urmom_header_t *hdr = PTR_CAST(const urmom_header_t, ptr + desc->item_size * index);
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
 			if (hdr->hash == hash && sameKey(desc->type, key, hdr->key))
@@ -122,7 +123,7 @@ urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key) {
 	int index = start_index;
 	int first_available = -1;
 	for (;;) {
-		const urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
+		const urmom_header_t *hdr = PTR_CAST(const urmom_header_t, ptr + desc->item_size * index);
 
 		if (URMOM_IS_OCCUPIED(*hdr)) {
 			if (hdr->hash == hash && sameKey(desc->type, key, hdr->key))
@@ -149,7 +150,7 @@ urmom_insert_t urmomInsert(const urmom_desc_t* desc, const char *key) {
 	if (first_available < 0)
 		return (urmom_insert_t){.index = -1, .created = 0};
 
-	urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * first_available);
+	urmom_header_t *hdr = PTR_CAST(urmom_header_t, ptr + desc->item_size * first_available);
 	hdr->hash = hash;
 	hdr->state = 1;
 
@@ -169,7 +170,7 @@ int urmomRemove(const urmom_desc_t* desc, const char *key) {
 
 void urmomRemoveByIndex(const urmom_desc_t* desc, int index) {
 	char *ptr = desc->array;
-	urmom_header_t *hdr = (urmom_header_t*)(ptr + desc->item_size * index);
+	urmom_header_t *hdr = PTR_CAST(urmom_header_t, ptr + desc->item_size * index);
 
 	if (!URMOM_IS_OCCUPIED(*hdr)) {
 		ERR("Hashmap=%p(is=%d, n=%d): lot %d is not occupied", desc->array, desc->item_size, desc->count, index);
