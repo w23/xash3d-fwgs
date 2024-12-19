@@ -128,6 +128,7 @@ qboolean R_RenderModelUpdateMaterials( const vk_render_model_t *model, const int
 typedef enum {
 	kMaterialFlag_None = 0,
 	kMaterialFlag_CullBackFace_Bit = (1<<0),
+	kMaterialFlag_DontCastShadow_Bit = (1<<1),
 } material_flag_bits_e;
 
 typedef struct {

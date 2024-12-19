@@ -375,6 +375,8 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 			switch (instance->material_mode) {
 				case MATERIAL_MODE_OPAQUE:
 					inst[i].mask = GEOMETRY_BIT_OPAQUE;
+					if (!(instance->material_flags & kMaterialFlag_DontCastShadow_Bit))
+						inst[i].mask |= GEOMETRY_BIT_CASTS_SHADOW;
 					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
 					// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
 					// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
