@@ -1200,3 +1200,21 @@ Solution: make build dir literally just `./build`.
 ### vk_brush.c / collect emissive surfaces
 - (I) try to merge emissive collection with surface loading
 - (II) convert from pushing material data to pulling. Not really clear how to do easily.
+
+# 2024-12-19 E386 resources / pre render graph
+What do we want? Resources and producers! When do we want it? Maybe next stream.
+- Resource itself: `r_vk_resource_i` -- interface
+	- name
+	- type
+	- producer
+	- (opaque impl: e.g. in the same alloc, right after this header struct)
+- Resource manager:
+	- `r_vk_resource_i* resources[]` -- collection of pointers to resources
+		- dynamic array, hash table, etc..
+	- `findResourceByName(const char *)`
+		- also by type? not sure. Requester can check for the expected type too.
+	- `registerResource(r_vk_resource_i *res)`
+	- `deregisterResource(..)`
+- Resource producer
+	- When resource is used, the user should call `resource->produce()` or something like that.
+	- ????? It's not really clear how to do this properly. E.g. how to invoke producing only once per frame?
