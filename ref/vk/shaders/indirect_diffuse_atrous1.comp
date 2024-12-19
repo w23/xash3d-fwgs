@@ -25,6 +25,12 @@ void main() {
 	const ivec2 res = ubo.ubo.res;
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
 
+	// skip this pass if we used other denoising pipeline
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		imageStore(out_indirect_diffuse_atrous1, pix, vec4(0.));
+		return;
+	}
+
 	const ivec2 res_scaled = res / INDIRECT_SCALE;
 	if (any(greaterThanEqual(pix, res_scaled))) {
 		return;

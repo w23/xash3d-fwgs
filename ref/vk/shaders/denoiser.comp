@@ -99,8 +99,11 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	const ivec2 p_indirect = pix / INDIRECT_SCALE;
 	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
 	c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb;
-	c.indirect_diffuse += imageLoad(indirect_diffuse_denoised_by_sh, p).rgb;
+	} else {
+		c.indirect_diffuse += imageLoad(indirect_diffuse_denoised_by_sh, p).rgb;
+	}
 	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
 	c.direct_specular += imageLoad(light_point_specular, p).rgb;
 	c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb;
@@ -144,7 +147,11 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 
 	res /= 2;
 	pix /= 2;
+	
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	BOX_BLUR(c.indirect_diffuse, indirect_diffuse, res, pix, INDIRECT_DIFFUSE_KERNEL);
+	}
+
 	BOX_BLUR(c.indirect_specular, indirect_specular, res, pix, INDIRECT_SPECULAR_KERNEL);
 
 	return c;
@@ -252,7 +259,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	const vec3 d0 = indirect_diffuse_c1 - indirect_diffuse_c0;
 	const vec3 d1 = indirect_diffuse_c2 - indirect_diffuse_c1;
 
-	// TODO(or not todo): The �-Trous paper mentions that it should be c2 + d1 + d0, but
+	// TODO(or not todo): The Á-Trous paper mentions that it should be c2 + d1 + d0, but
 	// it gives horrible artifacts. Either I'm misreading the paper, or something else is broken here,
 	// Using just c2 seems fine enough (although still not up to original paper image quality)
 	c.indirect_diffuse = indirect_diffuse_c2;// + d1 + d0;
@@ -308,9 +315,11 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				direct_diffuse_total += direct_diffuse_scale;
 
 				c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb * direct_diffuse_scale;
+				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
-			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
+			if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 &&
+				all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
 			{
 				// TODO indirect operates at different scale, do a separate pass
 				const float indirect_diffuse_scale = scale
@@ -451,10 +460,13 @@ void main() {
 		return;
 	}
 
-	vec3 indirect_diffuse_sh = imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
-
-	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse + indirect_diffuse_sh;
+	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
 	vec3 specular = c.direct_specular + c.indirect_specular;
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		diffuse += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+	}
+
 	{
 //#define DISABLE_TEMPORAL_DENOISER
 #ifndef DISABLE_TEMPORAL_DENOISER
@@ -556,7 +568,7 @@ void main() {
 	colour = LINEARtoSRGB(colour);
 
 // See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
-// Adding emissive_blend to the final color in the *incorrect* sRGB-? space. It makes
+// Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
 // it look much more like the original. Adding emissive in the *correct* linear space differs
 // from the original a lot, and looks perceptively worse.
 	colour += legacy_blend.rgb;
