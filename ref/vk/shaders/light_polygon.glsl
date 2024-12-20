@@ -208,7 +208,8 @@ void sampleSinglePolygonLight(in vec3 P, in vec3 N, in vec3 view_dir, in SampleC
 		return;
 
 	vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
-	evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
+	float specular_pdf = 0.;
+	evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular, specular_pdf);
 	const float estimate = light_sample_dir.w;
 	const vec3 emissive = poly.emissive * estimate;
 	diffuse += emissive * poly_diffuse;
@@ -278,7 +279,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 			//const float estimate = total_contrib;
 			const float estimate = light_sample_dir.w;
 			vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
-			evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
+			float specular_pdf = 0.;
+			evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular, specular_pdf);
 			diffuse += emissive * estimate * poly_diffuse;
 			specular += emissive * estimate * poly_specular;
 
@@ -345,7 +347,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 	const PolygonLight poly = lights.m.polygons[selected - 1];
 	const vec3 emissive = poly.emissive;
 	vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
-	evalSplitBRDF(N, normalize(poly.center-P), view_dir, material, poly_diffuse, poly_specular);
+	float specular_pdf = 0.;
+	evalSplitBRDF(N, normalize(poly.center-P), view_dir, material, poly_diffuse, poly_specular, specular_pdf);
 	diffuse += emissive * total_contrib;
 	specular += emissive * total_contrib;
 #else
@@ -367,7 +370,8 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 		//const float estimate = total_contrib;
 		const float estimate = light_sample_dir.w;
 		vec3 poly_diffuse = vec3(0.), poly_specular = vec3(0.);
-		evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
+		float specular_pdf = 0.;
+		evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular, specular_pdf);
 		diffuse += emissive * estimate;
 		specular += emissive * estimate;
 	}

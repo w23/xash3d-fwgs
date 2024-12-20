@@ -121,7 +121,7 @@ const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
 const float kRayNormalOffsetFudge = .01;
 
 ivec2 pix;
-void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular) {
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout float specularPdf) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
@@ -129,13 +129,17 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 
 	for (int i = 0; i < bouncesCount; ++i) {
 		vec3 bounce_direction;
+		float bounceSpecularPdf;
 
 		// TODO blue noise
 		const vec2 rnd = vec2(rand01(), rand01());
-		const int brdf_type = brdfGetSample(rnd, mat.prop, -direction, mat.geometry_normal, mat.shading_normal/* TODO, mat.base_color_a.a*/, bounce_direction, throughput);
+		const int brdf_type = brdfGetSample(rnd, mat.prop, -direction, mat.geometry_normal, mat.shading_normal/* TODO, mat.base_color_a.a*/, bounce_direction, throughput, bounceSpecularPdf);
 
 		if (brdf_type == BRDF_TYPE_NONE)
 			return;
+
+		if (i == 0)
+			specularPdf = bounceSpecularPdf;
 
 		if (IS_INVALIDV(throughput)) {
 #ifdef SHADER_DEBUG_ENABLE
@@ -262,6 +266,7 @@ void main() {
 
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
+	float specularPdf = 0.;
 	if (pos_t.w > 0.) {
 		const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
 		const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
@@ -288,7 +293,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 		}
 
-		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular);
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, specularPdf);
 
 		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
 			diffuse += specular;
@@ -302,7 +307,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 
 			vec3 unusedDiffuse = vec3(0.);
-			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular);
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, specularPdf);
 		}
 	}
 
@@ -322,5 +327,5 @@ void main() {
 #endif
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
-	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
+	imageStore(out_indirect_specular, pix, vec4(specular, specularPdf));
 }

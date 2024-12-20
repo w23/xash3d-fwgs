@@ -166,7 +166,8 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 		color *= one_over_pdf;
 
 		vec3 ldiffuse, lspecular;
-		evalSplitBRDF(N, light_dir, view_dir, material, ldiffuse, lspecular);
+		float specularPdf;
+		evalSplitBRDF(N, light_dir, view_dir, material, ldiffuse, lspecular, specularPdf);
 		ldiffuse *= color;
 		lspecular *= color;
 
