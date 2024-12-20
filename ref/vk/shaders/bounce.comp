@@ -121,13 +121,13 @@ const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
 const float kRayNormalOffsetFudge = .01;
 
 ivec2 pix;
-void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse, inout vec3 specular) {
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
 	int first_brdf_type = BRDF_TYPE_NONE;
 
-	for (int i = 0; i < kMaxBounces; ++i) {
+	for (int i = 0; i < bouncesCount; ++i) {
 		vec3 bounce_direction;
 
 		// TODO blue noise
@@ -288,7 +288,22 @@ void main() {
 			mat.prop.roughness = material_data.r;
 		}
 
-		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular);
+
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
+			diffuse += specular;
+			specular = vec3(0.);
+		}
+
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0) {
+			specular = vec3(0.);
+
+			mat.prop.metalness = 1.0;
+			mat.prop.roughness = material_data.r;
+
+			vec3 unusedDiffuse = vec3(0.);
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular);
+		}
 	}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -305,11 +320,6 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.diffuse", diffuse, 0., 1e6);
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.specular", specular, 0., 1e6);
 #endif
-
-	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
-		diffuse += specular;
-		specular = vec3(0.);
-	}
 
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
