@@ -32,7 +32,8 @@ layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
-layout(set = 0, binding = 22, rgba16f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
+layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
+layout(set = 0, binding = 23, rgba32f) uniform writeonly image2D out_reflection_direction_pdf; // for spartial reconstruction
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -121,7 +122,7 @@ const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
 const float kRayNormalOffsetFudge = .01;
 
 ivec2 pix;
-void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout float specularPdf) {
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout float specularPdf, inout vec3 first_bounce_direction) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
@@ -227,7 +228,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 			specular += contribution;
 
 		if (i == 0)
-			imageStore(out_first_bounce_direction, pix, vec4(normalize(bounce_direction), 0.f)); // for spherical harmonics denoising
+			first_bounce_direction = bounce_direction;
 
 		if (!did_hit)
 			break;
@@ -266,6 +267,7 @@ void main() {
 
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
+	vec3 first_bounce_direction = vec3(0.), reflection_direction = vec3(0.);
 	float specularPdf = 0.;
 	if (pos_t.w > 0.) {
 		const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
@@ -293,7 +295,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 		}
 
-		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, specularPdf);
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, specularPdf, first_bounce_direction);
 
 		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
 			diffuse += specular;
@@ -307,7 +309,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 
 			vec3 unusedDiffuse = vec3(0.);
-			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, specularPdf);
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, specularPdf, reflection_direction);
 		}
 	}
 
@@ -326,6 +328,12 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.specular", specular, 0., 1e6);
 #endif
 
+	if (any(equal(reflection_direction, vec3(0.)))) {
+		reflection_direction = first_bounce_direction;
+	}
+
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
-	imageStore(out_indirect_specular, pix, vec4(specular, specularPdf));
+	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
+	imageStore(out_first_bounce_direction, pix, vec4(first_bounce_direction, 0.f)); // for spherical harmonics denoising
+	imageStore(out_reflection_direction_pdf, pix, vec4(reflection_direction, specularPdf)); // for spartial reconstruction
 }

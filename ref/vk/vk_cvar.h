@@ -30,6 +30,7 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_separated_reflection) \
 	X(rt_denoise_gi_by_sh) \
 	X(rt_disable_gi) \
+	X(rt_spartial_reconstruction) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

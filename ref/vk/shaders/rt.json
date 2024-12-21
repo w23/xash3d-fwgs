@@ -62,6 +62,9 @@
 	"indiff_sh_save": {
 		"comp": "diffuse_gi_sh_denoise_save"
 	},
+	"spartial_reconstruction": {
+		"comp": "spartial_reconstruction"
+	},
 	"denoiser": {
 		"comp": "denoiser"
 	},
