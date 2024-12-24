@@ -6,8 +6,10 @@
 
 #include "debug.glsl"
 
+#define SPECULAR_CLAMPING_MAX 1.0
 #define SPATIAL_RECONSTRUCTION_SAMPLES 8
-#define SPARTIAL_RECONSTRUCTION_RADIUS 4.
+//#define SPATIAL_RECONSTRUCTION_SAMPLES 64
+#define SPARTIAL_RECONSTRUCTION_RADIUS 8.
 #define SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR 5.
 #define SPATIAL_RECONSTRUCTION_SIGMA 0.9
 #define INDIRECT_SCALE 2
@@ -105,39 +107,30 @@ float NormalDistribution_GGX(float NdotH, float AlphaRoughness)
 vec2 ComputeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float Weight)
 {
     vec4 RayDirectionPDF = imageLoad(reflection_direction_pdf, pix);
-    float InvRayLength = inversesqrt(dot(RayDirectionPDF.xyz, RayDirectionPDF.xyz));
-    if (isnan(InvRayLength))
-    {
-        return vec2(1.0e-6f, 1.0e-6f);
-    }
-    else
-    {
-        vec3 RayDirection = RayDirectionPDF.xyz * InvRayLength;
-        float PDF = RayDirectionPDF.w;
-        float AlphaRoughness = roughness * roughness;
+    float rayLength = length(RayDirectionPDF.xyz);
+    vec3 RayDirection = normalize(RayDirectionPDF.xyz);
+    float PDF = RayDirectionPDF.w;
+    float AlphaRoughness = roughness * roughness;
 
-        vec3 L = RayDirection;
-        vec3 H = normalize(L + V);
+    vec3 L = RayDirection;
+    vec3 H = normalize(L + V);
 
-        float NdotH = saturate(dot(N, H));
-        float NdotL = saturate(dot(N, L));
+    float NdotH = saturate(dot(N, H));
+    float NdotL = saturate(dot(N, L));
 
-        float Vis = SmithGGXVisibilityCorrelated(NdotL, NdotV, AlphaRoughness);
-        float D = NormalDistribution_GGX(NdotH, AlphaRoughness);
-        float LocalBRDF = Vis * D * NdotL;
-        LocalBRDF *= ComputeGaussianWeight(Weight);
-		float rcpRayLength = InvRayLength == 0. ? 0. : 1. / InvRayLength;
-        return vec2(max(LocalBRDF / max(PDF, 1.0e-5f), 1e-6), 1. / InvRayLength);
-    }
-
-	return vec2(0.);
+    float Vis = SmithGGXVisibilityCorrelated(NdotL, NdotV, AlphaRoughness);
+    float D = NormalDistribution_GGX(NdotH, AlphaRoughness);
+    float LocalBRDF = Vis * D * NdotL;
+    LocalBRDF *= ComputeGaussianWeight(Weight);
+    float rcpRayLength = rayLength == 0. ? 0. : 1. / rayLength;
+    return vec2(max(LocalBRDF / max(PDF, 1.0e-5f), 1e-6), rcpRayLength);
 }
 
 // Weighted incremental variance
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
-void ComputeWeightedVariance(inout PixelAreaStatistic Stat, vec4 SampleColor, float Weight)
+void ComputeWeightedVariance(inout PixelAreaStatistic Stat, vec3 SampleColor, float Weight)
 {
-    Stat.ColorSum += Weight * SampleColor;
+    Stat.ColorSum.xyz += Weight * SampleColor;
     Stat.WeightSum += Weight;
 
     float Value = luminance(SampleColor.rgb);
@@ -167,6 +160,15 @@ float ComputeSpatialWeight(float Distance, float Sigma)
     return exp(-(Distance) / (2.0 * Sigma * Sigma));
 }
 
+vec3 clampSpecular(vec3 specular, float maxLuminace) {
+    float lum = luminance(specular);
+    if (lum == 0.)
+        return vec3(0.);
+
+    float clamped = min(maxLuminace, lum);
+    return specular * (clamped / lum);
+}
+
 void main() {
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
 	const ivec2 res = ubo.ubo.res / INDIRECT_SCALE;
@@ -182,7 +184,7 @@ void main() {
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
 	
 	const vec3 origin = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
-	const vec3 position = imageLoad(position_t, pix).xyz;
+	const vec3 position = imageLoad(position_t, pix * INDIRECT_SCALE).xyz;
 
     // samples = 8, min distance = 0.5, average samples on radius = 2
     vec3 Poisson[SPATIAL_RECONSTRUCTION_SAMPLES];
@@ -196,12 +198,12 @@ void main() {
     Poisson[7] = vec3(+0.1564120, -0.8198990, +0.8346850);
 
 	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
+	readNormals(pix * INDIRECT_SCALE, geometry_normal, shading_normal);
 
     vec3 V = normalize(origin - position);
     float NdotV = saturate(dot(shading_normal, V));
 
-    float roughness = imageLoad(material_rmxx, pix).x;
+    float roughness = imageLoad(material_rmxx, pix * INDIRECT_SCALE).x;
 
     float roughness_factor = saturate(float(SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR) * roughness);
     float radius = mix(0.0, SPARTIAL_RECONSTRUCTION_RADIUS, roughness_factor);
@@ -222,15 +224,11 @@ void main() {
     for (int SampleIdx = 0; SampleIdx < SPATIAL_RECONSTRUCTION_SAMPLES; SampleIdx++)
     {
 		vec2 Xi = Poisson[SampleIdx].xy;
-        //vec2 Xi = RotateVector(Rotator, Poisson[SampleIdx].xy); // TODO: rotate samples
-// #ifdef SSR_OPTION_HALF_RESOLUTION
-//         ivec2 SampleCoord = ClampScreenCoord(ivec2(0.5 * (vec2(pix) + radius * Xi) + vec2(0.5, 0.5)), ivec2(res));
-// #else
-        ivec2 SampleCoord = ClampScreenCoord(ivec2(vec2(pix) + radius * Xi), res);
-//#endif
+        ivec2 SampleCoord = max(ivec2(0), min(ivec2(res) - ivec2(1), ivec2(pix + radius * Xi))); 
+
         float WeightS = ComputeSpatialWeight(Poisson[SampleIdx].z * Poisson[SampleIdx].z, SPATIAL_RECONSTRUCTION_SIGMA);
         vec2 WeightLength = ComputeWeightRayLength(SampleCoord, V, shading_normal, roughness, NdotV, WeightS);
-        vec4 SampleColor = imageLoad(indirect_specular, SampleCoord);
+        vec3 SampleColor = clampSpecular(imageLoad(indirect_specular, SampleCoord).xyz, SPECULAR_CLAMPING_MAX);
         ComputeWeightedVariance(PixelAreaStat, SampleColor, WeightLength.x);
 
         if (WeightLength.x > 1.0e-6)

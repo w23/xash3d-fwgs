@@ -305,6 +305,7 @@ void main() {
 		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0) {
 			specular = vec3(0.);
 
+			mat.prop.base_color = vec3(1.);
 			mat.prop.metalness = 1.0;
 			mat.prop.roughness = material_data.r;
 

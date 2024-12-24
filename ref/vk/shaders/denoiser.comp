@@ -562,6 +562,8 @@ void main() {
 		colour = diffuse + specular;
 	}
 
+	colour = imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb; // DEBUG!
+
 	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
 
 	colour += imageLoad(emissive, pix).rgb;
