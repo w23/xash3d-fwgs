@@ -29,25 +29,25 @@ layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
 
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
 layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
-//layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular;
 layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular_reconstructed;
 layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
+layout(set = 0, binding = 16, rgba32f) uniform readonly image2D reflection_direction_pdf;
 
-layout(set = 0, binding = 16, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 17, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 18, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 19, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 19, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 20, rgba16f) uniform image2D prev_temporal_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 20) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 21) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 21, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
 
-//layout(set = 0, binding = 22) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
 
 #include "atrous.glsl"
 
@@ -87,6 +87,12 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
 	geometry_normal = normalDecode(n.xy);
 	shading_normal = normalDecode(n.zw);
+}
+
+vec3 closestColor(vec3 color1, vec3 color2, vec3 sampleColor) {
+    float dist1 = dot(color1 - sampleColor, color1 - sampleColor);
+    float dist2 = dot(color2 - sampleColor, color2 - sampleColor);
+    return (dist1 < dist2) ? color1 : color2;
 }
 
 struct Components {
@@ -522,6 +528,54 @@ void main() {
 			}
 		}
 
+		// parallax reprojecting for specular
+		float average_ray_length = 0.;
+		float ray_length_samples_count = 0.;
+		for(int x = -TEMPORAL_KERNEL; x <=TEMPORAL_KERNEL; x++) {
+			for(int y = -TEMPORAL_KERNEL; y <=TEMPORAL_KERNEL; y++) {
+				const ivec2 p = pix / INDIRECT_SCALE + ivec2(x, y);
+				if (any(greaterThanEqual(p, res / INDIRECT_SCALE)) || any(lessThan(p, ivec2(0)))) {
+					continue;
+				}
+
+				average_ray_length += length(imageLoad( reflection_direction_pdf, p ).xyz);
+				ray_length_samples_count += 1.;
+			}
+		}
+		if (ray_length_samples_count > 0. && average_ray_length > 0.) {
+			average_ray_length /= ray_length_samples_count;
+
+			//	origin (camera)
+			//	       []<          reflection destination
+			//		 	| \        (UwU) (reflected in
+			//			|   \     /  |    surface texel)
+			//			|     \ /    |
+			//	--------x------x-----x------------
+			//	origin on      ^   reflection on plane
+			//	   plane	   |
+			//				reflection center
+			//		(surface texel in current frame)
+			//	  (need to find this in previous frame)
+			//		
+
+			const vec3 refl_position = reflect(normalize(position - origin), geometry_normal) * average_ray_length + position;
+			const float refl_distance_to_plane = dot(geometry_normal, refl_position - prev_position);
+			const vec3 refl_on_plane = refl_position - geometry_normal * refl_distance_to_plane;
+			const float prev_distance_to_plane = dot(geometry_normal, prev_origin - prev_position);
+			const vec3 prev_origin_on_plane = prev_origin - geometry_normal * prev_distance_to_plane;
+			const float refl_center = prev_distance_to_plane / (prev_distance_to_plane + refl_distance_to_plane);
+			const vec3 parallax_position = mix(prev_origin_on_plane, refl_on_plane, refl_center);
+
+			const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(parallax_position, 1.)).xyz, 1.);
+			const vec2 parallax_uv = clip_space.xy / clip_space.w;
+			const ivec2 parallax_pix = ivec2((parallax_uv * 0.5 + vec2(0.5)) * vec2(res));
+
+			if (any(greaterThanEqual(parallax_pix, ivec2(0))) && any(lessThan(parallax_pix, res))) {
+				const vec4 history_specular_sample = imageLoad( prev_temporal_specular, parallax_pix );
+				history_specular = closestColor(history_specular_sample.xyz, history_specular, specular);
+			}
+		}
+
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALIDV(history_specular)) {
 			debugPrintfEXT("PRE pix=(%d,%d) history_specular=inv", pix.x, pix.y);
@@ -536,7 +590,7 @@ void main() {
 
 		if (better_depth_offset < depth_treshold) {
 			diffuse = mix(diffuse, history_diffuse, 0.8);
-			specular = mix(specular, history_specular, 0.3);
+			specular = mix(specular, history_specular, 0.8);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA

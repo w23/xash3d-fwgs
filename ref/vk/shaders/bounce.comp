@@ -228,7 +228,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 			specular += contribution;
 
 		if (i == 0)
-			first_bounce_direction = bounce_direction;
+			first_bounce_direction = hit_pos - pos;
 
 		if (!did_hit)
 			break;
