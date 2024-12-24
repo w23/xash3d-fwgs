@@ -411,6 +411,8 @@ void main() {
 		return;
 	}
 
+	const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
+
 	const vec3 position = imageLoad(position_t, pix).xyz;
 
 	const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
@@ -479,9 +481,7 @@ void main() {
 	}
 
 	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
-	//vec3 specular = c.direct_specular + c.indirect_specular;
-
-	vec3 specular = c.direct_specular + imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb;
+	vec3 specular = c.direct_specular + c.indirect_specular;
 
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
 		diffuse += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
@@ -491,7 +491,6 @@ void main() {
 //#define DISABLE_TEMPORAL_DENOISER
 #ifndef DISABLE_TEMPORAL_DENOISER
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
-		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth = length(origin - position);
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(prev_position, 1.)).xyz, 1.);
