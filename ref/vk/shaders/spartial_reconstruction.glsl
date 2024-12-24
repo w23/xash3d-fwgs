@@ -1,19 +1,22 @@
-#version 460 core
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_EXT_shader_16bit_storage : require
-#extension GL_EXT_ray_query: require
+#ifndef SPARTIAL_RECONSTRUCTION_RADIUS
+#define SPARTIAL_RECONSTRUCTION_RADIUS 7.
+#endif
+
+#ifndef SPECULAR_INPUT_IMAGE
+#define SPECULAR_INPUT_IMAGE indirect_specular
+#endif
+
+#ifndef SPECULAR_OUTPUT_IMAGE
+#define SPECULAR_OUTPUT_IMAGE out_indirect_specular_reconstructed
+#endif
 
 #include "debug.glsl"
 
-#define SPECULAR_CLAMPING_MAX 1.0
+#define SPECULAR_CLAMPING_MAX 1.2
 #define SPATIAL_RECONSTRUCTION_SAMPLES 8
-//#define SPATIAL_RECONSTRUCTION_SAMPLES 64
-#define SPARTIAL_RECONSTRUCTION_RADIUS 8.
 #define SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR 5.
 #define SPATIAL_RECONSTRUCTION_SIGMA 0.9
 #define INDIRECT_SCALE 2
-//#define SSR_OPTION_HALF_RESOLUTION 1
 
 #define GLSL
 #include "ray_interop.h"
@@ -23,12 +26,12 @@
 #define RAY_QUERY
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rgba16f) uniform image2D out_indirect_specular_reconstructed;
+layout(set = 0, binding = 0, rgba16f) uniform image2D SPECULAR_OUTPUT_IMAGE;
 
 layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
 layout(set = 0, binding = 3, rgba8) uniform readonly image2D material_rmxx;
-layout(set = 0, binding = 4, rgba16f) uniform readonly image2D indirect_specular;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D SPECULAR_INPUT_IMAGE;
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D reflection_direction_pdf;
 
 layout(set = 0, binding = 6) uniform UBO { UniformBuffer ubo; } ubo;
@@ -145,8 +148,6 @@ void ComputeWeightedVariance(inout PixelAreaStatistic Stat, vec3 SampleColor, fl
 float ComputeResolvedDepth(vec3 origin, vec3 PositionWS, float SurfaceHitDistance)
 {
 	return distance(origin, PositionWS) + SurfaceHitDistance;
-    //float CameraSurfaceDistance = distance(origin, PositionWS) + SurfaceHitDistance;
-    //return CameraZToDepth(CameraSurfaceDistance + SurfaceHitDistance, g_Camera.mProj);
 }
 
 ivec2 ClampScreenCoord(ivec2 pix, ivec2 res)\
@@ -177,7 +178,7 @@ void main() {
 	}
 
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SPARTIAL_RECONSTRUCTION) == 0) {
-	    imageStore(out_indirect_specular_reconstructed, pix, imageLoad(indirect_specular, pix));
+	    imageStore(SPECULAR_OUTPUT_IMAGE, pix, imageLoad(SPECULAR_INPUT_IMAGE, pix));
         return;
     }
 
@@ -207,7 +208,6 @@ void main() {
 
     float roughness_factor = saturate(float(SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR) * roughness);
     float radius = mix(0.0, SPARTIAL_RECONSTRUCTION_RADIUS, roughness_factor);
-    //vec4 Rotator = ComputeBlurKernelRotation(pix, g_Camera.uiFrameIndex);
 
     PixelAreaStatistic PixelAreaStat;
     PixelAreaStat.ColorSum = vec4(0.0, 0.0, 0.0, 0.0);
@@ -228,7 +228,7 @@ void main() {
 
         float WeightS = ComputeSpatialWeight(Poisson[SampleIdx].z * Poisson[SampleIdx].z, SPATIAL_RECONSTRUCTION_SIGMA);
         vec2 WeightLength = ComputeWeightRayLength(SampleCoord, V, shading_normal, roughness, NdotV, WeightS);
-        vec3 SampleColor = clampSpecular(imageLoad(indirect_specular, SampleCoord).xyz, SPECULAR_CLAMPING_MAX);
+        vec3 SampleColor = clampSpecular(imageLoad(SPECULAR_INPUT_IMAGE, SampleCoord).xyz, SPECULAR_CLAMPING_MAX);
         ComputeWeightedVariance(PixelAreaStat, SampleColor, WeightLength.x);
 
         if (WeightLength.x > 1.0e-6)
@@ -246,5 +246,5 @@ void main() {
     float ResolvedVariance = PixelAreaStat.Variance / max(PixelAreaStat.WeightSum, 1e-6f);
     float ResolvedDepth = ComputeResolvedDepth(origin, position, NearestSurfaceHitDistance);
 
-	imageStore(out_indirect_specular_reconstructed, pix, vec4(ResolvedRadiance.xyz, ResolvedVariance));
+	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(ResolvedRadiance.xyz, ResolvedVariance));
 }

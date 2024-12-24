@@ -158,7 +158,14 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 	return c;
 }
 
-Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal) {
+vec3 restoreSpecular(vec3 decolorized_specular, vec3 base_color, float metalness) {
+	// TODO: add fresnel and do like PBR
+	const vec3 plasticSpecular = decolorized_specular * 0.02;
+	const vec3 metalSpecular = decolorized_specular * base_color;
+	return mix(plasticSpecular, metalSpecular, metalness);
+}
+
+Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal, vec3 base_color, float metalness) {
 	Components c;
 	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
@@ -238,7 +245,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					const bool do_indirect = all(lessThan(p_scaled, res_scaled));
 					if (do_indirect) {
 						weight_total_indirect_specular += weight;
-						c.indirect_specular += imageLoad(indirect_specular_reconstructed, p_scaled).rgb * weight;
+						c.indirect_specular += restoreSpecular(imageLoad(indirect_specular_reconstructed, p_scaled).rgb, base_color, metalness) * weight;
 					}
 				}
 			}
@@ -399,6 +406,10 @@ void main() {
 	}
 
 	const vec3 position = imageLoad(position_t, pix).xyz;
+
+	const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
+	const float metalness = imageLoad(material_rmxx, pix).g;
+
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
 
@@ -431,7 +442,7 @@ void main() {
 	//const Components c = blurSamples(res, pix);
 	//const Components c = boxBlurSamples(res, pix);
 	//const Components c = dontBlurSamples(res, pix);
-	const Components c = blurATrous(res, pix, position, shading_normal, geometry_normal);
+	const Components c = blurATrous(res, pix, position, shading_normal, geometry_normal, base_color, metalness);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
@@ -483,7 +494,7 @@ void main() {
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth_nessesary = length(prev_position - prev_origin);
 		const float depth_treshold = 0.01 * clip_space.w;
-
+		
 		float better_depth_offset = depth_treshold;
 		vec3 history_diffuse = diffuse;
 		vec3 history_specular = specular;
@@ -555,14 +566,10 @@ void main() {
 	vec3 colour = vec3(0.);
 
 	if (ubo.ubo.debug_display_only != DEBUG_DISPLAY_LIGHTING) {
-		const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
-		const float metalness = imageLoad(material_rmxx, pix).g;
 		colour = mixFinalColor(base_color, diffuse, specular, metalness);
 	} else {
 		colour = diffuse + specular;
 	}
-
-	colour = imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb; // DEBUG!
 
 	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
 
