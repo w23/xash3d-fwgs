@@ -130,7 +130,7 @@ struct Kusok {
 };
 
 struct PointLight {
-	vec4 origin_r2; // vec4(center.xyz, radius�)
+	vec4 origin_r2; // vec4(center.xyz, radius²)
 	vec4 color_stopdot;
 	vec4 dir_stopdot2;
 
