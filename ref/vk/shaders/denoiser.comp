@@ -7,6 +7,10 @@
 #include "ray_interop.h"
 #undef GLSL
 
+#define DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT 0.8
+#define SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT 0.8
+#define DIELECTRIC_SPECULAR_MULTIPLIER 0.02 // default value from pbr papers, but 0.04 in Unreal Engine
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform image2D out_dest;
@@ -166,7 +170,7 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 
 vec3 restoreSpecular(vec3 decolorized_specular, vec3 base_color, float metalness) {
 	// TODO: add fresnel and do like PBR
-	const vec3 plasticSpecular = decolorized_specular * 0.02;
+	const vec3 plasticSpecular = decolorized_specular * DIELECTRIC_SPECULAR_MULTIPLIER;
 	const vec3 metalSpecular = decolorized_specular * base_color;
 	return mix(plasticSpecular, metalSpecular, metalness);
 }
@@ -501,35 +505,26 @@ void main() {
 		float better_depth_offset = depth_treshold;
 		vec3 history_diffuse = diffuse;
 		vec3 history_specular = specular;
-		const int TEMPORAL_KERNEL = 1; // lifekilled says it should be fixed
-		for(int x = -TEMPORAL_KERNEL; x <=TEMPORAL_KERNEL; x++) {
-			for(int y = -TEMPORAL_KERNEL; y <=TEMPORAL_KERNEL; y++) {
-				const ivec2 p = reproj_pix + ivec2(x, y);
-				if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
-					continue;
-				}
+		
+		if (any(greaterThanEqual(reproj_pix, ivec2(0))) && any(lessThan(reproj_pix, res))) {			
+			const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
+			const vec4 history_specular_sample = imageLoad( prev_temporal_specular, reproj_pix );
 
-				if (any(greaterThanEqual(reproj_pix, res)) || any(lessThan(reproj_pix, ivec2(0)))) {
-					continue;
-				}
-				const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
-				const vec4 history_specular_sample = imageLoad( prev_temporal_specular, reproj_pix );
-
-				const float history_depth = history_diffuse_depth.w;
-				const float depth_offset = abs(history_depth - depth_nessesary);
-				if ( depth_offset < better_depth_offset ) {
-					better_depth_offset = depth_offset;
-					history_diffuse = history_diffuse_depth.rgb;
-					history_specular = history_specular_sample.rgb;
-				}
+			const float history_depth = history_diffuse_depth.w;
+			const float depth_offset = abs(history_depth - depth_nessesary);
+			if ( depth_offset < better_depth_offset ) {
+				better_depth_offset = depth_offset;
+				history_diffuse = history_diffuse_depth.rgb;
+				history_specular = history_specular_sample.rgb;
 			}
 		}
 
 		// parallax reprojecting for specular
 		float average_ray_length = 0.;
 		float ray_length_samples_count = 0.;
-		for(int x = -TEMPORAL_KERNEL; x <=TEMPORAL_KERNEL; x++) {
-			for(int y = -TEMPORAL_KERNEL; y <=TEMPORAL_KERNEL; y++) {
+		const int AVERAGE_RAY_LENGTH_KERNEL = 1;
+		for(int x = -AVERAGE_RAY_LENGTH_KERNEL; x <=AVERAGE_RAY_LENGTH_KERNEL; x++) {
+			for(int y = -AVERAGE_RAY_LENGTH_KERNEL; y <=AVERAGE_RAY_LENGTH_KERNEL; y++) {
 				const ivec2 p = pix / INDIRECT_SCALE + ivec2(x, y);
 				if (any(greaterThanEqual(p, res / INDIRECT_SCALE)) || any(lessThan(p, ivec2(0)))) {
 					continue;
@@ -586,8 +581,8 @@ void main() {
 #endif
 
 		if (better_depth_offset < depth_treshold) {
-			diffuse = mix(diffuse, history_diffuse, 0.8);
-			specular = mix(specular, history_specular, 0.8);
+			diffuse = mix(diffuse, history_diffuse, DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT);
+			specular = mix(specular, history_specular, SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA

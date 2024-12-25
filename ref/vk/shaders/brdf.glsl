@@ -189,7 +189,7 @@ void brdfComputeGltfModel(vec3 N, vec3 L, vec3 V, MaterialProperties material, o
 #endif
 }
 
-void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular, out float out_specular_pdf) {
+void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 out_diffuse, out vec3 out_specular) {
 	out_diffuse = vec3(0.);
 	out_specular = vec3(0.);
 
@@ -347,7 +347,7 @@ vec3 SampleGGXReflection ( vec3 i , vec2 alpha , vec2 rand ) {
 #define BRDF_TYPE_DIFFUSE 1
 #define BRDF_TYPE_SPECULAR 2
 
-int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, /*float alpha, */out vec3 out_direction, inout vec3 inout_throughput, inout float inout_specular_pdf) {
+int brdfGetSample(vec2 rnd, MaterialProperties material, vec3 view, vec3 geometry_normal, vec3 shading_normal, /*float alpha, */out vec3 out_direction, inout vec3 inout_throughput) {
 #if 1
 	// See SELECTING BRDF LOBES in 14.3.6 RT Gems 2
 	// TODO DRY brdfComputeGltfModel
@@ -429,8 +429,7 @@ if (g_mat_gltf2) {
 
 		const vec2 u = vec2(rand01(), rand01());
 		vec3 brdf_weight = vec3(0.);
-		float inout_specular_pdf = 0.;
-		if (!evalIndirectCombinedBRDF(u, shading_normal, geometry_normal, -direction, material, brdf_type, bounce_direction, brdf_weight, inout_specular_pdf))
+		if (!evalIndirectCombinedBRDF(u, shading_normal, geometry_normal, -direction, material, brdf_type, bounce_direction, brdf_weight))
 			return false;
 		throughput *= brdf_weight;
 	}

@@ -907,7 +907,7 @@ vec3 evalCombinedBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material) {
 }
 
 // This is an entry point for evaluation of all other BRDFs based on selected configuration (for indirect light)
-bool evalIndirectCombinedBRDF(vec2 u, vec3 shadingNormal, vec3 geometryNormal, vec3 V, MaterialProperties material, const int brdfType, OUT_PARAMETER(vec3) rayDirection, OUT_PARAMETER(vec3) sampleWeight, OUT_PARAMETER(float) reflectionPdf) {
+bool evalIndirectCombinedBRDF(vec2 u, vec3 shadingNormal, vec3 geometryNormal, vec3 V, MaterialProperties material, const int brdfType, OUT_PARAMETER(vec3) rayDirection, OUT_PARAMETER(vec3) sampleWeight) {
 
 	// Ignore incident ray coming from "below" the hemisphere
 	if (dot(shadingNormal, V) <= 0.0f) return false;
@@ -938,12 +938,9 @@ bool evalIndirectCombinedBRDF(vec2 u, vec3 shadingNormal, vec3 geometryNormal, v
 		sampleWeight *= (vec3(1.0f, 1.0f, 1.0f) - evalFresnel(data.specularF0, shadowedF90(data.specularF0), VdotH));
 #endif
 
-		reflectionPdf = 0.0;
-
 	} else if (brdfType == SPECULAR_TYPE) {
 		const BrdfData data = prepareBRDFData(Nlocal, vec3(0.0f, 0.0f, 1.0f) /* unused L vector */, Vlocal, material);
 		rayDirectionLocal = sampleSpecular(Vlocal, data.alpha, data.alphaSquared, data.specularF0, u, sampleWeight);
-		reflectionPdf = specularPdf(data.alpha, data.alphaSquared, data.NdotH, data.NdotV, data.LdotH);
 	}
 
 	// Prevent tracing direction with no contribution

@@ -4,8 +4,8 @@
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_ray_query: require
 
-#define SPARTIAL_RECONSTRUCTION_RADIUS 5.
+#define SPATIAL_RECONSTRUCTION_RADIUS 5.
 #define SPECULAR_INPUT_IMAGE indirect_specular_reconstructed_pass1
 #define SPECULAR_OUTPUT_IMAGE out_indirect_specular_reconstructed
 
-#include "spartial_reconstruction.glsl"
+#include "spatial_reconstruction.glsl"

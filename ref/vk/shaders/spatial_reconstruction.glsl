@@ -1,8 +1,8 @@
 // originally implemented by Mikhail Gorobets for Diligent Engine
 // https://github.com/DiligentGraphics/DiligentEngine
 
-#ifndef SPARTIAL_RECONSTRUCTION_RADIUS
-#define SPARTIAL_RECONSTRUCTION_RADIUS 7.
+#ifndef SPATIAL_RECONSTRUCTION_RADIUS
+#define SPATIAL_RECONSTRUCTION_RADIUS 7.
 #endif
 
 #ifndef SPECULAR_INPUT_IMAGE
@@ -165,7 +165,7 @@ void main() {
 		return;
 	}
 
-	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SPARTIAL_RECONSTRUCTION) == 0) {
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SPATIAL_RECONSTRUCTION) == 0) {
 		imageStore(SPECULAR_OUTPUT_IMAGE, pix, imageLoad(SPECULAR_INPUT_IMAGE, pix));
 		return;
 	}
@@ -195,7 +195,7 @@ void main() {
 	float roughness = imageLoad(material_rmxx, pix * INDIRECT_SCALE).x;
 
 	float roughness_factor = saturate(float(SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR) * roughness);
-	float radius = mix(0.0, SPARTIAL_RECONSTRUCTION_RADIUS, roughness_factor);
+	float radius = mix(0.0, SPATIAL_RECONSTRUCTION_RADIUS, roughness_factor);
 
 	PixelAreaStatistic pixelAreaStat;
 	pixelAreaStat.colorSum = vec4(0.0, 0.0, 0.0, 0.0);
