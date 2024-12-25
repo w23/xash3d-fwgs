@@ -130,7 +130,7 @@ struct Kusok {
 };
 
 struct PointLight {
-	vec4 origin_r2; // vec4(center.xyz, radius²)
+	vec4 origin_r2; // vec4(center.xyz, radiusÂ²)
 	vec4 color_stopdot;
 	vec4 dir_stopdot2;
 
@@ -197,6 +197,7 @@ struct LightCluster {
 #define RENDERER_FLAG_SEPARATED_REFLECTION (1<<1)
 #define RENDERER_FLAG_DENOISE_GI_BY_SH (1<<2)
 #define RENDERER_FLAG_DISABLE_GI (1<<3)
+#define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;

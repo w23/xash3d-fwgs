@@ -62,6 +62,12 @@
 	"indiff_sh_save": {
 		"comp": "diffuse_gi_sh_denoise_save"
 	},
+	"spatial_reconstruction_pass1": {
+		"comp": "spatial_reconstruction_pass1"
+	},
+	"spatial_reconstruction_pass2": {
+		"comp": "spatial_reconstruction_pass2"
+	},
 	"denoiser": {
 		"comp": "denoiser"
 	},

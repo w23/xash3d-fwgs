@@ -272,7 +272,8 @@ static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int fr
 	ubo->renderer_flags = SET_RENDERER_FLAG(rt_only_diffuse_gi, RENDERER_FLAG_ONLY_DIFFUSE_GI) |
 						  SET_RENDERER_FLAG(rt_separated_reflection, RENDERER_FLAG_SEPARATED_REFLECTION) |
 						  SET_RENDERER_FLAG(rt_denoise_gi_by_sh, RENDERER_FLAG_DENOISE_GI_BY_SH) |
-						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI);
+						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI) |
+						  SET_RENDERER_FLAG(rt_spatial_reconstruction, RENDERER_FLAG_SPATIAL_RECONSTRUCTION);
 
 #undef SET_RENDERER_FLAG
 }
