@@ -8,7 +8,14 @@
 #include "crtlib.h"
 
 #define ASSERT(x) if(!( x )) gEngine.Host_Error( "assert %s failed at %s:%d\n", #x, __FILE__, __LINE__ )
-// TODO ASSERTF(x, fmt, ...)
+
+#define ASSERTF(x, fmt, ...) \
+	do { \
+		if(!(x)) \
+		{ \
+			gEngine.Host_Error("assert %s failed at %s:%d msg:" fmt "\n", #x, __FILE__, __LINE__, ##__VA_ARGS__); \
+		} \
+	} while(0) 
 
 #define Mem_Malloc( pool, size ) gEngine._Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
 #define Mem_Calloc( pool, size ) gEngine._Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
