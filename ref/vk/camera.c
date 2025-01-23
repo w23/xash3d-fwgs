@@ -81,8 +81,8 @@ void R_SetupCamera( const ref_viewpass_t *rvp )
 #define RP_NORMALPASS() true // FIXME ???
 	if( RP_NORMALPASS() && ( gEngine.EngineGetParm( PARM_WATER_LEVEL, 0 ) >= 3 ))
 	{
-		g_camera.fov_x = atan( tan( DEG2RAD( g_camera.fov_x ) / 2 ) * ( 0.97f + sin( gpGlobals->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
-		g_camera.fov_y = atan( tan( DEG2RAD( g_camera.fov_y ) / 2 ) * ( 1.03f - sin( gpGlobals->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
+		g_camera.fov_x = atan( tan( DEG2RAD( g_camera.fov_x ) / 2 ) * ( 0.97f + sin( gp_cl->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
+		g_camera.fov_y = atan( tan( DEG2RAD( g_camera.fov_y ) / 2 ) * ( 1.03f - sin( gp_cl->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
 	}
 
 	// build the transformation matrix for the given view angles

@@ -67,9 +67,9 @@ extern uint32_t g_log_debug_bits;
 	do { \
 		static int called = 0; \
 		static double next_message_time = 0.; \
-		if (gpGlobals->realtime > next_message_time) { \
+		if (gp_host->realtime > next_message_time) { \
 			gEngine.Con_Printf( prefix "(x%d) " msg "\n", called, ##__VA_ARGS__ ); \
-			next_message_time = gpGlobals->realtime + delay; \
+			next_message_time = gp_host->realtime + delay; \
 		} \
 		++called; \
 	} while(0)

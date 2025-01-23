@@ -609,7 +609,7 @@ static uint32_t writeDlightsToUBO( void )
 	// TODO this should not be here (where? vk_scene?)
 	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
 		const dlight_t *l = gEngine.GetDynamicLight(i);
-		if( !l || l->die < gpGlobals->time || !l->radius )
+		if( !l || l->die < gp_cl->time || !l->radius )
 			continue;
 		Vector4Set(
 			ubo_lights->light[num_lights].color,

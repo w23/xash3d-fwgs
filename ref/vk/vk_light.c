@@ -1370,7 +1370,7 @@ void RT_LightsFrameEnd( void ) {
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
 		const dlight_t *dlight = gEngine.GetDynamicLight(i);
-		if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
+		if( !dlight || dlight->die < gp_cl->time || !dlight->radius )
 			continue;
 
 		if (addDlight(dlight))

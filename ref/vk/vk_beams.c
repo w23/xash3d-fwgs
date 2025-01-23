@@ -582,7 +582,7 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime, const vec4_t color )
 	if( pnew )
 	{
 		VectorCopy( pbeam->source, pnew->org );
-		pnew->die = gpGlobals->time + pbeam->amplitude;
+		pnew->die = gp_cl->time + pbeam->amplitude;
 		VectorClear( pnew->vel );
 
 		pnew->next = particles;
@@ -629,7 +629,7 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime, const vec4_t color )
 	VectorMA( delta, -pbeam->width, normal, last2 );
 
 	div = 1.0f / pbeam->amplitude;
-	fraction = ( pbeam->die - gpGlobals->time ) * div;
+	fraction = ( pbeam->die - gp_cl->time ) * div;
 
 	vLast = 0.0f;
 	vStep = 1.0f;
@@ -663,7 +663,7 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime, const vec4_t color )
 
 		if( particles->next != NULL )
 		{
-			fraction = (particles->die - gpGlobals->time) * div;
+			fraction = (particles->die - gp_cl->time) * div;
 		}
 		else
 		{
@@ -890,7 +890,7 @@ static qboolean R_BeamRecomputeEndpoints( BEAM *pbeam )
 		else if( !FBitSet( pbeam->flags, FBEAM_FOREVER ))
 		{
 			ClearBits( pbeam->flags, FBEAM_ENDENTITY );
-			pbeam->die = gpGlobals->time;
+			pbeam->die = gp_cl->time;
 			return false;
 		}
 		else
@@ -926,7 +926,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 	if( !model || model->type != mod_sprite )
 	{
 		pbeam->flags &= ~FBEAM_ISACTIVE; // force to ignore
-		pbeam->die = gpGlobals->time;
+		pbeam->die = gp_cl->time;
 		return;
 	}
 
@@ -986,7 +986,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 	if( pbeam->flags & ( FBEAM_FADEIN|FBEAM_FADEOUT ))
 	{
 		// update life cycle
-		pbeam->t = pbeam->freq + ( pbeam->die - gpGlobals->time );
+		pbeam->t = pbeam->freq + ( pbeam->die - gp_cl->time );
 		if( pbeam->t != 0.0f ) pbeam->t = 1.0f - pbeam->freq / pbeam->t;
 	}
 
@@ -1034,7 +1034,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 
 	render_mode = FBitSet( pbeam->flags, FBEAM_SOLID ) ? kRenderNormal : kRenderTransAdd;
 
-	texturenum = R_GetSpriteTexture( model, (int)(pbeam->frame + pbeam->frameRate * gpGlobals->time) % pbeam->frameCount);
+	texturenum = R_GetSpriteTexture( model, (int)(pbeam->frame + pbeam->frameRate * gp_cl->time) % pbeam->frameCount);
 	if( texturenum <= 0 ) // FIXME VK || texturenum > MAX_TEXTURES )
 	{
 		ClearBits( pbeam->flags, FBEAM_ISACTIVE );
@@ -1140,8 +1140,8 @@ static void R_BeamSetup( BEAM *pbeam, vec3_t start, vec3_t end, int modelIndex, 
 	VectorCopy( end, pbeam->target );
 	VectorSubtract( end, start, pbeam->delta );
 
-	pbeam->freq = speed * gpGlobals->time;
-	pbeam->die = life + gpGlobals->time;
+	pbeam->freq = speed * gp_cl->time;
+	pbeam->die = life + gp_cl->time;
 	pbeam->amplitude = amplitude;
 	pbeam->brightness = brightness;
 	pbeam->width = width;

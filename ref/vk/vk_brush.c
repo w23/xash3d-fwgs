@@ -224,7 +224,7 @@ static qboolean tesselationHasSameOrientation( const msurface_t *surf, qboolean 
 #endif
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
-	const float time = gpGlobals->time;
+	const float time = gp_cl->time;
 	const qboolean reverse = false;//!tesselationHasSameOrientation( args.warp, args.debug );
 
 #define MAX_WATER_VERTICES 16
@@ -292,10 +292,10 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 			const float os = v[3];
 			const float ot = v[4];
 
-			float s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float s = os + r_turbsin[(int)((ot * 0.125f + gp_cl->time) * TURBSCALE) & 255];
 			s *= ( 1.0f / SUBDIVIDE_SIZE );
 
-			float t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float t = ot + r_turbsin[(int)((os * 0.125f + gp_cl->time) * TURBSCALE) & 255];
 			t *= ( 1.0f / SUBDIVIDE_SIZE );
 
 			poly_vertices[i].pos[0] = v[0];
@@ -845,7 +845,7 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 			speed = 10;
 		else */ speed = 20;
 
-		reletive = (int)(gpGlobals->time * speed) % base->anim_total;
+		reletive = (int)(gp_cl->time * speed) % base->anim_total;
 	}
 
 	count = 0;
@@ -992,7 +992,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	for (int i = 0; i < bmodel->conveyors_count; ++i) {
 		const r_conveyor_t *const conv = bmodel->conveyors + i;
 		vec2_t offset = {0, 0};
-		computeConveyorOffset(ent->curstate.rendercolor, conv->texture_width, gpGlobals->time, offset);
+		computeConveyorOffset(ent->curstate.rendercolor, conv->texture_width, gp_cl->time, offset);
 
 		ASSERT(conv->geometry_index >= 0);
 		ASSERT(conv->geometry_index < bmodel->render_model.num_geometries);
@@ -1025,7 +1025,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	});
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
-	bmodel->prev_time = gpGlobals->time;
+	bmodel->prev_time = gp_cl->time;
 }
 
 static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) {
@@ -1835,7 +1835,7 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	mod->cache.data = bmodel;
 
 	Matrix4x4_LoadIdentity(bmodel->prev_transform);
-	bmodel->prev_time = gpGlobals->time;
+	bmodel->prev_time = gp_cl->time;
 
 	arrayDynamicInitT(&bmodel->dynamic_polylights);
 

@@ -181,7 +181,7 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 
 		// when loading in Mod_LoadSpriteGroup, we guaranteed all interval values
 		// are positive, so we don't have to worry about division by zero
-		targettime = gpGlobals->time - ((int)( gpGlobals->time / fullinterval )) * fullinterval;
+		targettime = gp_cl->time - ((int)( gp_cl->time / fullinterval )) * fullinterval;
 
 		for( i = 0; i < (numframes - 1); i++ )
 		{
@@ -567,25 +567,25 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 				// this can be happens when rendering switched between single and angled frames
 				// or change model on replace delta-entity
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 1.0f;
 			}
 
-			if( ent->latched.sequencetime < gpGlobals->time )
+			if( ent->latched.sequencetime < gp_cl->time )
 			{
 				if( frame != ent->latched.prevblending[1] )
 				{
 					ent->latched.prevblending[0] = ent->latched.prevblending[1];
 					ent->latched.prevblending[1] = frame;
-					ent->latched.sequencetime = gpGlobals->time;
+					ent->latched.sequencetime = gp_cl->time;
 					lerpFrac = 0.0f;
 				}
-				else lerpFrac = (gpGlobals->time - ent->latched.sequencetime) * 11.0f;
+				else lerpFrac = (gp_cl->time - ent->latched.sequencetime) * 11.0f;
 			}
 			else
 			{
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 0.0f;
 			}
 		}
@@ -599,7 +599,7 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		{
 			// reset interpolation on change model
 			ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-			ent->latched.sequencetime = gpGlobals->time;
+			ent->latched.sequencetime = gp_cl->time;
 			lerpFrac = 0.0f;
 		}
 
@@ -614,7 +614,7 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		numframes = pspritegroup->numframes;
 		fullinterval = pintervals[numframes-1];
 		jinterval = pintervals[1] - pintervals[0];
-		time = gpGlobals->time;
+		time = gp_cl->time;
 		jtime = 0.0f;
 
 		// when loading in Mod_LoadSpriteGroup, we guaranteed all interval values
@@ -653,25 +653,25 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 				// this can be happens when rendering switched between single and angled frames
 				// or change model on replace delta-entity
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 1.0f;
 			}
 
-			if( ent->latched.sequencetime < gpGlobals->time )
+			if( ent->latched.sequencetime < gp_cl->time )
 			{
 				if( frame != ent->latched.prevblending[1] )
 				{
 					ent->latched.prevblending[0] = ent->latched.prevblending[1];
 					ent->latched.prevblending[1] = frame;
-					ent->latched.sequencetime = gpGlobals->time;
+					ent->latched.sequencetime = gp_cl->time;
 					lerpFrac = 0.0f;
 				}
-				else lerpFrac = (gpGlobals->time - ent->latched.sequencetime) * ent->curstate.framerate;
+				else lerpFrac = (gp_cl->time - ent->latched.sequencetime) * ent->curstate.framerate;
 			}
 			else
 			{
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 0.0f;
 			}
 		}

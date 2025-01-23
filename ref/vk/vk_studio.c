@@ -165,14 +165,14 @@ static void R_StudioSetupTimings( void )
 	if( RI.drawWorld )
 	{
 		// synchronize with server time
-		g_studio.time = gpGlobals->time;
-		g_studio.frametime = gpGlobals->time -   gpGlobals->oldtime;
+		g_studio.time = gp_cl->time;
+		g_studio.frametime = gp_cl->time -   gp_cl->oldtime;
 	}
 	else
 	{
 		// menu stuff
-		g_studio.time = gpGlobals->realtime;
-		g_studio.frametime = gpGlobals->frametime;
+		g_studio.time = gp_host->realtime;
+		g_studio.frametime = gp_host->frametime;
 	}
 }
 
@@ -2497,7 +2497,7 @@ static void R_StudioClientEvents( void )
 
 		ClearBits( e->curstate.effects, EF_MUZZLEFLASH );
 		VectorCopy( e->attachment[0], el->origin );
-		el->die = gpGlobals->time + 0.05f;
+		el->die = gp_cl->time + 0.05f;
 		el->color.r = 255;
 		el->color.g = 192;
 		el->color.b = 64;
@@ -2513,7 +2513,7 @@ static void R_StudioClientEvents( void )
 		return;
 
 	end = R_StudioEstimateFrame( e, pseqdesc, g_studio.time );
-	start = end - e->curstate.framerate * gpGlobals->frametime * pseqdesc->fps;
+	start = end - e->curstate.framerate * gp_host->frametime * pseqdesc->fps;
 	pevent = PTR_CAST(mstudioevent_t, (byte *)m_pStudioHeader + pseqdesc->eventindex);
 
 	if( e->latched.sequencetime == e->curstate.animtime )
@@ -3467,8 +3467,8 @@ static void pfnGetEngineTimes( int *framecount, double *current, double *old )
 	// TODO is framecount enough? Should it be "REAL" framecount?
 	/* if( framecount ) *framecount = tr.realframecount; */
 	if( framecount ) *framecount = g_studio.framecount;
-	if( current ) *current = gpGlobals->time;
-	if( old ) *old =   gpGlobals->oldtime;
+	if( current ) *current = gp_cl->time;
+	if( old ) *old =   gp_cl->oldtime;
 }
 
 static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *forwardv )
