@@ -33,7 +33,7 @@
 #define APROF_TOKENPASTE2(x, y) APROF_TOKENPASTE(x, y)
 
 #define APROF_SCOPE_BEGIN_EARLY(scope) \
-	const int APROF_TOKENPASTE2(_aprof_dummy, __LINE__) = (aprof_scope_event(_aprof_scope_id_##scope, 1), 0)
+	aprof_scope_event(_aprof_scope_id_##scope, 1)
 
 #define APROF_SCOPE_END(scope) \
 	aprof_scope_event(_aprof_scope_id_##scope, 0)
