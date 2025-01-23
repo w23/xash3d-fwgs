@@ -188,7 +188,7 @@ static void kusochkiFree(const rt_kusochki_t *kusochki) {
 }
 
 // TODO this function can't really fail. It'd mean that staging is completely broken.
-qboolean kusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
+static qboolean kusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
 	const vk_buffer_lock_t lock_args = {
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
 		.size = geoms_count * sizeof(vk_kusok_data_t),

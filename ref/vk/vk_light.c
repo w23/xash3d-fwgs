@@ -335,8 +335,8 @@ static int leafAccumAddPotentiallyVisibleFromLeaf(const model_t *const map, cons
 	return leafs_added;
 }
 
-vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+static vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
 	const int surf_index = surf - map->surfaces;
 	vk_surface_metadata_t * const smeta = g_lights_bsp.surfaces + surf_index;
 	const qboolean verbose_debug = false;
@@ -412,8 +412,8 @@ int RT_LightCellIndex( const int light_cell[3] ) {
 	return light_cell[0] + light_cell[1] * g_lights.map.grid_size[0] + light_cell[2] * g_lights.map.grid_size[0] * g_lights.map.grid_size[1];
 }
 
-vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf, const matrix3x4 *transform_row ) {
 	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+static vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf, const matrix3x4 *transform_row ) {
 	const mextrasurf_t *const extra = surf->info;
 
 	// This is a very conservative way to construct a bounding sphere. It's not great.

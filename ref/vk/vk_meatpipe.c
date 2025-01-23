@@ -37,7 +37,7 @@ typedef struct vk_meatpipe_pass_s {
 	int *resource_map;
 } vk_meatpipe_pass_t;
 
-const void* curReadPtr(cursor_t *cur, int size) {
+static const void* curReadPtr(cursor_t *cur, int size) {
 	const int left = cur->size - cur->off;
 	if (left < size) {
 		cur->error = true;
@@ -64,7 +64,7 @@ const void* curReadPtr(cursor_t *cur, int size) {
 #define READ_PTR(size, errmsg, ...) \
 	curReadPtr(&ctx->cur, size); CUR_ERROR(errmsg, ##__VA_ARGS__)
 
-uint32_t curReadU32(cursor_t *cur) {
+static uint32_t curReadU32(cursor_t *cur) {
 	const void *src = curReadPtr(cur, sizeof(uint32_t));
 	if (!src)
 		return 0;
@@ -80,7 +80,7 @@ uint32_t curReadU32(cursor_t *cur) {
 #define READ_U32_RETURN(retval, errmsg, ...) \
 	curReadU32(&ctx->cur); CUR_ERROR_RETURN(retval, errmsg, ##__VA_ARGS__)
 
-int curReadStr(cursor_t *cur, char* out, int out_size) {
+static int curReadStr(cursor_t *cur, char* out, int out_size) {
 	const int len = curReadU32(cur);
 	if (cur->error)
 		return -1;

@@ -123,7 +123,7 @@ static struct {
 	} conn;
 } g_brush;
 
-void VK_InitRandomTable( void )
+static void VK_InitRandomTable( void )
 {
 	int	tu, tv;
 

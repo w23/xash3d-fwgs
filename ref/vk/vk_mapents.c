@@ -782,7 +782,7 @@ static void parseEntities( char *string, qboolean is_patch ) {
 	}
 }
 
-const xvk_mapent_target_t *findTargetByName(const char *name) {
+static const xvk_mapent_target_t *findTargetByName(const char *name) {
 	for (int i = 0; i < g_map_entities.num_targets; ++i) {
 		const xvk_mapent_target_t *target = g_map_entities.targets + i;
 		if (Q_strcmp(name, target->targetname) == 0)
