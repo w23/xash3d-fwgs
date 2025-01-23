@@ -167,7 +167,7 @@ static const float r_turbsin[] =
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
 static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int *num_indices) {
-	for( const glpoly_t *p = warp->polys; p; p = p->next ) {
+	for( const glpoly2_t *p = warp->polys; p; p = p->next ) {
 		const int triangles = p->numverts - 2;
 		*num_vertices += p->numverts;
 		*num_indices += triangles * 3;
@@ -264,7 +264,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	);
 
 
-	for( const glpoly_t *p = args.warp->polys; p; p = p->next ) {
+	for( const glpoly2_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
 
 		const float *v;

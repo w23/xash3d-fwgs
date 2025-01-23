@@ -40,7 +40,7 @@ static void SubdividePolygon_r( model_t *loadmodel, msurface_t *warpface, int nu
 	int		i, j, k, f, b;
 	float		sample_size;
 	vec3_t		mins, maxs;
-	glpoly_t		*poly;
+	glpoly2_t		*poly;
 
 	if( numverts > ( SUBDIVIDE_SIZE - 4 ))
 		gEngine.Host_Error( "Mod_SubdividePolygon: too many vertexes on face ( %i )\n", numverts );
@@ -104,7 +104,7 @@ static void SubdividePolygon_r( model_t *loadmodel, msurface_t *warpface, int nu
 		ClearBits( warpface->flags, SURF_DRAWTURB_QUADS );
 
 	// add a point in the center to help keep warp valid
-	poly = Mem_Calloc( loadmodel->mempool, sizeof( glpoly_t ) + (numverts - 4) * VERTEXSIZE * sizeof( float ));
+	poly = Mem_Calloc( loadmodel->mempool, sizeof( glpoly2_t ) + numverts * VERTEXSIZE * sizeof( float ));
 	poly->next = warpface->polys;
 	poly->flags = warpface->flags;
 	warpface->polys = poly;
