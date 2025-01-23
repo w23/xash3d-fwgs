@@ -235,7 +235,7 @@ void VK_ClearLightmap( void )
 	LM_InitBlock();
 }
 
-void VK_RunLightStyles( void )
+void VK_RunLightStyles( lightstyle_t *styles )
 {
 	int		i, k, flight, clight;
 	float		l, lerpfrac, backlerp;
@@ -250,9 +250,11 @@ void VK_RunLightStyles( void )
 
 	// light animations
 	// 'm' is normal light, 'a' is no light, 'z' is double bright
+
+	// TODO
 	for( i = 0; i < MAX_LIGHTSTYLES; i++ )
 	{
-		ls = gEngine.GetLightStyle( i );
+		ls = styles + i;
 		if( !world->lightdata )
 		{
 			g_lightmap.lightstylevalue[i] = 256 * 256;
