@@ -49,6 +49,7 @@ inline static int clampi32(int v, int min, int max) {
 typedef struct {
 	struct world_static_s *world;
 	cl_entity_t *entities;
+	unsigned int max_entities;
 	struct movevars_s *movevars;
 	color24 *palette;
 	cl_entity_t *viewent;

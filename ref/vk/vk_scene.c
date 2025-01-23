@@ -289,13 +289,18 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	return true;
 }
 
-void R_ProcessEntData( qboolean allocate )
+void R_ProcessEntData( qboolean allocate, cl_entity_t *entities, unsigned int max_entities )
 {
 	if( !allocate )
 	{
 		g_lists.draw_list->num_solid_entities = 0;
 		g_lists.draw_list->num_trans_entities = 0;
 		g_lists.draw_list->num_beam_entities = 0;
+	}
+
+	{
+		globals.max_entities = max_entities;
+		globals.entities = entities;
 	}
 
 	if( gEngine.drawFuncs->R_ProcessEntData )
