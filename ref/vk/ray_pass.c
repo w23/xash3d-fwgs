@@ -261,7 +261,7 @@ static void performCompute( vk_combuf_t *combuf, int set_slot, const ray_pass_co
 }
 
 void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perform_args_t args ) {
-	r_vk_barrier_t barrier = {};
+	r_vk_barrier_t barrier = {0};
 
 	const int num_bindings = pass->desc.riptors.num_bindings;
 	for (int i = 0; i < num_bindings; ++i) {
