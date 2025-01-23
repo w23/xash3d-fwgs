@@ -260,6 +260,8 @@ def configure(conf):
 		conf.options.VULKAN           = False
 		# we'll specify -fPIC by hand for shared libraries only
 		enforce_pic                   = False
+	elif conf.env.DEST_OS == 'darwin':
+		conf.options.VULKAN           = False
 
 	if conf.env.STATIC_LINKING:
 		enforce_pic = False # PIC may break full static builds
