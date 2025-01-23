@@ -841,7 +841,7 @@ static qboolean R_BeamComputePoint( int beamEnt, vec3_t pt )
 	// get attachment
 	if( attach > 0 )
 		VectorCopy( ent->attachment[attach - 1], pt );
-	else if( ent->index == gEngine.EngineGetParm( PARM_PLAYER_INDEX, 0 ) )
+	else if( ent->index == gp_cl->playernum + 1 )
 	{
 		vec3_t simorg;
 		gEngine.GetPredictedOrigin( simorg );

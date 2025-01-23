@@ -36,7 +36,7 @@
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
-#define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
+#define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == (gp_cl->playernum + 1) )
 
 // FIXME VK should not be declared here
 colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
