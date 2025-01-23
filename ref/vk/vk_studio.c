@@ -188,7 +188,7 @@ static qboolean R_AllowFlipViewModel( cl_entity_t *e )
 {
 	if( cl_righthand && cl_righthand->value > 0 )
 	{
-		if( e == gEngine.GetViewModel() )
+		if( e == globals.viewent )
 			return true;
 	}
 
@@ -3201,7 +3201,7 @@ void R_RunViewmodelEvents( void )
 	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
 
-	RI.currententity = gEngine.GetViewModel();
+	RI.currententity = globals.viewent;
 
 	if( !RI.currententity->model || RI.currententity->model->type != mod_studio )
 		return;
@@ -3230,7 +3230,7 @@ void R_GatherPlayerLight( void )
 
 void R_DrawViewModel( void )
 {
-	cl_entity_t	*view = gEngine.GetViewModel();
+	cl_entity_t	*view = globals.viewent;
 
 	R_GatherPlayerLight();
 
@@ -3466,7 +3466,7 @@ static entity_state_t *R_StudioGetPlayerState( int index )
 
 static cl_entity_t *pfnGetViewEntity( void )
 {
-	return gEngine.GetViewModel();
+	return globals.viewent;
 }
 
 static void pfnGetEngineTimes( int *framecount, double *current, double *old )
