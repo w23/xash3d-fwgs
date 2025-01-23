@@ -19,6 +19,9 @@ const float shadow_offset_fudge = .1;
 void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	diffuse = specular = vec3(0.);
 
+	// TODO blue noise
+	const vec2 rnd = vec2(rand01(), rand01());
+
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
 #define USE_CLUSTERS
 #ifdef USE_CLUSTERS
@@ -36,9 +39,6 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 		const vec3 spotlight_dir = lights.m.point_lights[i].dir_stopdot2.xyz;
 		const bool is_environment = (lights.m.point_lights[i].environment != 0);
-
-		// TODO blue noise
-		const vec2 rnd = vec2(rand01(), rand01());
 
 		vec3 light_dir;
 		vec3 color = lights.m.point_lights[i].color_stopdot.rgb;
