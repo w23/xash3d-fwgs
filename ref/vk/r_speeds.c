@@ -103,7 +103,7 @@ static void speedsStrcat( const char *msg ) {
 	Q_strncat( g_speeds.frame.message, msg, sizeof( g_speeds.frame.message ));
 }
 
-static void speedsPrintf( const char *msg, ... ) _format(1);
+static void speedsPrintf( const char *msg, ... ) FORMAT_CHECK(1);
 static void speedsPrintf( const char *msg, ... ) {
 	va_list argptr;
 	char text[MAX_SPEEDS_MESSAGE];
