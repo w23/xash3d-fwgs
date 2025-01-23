@@ -109,12 +109,6 @@ static void R_ClearAllDecals( void )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-// bmodel
-static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean custom_palette )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-
 extern void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa );
 
 static void Mod_UnloadTextures( model_t *mod )
@@ -165,12 +159,15 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 				break;
 			case mod_alias:
 				// TODO what ARE mod_alias? We just don't know.
+				loaded = false;
 				break;
 			case mod_brush:
 				// This call happens before we get R_NewMap, which frees all current buffers
 				// So we can't really load anything here
 				break;
-			default: gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
+			default:
+				gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
+				loaded = false;
 		}
 	}
 
@@ -297,6 +294,13 @@ static void		GetExtraParmsForTexture( int texture, byte *red, byte *green, byte 
 }
 static float		GetFrameTime( void )
 {
+	/* TODO as in gl R_RenderScene()
+	// frametime is valid only for normal pass
+	if( RP_NORMALPASS( ))
+		tr.frametime = gp_cl->time -   gp_cl->oldtime;
+	else tr.frametime = 0.0;
+	*/
+
 	PRINT_NOT_IMPLEMENTED();
 	return 1.f;
 }
@@ -367,22 +371,22 @@ static void		GL_TextureTarget( unsigned int target )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
-static void		GL_TexCoordArrayMode( unsigned int texmode )
+static void GL_TexCoordArrayMode( unsigned int texmode )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
-static void		GL_UpdateTexSize( int texnum, int width, int height, int depth )
+static void GL_UpdateTexSize( int texnum, int width, int height, int depth )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
 
 // Misc renderer functions
-static void		GL_DrawParticles( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime )
+static void GL_DrawParticles( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
 
-colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
+colorVec R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
 
 static struct mstudiotex_s *R_StudioGetTexture( struct cl_entity_s *e )
 {
@@ -438,61 +442,6 @@ static void	TriCullFace( TRICULLSTYLE mode )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-// vgui drawing implementation
-static void	VGUI_DrawInit( void )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_DrawShutdown( void )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_SetupDrawingText( int *pColor )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_SetupDrawingRect( int *pColor )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_SetupDrawingImage( int *pColor )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_BindTexture( int id )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_EnableTexture( qboolean enable )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_CreateTexture( int id, int width, int height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_UploadTexture( int id, const char *buffer, int width, int height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_UploadTextureBlock( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_GetTextureSizes( int *width, int *height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static int		VGUI_GenerateTexture( void )
-{
-	PRINT_NOT_IMPLEMENTED();
-	return 0;
-}
-
 static const byte* R_TextureData_UNUSED( unsigned int texnum )
 {
 	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%d", texnum);
@@ -501,7 +450,7 @@ static const byte* R_TextureData_UNUSED( unsigned int texnum )
 	return NULL;
 }
 
-int R_CreateTexture_UNUSED( const char *name, int width, int height, const void *buffer, texFlags_t flags )
+static int R_CreateTexture_UNUSED( const char *name, int width, int height, const void *buffer, texFlags_t flags )
 {
 	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
 	return 0;
@@ -513,7 +462,7 @@ static int R_LoadTextureArray_UNUSED( const char **names, int flags )
 	return 0;
 }
 
-int R_CreateTextureArray_UNUSED( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
+static int R_CreateTextureArray_UNUSED( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
 {
 	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
 	return 0;
@@ -527,6 +476,10 @@ static const ref_device_t *pfnGetRenderDevice( unsigned int idx )
 	return &vk_core.devices[idx];
 }
 
+static void R_GammaChanged( qboolean do_reset_gamma )
+{
+	PRINT_NOT_IMPLEMENTED_ARGS("do_reset_gamma=%d", do_reset_gamma);
+}
 
 static qboolean R_Init(void) {
 	globals.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
@@ -543,33 +496,54 @@ static qboolean R_Init(void) {
 	return R_VkInit();
 }
 
+static void R_SetSkyCloudsTextures( int solidskyTexture, int alphaskyTexture ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("solidskyTexture=%d alphaskyTexture=%d", solidskyTexture, alphaskyTexture);
+}
+
+static void R_OverrideTextureSourceSize( unsigned int texnum, unsigned int srcWidth, unsigned int srcHeight ) { // used to override decal size for texture replacement
+	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%u srcWidth=%u srcHeight=%u", texnum, srcWidth, srcHeight);
+}
+
+static void VGUI_SetupDrawing( qboolean rect ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("rect=%d", rect);
+}
+
+static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("drawX=%d drawY=%d rgba=%p blockWidth=%d blockHeight=%d",
+		drawX, drawY, rgba, blockWidth, blockHeight);
+}
+
 static const ref_interface_t gReffuncs =
 {
 	.R_Init = R_Init,
 	.R_Shutdown = R_VkShutdown,
-	R_GetConfigName,
-	R_SetDisplayTransform,
+
+	.R_GetConfigName = R_GetConfigName,
+	.R_SetDisplayTransform = R_SetDisplayTransform,
 
 	// only called for GL contexts
-	GL_SetupAttributes,
+	.GL_SetupAttributes = GL_SetupAttributes,
 	.GL_InitExtensions = NULL, // Unused in Vulkan renderer
-	GL_ClearExtensions,
+	.GL_ClearExtensions = GL_ClearExtensions,
 
-	R_BeginFrame,
-	R_RenderScene, // Not called ever?
-	R_EndFrame,
-	R_PushScene,
-	R_PopScene,
+	.R_GammaChanged = R_GammaChanged,
+
+	.R_BeginFrame = R_BeginFrame,
+	.R_RenderScene = R_RenderScene, // Not called ever?
+	.R_EndFrame = R_EndFrame,
+	.R_PushScene = R_PushScene,
+	.R_PopScene = R_PopScene,
 	.GL_BackendStartFrame = GL_BackendStartFrame_UNUSED,
 	.GL_BackendEndFrame = GL_BackendEndFrame_UNUSED,
 
-	R_ClearScreen,
-	R_AllowFog,
-	GL_SetRenderMode,
+	.R_ClearScreen = R_ClearScreen,
+	.R_AllowFog = R_AllowFog,
+	.GL_SetRenderMode = GL_SetRenderMode,
 
-	R_AddEntity,
-	CL_AddCustomBeam,
-	R_ProcessEntData,
+	.R_AddEntity = R_AddEntity,
+	.CL_AddCustomBeam = CL_AddCustomBeam,
+	.R_ProcessEntData = R_ProcessEntData,
+	.R_Flush = NULL,
 
 	// debug
 	.R_ShowTextures = R_ShowTextures_UNUSED,
@@ -581,54 +555,51 @@ static const ref_interface_t gReffuncs =
 	.R_SetupSky = R_TextureSetupCustomSky,
 
 	// 2D
-	R_Set2DMode,
-	R_DrawStretchRaw,
-	R_DrawStretchPic,
-	R_DrawTileClear,
-	CL_FillRGBA,
-	CL_FillRGBABlend,
-	R_WorldToScreen,
+	.R_Set2DMode = R_Set2DMode,
+	.R_DrawStretchRaw = R_DrawStretchRaw,
+	.R_DrawStretchPic = R_DrawStretchPic,
+	.FillRGBA = CL_FillRGBA,
+	.WorldToScreen = R_WorldToScreen,
 
 	// screenshot, cubemapshot
-	VID_ScreenShot,
-	VID_CubemapShot,
+	.VID_ScreenShot = VID_ScreenShot,
+	.VID_CubemapShot = VID_CubemapShot,
 
 	// light
-	R_LightPoint,
+	.R_LightPoint = R_LightPoint,
 
 	// decals
-	R_DecalShoot,
-	R_DecalRemoveAll,
-	R_CreateDecalList,
-	R_ClearAllDecals,
+	.R_DecalShoot = R_DecalShoot,
+	.R_DecalRemoveAll = R_DecalRemoveAll,
+	.R_CreateDecalList = R_CreateDecalList,
+	.R_ClearAllDecals = R_ClearAllDecals,
 
-	R_StudioEstimateFrame,
-	R_StudioLerpMovement,
-	CL_InitStudioAPI,
+	.R_StudioEstimateFrame = R_StudioEstimateFrame,
+	.R_StudioLerpMovement = R_StudioLerpMovement,
+	.CL_InitStudioAPI = CL_InitStudioAPI,
 
-	R_InitSkyClouds,
-	GL_SubdivideSurface,
-	VK_RunLightStyles,
+	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
+	.GL_SubdivideSurface = GL_SubdivideSurface,
+	.CL_RunLightStyles = VK_RunLightStyles,
 
-	R_GetSpriteParms,
-	R_GetSpriteTexture,
+	.R_GetSpriteParms = R_GetSpriteParms,
+	.R_GetSpriteTexture = R_GetSpriteTexture,
 
-	Mod_LoadMapSprite,
-	Mod_ProcessRenderData,
-	Mod_StudioLoadTextures,
+	.Mod_ProcessRenderData = Mod_ProcessRenderData,
+	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
 
-	CL_DrawParticles,
-	CL_DrawTracers,
-	CL_DrawBeams,
-	R_BeamCull,
+	.CL_DrawParticles = CL_DrawParticles,
+	.CL_DrawTracers = CL_DrawTracers,
+	.CL_DrawBeams = CL_DrawBeams,
+	.R_BeamCull = R_BeamCull,
 
-	VK_RefGetParm,
-	GetDetailScaleForTexture,
-	GetExtraParmsForTexture,
-	GetFrameTime,
+	.RefGetParm = VK_RefGetParm,
+	.GetDetailScaleForTexture = GetDetailScaleForTexture,
+	.GetExtraParmsForTexture = GetExtraParmsForTexture,
+	.GetFrameTime = GetFrameTime,
 
-	R_SetCurrentEntity,
-	R_SetCurrentModel,
+	.R_SetCurrentEntity = R_SetCurrentEntity,
+	.R_SetCurrentModel = R_SetCurrentModel,
 
 	// Texture tools
 	.GL_FindTexture = R_TextureFindByName,
@@ -639,29 +610,30 @@ static const ref_interface_t gReffuncs =
 	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
 	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
 	.GL_FreeTexture = R_TextureFree,
+	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
 	// Decals manipulating (draw & remove)
-	DrawSingleDecal,
-	R_DecalSetupVerts,
-	R_EntityRemoveDecals,
+	.DrawSingleDecal = DrawSingleDecal,
+	.R_DecalSetupVerts = R_DecalSetupVerts,
+	.R_EntityRemoveDecals = R_EntityRemoveDecals,
 
-	AVI_UploadRawFrame,
+	.AVI_UploadRawFrame = AVI_UploadRawFrame,
 
-	GL_Bind,
-	GL_SelectTexture,
-	GL_LoadTextureMatrix,
-	GL_TexMatrixIdentity,
-	GL_CleanUpTextureUnits,
-	GL_TexGen,
-	GL_TextureTarget,
-	GL_TexCoordArrayMode,
-	GL_UpdateTexSize,
+	.GL_Bind = GL_Bind,
+	.GL_SelectTexture = GL_SelectTexture,
+	.GL_LoadTextureMatrix = GL_LoadTextureMatrix,
+	.GL_TexMatrixIdentity = GL_TexMatrixIdentity,
+	.GL_CleanUpTextureUnits = GL_CleanUpTextureUnits,
+	.GL_TexGen = GL_TexGen,
+	.GL_TextureTarget = GL_TextureTarget,
+	.GL_TexCoordArrayMode = GL_TexCoordArrayMode,
+	.GL_UpdateTexSize = GL_UpdateTexSize,
 	NULL, // Reserved0
 	NULL, // Reserved1
 
-	GL_DrawParticles,
-	R_LightVec,
-	R_StudioGetTexture,
+	.GL_DrawParticles = GL_DrawParticles,
+	.LightVec = R_LightVec,
+	.StudioGetTexture = R_StudioGetTexture,
 
 	VK_RenderFrame,
 	GL_OrthoBounds,
