@@ -2371,11 +2371,8 @@ static void R_StudioDrawPoints( void ) {
 
 static void R_StudioSetRemapColors( int newTop, int newBottom )
 {
-	gEngine.CL_AllocRemapInfo( RI.currententity, RI.currentmodel, newTop, newBottom );
-
-	if( gEngine.CL_GetRemapInfoForEntity( RI.currententity ))
+	if( gEngine.CL_EntitySetRemapColors( RI.currententity, RI.currentmodel, newTop, newBottom ))
 	{
-		gEngine.CL_UpdateRemapInfo( RI.currententity, newTop, newBottom );
 		m_fDoRemap = true;
 	}
 }
