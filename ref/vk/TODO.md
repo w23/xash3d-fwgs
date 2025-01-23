@@ -16,7 +16,8 @@
 ## 2025-01-23 E387
 - [x] (local) waf prefix shenanigans
 - [ ] merge resources branch into vulkan
-  - [ ] reverse-merge vulkan
+  - [x] reverse-merge vulkan
+  - [x] ghci upload s/v3/v4/
 - [ ] merge from upstream
 - [ ] discuss further agenda
 
