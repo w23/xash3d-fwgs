@@ -1265,7 +1265,7 @@ static void connectVertices( const model_t *mod, qboolean smooth_entire_model ) 
 			if (cedge->count == 0) {
 				cedge->first_surface = surface_index;
 			} else {
-				const medge_t *edge = mod->edges + iedge;
+				const medge16_t *edge = mod->edges16 + iedge;
 				if (shouldSmoothLinkSurfaces(mod, smooth_entire_model, cedge->first_surface, surface_index)) {
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[0]);
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[1]);
@@ -1578,13 +1578,12 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
 
-			vk_vertex_t *const pvert_begin = p_vert;
 			vec3_t p[3];
 			for( int k = 0; k < surf->numedges; k++ )
 			{
 				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
 				const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
-				const medge_t *edge = args.mod->edges + iedge;
+				const medge16_t *edge = args.mod->edges16 + iedge;
 				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
 				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
 
@@ -1981,7 +1980,7 @@ static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t
 
 	for (int i = 0; i < out_polygon->num_vertices; ++i) {
 		const int iedge = mod->surfedges[surf->firstedge + i];
-		const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
+		const medge16_t *edge = mod->edges16 + (iedge >= 0 ? iedge : -iedge);
 		const mvertex_t *vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
 		VectorCopy(vertex->position, out_polygon->vertices[i]);
 	}

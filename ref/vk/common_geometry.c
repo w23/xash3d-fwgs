@@ -152,6 +152,30 @@ static void SubdividePolygon_r( model_t *loadmodel, msurface_t *warpface, int nu
 	}
 }
 
+static void R_GetEdgePosition( const model_t *mod, const msurface_t *fa, int i, vec3_t vec )
+{
+	const int lindex = mod->surfedges[fa->firstedge + i];
+
+	if( FBitSet( mod->flags, MODEL_QBSP2 ))
+	{
+		const medge32_t *pedges = mod->edges32;
+
+		if( lindex > 0 )
+			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
+		else
+			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
+	}
+	else
+	{
+		const medge16_t *pedges = mod->edges16;
+
+		if( lindex > 0 )
+			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
+		else
+			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
+	}
+}
+
 /*
 ================
 GL_SubdivideSurface
@@ -164,24 +188,14 @@ can be done reasonably.
 void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa )
 {
 	vec3_t	verts[SUBDIVIDE_SIZE];
-	int	numverts;
-	int	i, lindex;
-	float	*vec;
+	int	i;
 
 	// convert edges back to a normal polygon
-	numverts = 0;
 	for( i = 0; i < fa->numedges; i++ )
-	{
-		lindex = loadmodel->surfedges[fa->firstedge + i];
-
-		if( lindex > 0 ) vec = loadmodel->vertexes[loadmodel->edges[lindex].v[0]].position;
-		else vec = loadmodel->vertexes[loadmodel->edges[-lindex].v[1]].position;
-		VectorCopy( vec, verts[numverts] );
-		numverts++;
-	}
+		R_GetEdgePosition( loadmodel, fa, i, verts[i] );
 
 	SetBits( fa->flags, SURF_DRAWTURB_QUADS ); // predict state
 
 	// do subdivide
-	SubdividePolygon_r( loadmodel, fa, numverts, verts[0] );
+	SubdividePolygon_r( loadmodel, fa, fa->numedges, verts[0] );
 }
