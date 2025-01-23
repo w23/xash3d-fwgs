@@ -14,10 +14,10 @@
 
 #include <stdlib.h>
 
-#define MAX_RESOURCES 128
+#define MAX_VK_RESOURCES 128
 
 static struct {
-	rt_resource_t res[MAX_RESOURCES];
+	rt_resource_t res[MAX_VK_RESOURCES];
 } g_res;
 
 void R_VkResourcesInit(void) {
@@ -38,7 +38,7 @@ void R_VkResourcesInit(void) {
 
 rt_resource_t *R_VkResourceGetByIndex(int index) {
 	ASSERT(index >= 0);
-	ASSERT(index < MAX_RESOURCES);
+	ASSERT(index < MAX_VK_RESOURCES);
 	return g_res.res + index;
 }
 
@@ -46,7 +46,7 @@ int R_VkResourceFindIndexByName(const char *name) {
 	// TODO hash table
 	// Find the exact match if exists
 	// There might be gaps, so we need to check everything
-	for (int i = 0; i < MAX_RESOURCES; ++i) {
+	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
 		if (strcmp(g_res.res[i].name, name) == 0)
 			return i;
 	}
@@ -65,7 +65,7 @@ rt_resource_t *R_VkResourceFindOrAlloc(const char *name) {
 		return res;
 
 	// Find first free slot
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
+	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
 		if (!g_res.res[i].name[0])
 			return g_res.res + i;
 	}
@@ -74,7 +74,7 @@ rt_resource_t *R_VkResourceFindOrAlloc(const char *name) {
 }
 
 void R_VkResourcesCleanup(void) {
-	for (int i = 0; i < MAX_RESOURCES; ++i) {
+	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t *const res = g_res.res + i;
 		if (!res->name[0] || res->refcount || !res->image.image)
 			continue;
@@ -135,7 +135,7 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 // FIXME not even sure what this functions is supposed to do in the end
 void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean discontinuity) {
 	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
+	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t* const res = g_res.res + i;
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
 			continue;
@@ -164,7 +164,7 @@ void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean disco
 	}
 
 	// Clear intra-frame resources
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
+	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t* const res = g_res.res + i;
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
 			continue;
