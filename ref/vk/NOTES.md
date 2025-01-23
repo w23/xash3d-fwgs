@@ -1218,3 +1218,12 @@ What do we want? Resources and producers! When do we want it? Maybe next stream.
 - Resource producer
 	- When resource is used, the user should call `resource->produce()` or something like that.
 	- ????? It's not really clear how to do this properly. E.g. how to invoke producing only once per frame?
+
+# 2025-01-23 E387
+## CI/performance on BC-250
+- BC-250 doesn't expose performance_query.
+  - why: `radv_perf_query_supported()` checks for `>= GFX10_3` saying some register interference
+  - what to do:
+    - make a simple perf query test app (and put it on github or something)
+    - just try force-enabling perf query on `GFX10` (bc250 is gfx1013)
+	- if fails: more research is needed, probably unfeasible at my skill level

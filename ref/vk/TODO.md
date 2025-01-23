@@ -13,6 +13,13 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2025-01-23 E387
+- [x] (local) waf prefix shenanigans
+- [ ] merge resources branch into vulkan
+  - [ ] reverse-merge vulkan
+- [ ] merge from upstream
+- [ ] discuss further agenda
+
 ## 2024-12-17 E385
 - [x] fix rendering on amdgpu+radv
 ### After stream
