@@ -22,7 +22,7 @@ static struct {
 	int submodels_cached_static;
 } g_studio_cache;
 
-void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
+static void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
 	R_RenderModelDestroy(&submodel->model);
 	R_GeometryRangeFree(&submodel->geometry_range);
 	if (submodel->geometries)
@@ -87,7 +87,7 @@ static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const
 	}
 }
 
-qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsilon )
+static qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsilon )
 {
 	vec_t	ax, ay, az, aw;
 
