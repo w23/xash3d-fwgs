@@ -1,6 +1,6 @@
 #include "vk_rtx.h"
 
-#include "ray_resources.h"
+#include "vk_resources.h"
 #include "vk_ray_accel.h"
 
 #include "vk_buffer.h"
@@ -13,13 +13,12 @@
 #include "vk_meatpipe.h"
 #include "vk_pipeline.h"
 #include "vk_ray_internal.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
 
 #include "profiler.h"
 
-#include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
@@ -31,37 +30,6 @@
 #define MIN_FRAME_WIDTH 1280
 #define MIN_FRAME_HEIGHT 800
 
-	// TODO each of these should be registered by the provider of the resource:
-#define EXTERNAL_RESOUCES(X) \
-		X(TLAS, tlas) \
-		X(Buffer, ubo) \
-		X(Buffer, kusochki) \
-		X(Buffer, model_headers) \
-		X(Buffer, indices) \
-		X(Buffer, vertices) \
-		X(Buffer, lights) \
-		X(Buffer, light_grid) \
-		X(Texture, textures) \
-		X(Texture, skybox) \
-		X(Texture, blue_noise_texture)
-
-enum {
-#define RES_ENUM(type, name) ExternalResource_##name,
-	EXTERNAL_RESOUCES(RES_ENUM)
-#undef RES_ENUM
-	ExternalResource_COUNT,
-};
-
-#define MAX_RESOURCES 128
-
-typedef struct {
-		char name[64];
-		vk_resource_t resource;
-		r_vk_image_t image;
-		int refcount;
-		int source_index_plus_1;
-} rt_resource_t;
-
 static struct {
 	// Holds UniformBuffer data
 	vk_buffer_t uniform_buffer;
@@ -69,11 +37,17 @@ static struct {
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
-	vk_meatpipe_t *mainpipe;
-	vk_resource_p *mainpipe_resources;
-	rt_resource_t *mainpipe_out;
 
-	rt_resource_t res[MAX_RESOURCES];
+	// Main RT rendering pipeline configuration
+	vk_meatpipe_t *mainpipe;
+
+	// Helper list of resource pointers to global resource map
+	// Needed as an argument to `R_VkMeatpipePerform()` so that meatpipe can access resources
+	vk_resource_p *mainpipe_resources;
+
+	// Pointer to the `dest` image produced by mainpipe
+	// TODO this should be a regular registered resource, nothing special about it
+	rt_resource_t *mainpipe_out;
 
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
@@ -93,57 +67,16 @@ static struct {
 	} debug;
 } g_rtx = {0};
 
-static int findResource(const char *name) {
-	// TODO hash table
-	// Find the exact match if exists
-	// There might be gaps, so we need to check everything
-	for (int i = 0; i < MAX_RESOURCES; ++i) {
-		if (strcmp(g_rtx.res[i].name, name) == 0)
-			return i;
-	}
-
-	return -1;
-}
-
-static int findResourceOrEmptySlot(const char *name) {
-	const int index = findResource(name);
-	if (index >= 0)
-		return index;
-
-	// Find first free slot
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
-		if (!g_rtx.res[i].name[0])
-			return i;
-	}
-
-	return -1;
-}
-
 void VK_RayNewMapBegin( void ) {
+	// TODO it seems like these are unnecessary leftovers. Moreover, they are actively harmful,
+	// as they recreate things that are in fact pretty much static. Untangle this.
 	RT_VkAccelNewMap();
 	RT_RayModel_Clear();
-}
-
-void VK_RayNewMapEnd( void ) {
-	g_rtx.res[ExternalResource_skybox].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
-		},
-	};
-
-	g_rtx.res[ExternalResource_blue_noise_texture].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetBlueNoiseImageInfo(),
-		},
-	};
 }
 
 void VK_RayFrameBegin( void ) {
 	ASSERT(vk_core.rtx);
 
-	RT_VkAccelFrameBegin();
 	XVK_RayModel_ClearForNextFrame();
 	RT_LightsFrameBegin();
 }
@@ -232,7 +165,7 @@ static uint32_t getRandomSeed( void ) {
 }
 
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
-	struct UniformBuffer *ubo = (struct UniformBuffer*)((char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
+	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -291,144 +224,35 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-#define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
-	g_rtx.res[ExternalResource_##name].resource = (vk_resource_t){ \
-		.type = type_, \
-		.value = (vk_descriptor_value_t) { \
-			.buffer = (VkDescriptorBufferInfo) { \
-				.buffer = (source_), \
-				.offset = (offset_), \
-				.range = (size_), \
-			} \
-		} \
-	}
+	R_VkResourcesSetBuiltinFIXME((r_vk_resources_builtin_fixme_t){
+		.frame_index = args->frame_index,
+		.uniform_buffer = &g_rtx.uniform_buffer,
+		.uniform_unit_size = g_rtx.uniform_unit_size,
+		.geometry_data.buffer = args->render_args->geometry_data.buffer,
+		.geometry_data.size = args->render_args->geometry_data.size,
+		.light_bindings = args->light_bindings,
+	});
 
-	RES_SET_BUFFER(ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, g_rtx.uniform_buffer.buffer, args->frame_index * g_rtx.uniform_unit_size, sizeof(struct UniformBuffer));
-
-#define RES_SET_SBUFFER_FULL(name, source_) \
-	RES_SET_BUFFER(name, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, source_.buffer, 0, source_.size)
-
-	// TODO move this to ray model producer
-	RES_SET_SBUFFER_FULL(kusochki, g_ray_model_state.kusochki_buffer);
-	RES_SET_SBUFFER_FULL(model_headers, g_ray_model_state.model_headers_buffer);
-
-	// TODO move these to vk_geometry
-	RES_SET_SBUFFER_FULL(indices, args->render_args->geometry_data);
-	RES_SET_SBUFFER_FULL(vertices, args->render_args->geometry_data);
-
-	// TODO move this to lights
-	RES_SET_BUFFER(lights, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, args->light_bindings->buffer, args->light_bindings->metadata.offset, args->light_bindings->metadata.size);
-	RES_SET_BUFFER(light_grid, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, args->light_bindings->buffer, args->light_bindings->grid.offset, args->light_bindings->grid.size);
-#undef RES_SET_SBUFFER_FULL
-#undef RES_SET_BUFFER
-
-	// Upload kusochki updates
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-			.buffer = g_ray_model_state.kusochki_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}, {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = g_ray_model_state.model_headers_buffer.buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
-
-	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
-		rt_resource_t* const res = g_rtx.res + i;
-		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
-			continue;
-
-		ASSERT(res->source_index_plus_1 <= COUNTOF(g_rtx.res));
-		rt_resource_t *const src = g_rtx.res + res->source_index_plus_1 - 1;
-		ASSERT(res != src);
-
-		// Swap resources
-		const vk_resource_t tmp_res = res->resource;
-		const r_vk_image_t tmp_img = res->image;
-
-		res->resource = src->resource;
-		res->image = src->image;
-
-		// TODO this is slightly incorrect, as they technically can have different resource->type values
-		src->resource = tmp_res;
-		src->image = tmp_img;
-
-		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (g_rtx.discontinuity || res->resource.write.pipelines == 0) {
-			// TODO is there a better way? Can image be cleared w/o explicit clear op?
-			DEBUG("discontinuity: %s", res->name);
-			R_VkImageClear( cmdbuf, res->image.image );
-			res->resource.write.pipelines = VK_PIPELINE_STAGE_TRANSFER_BIT;
-			res->resource.write.image_layout = VK_IMAGE_LAYOUT_GENERAL;
-			res->resource.write.access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		}
-	}
-
-	if (g_rtx.discontinuity)
+	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
+	if (g_rtx.discontinuity) {
 		DEBUG("discontinuity => false");
-	g_rtx.discontinuity = false;
-
-	// Clear intra-frame resources
-	for (int i = ExternalResource_COUNT; i < MAX_RESOURCES; ++i) {
-		rt_resource_t* const res = g_rtx.res + i;
-		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
-			continue;
-
-		//res->resource.read = res->resource.write = (ray_resource_state_t){0};
-		res->resource.write = (ray_resource_state_t){0};
+		g_rtx.discontinuity = false;
 	}
 
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
-	// TODO move this to "TLAS producer"
-	g_rtx.res[ExternalResource_tlas].resource = RT_VkAccelPrepareTlas(combuf);
-
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
-
-	{ // FIXME this should be done automatically inside meatpipe, TODO
-		//const uint32_t size = sizeof(struct Lights);
-		//const uint32_t size = sizeof(struct LightsMetadata); // + 8 * sizeof(uint32_t);
-		const VkBufferMemoryBarrier bmb[] = {{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-			.buffer = args->light_bindings->buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		}};
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
 
 	// Update image resource links after the prev_-related swap above
 	// TODO Preserve the indexes somewhere to avoid searching
 	// FIXME I don't really get why we need this, the pointers should have been preserved ?!
 	for (int i = 0; i < g_rtx.mainpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = g_rtx.mainpipe->resources + i;
-		const int index = findResource(mr->name);
-		ASSERT(index >= 0);
-		ASSERT(index < MAX_RESOURCES);
-		rt_resource_t *const res = g_rtx.res + index;
+		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			// THIS FAILS WHY?! ASSERT(g_rtx.mainpipe_resources[i]->value.image_object == &res->image);
-			g_rtx.mainpipe_resources[i]->value.image_object = &res->image;
+			g_rtx.mainpipe_resources[i]->ref.image = &res->image;
 	}
 
 	R_VkMeatpipePerform(g_rtx.mainpipe, combuf, (vk_meatpipe_perfrom_args_t) {
@@ -438,45 +262,9 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.resources = g_rtx.mainpipe_resources,
 	});
 
-	{
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = args->frame_width,
-				.height = args->frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->render_args->dst.image,
-				.width = args->render_args->dst.width,
-				.height = args->render_args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
-			},
-		};
-
-		R_VkImageBlit( cmdbuf, &blit_args );
-
-		// TODO this is to make sure we remember image layout after image_blit
-		// The proper way to do this would be to teach R_VkImageBlit to properly track the image metadata (i.e. vk_resource_t state)
-		g_rtx.mainpipe_out->resource.write.image_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-	}
 	DEBUG_END(cmdbuf);
 
 	APROF_SCOPE_END(perform);
-}
-
-static void cleanupResources(void) {
-	for (int i = 0; i < MAX_RESOURCES; ++i) {
-		rt_resource_t *const res = g_rtx.res + i;
-		if (!res->name[0] || res->refcount || !res->image.image)
-			continue;
-
-		R_VkImageDestroy(&res->image);
-		res->name[0] = '\0';
-	}
 }
 
 static void destroyMainpipe(void) {
@@ -487,15 +275,13 @@ static void destroyMainpipe(void) {
 
 	for (int i = 0; i < g_rtx.mainpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = g_rtx.mainpipe->resources + i;
-		const int index = findResource(mr->name);
-		ASSERT(index >= 0);
-		ASSERT(index < MAX_RESOURCES);
-		rt_resource_t *const res = g_rtx.res + index;
+		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
+		ASSERT(res);
 		ASSERT(res->refcount > 0);
 		res->refcount--;
 	}
 
-	cleanupResources();
+	R_VkResourcesCleanup();
 	R_VkMeatpipeDestroy(g_rtx.mainpipe);
 	g_rtx.mainpipe = NULL;
 
@@ -532,13 +318,11 @@ static void reloadMainpipe(void) {
 		// TODO this should be specified as a flag, from rt.json
 		const qboolean output = Q_strcmp("dest", mr->name) == 0;
 
-		const int index = create ? findResourceOrEmptySlot(mr->name) : findResource(mr->name);
-		if (index < 0) {
+		rt_resource_t *const res = create ? R_VkResourceFindOrAlloc(mr->name) : R_VkResourceFindByName(mr->name);
+		if (!res) {
 			ERR("Couldn't find resource/slot for %s", mr->name);
 			goto fail;
 		}
-
-		rt_resource_t *const res = g_rtx.res + index;
 
 		if (output)
 			newpipe_out = res;
@@ -564,7 +348,10 @@ static void reloadMainpipe(void) {
 					.tiling = VK_IMAGE_TILING_OPTIMAL,
 					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
 					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
-					.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+					.usage = VK_IMAGE_USAGE_STORAGE_BIT
+						//| VK_IMAGE_USAGE_SAMPLED_BIT // required by VK_IMAGE_LAYOUT_SHADER_READ_OPTIMAL
+						| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+						| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
 					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
@@ -576,11 +363,11 @@ static void reloadMainpipe(void) {
 
 		if (create) {
 			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-				newpipe_resources[i]->value.image_object = &res->image;
+				newpipe_resources[i]->ref.image = &res->image;
 			}
 
 			// TODO full r/w initialization
-			res->resource.write.pipelines = 0;
+			// FIXME not sure if not needed res->resource.deprecate.write.pipelines = 0;
 			res->resource.type = mr->descriptor_type;
 		} else {
 			// TODO no assert, complain and exit
@@ -602,37 +389,30 @@ static void reloadMainpipe(void) {
 
 		ASSERT(mr->prev_frame_index_plus_1 < newpipe->resources_count);
 
-		const int index = findResource(mr->name);
-		ASSERT(index >= 0);
+		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
+		ASSERT(res);
 
 		const vk_meatpipe_resource_t *pr = newpipe->resources + (mr->prev_frame_index_plus_1 - 1);
 
-		const int dest_index = findResource(pr->name);
+		const int dest_index = R_VkResourceFindIndexByName(pr->name);
 		if (dest_index < 0) {
 			ERR("Couldn't find prev_ resource/slot %s for resource %s", pr->name, mr->name);
 			goto fail;
 		}
 
-		g_rtx.res[index].source_index_plus_1 = dest_index + 1;
+		res->source_index_plus_1 = dest_index + 1;
 	}
 
 	// Loading successful
 	// Update refcounts
 	for (int i = 0; i < newpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = newpipe->resources + i;
-		const int index = findResource(mr->name);
-		ASSERT(index >= 0);
-		ASSERT(index < MAX_RESOURCES);
-		rt_resource_t *const res = g_rtx.res + index;
+		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
+		ASSERT(res);
 		res->refcount++;
 	}
 
 	destroyMainpipe();
-
-	// TODO currently changing texture format is not handled. It will try to reuse existing image with the old format
-	// which will probably fail. To handle it we'd need to refactor this:
-	// 1. r_vk_image_t should have a field with its current format? (or we'd also store if with the resource here)
-	// 2. do another loop here to detect format mismatch and recreate.
 
 	g_rtx.mainpipe = newpipe;
 	g_rtx.mainpipe_resources = newpipe_resources;
@@ -641,7 +421,7 @@ static void reloadMainpipe(void) {
 	return;
 
 fail:
-	cleanupResources();
+	R_VkResourcesCleanup();
 
 	if (newpipe_resources)
 		Mem_Free(newpipe_resources);
@@ -661,7 +441,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
 
 	RT_LightsFrameEnd();
-	const vk_lights_bindings_t light_bindings = VK_LightsUpload();
+	const vk_lights_bindings_t light_bindings = VK_LightsUpload(args->combuf);
 
 	g_rtx.frame_number++;
 
@@ -670,15 +450,15 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	qboolean need_reload = g_rtx.reload_pipeline;
 
-	if (g_rtx.max_frame_width < args->dst.width) {
-		g_rtx.max_frame_width = ALIGN_UP(args->dst.width, 16);
+	if (g_rtx.max_frame_width < args->dst->width) {
+		g_rtx.max_frame_width = ALIGN_UP(args->dst->width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
 	}
 
-	if (g_rtx.max_frame_height < args->dst.height) {
-		g_rtx.max_frame_height = ALIGN_UP(args->dst.height, 16);
+	if (g_rtx.max_frame_height < args->dst->height) {
+		g_rtx.max_frame_height = ALIGN_UP(args->dst->height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
 		// TODO only reload resources, no need to reload the entire pipeline
 		need_reload = true;
@@ -698,38 +478,30 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
-	ASSERT(args->dst.width <= g_rtx.max_frame_width);
-	ASSERT(args->dst.height <= g_rtx.max_frame_height);
+	// FIXME what's the right place for this?
+	// This needs to happen every frame where we might've locked staging for kusochki
+	// - After dynamic stuff (might upload kusochki)
+	// - Before performTracing(), even if it is not called
+	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
+	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
+
+	ASSERT(args->dst->width <= g_rtx.max_frame_width);
+	ASSERT(args->dst->height <= g_rtx.max_frame_height);
 
 	// TODO dynamic scaling based on perf
-	const int frame_width = args->dst.width;
-	const int frame_height = args->dst.height;
+	const int frame_width = args->dst->width;
+	const int frame_height = args->dst->height;
+
+	rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
 
 	// Do not draw when we have no swapchain
-	if (args->dst.image_view == VK_NULL_HANDLE)
+	if (!args->dst->image)
 		goto tail;
 
-	if (g_ray_model_state.frame.instances_count == 0) {
-		const r_vkimage_blit_args blit_args = {
-			.in_stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
-			.src = {
-				.image = g_rtx.mainpipe_out->image.image,
-				.width = frame_width,
-				.height = frame_height,
-				.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			},
-			.dst = {
-				.image = args->dst.image,
-				.width = args->dst.width,
-				.height = args->dst.height,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.srcAccessMask = 0,
-			},
-		};
-
-		R_VkImageClear( cmdbuf, g_rtx.mainpipe_out->image.image );
-		R_VkImageBlit( cmdbuf, &blit_args );
+	// TODO move this to "TLAS producer"
+	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
+	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
+		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
@@ -741,6 +513,21 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_height = frame_height,
 		};
 		performTracing( args->combuf, &trace_args );
+	}
+
+	{
+		const r_vkimage_blit_args blit_args = {
+			.src = {
+				.image = &g_rtx.mainpipe_out->image,
+				.width = frame_width,
+				.height = frame_height,
+			},
+			.dst = {
+				.image = args->dst,
+			},
+		};
+
+		R_VkImageBlit( args->combuf, &blit_args );
 	}
 
 tail:
@@ -766,19 +553,7 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-#define REGISTER_EXTERNAL(type, name_) \
-	Q_strncpy(g_rtx.res[ExternalResource_##name_].name, #name_, sizeof(g_rtx.res[0].name)); \
-	g_rtx.res[ExternalResource_##name_].refcount = 1;
-	EXTERNAL_RESOUCES(REGISTER_EXTERNAL)
-#undef REGISTER_EXTERNAL
-
-	g_rtx.res[ExternalResource_textures].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image_array = R_VkTexturesGetAllDescriptorsArray(),
-		}
-	};
-	g_rtx.res[ExternalResource_textures].refcount = 1;
+	R_VkResourcesInit();
 
 	reloadMainpipe();
 	if (!g_rtx.mainpipe)

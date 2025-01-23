@@ -59,14 +59,12 @@ void R_GeometryRangeFree(const r_geometry_range_t* range) {
 }
 
 r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
-	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_geom.buffer.buffer,
+	const vk_buffer_lock_t staging_args = {
 		.offset = range->block_handle.offset,
 		.size = range->block_handle.size,
-		.alignment = 4,
 	};
 
-	const vk_staging_region_t staging = R_VkStagingLockForBuffer(staging_args);
+	const vk_buffer_locked_t staging = R_VkBufferLock(&g_geom.buffer, staging_args);
 	ASSERT(staging.ptr);
 
 	const uint32_t vertices_size = range->vertices.count * sizeof(vk_vertex_t);
@@ -76,25 +74,23 @@ r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range) {
 
 	return (r_geometry_range_lock_t){
 		.vertices = (vk_vertex_t *)staging.ptr,
-		.indices = (uint16_t *)((char*)staging.ptr + vertices_size),
+		.indices = PTR_CAST(uint16_t, (char*)staging.ptr + vertices_size),
 		.impl_ = {
-			.staging_handle = staging.handle,
+			.staging_handle = staging,
 		},
 	};
 }
 
 r_geometry_range_lock_t R_GeometryRangeLockSubrange(const r_geometry_range_t *range, int vertices_offset, int vertices_count ) {
-	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_geom.buffer.buffer,
+	const vk_buffer_lock_t staging_args = {
 		.offset = range->block_handle.offset + sizeof(vk_vertex_t) * vertices_offset,
 		.size = sizeof(vk_vertex_t) * vertices_count,
-		.alignment = 4,
 	};
 
 	ASSERT(staging_args.offset >= range->block_handle.offset);
 	ASSERT(staging_args.offset + staging_args.size <= range->block_handle.offset + range->block_handle.size);
 
-	const vk_staging_region_t staging = R_VkStagingLockForBuffer(staging_args);
+	const vk_buffer_locked_t staging = R_VkBufferLock(&g_geom.buffer, staging_args);
 	ASSERT(staging.ptr);
 
 	ASSERT( range->block_handle.offset % sizeof(vk_vertex_t) == 0 );
@@ -103,13 +99,13 @@ r_geometry_range_lock_t R_GeometryRangeLockSubrange(const r_geometry_range_t *ra
 		.vertices = (vk_vertex_t *)staging.ptr,
 		.indices = NULL,
 		.impl_ = {
-			.staging_handle = staging.handle,
+			.staging_handle = staging,
 		},
 	};
 }
 
 void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock) {
-	R_VkStagingUnlock(lock->impl_.staging_handle);
+	R_VkBufferUnlock(lock->impl_.staging_handle);
 }
 
 qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int vertex_count, int index_count) {
@@ -129,14 +125,12 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 	{
 		const uint32_t vertices_offset = offset / sizeof(vk_vertex_t);
 		const uint32_t indices_offset = (offset + vertices_size) / sizeof(uint16_t);
-		const vk_staging_buffer_args_t staging_args = {
-			.buffer = g_geom.buffer.buffer,
+		const vk_buffer_lock_t staging_args = {
 			.offset = offset,
 			.size = total_size,
-			.alignment = 4,
 		};
 
-		const vk_staging_region_t staging = R_VkStagingLockForBuffer(staging_args);
+		const vk_buffer_locked_t staging = R_VkBufferLock(&g_geom.buffer, staging_args);
 		ASSERT(staging.ptr);
 
 		ASSERT( offset % sizeof(vk_vertex_t) == 0 );
@@ -150,11 +144,11 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 			},
 			.indices = {
 				.count = index_count,
-				.ptr = (uint16_t *)((char*)staging.ptr + vertices_size),
+				.ptr = PTR_CAST(uint16_t, (char*)staging.ptr + vertices_size),
 				.unit_offset = indices_offset,
 			},
 			.impl_ = {
-				.staging_handle = staging.handle,
+				.handle_ = staging,
 			},
 		};
 	}
@@ -166,7 +160,7 @@ qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int ve
 }
 
 void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock ) {
-	R_VkStagingUnlock(lock->impl_.staging_handle);
+	R_VkBufferUnlock(lock->impl_.handle_);
 }
 
 void R_GeometryBuffer_MapClear( void ) {
@@ -203,6 +197,6 @@ void R_GeometryBuffer_Flip(void) {
 	R_BlocksClearOnce(&g_geom.alloc);
 }
 
-VkBuffer R_GeometryBuffer_Get(void) {
-	return g_geom.buffer.buffer;
+vk_buffer_t* R_GeometryBuffer_Get(void) {
+	return &g_geom.buffer;
 }

@@ -1,7 +1,6 @@
 #include "vk_meatpipe.h"
 
 #include "vk_pipeline.h"
-#include "ray_resources.h"
 
 #include "ray_pass.h"
 #include "vk_common.h"

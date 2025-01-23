@@ -5,21 +5,19 @@
 
 void VK_RayFrameBegin( void );
 
+struct vk_combuf_s;
+struct r_vk_image_s;
 typedef struct {
 	struct vk_combuf_s *combuf;
 
-	struct {
-		VkImageView image_view;
-		VkImage image;
-		uint32_t width, height;
-	} dst;
+	struct r_vk_image_s *dst;
 
 	const matrix4x4 *projection, *view;
 
 	// Buffer holding vertex and index data
 	// TODO remove
 	struct {
-		VkBuffer buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
+		vk_buffer_t* buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
 		uint64_t size;
 	} geometry_data;
 
@@ -28,7 +26,6 @@ typedef struct {
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args);
 
 void VK_RayNewMapBegin( void );
-void VK_RayNewMapEnd( void );
 
 qboolean VK_RayInit( void );
 void VK_RayShutdown( void );

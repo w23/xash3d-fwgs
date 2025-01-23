@@ -1,6 +1,6 @@
 #include "ray_pass.h"
 #include "shaders/ray_interop.h" // for SPEC_SBT_RECORD_SIZE_INDEX
-#include "ray_resources.h"
+#include "vk_resources.h"
 #include "vk_pipeline.h"
 #include "vk_descriptor.h"
 #include "vk_combuf.h"
@@ -261,20 +261,41 @@ static void performCompute( vk_combuf_t *combuf, int set_slot, const ray_pass_co
 }
 
 void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perform_args_t args ) {
-	R_VkResourcesPrepareDescriptorsValues(combuf->cmdbuf,
-		(vk_resources_write_descriptors_args_t){
-			.pipeline = pass->pipeline_type,
-			.resources = args.resources,
-			.resources_map = args.resources_map,
-			.values = pass->desc.riptors.values,
-			.count = pass->desc.riptors.num_bindings,
-			.write_begin = pass->desc.write_from,
-		}
-	);
+	r_vk_barrier_t barrier = {};
 
-	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
+	const int num_bindings = pass->desc.riptors.num_bindings;
+	for (int i = 0; i < num_bindings; ++i) {
+		const int index = args.resources_map ? args.resources_map[i] : i;
+		vk_resource_t* const res = args.resources[index];
+
+		const qboolean write = i >= pass->desc.write_from;
+		R_VkResourceAddToBarrier(res, write, pass->pipeline_type, &barrier);
+	}
 
 	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
+	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
+
+	for (int i = 0; i < num_bindings; ++i) {
+		const int index = args.resources_map ? args.resources_map[i] : i;
+		vk_resource_t* const res = args.resources[index];
+
+		const vk_descriptor_value_t *const src_value = &res->value;
+		vk_descriptor_value_t *const dst_value = pass->desc.riptors.values + i;
+
+		// layout is only known after barrier
+		// FIXME this is not true, it can be known earlier
+		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+			dst_value->image = (VkDescriptorImageInfo) {
+				.imageLayout = res->ref.image->sync.layout,
+				.imageView = res->ref.image->view,
+				.sampler = VK_NULL_HANDLE,
+			};
+		} else {
+			*dst_value = *src_value;
+		}
+	}
+
+	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
 
 	switch (pass->type) {
 		case RayPassType_Tracing:

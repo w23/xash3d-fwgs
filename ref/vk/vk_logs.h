@@ -15,6 +15,11 @@
 	X(rt) \
 	X(rmain) \
 	X(sprite) \
+	X(img) \
+	X(staging) \
+	X(buf) \
+	X(fctl) \
+	X(combuf) \
 
 enum {
 #define X(m) LogModule_##m,

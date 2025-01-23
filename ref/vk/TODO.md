@@ -1,6 +1,72 @@
 ## Next
+
+## Upcoming
+- [ ] framectl frame tracking, e.g.:
+	- [ ] wait for frame fence only really before actually starting to build combuf in R_BeginFrame()
+		- why: there should be nothing to synchronize with
+		- why: more straightforward dependency tracking
+		- why not: waiting on frame fence allows freeing up staging and other temp memory
+- [ ] Remove second semaphore from submit, replace it with explicit barriers for e.g. geom buffer
+	- [x] why: best practice validation complains about too wide ALL_COMMANDS semaphore
+	- why: explicit barriers are more clear, better perf possible too
+	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2025-01-23 E387
+- [x] (local) waf prefix shenanigans
+- [ ] merge resources branch into vulkan
+  - [x] reverse-merge vulkan
+  - [x] ghci upload s/v3/v4/
+- [ ] merge from upstream
+- [ ] discuss further agenda
+
+## 2024-12-17 E385
+- [x] fix rendering on amdgpu+radv
+### After stream
+- [x] cleanup TLAS creation and building code
+
+## 2024-12-12 E384
+- [x] track image sync state with the image object itself (and not with vk_resource)
+
+### After stream
+- [x] Proper staging-vs-frame tracking, replace tag with something sensitive
+	- currently assert fails because there's 1 frame latency, not one.
+	- [x] comment for future: full staging might want to wait for previous frame to finish
+- [x] zero vkCmdPipelineBarriers calls
+	- [x] grep for anything else
+
+## 2024-12-10 E383
+- [x] Add transfer stage to submit semaphore separating command buffer: fixes sync for rt
+- [x] Issue staging commit for a bunch of RT buffers (likely not all of them)
+- [x] move destination buffer tracking to outside of staging:
+	- [x] vk_geometry
+	- [x] vk_light: grid, metadata
+	- [x] vk_ray_accel: TLAS geometries
+	- [x] vk_ray_model: kusochki
+- [x] staging should not be aware of cmdbuf either
+	- [x] `R_VkStagingCommit()`: -- removed
+	- [x] `R_VkStagingGetCommandBuffer()` -- removed
+- [x] Go through all staged buffers and make sure that they are committed
+- [x] Commit staging in right places for right buffers
+- [x] Add mode staging debug tracking/logs
+
+### After stream
+- [x] Fix glitch geometry
+	- [x] Which specific models produce it? Use nsight btw
+
+## 2024-05-24 E379
+- [ ] refactor staging:
+	- [ ] move destination image tracking to outside of staging
+		- [x] vk_image ← vk_texture (E380)
+		- [x] implement generic staging regions (E380)
+		- [ ] implement stricter staging regions tracking
+
+## 2024-05-07 E376
+- [ ] resource manager
+    - [x] extract all resource mgmt from vk_rtx into a designated file
+    - [ ] register all resources in their modules
+    - [ ] massage resource state tracking (read-write vs write-current; `value` field consistency, etc)
 
 ## 2024-04-12 E374
 - [x] ~~`-vknort` arg to force-disable RT at init time~~ -- reverted on 2024-04-29

@@ -1160,3 +1160,70 @@ Pro: no special code for shaders/model passing.
 Cons: ridiculous texture explosion
 
 5. Hand-patch things that look weird. E.g. for known sprite/beam textures specify how their alphas should be mapped.
+
+
+# 2024-05-07 E376
+## Resource tables
+### Types
+- `rt_resource_t` [vk_rtx.c]:
+	- name, `vk_resource_t`, image, refcount, source_index_plus_1
+- `vk_resource_t`/`vk_resource_s`/`*vk_resource_p` [ray_resources.h]:
+	- desc `type`, state `read/write`, desc `value`
+
+### Variables
+- `g_rtx.res[]` -- `rt_resource_t`[`MAX_RESOURCES`=32]
+	- `findResource(name)` / `findResourceOrEmptySlot(name)`
+	- access by builtin index names like `g_rtx.res[ExternalResource_...]` for both read and write
+		- `performTracing()` write resource desc values passed from outside on each call
+	- new resources are added in `reloadMainpipe()`
+    - resource with zero refcount are destroyed in `cleanupResources()`
+
+
+# 2024-11-26
+`./waf clangdb` produces `compile_commands.json` file inside of the build directory. All the paths in the file are relative to that directory.
+If the build directory is something 2nd level, like `build/amd64-debug`, and the file is then symlinked to (as nvim/lsp/clangd only looks for the file in the root and in the `./build` dir), then it confuses nvim/lsp/clangd.
+Solution: make build dir literally just `./build`.
+
+
+# 2024-11-27 E381
+## Removing staging flush
+
+### vk_scene.c/reloadPatches()
+- Can ignore for now
+
+### Staging full
+- (I) Just allocate another buffer for staging
+- (II) Figure out why the hell do we need so much staging memory
+	- PBR/remastered textures
+		- possible solution: lazy/ondemand loading
+
+### vk_brush.c / collect emissive surfaces
+- (I) try to merge emissive collection with surface loading
+- (II) convert from pushing material data to pulling. Not really clear how to do easily.
+
+# 2024-12-19 E386 resources / pre render graph
+What do we want? Resources and producers! When do we want it? Maybe next stream.
+- Resource itself: `r_vk_resource_i` -- interface
+	- name
+	- type
+	- producer
+	- (opaque impl: e.g. in the same alloc, right after this header struct)
+- Resource manager:
+	- `r_vk_resource_i* resources[]` -- collection of pointers to resources
+		- dynamic array, hash table, etc..
+	- `findResourceByName(const char *)`
+		- also by type? not sure. Requester can check for the expected type too.
+	- `registerResource(r_vk_resource_i *res)`
+	- `deregisterResource(..)`
+- Resource producer
+	- When resource is used, the user should call `resource->produce()` or something like that.
+	- ????? It's not really clear how to do this properly. E.g. how to invoke producing only once per frame?
+
+# 2025-01-23 E387
+## CI/performance on BC-250
+- BC-250 doesn't expose performance_query.
+  - why: `radv_perf_query_supported()` checks for `>= GFX10_3` saying some register interference
+  - what to do:
+    - make a simple perf query test app (and put it on github or something)
+    - just try force-enabling perf query on `GFX10` (bc250 is gfx1013)
+	- if fails: more research is needed, probably unfeasible at my skill level

@@ -174,7 +174,7 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 	}
 	else if( psprite->frames[frame].type == SPR_GROUP )
 	{
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pintervals = pspritegroup->intervals;
 		numframes = pspritegroup->numframes;
 		fullinterval = pintervals[numframes-1];
@@ -198,7 +198,7 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 		gEngine.Con_Printf(S_WARN "VK FIXME: %s doesn't know about viewangles\n", __FUNCTION__);
 
 		// e.g. doom-style sprite monsters
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pspriteframe = pspritegroup->frames[angleframe];
 	}
 
@@ -261,7 +261,7 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	pspriteframe->gl_texturenum = gl_texturenum;
 	*ppframe = pspriteframe;
 
-	return ( const dframetype_t* )(( const byte* )pin + sizeof( dspriteframe_t ) + pinframe.width * pinframe.height * bytes );
+	return PTR_CAST(const dframetype_t, ( const byte* )pin + sizeof( dspriteframe_t ) + pinframe.width * pinframe.height * bytes );
 }
 
 static const dframetype_t *VK_SpriteLoadGroup( model_t *mod, const void *pin, mspriteframe_t **ppframe, int framenum, const SpriteLoadContext *ctx )
@@ -609,7 +609,7 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 	}
 	else if( psprite->frames[frame].type == FRAME_GROUP )
 	{
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pintervals = pspritegroup->intervals;
 		numframes = pspritegroup->numframes;
 		fullinterval = pintervals[numframes-1];
@@ -681,10 +681,10 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 			lerpFrac = 1.0f;
 		}
 
-		pspritegroup = (mspritegroup_t *)psprite->frames[ent->latched.prevblending[0]].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[ent->latched.prevblending[0]].frameptr);
 		if( oldframe ) *oldframe = pspritegroup->frames[angleframe];
 
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		if( curframe ) *curframe = pspritegroup->frames[angleframe];
 	}
 
@@ -1099,7 +1099,7 @@ void Mod_SpriteUnloadTextures( void *data )
 			}
 			else
 			{
-				pspritegroup = (mspritegroup_t *)psprite->frames[i].frameptr;
+				pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[i].frameptr);
 
 				for( j = 0; j < pspritegroup->numframes; j++ )
 				{

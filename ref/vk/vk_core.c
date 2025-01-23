@@ -3,7 +3,7 @@
 #include "vk_common.h"
 #include "r_textures.h"
 #include "vk_overlay.h"
-#include "vk_renderstate.h"
+#include "vk_image.h"
 #include "vk_staging.h"
 #include "vk_framectl.h"
 #include "vk_brush.h"
@@ -24,6 +24,7 @@
 #include "vk_combuf.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
+#include "arrays.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -39,7 +40,6 @@
 #include "debugbreak.h"
 
 #include <string.h>
-#include <errno.h>
 
 #define LOG_MODULE core
 
@@ -114,7 +114,7 @@ static const char* device_extensions_extra[] = {
 	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 };
 
-VkBool32 VKAPI_PTR debugCallback(
+static VkBool32 VKAPI_PTR debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
     const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
@@ -123,16 +123,9 @@ VkBool32 VKAPI_PTR debugCallback(
 	(void)(messageTypes);
 	(void)(messageSeverity);
 
-	if (Q_strcmp(pCallbackData->pMessageIdName, "VUID-vkMapMemory-memory-00683") == 0)
-		return VK_FALSE;
-
-	/* if (messageSeverity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) { */
-	/* 	gEngine.Con_Printf(S_WARN "Validation: %s\n", pCallbackData->pMessage); */
-	/* } */
-
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+		gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
 #ifdef _MSC_VER
 		__debugbreak();
 #else
@@ -140,9 +133,9 @@ VkBool32 VKAPI_PTR debugCallback(
 #endif
 	} else {
 		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
-			gEngine.Con_Printf(S_ERROR "%s\n", pCallbackData->pMessage);
+			gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
 		} else {
-			gEngine.Con_Printf(S_WARN "%s\n", pCallbackData->pMessage);
+			gEngine.Con_Printf(S_WARN "vk/dbg: %s\n", pCallbackData->pMessage);
 		}
 	}
 
@@ -184,19 +177,19 @@ static qboolean createInstance( void )
 		// TODO support versions 1.0 and 1.1 for simple traditional rendering
 		// This would require using older physical device features and props query structures
 		// .apiVersion = vk_core.rtx ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1,
-		.apiVersion = VK_API_VERSION_1_2,
+		.apiVersion = VK_API_VERSION_1_3,
 		.applicationVersion = VK_MAKE_VERSION(0, 0, 0), // TODO
 		.engineVersion = VK_MAKE_VERSION(0, 0, 0),
 		.pApplicationName = "",
 		.pEngineName = "xash3d-fwgs",
 	};
 
-	BOUNDED_ARRAY(validation_features, VkValidationFeatureEnableEXT, 8);
-	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
-	BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+	BOUNDED_ARRAY(VkValidationFeatureEnableEXT, validation_features, 8);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
 
 	if (!!gEngine.Sys_CheckParm("-vkdbg_shaderprintf"))
-		BOUNDED_ARRAY_APPEND(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+		BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
 
 	const VkValidationFeaturesEXT validation_ext = {
 		.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
@@ -567,6 +560,13 @@ static qboolean createDevice( void ) {
 			head = NULL;
 		}
 
+		VkPhysicalDeviceVulkan13Features vk13_features = {
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+			.pNext = head,
+			.synchronization2 = VK_TRUE,
+		};
+		head = &vk13_features;
+
 		VkPhysicalDeviceFeatures2 features = {
 			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 			.pNext = head,
@@ -729,6 +729,7 @@ static const r_vk_module_t *const modules[] = {
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
+	INFO("R_VkInit");
 
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
@@ -793,6 +794,9 @@ qboolean R_VkInit( void )
 
 	VK_LoadCvarsAfterInit();
 
+	if (!R_VkImageInit())
+		return false;
+
 	if (!R_VkCombuf_Init())
 		return false;
 
@@ -847,6 +851,7 @@ qboolean R_VkInit( void )
 	R_SpriteInit();
 	R_BeamInit();
 
+	INFO("R_VkInit done");
 	return true;
 }
 

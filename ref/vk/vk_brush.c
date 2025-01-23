@@ -1,7 +1,6 @@
 #include "vk_brush.h"
 
 #include "vk_core.h"
-#include "vk_const.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
@@ -10,9 +9,9 @@
 #include "vk_light.h"
 #include "vk_mapents.h"
 #include "r_speeds.h"
-#include "vk_staging.h"
 #include "vk_logs.h"
 #include "profiler.h"
+#include "arrays.h"
 
 #include <math.h>
 #include <memory.h>
@@ -59,8 +58,7 @@ typedef struct vk_brush_model_s {
 	vk_vertex_t *conveyors_vertices;
 
 	// Polylights which need to be added per-frame dynamically
-	struct rt_light_add_polygon_s *dynamic_polylights;
-	int dynamic_polylights_count;
+	ARRAY_DYNAMIC_DECLARE(struct rt_light_add_polygon_s, dynamic_polylights);
 } vk_brush_model_t;
 
 typedef struct {
@@ -426,13 +424,46 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
+typedef enum {
+	BrushSurface_Hidden = 0,
+	BrushSurface_Regular,
+	BrushSurface_Animated,
+	BrushSurface_Water,
+	BrushSurface_WaterSide,
+	BrushSurface_Sky,
+	BrushSurface_Conveyor,
+} brush_surface_type_e;
+
+static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qboolean is_worldmodel );
+
+typedef struct {
+	const model_t *mod;
+	const xvk_mapent_func_any_t *func_any;
+	qboolean is_static;
+	vk_brush_model_t *bmodel;
+	const msurface_t *surf;
+	int surface_index;
+	brush_surface_type_e type;
+	int tex_id;
+	const xvk_patch_surface_t *psurf;
+	vk_render_geometry_t *model_geometry;
+	int *emissive_surfaces_count;
+} SurfaceHandleEmissiveArgs;
+
+static void surfaceHandleEmissive(SurfaceHandleEmissiveArgs args);
+
 typedef struct {
 	const cl_entity_t *ent;
 	const msurface_t *surfaces;
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
-	qboolean debug;
+	qboolean is_creating;
+
+	vk_brush_model_t *bmodel;
+	const xvk_mapent_func_any_t *func_any;
+	qboolean is_worldmodel;
+	qboolean is_static;
 } fill_water_surfaces_args_t;
 
 static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
@@ -444,9 +475,29 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 
 	int vertices_offset = 0;
 	int indices_offset = 0;
+	int emissive_surfaces_count = 0;
 	for (int i = 0; i < args.wmodel->surfaces_count; ++i) {
 		const int surf_index = args.wmodel->surfaces_indices[i];
 		const msurface_t *warp = args.surfaces + surf_index;
+
+		if (args.is_creating) {
+			const int orig_tex_id = warp->texinfo->texture->gl_texturenum;
+			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surf_index);
+			const brush_surface_type_e type = getSurfaceType(warp, surf_index, args.is_worldmodel);
+			surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
+				.mod = args.bmodel->engine_model,
+				.func_any = args.func_any,
+				.is_static = args.is_static,
+				.bmodel = args.bmodel,
+				.surf = warp,
+				.surface_index = surf_index,
+				.type = type,
+				.tex_id = orig_tex_id,
+				.psurf = psurf,
+				.model_geometry = args.geometries + i,
+				.emissive_surfaces_count = &emissive_surfaces_count,
+			});
+		}
 
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
@@ -460,7 +511,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 
 			.out_vertex_count = &vertices,
 			.out_index_count = &indices,
-			.debug = args.debug,
+			.debug = args.is_creating,
 		});
 
 		args.geometries[i].vertex_offset = args.wmodel->geometry.vertices.unit_offset + vertices_offset;
@@ -471,6 +522,12 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 
 		ASSERT(vertices_offset  <= args.wmodel->geometry.vertices.count);
 		ASSERT(indices_offset <= args.wmodel->geometry.indices.count);
+	}
+
+	// Apply all emissive surfaces found
+	if (emissive_surfaces_count > 0) {
+		INFO("Loaded %d polylights, %d dynamic for %s model %s",
+			emissive_surfaces_count, (int)args.bmodel->dynamic_polylights.count, args.is_static ? "static" : "movable", args.bmodel->engine_model->name);
 	}
 
 	R_GeometryRangeUnlock( &geom_lock );
@@ -512,16 +569,6 @@ static qboolean isSurfaceAnimated( const msurface_t *s, qboolean is_worldmodel )
 
 	return doesTextureChainChange(base) || (!is_worldmodel && doesTextureChainChange(base->alternate_anims));
 }
-
-typedef enum {
-	BrushSurface_Hidden = 0,
-	BrushSurface_Regular,
-	BrushSurface_Animated,
-	BrushSurface_Water,
-	BrushSurface_WaterSide,
-	BrushSurface_Sky,
-	BrushSurface_Conveyor,
-} brush_surface_type_e;
 
 static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qboolean is_worldmodel ) {
 // 	if ( i >= 0 && (surf->flags & ~(SURF_PLANEBACK | SURF_UNDERWATER | SURF_TRANSPARENT)) != 0)
@@ -593,45 +640,63 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 	return BrushSurface_Regular;
 }
 
-static qboolean brushCreateWaterModel(const model_t *mod, r_brush_water_model_t *wmodel, const water_model_sizes_t sizes, brush_surface_type_e type, qboolean is_worldmodel) {
+static const xvk_mapent_func_any_t *getModelFuncAnyPatch( const model_t *const mod );
 
-	const r_geometry_range_t geometry = R_GeometryRangeAlloc(sizes.vertices, sizes.indices);
+typedef struct {
+	vk_brush_model_t *bmodel;
+	r_brush_water_model_t *wmodel;
+	const water_model_sizes_t sizes;
+	brush_surface_type_e type;
+	qboolean is_worldmodel;
+	qboolean is_static;
+} brush_create_water_model_t;
+
+static qboolean brushCreateWaterModel(brush_create_water_model_t args) {
+	const model_t *const mod = args.bmodel->engine_model;
+	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
+
+	const r_geometry_range_t geometry = R_GeometryRangeAlloc(args.sizes.vertices, args.sizes.indices);
 	if (!geometry.block_handle.size) {
 		ERR("Cannot allocate geometry (v=%d, i=%d) for water model %s",
-			sizes.vertices, sizes.indices, mod->name );
+			args.sizes.vertices, args.sizes.indices, mod->name );
 		return false;
 	}
 
-	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.surfaces);
+	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * args.sizes.surfaces);
 
-	int* const surfaces_indices = Mem_Malloc(vk_core.pool, sizes.surfaces * sizeof(int));
+	int* const surfaces_indices = Mem_Malloc(vk_core.pool, args.sizes.surfaces * sizeof(int));
 	int surfaces_count = 0;
 	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
 		const int surface_index = mod->firstmodelsurface + i;
 		const msurface_t *surf = mod->surfaces + surface_index;
 
-		if (getSurfaceType(surf, surface_index, is_worldmodel) == type) {
+		if (getSurfaceType(surf, surface_index, args.is_worldmodel) == args.type) {
 			surfaces_indices[surfaces_count++] = surface_index;
 		}
 	}
 
-	ASSERT(surfaces_count == sizes.surfaces);
+	ASSERT(surfaces_count == args.sizes.surfaces);
 
-	wmodel->surfaces_indices = surfaces_indices;
-	wmodel->surfaces_count = surfaces_count;
-	wmodel->surfaces_indices = surfaces_indices;
-	wmodel->geometry = geometry;
+	args.wmodel->surfaces_indices = surfaces_indices;
+	args.wmodel->surfaces_count = surfaces_count;
+	args.wmodel->surfaces_indices = surfaces_indices;
+	args.wmodel->geometry = geometry;
 
 	fillWaterSurfaces( (fill_water_surfaces_args_t){
 		.ent = NULL,
 		.surfaces = mod->surfaces,
-		.wmodel = wmodel,
+		.wmodel = args.wmodel,
 		.geometries = geometries,
 		.prev_time = 0.f,
-		.debug = true,
+		.is_creating = true,
+
+		.bmodel = args.bmodel,
+		.func_any = func_any,
+		.is_worldmodel = args.is_worldmodel,
+		.is_static = args.is_static,
 	});
 
-	if (!R_RenderModelCreate(&wmodel->render_model, (vk_render_model_init_t){
+	if (!R_RenderModelCreate(&args.wmodel->render_model, (vk_render_model_init_t){
 		.name = mod->name,
 		.geometries = geometries,
 		.geometries_count = surfaces_count,
@@ -681,18 +746,19 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
-		.debug = false,
+		.is_creating = false,
 	});
 
 	if (!R_RenderModelUpdate(&wmodel->render_model)) {
 		ERR("Failed to update brush model \"%s\" water", wmodel->render_model.debug_name);
+		return;
 	}
 
 	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
 	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
-		.material_flags = kMaterialFlag_None,
+		.material_flags = kMaterialFlag_DontCastShadow_Bit,
 		.color = (const vec4_t*)color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = (const matrix4x4*)prev_transform,
@@ -813,8 +879,8 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		render_mode = bmodel->patch_rendermode;
 
 	// Add dynamic polylights if any
-	for (int i = 0; i < bmodel->dynamic_polylights_count; ++i) {
-		rt_light_add_polygon_t *const polylight = bmodel->dynamic_polylights + i;
+	for (int i = 0; i < bmodel->dynamic_polylights.count; ++i) {
+		rt_light_add_polygon_t *const polylight = bmodel->dynamic_polylights.items + i;
 		polylight->transform_row = (const matrix3x4*)transform;
 		polylight->dynamic = true;
 		RT_LightAddPolygon(polylight);
@@ -1030,7 +1096,9 @@ typedef struct {
 	vk_render_geometry_t *out_geometries;
 	vk_vertex_t *out_vertices;
 	uint16_t *out_indices;
+	const xvk_mapent_func_any_t *func_any;
 	qboolean is_worldmodel;
+	qboolean is_static;
 } fill_geometries_args_t;
 
 static void getSurfaceNormal( const msurface_t *surf, vec3_t out_normal) {
@@ -1272,12 +1340,88 @@ static const xvk_mapent_func_any_t *getModelFuncAnyPatch( const model_t *const m
 	return NULL;
 }
 
+static void surfaceHandleEmissive(SurfaceHandleEmissiveArgs args) {
+	VectorClear(args.model_geometry->emissive);
+
+	switch (args.type) {
+	case BrushSurface_Regular:
+	case BrushSurface_Water:
+	// No known cases, also needs to be dynamic case BrushSurface_WaterSide:
+		break;
+	// Animated textures are enumerated in `R_BrushModelDraw()` and are added as dynamic lights
+	// when their current frame is emissive. Do not add such surfaces here to avoid adding them twice.
+	// TODO: Most of the animated surfaces are techically static: i.e. they don't really move.
+	// Make a special case for static lights that can be off.
+	case BrushSurface_Animated:
+	default:
+		return;
+	}
+
+	vec3_t emissive;
+	if (args.psurf && (args.psurf->flags & Patch_Surface_Emissive)) {
+		VectorCopy(args.psurf->emissive, emissive);
+	} else if (RT_GetEmissiveForTexture(emissive, args.tex_id)) {
+		// emissive
+	} else {
+		// not emissive, continue to the next
+		return;
+	}
+
+	DEBUG("emissive[%d] surf_index=%d tex_id=%d patch=%d(%#x) => emissive=(%f,%f,%f)",
+		*args.emissive_surfaces_count, args.surface_index, args.tex_id, !!args.psurf, args.psurf?args.psurf->flags:0, emissive[0], emissive[1], emissive[2]);
+
+	(*args.emissive_surfaces_count)++;
+
+	/* const qboolean is_water = type == BrushSurface_Water; */
+	VectorCopy(emissive, args.model_geometry->emissive);
+
+	rt_light_add_polygon_t polylight;
+	if (!loadPolyLight(&polylight, args.mod, args.surface_index, args.surf, emissive))
+		return;
+
+	// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
+	// for lights visibility calculation directly.
+	if (args.func_any && args.func_any->origin_patched) {
+		// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
+		polylight.dynamic = true;
+		matrix3x4 m;
+		Matrix3x4_LoadIdentity(m);
+		Matrix3x4_SetOrigin(m, args.func_any->origin[0], args.func_any->origin[1], args.func_any->origin[2]);
+		polylight.transform_row = &m;
+	}
+
+	// Static emissive surfaces are added immediately, as they are drawn all the time.
+	// Non-static ones will be applied later when the model is actually rendered
+	// Non-static brush models may move around and so must have their emissive surfaces treated as dynamic
+	if (args.is_static) {
+		RT_LightAddPolygon(&polylight);
+
+		/* TODO figure out when this is needed.
+		 * This is needed in cases where we can dive into emissive acid, which should illuminate what's under it
+		 * Likely, this is not a correct fix, though, see https://github.com/w23/xash3d-fwgs/issues/56
+		if (is_water) {
+			// Add backside for water
+			for (int i = 0; i < polylight.num_vertices; ++i) {
+				vec3_t tmp;
+				VectorCopy(polylight.vertices[i], tmp);
+				VectorCopy(polylight.vertices[polylight.num_vertices-1-i], polylight.vertices[i]);
+				VectorCopy(tmp, polylight.vertices[polylight.num_vertices-1-i]);
+				RT_LightAddPolygon(&polylight);
+			}
+		}
+		*/
+	} else {
+		arrayDynamicAppendT(&args.bmodel->dynamic_polylights, &polylight);
+	}
+}
+
 static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 	int vertex_offset = 0;
 	int num_geometries = 0;
 	int animated_count = 0;
 	int conveyors_count = 0;
 	int conveyors_vertices_count = 0;
+	int emissive_surfaces_count = 0;
 
 	vk_vertex_t *p_vert = args.out_vertices;
 	uint16_t *p_ind = args.out_indices;
@@ -1313,7 +1457,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			// TODO this patching should probably override entity patching below
 			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-
 			const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
 			switch (type) {
 			case BrushSurface_Water:
@@ -1331,6 +1474,20 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			case BrushSurface_Regular:
 				break;
 			}
+
+			surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
+				.mod = args.mod,
+				.func_any = args.func_any,
+				.is_static = args.is_static,
+				.bmodel = args.bmodel,
+				.surf = surf,
+				.surface_index = surface_index,
+				.type = type,
+				.tex_id = tex_id,
+				.psurf = psurf,
+				.model_geometry = model_geometry,
+				.emissive_surfaces_count = &emissive_surfaces_count,
+			});
 
 			args.bmodel->surface_to_geometry_index[i] = num_geometries;
 
@@ -1401,8 +1558,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			// To update emissive and other texture states
 			if (type == BrushSurface_Animated)
 				model_geometry->ye_olde_texture = -1;
-
-			VectorClear(model_geometry->emissive);
 
 			model_geometry->surf_deprecate = surf;
 
@@ -1541,7 +1696,7 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 					if (area2 <= 0.) {
 						// Do not produce triangle if it has zero area
 						// NOTE: this is suboptimal in the sense that points that might be necessary for proper
-						// normal smoothing might be skippedk. In case that this causes undesirable rendering
+						// normal smoothing might be skipped. In case that this causes undesirable rendering
 						// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
 						// be needed. E.g. ear clipping.
 						/* diagnostics
@@ -1581,6 +1736,12 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 		} // for mod->nummodelsurfaces
 	}
 
+	// Apply all emissive surfaces found
+	if (emissive_surfaces_count > 0) {
+		INFO("Loaded %d polylights, %d dynamic for %s model %s",
+			emissive_surfaces_count, (int)args.bmodel->dynamic_polylights.count, args.is_static ? "static" : "movable", args.mod->name);
+	}
+
 	ASSERT(args.sizes.num_surfaces == num_geometries);
 	ASSERT(args.sizes.animated_count == animated_count);
 	ASSERT(args.sizes.conveyors_count == conveyors_count);
@@ -1614,6 +1775,8 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 	}
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&bmodel->geometry);
+	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
+	const qboolean is_static = is_worldmodel || (func_any && func_any->origin_patched);
 
 	const qboolean fill_result = fillBrushSurfaces((fill_geometries_args_t){
 			.mod = mod,
@@ -1624,7 +1787,9 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 			.out_geometries = geometries,
 			.out_vertices = geom_lock.vertices,
 			.out_indices = geom_lock.indices,
+			.func_any = func_any,
 			.is_worldmodel = is_worldmodel,
+			.is_static = is_static,
 		});
 
 	R_GeometryRangeUnlock( &geom_lock );
@@ -1670,7 +1835,11 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	Matrix4x4_LoadIdentity(bmodel->prev_transform);
 	bmodel->prev_time = gpGlobals->time;
 
+	arrayDynamicInitT(&bmodel->dynamic_polylights);
+
 	const model_sizes_t sizes = computeSizes( mod, is_worldmodel );
+	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
+	const qboolean is_static = is_worldmodel || (func_any && func_any->origin_patched);
 
 	if (is_worldmodel) {
 		tglob.current_map_has_surf_sky = sizes.sky_surfaces_count != 0;
@@ -1686,7 +1855,14 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	}
 
 	if (sizes.water.surfaces) {
-		if (!brushCreateWaterModel(mod, &bmodel->water, sizes.water, BrushSurface_Water, is_worldmodel)) {
+		if (!brushCreateWaterModel((brush_create_water_model_t) {
+				.bmodel = bmodel,
+				.wmodel = &bmodel->water,
+				.sizes = sizes.water,
+				.type = BrushSurface_Water,
+				.is_worldmodel = is_worldmodel,
+				.is_static = is_static,
+			})) {
 			ERR("Could not load brush water model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
@@ -1694,7 +1870,14 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	}
 
 	if (sizes.side_water.surfaces) {
-		if (!brushCreateWaterModel(mod, &bmodel->water_sides, sizes.side_water, BrushSurface_WaterSide, is_worldmodel)) {
+		if (!brushCreateWaterModel((brush_create_water_model_t) {
+				.bmodel = bmodel,
+				.wmodel = &bmodel->water_sides,
+				.sizes = sizes.side_water,
+				.type = BrushSurface_WaterSide,
+				.is_worldmodel = is_worldmodel,
+				.is_static = is_static,
+			})) {
 			ERR("Could not load brush water_side model %s", mod->name);
 			// FIXME Cannot deallocate bmodel as we might still have staging references to its memory
 			return false;
@@ -1718,8 +1901,7 @@ static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	ASSERT(bmodel->engine_model->cache.data == bmodel);
 	ASSERT(bmodel->engine_model->type == mod_brush);
 
-	if (bmodel->dynamic_polylights)
-		Mem_Free(bmodel->dynamic_polylights);
+	arrayDynamicDestroyT(&bmodel->dynamic_polylights);
 
 	if (bmodel->conveyors_vertices)
 		Mem_Free(bmodel->conveyors_vertices);
@@ -1811,163 +1993,6 @@ static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t
 
 	out_polygon->surface = surf;
 	return true;
-}
-
-void R_VkBrushModelCollectEmissiveSurfaces( const struct model_s *mod, qboolean is_worldmodel ) {
-	vk_brush_model_t *const bmodel = mod->cache.data;
-	ASSERT(bmodel);
-
-	const xvk_mapent_func_any_t *func_any = getModelFuncAnyPatch(mod);
-	const qboolean is_static = is_worldmodel || (func_any && func_any->origin_patched);
-
-	typedef struct {
-		int model_surface_index;
-		int surface_index;
-		const msurface_t *surf;
-		vec3_t emissive;
-		qboolean is_water;
-	} emissive_surface_t;
-	emissive_surface_t emissive_surfaces[MAX_SURFACE_LIGHTS];
-	int geom_indices[MAX_SURFACE_LIGHTS];
-	int emissive_surfaces_count = 0;
-
-	// Load list of all emissive surfaces
-	for( int i = 0; i < mod->nummodelsurfaces; ++i) {
-		const int surface_index = mod->firstmodelsurface + i;
-		const msurface_t *surf = mod->surfaces + surface_index;
-		const brush_surface_type_e type = getSurfaceType(surf, surface_index, is_worldmodel);
-
-		switch (type) {
-		case BrushSurface_Regular:
-		case BrushSurface_Water:
-		// No known cases, also needs to be dynamic case BrushSurface_WaterSide:
-			break;
-		// Animated textures are enumerated in `R_BrushModelDraw()` and are added as dynamic lights
-		// when their current frame is emissive. Do not add such surfaces here to avoid adding them twice.
-		// TODO: Most of the animated surfaces are techically static: i.e. they don't really move.
-		// Make a special case for static lights that can be off.
-		case BrushSurface_Animated:
-		default:
-			continue;
-		}
-
-		const int tex_id = surf->texinfo->texture->gl_texturenum; // TODO animation?
-
-		vec3_t emissive;
-		const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-		if (psurf && (psurf->flags & Patch_Surface_Emissive)) {
-			VectorCopy(psurf->emissive, emissive);
-		} else if (RT_GetEmissiveForTexture(emissive, tex_id)) {
-			// emissive
-		} else {
-			// not emissive, continue to the next
-			continue;
-		}
-
-		DEBUG("%d: i=%d surf_index=%d tex_id=%d patch=%d(%#x) => emissive=(%f,%f,%f)", emissive_surfaces_count, i, surface_index, tex_id, !!psurf, psurf?psurf->flags:0, emissive[0], emissive[1], emissive[2]);
-
-		if (emissive_surfaces_count == MAX_SURFACE_LIGHTS) {
-			ERR("Too many emissive surfaces for model %s: max=%d", mod->name, MAX_SURFACE_LIGHTS);
-			break;
-		}
-
-		emissive_surface_t* const surface = &emissive_surfaces[emissive_surfaces_count++];
-		surface->model_surface_index = i;
-		surface->surface_index = surface_index;
-		surface->surf = surf;
-		surface->is_water = type == BrushSurface_Water;
-		VectorCopy(emissive, surface->emissive);
-	}
-
-	// Clear old per-geometry emissive values. The new emissive values will be assigned by the loop below only to the relevant geoms
-	// This is relevant for updating lights during development
-	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
-		vk_render_geometry_t *const geom = bmodel->render_model.geometries + i;
-		VectorClear(geom->emissive);
-	}
-
-	// Non-static brush models may move around and so must have their emissive surfaces treated as dynamic
-	if (!is_static) {
-		if (bmodel->dynamic_polylights)
-			Mem_Free(bmodel->dynamic_polylights);
-		bmodel->dynamic_polylights_count = 0;
-		bmodel->dynamic_polylights = Mem_Malloc(vk_core.pool, sizeof(bmodel->dynamic_polylights[0]) * emissive_surfaces_count);
-	}
-
-	// Apply all emissive surfaces found
-	int geom_indices_count = 0;
-	for (int i = 0; i < emissive_surfaces_count; ++i) {
-		const emissive_surface_t* const s = emissive_surfaces + i;
-		rt_light_add_polygon_t polylight;
-		if (!loadPolyLight(&polylight, mod, s->surface_index, s->surf, s->emissive))
-			continue;
-
-		// func_any surfaces do not really belong to BSP+PVS system, so they can't be used
-		// for lights visibility calculation directly.
-		if (func_any && func_any->origin_patched) {
-			// TODO this is not really dynamic, but this flag signals using MovingSurface visibility calc
-			polylight.dynamic = true;
-			matrix3x4 m;
-			Matrix3x4_LoadIdentity(m);
-			Matrix3x4_SetOrigin(m, func_any->origin[0], func_any->origin[1], func_any->origin[2]);
-			polylight.transform_row = &m;
-		}
-
-		// Static emissive surfaces are added immediately, as they are drawn all the time.
-		// Non-static ones will be applied later when the model is actually rendered
-		if (is_static) {
-			RT_LightAddPolygon(&polylight);
-
-			/* TODO figure out when this is needed.
-			 * This is needed in cases where we can dive into emissive acid, which should illuminate what's under it
-			 * Likely, this is not a correct fix, though, see https://github.com/w23/xash3d-fwgs/issues/56
-			if (s->is_water) {
-				// Add backside for water
-				for (int i = 0; i < polylight.num_vertices; ++i) {
-					vec3_t tmp;
-					VectorCopy(polylight.vertices[i], tmp);
-					VectorCopy(polylight.vertices[polylight.num_vertices-1-i], polylight.vertices[i]);
-					VectorCopy(tmp, polylight.vertices[polylight.num_vertices-1-i]);
-					RT_LightAddPolygon(&polylight);
-				}
-			}
-			*/
-		} else {
-			ASSERT(bmodel->dynamic_polylights_count < emissive_surfaces_count);
-			bmodel->dynamic_polylights[bmodel->dynamic_polylights_count++] = polylight;
-		}
-
-		// Assign the emissive value to the right geometry
-		if (bmodel->surface_to_geometry_index) { // Can be absent for water-only models
-			const int geom_index = bmodel->surface_to_geometry_index[s->model_surface_index];
-			if (geom_index != -1) { // can be missing for water surfaces
-				ASSERT(geom_index >= 0);
-				ASSERT(geom_index < bmodel->render_model.num_geometries);
-				ASSERT(geom_indices_count < COUNTOF(geom_indices));
-				geom_indices[geom_indices_count++] = geom_index;
-				VectorCopy(polylight.emissive, bmodel->render_model.geometries[geom_index].emissive);
-			}
-		}
-	}
-
-	if (emissive_surfaces_count > 0) {
-		// Update emissive values in kusochki. This is required because initial R_BrushModelLoad happens before we've read
-		// RAD data in vk_light.c, so the emissive values are empty. This is the place and time where we actually get to
-		// know them, so let's fixup things.
-		// TODO minor optimization: sort geom_indices to have a better chance for them to be sequential
-
-		{
-			// Make sure that staging has been flushed.
-			// Updating materials leads to staging an upload to the same memory that we've just staged an upload to.
-			// This doesn't please the validator.
-			// Ensure that these uploads are not mixed into the same unsynchronized stream.
-			// TODO this might be not great for performance (extra waiting for GPU), so a better solution should be considered. E.g. tracking and barrier-syncing regions to-be-reuploaded.
-			R_VkStagingFlushSync();
-		}
-
-		R_RenderModelUpdateMaterials(&bmodel->render_model, geom_indices, geom_indices_count);
-		INFO("Loaded %d polylights for %s model %s", emissive_surfaces_count, is_static ? "static" : "movable", mod->name);
-	}
 }
 
 void R_BrushUnloadTextures( model_t *mod )

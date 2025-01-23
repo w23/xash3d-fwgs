@@ -100,7 +100,7 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 			.imageExtent.width = g_swapchain.width,
 			.imageExtent.height = g_swapchain.height,
 			.imageArrayLayers = 1,
-			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | (vk_core.rtx ? VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
+			.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | (vk_core.rtx ? /* TODO is it used really? why not? */ VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
 			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 			.preTransform = surface_caps.currentTransform,
 			.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
@@ -259,11 +259,34 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 		break;
 	}
 
+	// This is temporary non-owning placeholder object.
+	// It is used only for combuf barrier tracking.
+	ret.image = (r_vk_image_t) {
+		.image = g_swapchain.images[ret.index],
+		.view = g_swapchain.image_views[ret.index],
+		.width = g_swapchain.width,
+		.height = g_swapchain.height,
+		.depth = 1,
+		.mips = 1,
+		.layers = 1,
+
+		.format = g_swapchain.image_format,
+		// TODO? .image_size = ???
+
+		.sync = {
+			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			.write = {
+				.access = VK_ACCESS_2_NONE,
+				.stage = VK_PIPELINE_STAGE_2_NONE,
+			},
+			.read = {
+				.access = VK_ACCESS_2_NONE,
+				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+			},
+		},
+	};
+	snprintf(ret.image.name, sizeof(ret.image.name), "framebuffer[%u]", ret.index);
 	ret.framebuffer = g_swapchain.framebuffers[ret.index];
-	ret.width = g_swapchain.width;
-	ret.height = g_swapchain.height;
-	ret.image = g_swapchain.images[ret.index];
-	ret.view = g_swapchain.image_views[ret.index];
 
 finalize:
 	APROF_SCOPE_END(function);

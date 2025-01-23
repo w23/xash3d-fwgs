@@ -14,7 +14,7 @@ uint traceShadowRay(vec3 pos, vec3 dir, float dist, uint flags) {
 	payload_shadow.hit_type = SHADOW_HIT;
 	traceRayEXT(tlas,
 		flags,
-		GEOMETRY_BIT_OPAQUE,
+		GEOMETRY_BIT_CASTS_SHADOW,
 		SHADER_OFFSET_HIT_SHADOW_BASE, SBT_RECORD_SIZE, SHADER_OFFSET_MISS_SHADOW,
 		pos, 0., dir, dist - shadow_offset_fudge, PAYLOAD_LOCATION_SHADOW);
 	return payload_shadow.hit_type;
@@ -83,6 +83,10 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 	return payload_shadow.hit_type == SHADOW_HIT;
 #elif defined(RAY_QUERY)
 	{
+		dist -= shadow_offset_fudge;
+		if (dist <= 0.)
+			return false;
+
 		const uint flags =  0
 			// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
 			//| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -90,7 +94,7 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 			| gl_RayFlagsTerminateOnFirstHitEXT
 			;
 		rayQueryEXT rq;
-		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, dist - shadow_offset_fudge);
+		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_CASTS_SHADOW, pos, 0., dir, dist);
 		while (rayQueryProceedEXT(rq)) {}
 
 		if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
@@ -125,7 +129,7 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		;
 	const float L = 10000.; // TODO Why 10k?
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, L);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_CASTS_SHADOW, pos, 0., dir, L);
 
 	// Find closest intersection, and then check whether that was a skybox
 	while (rayQueryProceedEXT(rq)) {}

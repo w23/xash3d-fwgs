@@ -2,7 +2,12 @@
 #include "vk_core.h"
 #include "vk_devmem.h"
 
+qboolean R_VkImageInit(void);
+void R_VkImageShutdown(void);
+
 typedef struct r_vk_image_s {
+	char name[64];
+
 	vk_devmem_t devmem;
 	VkImage image;
 	VkImageView view;
@@ -15,6 +20,14 @@ typedef struct r_vk_image_s {
 	int mips, layers;
 	VkFormat format;
 	uint32_t flags;
+	uint32_t image_size;
+
+	int upload_slot;
+
+	struct {
+		VkImageLayout layout;
+		r_vksync_scope_t write, read;
+	} sync;
 } r_vk_image_t;
 
 enum {
@@ -37,22 +50,24 @@ typedef struct {
 r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create);
 void R_VkImageDestroy(r_vk_image_t *img);
 
-void R_VkImageClear(VkCommandBuffer cmdbuf, VkImage image);
+struct vk_combuf_s;
+void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClearColorValue*);
 
 typedef struct {
-	VkPipelineStageFlags in_stage;
 	struct {
-		VkImage image;
-		int width, height;
-		VkImageLayout oldLayout;
-		VkAccessFlags srcAccessMask;
+		r_vk_image_t *image;
+		int width, height, depth;
 	} src, dst;
 } r_vkimage_blit_args;
 
-void R_VkImageBlit( VkCommandBuffer cmdbuf, const r_vkimage_blit_args *blit_args );
+void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *blit_args );
 
 uint32_t R_VkImageFormatTexelBlockSize( VkFormat format );
 
+// Expects *img to be pinned and valid until either cancel or commit is called
 void R_VkImageUploadBegin( r_vk_image_t *img );
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
 void R_VkImageUploadEnd( r_vk_image_t *img );
+
+// Upload all enqueued images using the given command buffer
+void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

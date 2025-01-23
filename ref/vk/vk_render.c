@@ -3,6 +3,7 @@
 #include "vk_core.h"
 #include "vk_buffer.h"
 #include "vk_geometry.h"
+#include "vk_combuf.h"
 #include "vk_const.h"
 #include "vk_common.h"
 #include "vk_cvar.h"
@@ -57,8 +58,6 @@ enum {
 	kVkPipeline_AT,       // no blend, depth RW, alpha test
 	kVkPipeline_1_1_R,    // blend: src + dst, depth test
 
-	// Special pipeline for skybox (tex = TEX_BASE_SKYBOX)
-	//kVkPipeline_Sky,
 	kVkPipeline_COUNT,
 };
 
@@ -181,12 +180,6 @@ static qboolean createSkyboxPipeline( void ) {
 
 static qboolean createPipelines( void )
 {
-	/* VkPushConstantRange push_const = { */
-	/* 	.offset = 0, */
-	/* 	.size = sizeof(AVec3f), */
-	/* 	.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, */
-	/* }; */
-
 	VkDescriptorSetLayout descriptor_layouts[] = {
 		vk_desc_fixme.one_uniform_buffer_layout,
 		vk_desc_fixme.one_texture_layout,
@@ -198,8 +191,6 @@ static qboolean createPipelines( void )
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount = ARRAYSIZE(descriptor_layouts),
 		.pSetLayouts = descriptor_layouts,
-		/* .pushConstantRangeCount = 1, */
-		/* .pPushConstantRanges = &push_const, */
 	};
 
 	// FIXME store layout separately
@@ -552,7 +543,7 @@ static uint32_t getUboOffset_FIXME( void ) {
 		if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
 			return UINT32_MAX;
 
-		uniform_data_t *const ubo = (uniform_data_t*)((byte*)g_render.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
+		uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_render.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
 		memcpy(&g_render_state.current_uniform_data, &g_render_state.dirty_uniform_data, sizeof(g_render_state.dirty_uniform_data));
 		memcpy(ubo, &g_render_state.current_uniform_data, sizeof(*ubo));
 		g_render_state.uniform_data_set_mask |= UNIFORM_UPLOADED;
@@ -613,7 +604,7 @@ static uint32_t writeDlightsToUBO( void )
 		gEngine.Con_Printf(S_ERROR "Cannot allocate UBO for DLights\n");
 		return UINT32_MAX;
 	}
-	ubo_lights = (vk_ubo_lights_t*)((byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
+	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
 
 	// TODO this should not be here (where? vk_scene?)
 	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
@@ -641,54 +632,12 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
-/*
-static void debugBarrier( VkCommandBuffer cmdbuf, VkBuffer buf) {
-	const VkBufferMemoryBarrier bmb[] = { {
-		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-		.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-		.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-		.buffer = buf,
-		.offset = 0,
-		.size = VK_WHOLE_SIZE,
-	} };
-	vkCmdPipelineBarrier(cmdbuf,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-}
-*/
-
-void VK_Render_FIXME_Barrier( VkCommandBuffer cmdbuf ) {
-	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
-	//debugBarrier(cmdbuf, geom_buffer);
-	// FIXME: this should be automatic and dynamically depend on actual usage, resolving this with render graph
-	{
-		const VkBufferMemoryBarrier bmb[] = { {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-			.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-			.dstAccessMask
-				= VK_ACCESS_INDEX_READ_BIT
-				| VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
-				| (vk_core.rtx ? ( VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT) : 0),
-			.buffer = geom_buffer,
-			.offset = 0,
-			.size = VK_WHOLE_SIZE,
-		} };
-		vkCmdPipelineBarrier(cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | (vk_core.rtx
-				? VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
-				| VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-				| VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-				: 0),
-			0, 0, NULL, ARRAYSIZE(bmb), bmb, 0, NULL);
-	}
-}
-
-void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
+void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
 {
 	if (!draw)
 		return;
+
+	VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
 	// TODO we can sort collected draw commands for more efficient and correct rendering
 	// that requires adding info about distance to camera for correct order-dependent blending
@@ -712,10 +661,10 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32
 	ASSERT(!g_render_state.current_frame_is_ray_traced);
 
 	{
-		const VkBuffer geom_buffer = R_GeometryBuffer_Get();
+		vk_buffer_t* const geom = R_GeometryBuffer_Get();
 		const VkDeviceSize offset = 0;
-		vkCmdBindVertexBuffers(cmdbuf, 0, 1, &geom_buffer, &offset);
-		vkCmdBindIndexBuffer(cmdbuf, geom_buffer, 0, VK_INDEX_TYPE_UINT16);
+		vkCmdBindVertexBuffers(cmdbuf, 0, 1, &geom->buffer, &offset);
+		vkCmdBindIndexBuffer(cmdbuf, geom->buffer, 0, VK_INDEX_TYPE_UINT16);
 	}
 
 	for (int i = 0; i < g_render_state.num_draw_commands; ++i) {
@@ -747,7 +696,7 @@ void VK_RenderEnd( VkCommandBuffer cmdbuf, qboolean draw, uint32_t width, uint32
 
 					// Compute and upload UBO stuff
 					{
-						sky_uniform_data_t* const sky_ubo = (sky_uniform_data_t*)((byte*)g_render.uniform_buffer.mapped + ubo_offset);
+						sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_render.uniform_buffer.mapped + ubo_offset);
 
 						// FIXME model matrix
 						Matrix4x4_ToArrayFloatGL(g_render_state.projection_view, (float*)sky_ubo->mvp);
@@ -847,26 +796,22 @@ void VK_RenderDebugLabelEnd( void )
 	drawCmdPushDebugLabelEnd();
 }
 
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, VkImageView img_dst_view, VkImage img_dst, uint32_t w, uint32_t h )
-{
-	const VkBuffer geom_buffer = R_GeometryBuffer_Get();
+void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
+	vk_buffer_t *const geom = R_GeometryBuffer_Get();
 	ASSERT(vk_core.rtx);
+
+	R_VkBufferStagingCommit(geom, combuf);
 
 	{
 		const vk_ray_frame_render_args_t args = {
 			.combuf = combuf,
-			.dst = {
-				.image_view = img_dst_view,
-				.image = img_dst,
-				.width = w,
-				.height = h,
-			},
+			.dst = dst,
 
 			.projection = &g_render_state.vk_projection,
 			.view = &g_camera.viewMatrix,
 
 			.geometry_data = {
-				.buffer = geom_buffer,
+				.buffer = geom,
 				.size = VK_WHOLE_SIZE,
 			},
 

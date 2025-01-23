@@ -29,6 +29,7 @@ void VK_LoadCvars( void )
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
 
 	vk_debug_log = gEngine.Cvar_Get("vk_debug_log_", "", FCVAR_GLCONFIG | FCVAR_READ_ONLY, "");
+	R_LogSetVerboseModules( vk_debug_log->string );
 
 	gEngine.Cmd_AddCommand("vk_debug_log", setDebugLog, "Set modules to enable debug logs for");
 }

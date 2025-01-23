@@ -1,27 +1,26 @@
 #include "vk_ray_internal.h"
 
 #include "vk_rtx.h"
-#include "r_textures.h"
 #include "vk_materials.h"
-#include "vk_geometry.h"
 #include "vk_render.h"
-#include "vk_staging.h"
-#include "vk_light.h"
-#include "vk_math.h"
-#include "vk_combuf.h"
 #include "vk_logs.h"
+#include "vk_ray_accel.h"
 #include "profiler.h"
 
-#include "eiface.h"
 #include "xash3d_mathlib.h"
 
 #include <string.h>
 
 xvk_ray_model_state_t g_ray_model_state;
 
+typedef struct rt_kusochki_s {
+	uint32_t offset;
+	int count;
+	int internal_index__;
+} rt_kusochki_t;
+
 typedef struct rt_model_s {
 	struct rt_blas_s *blas;
-	VkDeviceAddress blas_addr;
 	rt_kusochki_t kusochki;
 } rt_model_t;
 
@@ -152,11 +151,10 @@ void RT_RayModel_Clear(void) {
 }
 
 void XVK_RayModel_ClearForNextFrame( void ) {
-	g_ray_model_state.frame.instances_count = 0;
 	R_DEBuffer_Flip(&g_ray_model_state.kusochki_alloc);
 }
 
-rt_kusochki_t RT_KusochkiAllocLong(int count) {
+static rt_kusochki_t kusochkiAllocLong(int count) {
 	// TODO Proper block allocator, not just double-ended buffer
 	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeStatic, count, 1);
 
@@ -172,7 +170,7 @@ rt_kusochki_t RT_KusochkiAllocLong(int count) {
 	};
 }
 
-uint32_t RT_KusochkiAllocOnce(int count) {
+static uint32_t kusochkiAllocOnce(int count) {
 	// TODO Proper block allocator
 	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeDynamic, count, 1);
 
@@ -184,60 +182,58 @@ uint32_t RT_KusochkiAllocOnce(int count) {
 	return kusochki_offset;
 }
 
-void RT_KusochkiFree(const rt_kusochki_t *kusochki) {
+static void kusochkiFree(const rt_kusochki_t *kusochki) {
 	// TODO block alloc
 	PRINT_NOT_IMPLEMENTED();
 }
 
 // TODO this function can't really fail. It'd mean that staging is completely broken.
-qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
-	const vk_staging_buffer_args_t staging_args = {
-		.buffer = g_ray_model_state.kusochki_buffer.buffer,
+qboolean kusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
+	const vk_buffer_lock_t lock_args = {
 		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
 		.size = geoms_count * sizeof(vk_kusok_data_t),
-		.alignment = 16,
 	};
-	const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
+	const vk_buffer_locked_t lock = R_VkBufferLock(&g_ray_model_state.kusochki_buffer, lock_args);
 
-	if (!kusok_staging.ptr) {
+	if (!lock.ptr) {
 		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov\n", geoms_count);
 		return false;
 	}
 
-	vk_kusok_data_t *const p = kusok_staging.ptr;
+	vk_kusok_data_t *const p = lock.ptr;
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *geom = geoms + i;
 		applyMaterialToKusok(p + i, geom, override_material, override_colors ? override_colors[i] : NULL);
 	}
 
-	R_VkStagingUnlock(kusok_staging.handle);
+	R_VkBufferUnlock(lock);
 	return true;
 }
 
 struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
-	const rt_kusochki_t kusochki = RT_KusochkiAllocLong(args.geometries_count);
+	const rt_kusochki_t kusochki = kusochkiAllocLong(args.geometries_count);
 	if (kusochki.count == 0) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate kusochki for %s\n", args.debug_name);
 		return NULL;
 	}
 
-	struct rt_blas_s* blas = RT_BlasCreate(args.debug_name, args.usage);
+	struct rt_blas_s *blas = RT_BlasCreate((rt_blas_create_t){
+		.name = args.debug_name,
+		.usage = args.usage,
+		.geoms = args.geometries,
+		.geoms_count = args.geometries_count,
+	});
 	if (!blas) {
 		gEngine.Con_Printf(S_ERROR "Cannot create BLAS for %s\n", args.debug_name);
 		goto fail;
 	}
 
-	if (!RT_BlasBuild(blas, args.geometries, args.geometries_count)) {
-		gEngine.Con_Printf(S_ERROR "Cannot build BLAS for %s\n", args.debug_name);
-		goto fail;
-	}
-
-	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
+	// Invokes staging, so this should be after all resource creation
+	kusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
 		ret->blas = blas;
-		ret->blas_addr = RT_BlasGetDeviceAddress(ret->blas);
 		ret->kusochki = kusochki;
 		return ret;
 	}
@@ -247,7 +243,7 @@ fail:
 		RT_BlasDestroy(blas);
 
 	if (kusochki.count)
-		RT_KusochkiFree(&kusochki);
+		kusochkiFree(&kusochki);
 
 	return NULL;
 }
@@ -260,7 +256,7 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 		RT_BlasDestroy(model->blas);
 
 	if (model->kusochki.count)
-		RT_KusochkiFree(&model->kusochki);
+		kusochkiFree(&model->kusochki);
 
 	Mem_Free(model);
 }
@@ -274,11 +270,11 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 	// stable textures that don't change.
 
 	// Schedule rebuilding blas
-	if (!RT_BlasBuild(model->blas, geometries, geometries_count))
+	if (!RT_BlasUpdate(model->blas, geometries, geometries_count))
 		return false;
 
 	// Also update materials
-	RT_KusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
+	kusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
 	return true;
 }
 
@@ -298,7 +294,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 			const int offset = geom_indices[begin];
 			const int count = i - begin;
 			ASSERT(offset + count <= geometries_count);
-			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
+			if (!kusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 				APROF_SCOPE_END(update_materials);
 				return false;
 			}
@@ -311,7 +307,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 		const int offset = geom_indices[begin];
 		const int count = geom_indices_count - begin;
 		ASSERT(offset + count <= geometries_count);
-		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
+		if (!kusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 
 			APROF_SCOPE_END(update_materials);
 			return false;
@@ -320,15 +316,6 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 
 	APROF_SCOPE_END(update_materials);
 	return true;
-}
-
-rt_draw_instance_t *getDrawInstance(void) {
-	if (g_ray_model_state.frame.instances_count >= ARRAYSIZE(g_ray_model_state.frame.instances)) {
-		gEngine.Con_Printf(S_ERROR "Too many RT draw instances, max = %d\n", (int)(ARRAYSIZE(g_ray_model_state.frame.instances)));
-		return NULL;
-	}
-
-	return g_ray_model_state.frame.instances + (g_ray_model_state.frame.instances_count++);
 }
 
 static qboolean isLegacyBlendingMode(int material_mode) {
@@ -378,36 +365,38 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	uint32_t kusochki_offset = model->kusochki.offset;
 
 	if (args.override.material != NULL) {
-		kusochki_offset = RT_KusochkiAllocOnce(args.override.geoms_count);
+		kusochki_offset = kusochkiAllocOnce(args.override.geoms_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED)
 			return;
 
-		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
+		if (!kusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
 			return;
 		}
 	}
 
-	rt_draw_instance_t *const draw_instance = getDrawInstance();
-	if (!draw_instance)
-		return;
-
-	draw_instance->blas_addr = model->blas_addr;
-	draw_instance->kusochki_offset = kusochki_offset;
-	draw_instance->material_mode = args.material_mode;
-	draw_instance->material_flags = args.material_flags;
+	rt_draw_instance_t draw_instance = {
+		.blas = model->blas,
+		.kusochki_offset = kusochki_offset,
+		.material_mode = args.material_mode,
+		.material_flags = args.material_flags,
+	};
 
 	// Legacy blending is done in sRGB-γ space
 	if (isLegacyBlendingMode(args.material_mode))
-		Vector4Copy(*args.color_srgb, draw_instance->color);
+		Vector4Copy(*args.color_srgb, draw_instance.color);
 	else
-		sRGBtoLinearVec4(*args.color_srgb, draw_instance->color);
+		sRGBtoLinearVec4(*args.color_srgb, draw_instance.color);
 
-	Matrix3x4_Copy(draw_instance->transform_row, args.transform);
-	Matrix4x4_Copy(draw_instance->prev_transform_row, args.prev_transform);
+	Matrix3x4_Copy(draw_instance.transform_row, args.transform);
+	Matrix4x4_Copy(draw_instance.prev_transform_row, args.prev_transform);
+
+	RT_VkAccelAddDrawInstance(&draw_instance);
 }
 
 #define MAX_RT_DYNAMIC_GEOMETRIES 256
+#define MAX_RT_DYNAMIC_GEOMETRIES_VERTICES 256
+#define MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES 256
 
 typedef struct {
 	struct rt_blas_s *blas;
@@ -431,27 +420,30 @@ static struct {
 } g_dyn;
 
 qboolean RT_DynamicModelInit(void) {
+	vk_render_geometry_t *const fake_geoms = Mem_Calloc(vk_core.pool, MAX_RT_DYNAMIC_GEOMETRIES * sizeof(*fake_geoms));
+	for (int i = 0; i < MAX_RT_DYNAMIC_GEOMETRIES; ++i) {
+		fake_geoms[i].max_vertex = MAX_RT_DYNAMIC_GEOMETRIES_VERTICES;
+		fake_geoms[i].element_count = MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES * 3;
+	}
+
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
-		struct rt_blas_s *blas = RT_BlasCreate(group_names[i], kBlasBuildDynamicFast);
+		struct rt_blas_s *blas = RT_BlasCreate((rt_blas_create_t){
+			.name = group_names[i],
+			.usage = kBlasBuildDynamicFast,
+			.geoms = fake_geoms,
+			.geoms_count = MAX_RT_DYNAMIC_GEOMETRIES,
+		});
+
 		if (!blas) {
 			// FIXME destroy allocated
 			gEngine.Con_Printf(S_ERROR "Couldn't create blas for %s\n", group_names[i]);
 			return false;
 		}
 
-		if (!RT_BlasPreallocate(blas, (rt_blas_preallocate_t){
-			// TODO better estimates for these constants
-			.max_geometries = MAX_RT_DYNAMIC_GEOMETRIES,
-			.max_prims_per_geometry = 256,
-			.max_vertex_per_geometry = 256,
-		})) {
-			// FIXME destroy allocated
-			gEngine.Con_Printf(S_ERROR "Couldn't preallocate blas for %s\n", group_names[i]);
-			return false;
-		}
 		g_dyn.groups[i].blas = blas;
-		g_dyn.groups[i].blas_addr = RT_BlasGetDeviceAddress(blas);
 	}
+
+	Mem_Free(fake_geoms);
 
 	return true;
 }
@@ -467,37 +459,41 @@ void RT_DynamicModelProcessFrame(void) {
 	APROF_SCOPE_DECLARE_BEGIN(process, __FUNCTION__);
 	for (int i = 0; i < MATERIAL_MODE_COUNT; ++i) {
 		rt_dynamic_t *const dyn = g_dyn.groups + i;
+		rt_draw_instance_t draw_instance;
+
 		if (!dyn->geometries_count)
 			continue;
 
-		rt_draw_instance_t* draw_instance;
-		const uint32_t kusochki_offset = RT_KusochkiAllocOnce(dyn->geometries_count);
+		const uint32_t kusochki_offset = kusochkiAllocOnce(dyn->geometries_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED) {
 			gEngine.Con_Printf(S_ERROR "Couldn't allocate kusochki once for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
 
-		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
+		if (!kusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
 
-		if (!RT_BlasBuild(dyn->blas, dyn->geometries, dyn->geometries_count)) {
+		if (!RT_BlasUpdate(dyn->blas, dyn->geometries, dyn->geometries_count)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
 
-		draw_instance = getDrawInstance();
-		if (!draw_instance)
-			goto tail;
+		draw_instance = (rt_draw_instance_t){
+			.blas = dyn->blas,
+			.kusochki_offset = kusochki_offset,
+			.material_mode = i,
+			.material_flags = 0,
+			.color = {1, 1, 1, 1},
+		};
 
-		draw_instance->blas_addr = dyn->blas_addr;
-		draw_instance->kusochki_offset = kusochki_offset;
-		draw_instance->material_mode = i;
-		draw_instance->material_flags = 0;
-		Vector4Set(draw_instance->color, 1, 1, 1, 1);
-		Matrix3x4_LoadIdentity(draw_instance->transform_row);
-		Matrix4x4_LoadIdentity(draw_instance->prev_transform_row);
+		// xash3d_mathlib is weird, can't just assign these
+		// TODO: make my own mathlib of perfectly assignable structs
+		Matrix3x4_LoadIdentity(draw_instance.transform_row);
+		Matrix4x4_LoadIdentity(draw_instance.prev_transform_row);
+
+		RT_VkAccelAddDrawInstance(&draw_instance);
 
 tail:
 		dyn->geometries_count = 0;

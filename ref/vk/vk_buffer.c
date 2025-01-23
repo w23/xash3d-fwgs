@@ -1,4 +1,10 @@
 #include "vk_buffer.h"
+#include "vk_logs.h"
+#include "vk_combuf.h"
+
+#include "arrays.h"
+
+#define LOG_MODULE buf
 
 qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags flags)
 {
@@ -28,13 +34,17 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 	XVK_CHECK(vkBindBufferMemory(vk_core.device, buf->buffer, buf->devmem.device_memory, buf->devmem.offset));
 
 	buf->mapped = buf->devmem.mapped;
-
 	buf->size = size;
+	buf->name = debug_name;
+
+	INFO("Created buffer=%llx, name=\"%s\", size=%u", (unsigned long long)buf->buffer, debug_name, size);
 
 	return true;
 }
 
 void VK_BufferDestroy(vk_buffer_t *buf) {
+	// FIXME destroy staging slot
+
 	if (buf->buffer) {
 		vkDestroyBuffer(vk_core.device, buf->buffer, NULL);
 		buf->buffer = VK_NULL_HANDLE;
@@ -115,4 +125,121 @@ uint32_t R_DEBuffer_Alloc(r_debuffer_t* debuf, r_lifetime_t lifetime, uint32_t s
 
 void R_DEBuffer_Flip(r_debuffer_t* debuf) {
 	R_FlippingBuffer_Flip(&debuf->dynamic);
+}
+
+#define MAX_STAGING_BUFFERS 16
+#define MAX_STAGING_ENTRIES 2048
+
+// TODO this should be part of the vk_buffer_t object itself
+typedef struct {
+	vk_buffer_t *buffer;
+	r_vkstaging_user_handle_t staging_handle;
+	VkBuffer staging_buffer;
+	BOUNDED_ARRAY_DECLARE(VkBufferCopy, regions, MAX_STAGING_ENTRIES);
+} r_vk_staging_buffer_t;
+
+// TODO remove this when staging is tracked by the buffer object itself
+static struct {
+	BOUNDED_ARRAY_DECLARE(r_vk_staging_buffer_t, staging, MAX_STAGING_BUFFERS);
+} g_buf;
+
+static r_vk_staging_buffer_t *findExistingStagingSlotForBuffer(vk_buffer_t *buf) {
+	for (int i = 0; i < g_buf.staging.count; ++i) {
+		r_vk_staging_buffer_t *const stb = g_buf.staging.items + i;
+		if (stb->buffer == buf)
+			return stb;
+	}
+
+	return NULL;
+}
+
+static void stagingBufferPush(void* userptr, struct vk_combuf_s *combuf, uint32_t pending) {
+	r_vk_staging_buffer_t *const stb = userptr;
+	ASSERT(pending == stb->regions.count);
+	R_VkBufferStagingCommit(stb->buffer, combuf);
+}
+
+static r_vk_staging_buffer_t *findOrCreateStagingSlotForBuffer(vk_buffer_t *buf) {
+	r_vk_staging_buffer_t *stb = findExistingStagingSlotForBuffer(buf);
+	if (stb)
+		return stb;
+
+	ASSERT(BOUNDED_ARRAY_HAS_SPACE(g_buf.staging, 1));
+	stb = &BOUNDED_ARRAY_APPEND_UNSAFE(g_buf.staging);
+	stb->staging_buffer = VK_NULL_HANDLE;
+	stb->buffer = buf;
+	stb->regions.count = 0;
+	stb->staging_handle = R_VkStagingUserCreate((r_vkstaging_user_create_t){
+		.name = buf->name,
+		.userptr = stb,
+		.push = stagingBufferPush,
+	});
+	return stb;
+}
+
+vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock) {
+	//DEBUG("Lock buf=%p size=%d region=%d..%d", buf, lock.size, lock.offset, lock.offset + lock.size);
+
+	r_vk_staging_buffer_t *const stb = findOrCreateStagingSlotForBuffer(buf);
+	ASSERT(stb);
+
+	r_vkstaging_region_t staging_lock = R_VkStagingLock(stb->staging_handle, lock.size);
+	ASSERT(staging_lock.ptr);
+
+	// TODO perf: adjacent region coalescing
+
+	ASSERT(BOUNDED_ARRAY_HAS_SPACE(stb->regions, 1));
+	BOUNDED_ARRAY_APPEND_UNSAFE(stb->regions) = (VkBufferCopy){
+		.srcOffset = staging_lock.offset,
+		.dstOffset = lock.offset,
+		.size = lock.size,
+	};
+
+	if (stb->staging_buffer != VK_NULL_HANDLE)
+		// TODO implement this if staging ever grows to multiple buffers
+		ASSERT(stb->staging_buffer == staging_lock.buffer);
+	else
+		stb->staging_buffer = staging_lock.buffer;
+
+	return (vk_buffer_locked_t) {
+		.ptr = staging_lock.ptr,
+		.impl_ = {
+			.buf = buf,
+		},
+	};
+}
+
+void R_VkBufferUnlock(vk_buffer_locked_t lock) {
+	//DEBUG("buf=%llx staging pending++", (unsigned long long)lock.impl_.buf->buffer);
+	// Nothing to do?
+}
+
+void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
+	r_vk_staging_buffer_t *const stb = findExistingStagingSlotForBuffer(buf);
+	if (!stb || stb->regions.count == 0)
+		return;
+
+	const r_vkcombuf_barrier_buffer_t barrier[] = {{
+		.buffer = buf,
+		.access = VK_ACCESS_TRANSFER_WRITE_BIT,
+	}};
+
+	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
+		.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
+		.buffers = { barrier, COUNTOF(barrier) },
+		.images = { NULL, 0 },
+	});
+
+	//TODO const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
+
+	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
+	DEBUG_NV_CHECKPOINTF(cmdbuf, "staging dst_buffer=%p count=%d", buf->buffer, stb->regions.count);
+	//DEBUG("buffer=%p copy %d regions from staging buffer=%p", buf->buffer, stb->regions.count, stb->staging);
+	vkCmdCopyBuffer(cmdbuf, stb->staging_buffer, buf->buffer, stb->regions.count, stb->regions.items);
+
+	DEBUG("buf=%llx staging pending-=%u", (unsigned long long)buf->buffer, stb->regions.count);
+	R_VkStagingUnlockBulk(stb->staging_handle, stb->regions.count);
+	stb->regions.count = 0;
+
+	//TODO R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_TRANSFER_BIT);
 }

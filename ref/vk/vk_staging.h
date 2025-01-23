@@ -5,49 +5,50 @@
 qboolean R_VkStagingInit(void);
 void R_VkStagingShutdown(void);
 
-typedef int staging_handle_t;
+struct vk_combuf_s;
+typedef void (r_vkstaging_push_f)(void* userptr, struct vk_combuf_s *combuf, uint32_t pending);
 
 typedef struct {
+	// Expected to be static, stored as a pointer
+	const char *name;
+
+	void *userptr;
+	r_vkstaging_push_f *push;
+} r_vkstaging_user_create_t;
+
+struct r_vkstaging_user_t;
+typedef struct r_vkstaging_user_t *r_vkstaging_user_handle_t;
+r_vkstaging_user_handle_t R_VkStagingUserCreate(r_vkstaging_user_create_t);
+void R_VkStagingUserDestroy(r_vkstaging_user_handle_t);
+
+typedef struct {
+	// CPU-accessible memory
 	void *ptr;
-	staging_handle_t handle;
-} vk_staging_region_t;
 
-// Allocate region for uploadting to buffer
-typedef struct {
+	// GPU buffer to copy from
 	VkBuffer buffer;
-	uint32_t offset;
-	uint32_t size;
-	uint32_t alignment;
-} vk_staging_buffer_args_t;
-vk_staging_region_t R_VkStagingLockForBuffer(vk_staging_buffer_args_t args);
+	VkDeviceSize offset;
+} r_vkstaging_region_t;
 
-// Allocate region for uploading to image
-typedef struct {
-	VkImage image;
-	VkImageLayout layout;
-	VkBufferImageCopy region;
-	uint32_t size;
-	uint32_t alignment;
-} vk_staging_image_args_t;
-vk_staging_region_t R_VkStagingLockForImage(vk_staging_image_args_t args);
+// Allocate CPU-accessible memory in staging buffer
+r_vkstaging_region_t R_VkStagingLock(r_vkstaging_user_handle_t, uint32_t size);
 
-// Mark allocated region as ready for upload
-void R_VkStagingUnlock(staging_handle_t handle);
+// Notify staging that this amount of regions are about to be consumed when the next combuf ends
+// I.e. they're "free" from the staging standpoint
+void R_VkStagingUnlockBulk(r_vkstaging_user_handle_t, uint32_t count);
 
-// Append copy commands to command buffer.
-struct vk_combuf_s* R_VkStagingCommit(void);
+// This gets called just before the combuf is ended and submitted.
+// Gives the last chance for the users that haven't yet used their data.
+// This is a workaround to patch up the impedance mismatch between top-down push model,
+// where the engine "pushes down" the data to be rendered, and "bottom-up" pull model,
+// where the frame is constructed based on render graph dependency tree. Not all pushed
+// resources could be used, and this gives the opportunity to at least ingest the data
+// to make sure that it remains complete, in case it might be needed in the future.
+// Returns current frame tag to be closed in the R_VkStagingCombufCompleted() function.
+uint32_t R_VkStagingFrameEpilogue(struct vk_combuf_s*);
 
-// Mark previous frame data as uploaded and safe to use.
-void R_VkStagingFrameBegin(void);
-
-// Uploads staging contents and returns the command buffer ready to be submitted.
-// Can return NULL if there's nothing to upload.
-struct vk_combuf_s *R_VkStagingFrameEnd(void);
-
-// Gets the current command buffer.
-// WARNING: Can be invalidated by any of the Lock calls
-VkCommandBuffer R_VkStagingGetCommandBuffer(void);
-
-// Commit all staging data into current cmdbuf, submit it and wait for completion.
-// Needed for CPU-GPU sync
-void R_VkStagingFlushSync( void );
+// This function is called when a frame is finished. It allows staging to free all the
+// data used in that frame.
+// TODO make this dependency more explicit, i.e. combuf should track when it's done
+// and what finalization functions it should call when it's done (there are many).
+void R_VkStagingFrameCompleted(uint32_t tag);
