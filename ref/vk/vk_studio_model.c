@@ -223,11 +223,9 @@ const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 
 	studioModelProcessBonesAnimations(mod, hdr, submodels, submodels_count);
 
-	qboolean is_dynamic = false;
 	DEBUG(" submodels_count: %d", submodels_count);
 	for (int i = 0; i < submodels_count; ++i) {
 		const r_studio_submodel_info_t *const subinfo = submodels + i;
-		is_dynamic |= subinfo->is_dynamic;
 		//DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d has_bonecontroller=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic, subinfo->has_bonecontroller);
 		DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
 	}

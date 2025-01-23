@@ -226,8 +226,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			tmp[2] = 0;
 			VectorNormalize( tmp );
 
-			vec3_t cull_vforward, cull_vup, cull_vright;
-			VectorCopy(g_camera.vforward, cull_vforward);
+			vec3_t /*cull_vforward,*/ cull_vup, cull_vright;
+			//VectorCopy(g_camera.vforward, cull_vforward);
 			VectorCopy(g_camera.vup, cull_vup);
 			VectorCopy(g_camera.vright, cull_vright);
 

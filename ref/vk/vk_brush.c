@@ -996,7 +996,6 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 
 		ASSERT(conv->geometry_index >= 0);
 		ASSERT(conv->geometry_index < bmodel->render_model.num_geometries);
-		const vk_render_geometry_t *const geom = bmodel->render_model.geometries + conv->geometry_index;
 		const r_geometry_range_lock_t lock = R_GeometryRangeLockSubrange(&bmodel->geometry, conv->vertices_dst_offset, conv->vertices_count);
 
 		for (int j = 0; j < conv->vertices_count; ++j) {

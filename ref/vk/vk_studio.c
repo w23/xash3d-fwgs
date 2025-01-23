@@ -183,6 +183,7 @@ R_AllowFlipViewModel
 should a flip the viewmodel if cl_righthand is set to 1
 ================
 */
+/*
 static qboolean R_AllowFlipViewModel( cl_entity_t *e )
 {
 	if( cl_righthand && cl_righthand->value > 0 )
@@ -193,6 +194,7 @@ static qboolean R_AllowFlipViewModel( cl_entity_t *e )
 
 	return false;
 }
+*/
 
 /*
 ================
@@ -1284,7 +1286,8 @@ void R_StudioEntityLight( alight_t *lightinfo )
 	float		minstrength, dist2, f, r2;
 	float		lstrength[MAX_LOCALLIGHTS];
 	cl_entity_t	*ent = RI.currententity;
-	vec3_t		mid, origin, pos;
+	vec3_t		mid, origin;
+	//vec3_t		pos;
 	dlight_t		*el;
 
 	g_studio.numlocallights = 0;
@@ -1314,7 +1317,7 @@ void R_StudioEntityLight( alight_t *lightinfo )
 			else VectorCopy( ent->origin, el->origin );
 		}
 
-		VectorCopy( el->origin, pos );
+		//VectorCopy( el->origin, pos );
 		VectorSubtract( origin, el->origin, mid );
 
 		f = DotProduct( mid, mid );
@@ -1560,7 +1563,8 @@ R_StudioGetTexture
 Doesn't changes studio global state at all
 ===============
 */
-mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
+/*
+static mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 {
 	mstudiotexture_t	*ptexture;
 	studiohdr_t	*phdr, *thdr;
@@ -1576,6 +1580,7 @@ mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 
 	return ptexture;
 }
+*/
 
 // TODO where does this need to be declared and defined? currently it's in vk_scene.c
 extern int CL_FxBlend( cl_entity_t *e );
@@ -1643,6 +1648,7 @@ R_StudioMeshCompare
 Sorting opaque entities by model type
 ===============
 */
+/*
 static int R_StudioMeshCompare( const void *a, const void *b )
 {
 	if( FBitSet( ((const sortedmesh_t*)a)->flags, STUDIO_NF_ADDITIVE ))
@@ -1653,6 +1659,7 @@ static int R_StudioMeshCompare( const void *a, const void *b )
 
 	return 0;
 }
+*/
 
 static void addVerticesIndicesCounts( const short *ptricmds, int *num_vertices, int *num_indices ) {
 	int i;
@@ -1963,11 +1970,11 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	}
 
 	// generate shared normals for properly scaling glowing shell
-	float shellscale = 0.0f;
+	//float shellscale = 0.0f;
 	if( RI.currententity->curstate.renderfx == kRenderFxGlowShell )
 	{
-		float factor = (1.0f / 128.0f);
-		shellscale = Q_max( factor, RI.currententity->curstate.renderamt * factor );
+		//float factor = (1.0f / 128.0f);
+		//shellscale = Q_max( factor, RI.currententity->curstate.renderamt * factor );
 		R_StudioBuildNormalTable();
 	}
 
@@ -1975,7 +1982,7 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 
 	const mstudiomesh_t *const pmesh = PTR_CAST(const mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex);
 
-	qboolean need_sort = false;
+	//qboolean need_sort = false;
 	for( int j = 0, k = 0; j < m_pSubModel->nummesh; j++ )
 	{
 		const int face_flags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
@@ -1985,15 +1992,15 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		g_studio.meshes[j].mesh = &pmesh[j];
 
 		// FIXME VK cannot into "dynamic" blending/alpha-test
-		if( FBitSet( face_flags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))
-			need_sort = true;
+		/*if( FBitSet( face_flags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))*/
+		/*	need_sort = true;*/
 
 		if( RI.currententity->curstate.rendermode == kRenderTransAdd )
 		{
 			for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 			{
 				// FIXME VK
-				const struct { float blend; } tr = {1.f};
+				//const struct { float blend; } tr = {1.f};
 				if( FBitSet( face_flags, STUDIO_NF_CHROME ))
 					R_StudioSetupChrome( g_studio.chrome[k], *pnormbone, (float *)pstudionorms );
 				VectorSet( g_studio.lightvalues[k], g_studio.blend, g_studio.blend, g_studio.blend );
@@ -2422,7 +2429,8 @@ R_GetEntityRenderMode
 check for texture flags
 ================
 */
-int R_GetEntityRenderMode( cl_entity_t *ent )
+/*
+static int R_GetEntityRenderMode( cl_entity_t *ent )
 {
 	int		i, opaque, trans;
 	mstudiotexture_t	*ptexture;
@@ -2464,6 +2472,7 @@ int R_GetEntityRenderMode( cl_entity_t *ent )
 		return kRenderTransAdd;
 	return ent->curstate.rendermode;
 }
+*/
 
 /*
 ===============
@@ -2603,11 +2612,11 @@ static int pfnIsHardware( void )
 
 static void R_StudioDrawPointsShadow( void )
 {
-	float		*av, height;
-	float		vec_x, vec_y;
-	mstudiomesh_t	*pmesh;
-	vec3_t		point;
-	int		i, k;
+	/*float		*av, height;*/
+	/*float		vec_x, vec_y;*/
+	//mstudiomesh_t	*pmesh;
+	//vec3_t		point;
+	int		/*i,*/ k;
 
 	if( FBitSet( RI.currententity->curstate.effects, EF_NOSHADOW ))
 		return;
@@ -2617,16 +2626,16 @@ static void R_StudioDrawPointsShadow( void )
 		pglEnable( GL_STENCIL_TEST );
 	*/
 
-	height = g_studio.lightspot[2] + 1.0f;
-	vec_x = -g_studio.lightvec[0] * 8.0f;
-	vec_y = -g_studio.lightvec[1] * 8.0f;
+	/*height = g_studio.lightspot[2] + 1.0f;*/
+	/*vec_x = -g_studio.lightvec[0] * 8.0f;*/
+	/*vec_y = -g_studio.lightvec[1] * 8.0f;*/
 
 	for( k = 0; k < m_pSubModel->nummesh; k++ )
 	{
-		short	*ptricmds;
+		//short	*ptricmds;
 
-		pmesh = PTR_CAST(mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex) + k;
-		ptricmds = PTR_CAST(short, (byte *)m_pStudioHeader + pmesh->triindex);
+		//pmesh = PTR_CAST(mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex) + k;
+		//ptricmds = PTR_CAST(short, (byte *)m_pStudioHeader + pmesh->triindex);
 
 		/* FIXME VK
 		r_stats.c_studio_polys += pmesh->numtris;
@@ -2687,7 +2696,7 @@ static void GL_StudioDrawShadow( void )
 
 	if( r_shadows.value && g_studio.rendermode != kRenderTransAdd && !FBitSet( RI.currentmodel->flags, STUDIO_AMBIENT_LIGHT ))
 	{
-		float	color = 1.0f - (g_studio.blend * 0.5f);
+		//float	color = 1.0f - (g_studio.blend * 0.5f);
 
 	/* FIXME VK
 		pglDisable( GL_TEXTURE_2D );
@@ -3210,8 +3219,8 @@ void R_RunViewmodelEvents( void )
 
 void R_GatherPlayerLight( void )
 {
-	cl_entity_t	*view = gEngine.GetViewModel();
-	colorVec		c;
+	//cl_entity_t	*view = globals.viewent;
+	//colorVec		c;
 
 	/* FIXME VK
 	tr.ignore_lightgamma = true;
