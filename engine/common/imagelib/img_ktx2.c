@@ -86,7 +86,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	ktx2_index_t index;
 	size_t total_size = 0;
 	size_t max_offset = 0;
-	int mip, cursor;
+	int mip;
 	const byte *const levels_begin = buffer + KTX2_LEVELS_OFFSET;
 
 	// Sets image.type and image.flags
@@ -174,7 +174,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	memcpy( image.rgba, buffer, image.size );
 
-	for( mip = 0, cursor = 0; mip < header->levelCount; ++mip )
+	for( mip = 0; mip < header->levelCount; ++mip )
 	{
 		int cursors[6] = {0};
 		if ( header->faceCount == 6 ) {
