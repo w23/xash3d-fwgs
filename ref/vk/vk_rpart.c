@@ -94,7 +94,7 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 			VectorScale( cull_vup, size, up );
 
 			p->color = bound( 0, p->color, 255 );
-			pColor = gEngine.CL_GetPaletteColor( p->color );
+			pColor = &globals.palette[ p->color ];
 
 			alpha = 255 * (p->die - gp_cl->time) * 16.0f;
 			if( alpha > 255 || p->type == pt_static )
