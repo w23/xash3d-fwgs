@@ -768,7 +768,7 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 	{
 		cl_entity_t	*parent;
 
-		parent = gEngine.GetEntityByIndex( e->curstate.aiment );
+		parent = globals.entities + e->curstate.aiment;
 
 		if( parent && parent->model )
 		{

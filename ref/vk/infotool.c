@@ -37,7 +37,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 		physent = gEngine.EV_GetPhysent( trace.ent );
 	}
 
-	ent = gEngine.GetEntityByIndex( (physent && physent->info > 0) ? physent->info : 0 );
+	ent = globals.entities + ((physent && physent->info > 0) ? physent->info : 0);
 
 	p += Q_snprintf(p, end - p,
 		"^\n"

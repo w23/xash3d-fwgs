@@ -2959,7 +2959,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		// copy attachments into global entity array
 		if( RI.currententity->index > 0 )
 		{
-			cl_entity_t *ent = gEngine.GetEntityByIndex( RI.currententity->index );
+			cl_entity_t *ent = globals.entities + ( RI.currententity->index );
 			memcpy( ent->attachment, RI.currententity->attachment, sizeof( vec3_t ) * 4 );
 		}
 	}
@@ -3083,7 +3083,7 @@ static int R_StudioDrawModel( int flags )
 		// copy attachments into global entity array
 		if( RI.currententity->index > 0 )
 		{
-			cl_entity_t *ent = gEngine.GetEntityByIndex( RI.currententity->index );
+			cl_entity_t *ent = globals.entities + RI.currententity->index;
 			memcpy( ent->attachment, RI.currententity->attachment, sizeof( vec3_t ) * 4 );
 		}
 	}
@@ -3165,7 +3165,7 @@ static void R_DrawStudioModel( cl_entity_t *e )
 	{
 		if( e->curstate.movetype == MOVETYPE_FOLLOW && e->curstate.aiment > 0 )
 		{
-			cl_entity_t *parent = gEngine.GetEntityByIndex( e->curstate.aiment );
+			cl_entity_t *parent = globals.entities + e->curstate.aiment;
 
 			if( parent && parent->model && parent->model->type == mod_studio )
 			{
