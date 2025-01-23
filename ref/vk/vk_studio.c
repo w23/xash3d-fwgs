@@ -3184,7 +3184,6 @@ static void R_DrawStudioModel( cl_entity_t *e )
 void R_RunViewmodelEvents( void )
 {
 	int	i;
-	vec3_t simorg;
 
 	if( r_drawviewmodel->value == 0 )
 		return;
@@ -3209,9 +3208,8 @@ void R_RunViewmodelEvents( void )
 
 	R_StudioSetupTimings();
 
-	gEngine.GetPredictedOrigin( simorg );
 	for( i = 0; i < 4; i++ )
-		VectorCopy( simorg, RI.currententity->attachment[i] );
+		VectorCopy( gp_cl->simorg, RI.currententity->attachment[i] );
 	RI.currentmodel = RI.currententity->model;
 
 	R_StudioDrawModelInternal( RI.currententity, STUDIO_EVENTS );

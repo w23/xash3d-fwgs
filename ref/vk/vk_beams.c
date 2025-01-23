@@ -843,9 +843,7 @@ static qboolean R_BeamComputePoint( int beamEnt, vec3_t pt )
 		VectorCopy( ent->attachment[attach - 1], pt );
 	else if( ent->index == gp_cl->playernum + 1 )
 	{
-		vec3_t simorg;
-		gEngine.GetPredictedOrigin( simorg );
-		VectorCopy( simorg, pt );
+		pt = gp_cl->simorg;
 	}
 	else VectorCopy( ent->origin, pt );
 
