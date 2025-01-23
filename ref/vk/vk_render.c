@@ -1037,12 +1037,14 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 			.render_type = args.render_type,
 		});
 	} else {
+		matrix4x4 identity;
+		Matrix4x4_LoadIdentity(identity);
 		submitToTraditionalRender((trad_submit_t){
 			.debug_name = args.name,
 			.lightmap = 0,
 			.geometries = &geometry,
 			.geometries_count = 1,
-			.transform = &m_matrix4x4_identity,
+			.transform = &identity,
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = -1,
