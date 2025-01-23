@@ -119,7 +119,7 @@ SUBDIRS = [
 REFDLLS = [
 	RefDll('soft', True),
 	RefDll('gl', True),
-	RefDll('vk', True),
+	RefDll('vk', True, 'VULKAN'),
 	RefDll('gles1', False, 'NANOGL'),
 	RefDll('gles2', False, 'GLWES'),
 	RefDll('gl4es', False),
@@ -371,7 +371,6 @@ def configure(conf):
 		]
 
 		opt_cflags = [
-			'-Werror=declaration-after-statement',
 			'-Werror=enum-conversion',
 			'-Wno-error=enum-float-conversion', # need this for cvars
 			'-Werror=implicit-int',

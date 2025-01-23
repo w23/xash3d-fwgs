@@ -122,7 +122,7 @@ def build(bld):
 	if bld.env.COMPILER_CC == 'msvc':
 		bld.env.CFLAGS += ['/WX']
 	else:
-		bld.env.CFLAGS += ['-Werror'] # TODO , '-Wall']
+		bld.env.CFLAGS += ['-Werror', '-Wno-format-nonliteral'] # TODO , '-Wall']
 
 	bld.shlib(
 		source   = source,
