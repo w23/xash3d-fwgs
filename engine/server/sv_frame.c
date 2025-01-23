@@ -25,8 +25,8 @@ typedef struct
 	byte		sended[MAX_EDICTS_BYTES];
 } sv_ents_t;
 
-int	c_fullsend;	// just a debug counter
-int	c_notsend;
+static int	c_fullsend;	// just a debug counter
+static int	c_notsend;
 
 /*
 =======================
@@ -178,9 +178,10 @@ Encode a client frame onto the network channel
 SV_FindBestBaseline
 
 trying to deltas with previous entities
+set frame to NULL to check for static entities
 =============
 */
-int SV_FindBestBaseline( sv_client_t *cl, int index, entity_state_t **baseline, entity_state_t *to, client_frame_t *frame, qboolean player )
+int SV_FindBestBaseline( int index, entity_state_t **baseline, entity_state_t *to, client_frame_t *frame, qboolean player )
 {
 	int	bestBitCount;
 	int	i, bitCount;
@@ -193,7 +194,13 @@ int SV_FindBestBaseline( sv_client_t *cl, int index, entity_state_t **baseline, 
 	for( i = index - 1; bestBitCount > 0 && i >= 0 && ( index - i ) < ( MAX_CUSTOM_BASELINES - 1 ); i-- )
 	{
 		// don't worry about underflow in circular buffer
-		entity_state_t	*test = &svs.packet_entities[(frame->first_entity+i) % svs.num_client_entities];
+		entity_state_t *test;
+
+		// if set, then it's normal entity
+		if( frame != NULL )
+			test = &svs.packet_entities[(frame->first_entity+i) % svs.num_client_entities];
+		else
+			test = &svs.static_entities[i];
 
 		if( to->entityType == test->entityType )
 		{
@@ -209,44 +216,12 @@ int SV_FindBestBaseline( sv_client_t *cl, int index, entity_state_t **baseline, 
 
 	// using delta from previous entity as baseline for current
 	if( index != bestfound )
-		*baseline = &svs.packet_entities[(frame->first_entity+bestfound) % svs.num_client_entities];
-	return index - bestfound;
-}
-
-/*
-=============
-SV_FindBestBaselineForStatic
-
-trying to deltas with previous static entities
-=============
-*/
-int SV_FindBestBaselineForStatic( int index, entity_state_t **baseline, entity_state_t *to )
-{
-	int	bestBitCount;
-	int	i, bitCount;
-	int	bestfound, j;
-
-	bestBitCount = j = Delta_TestBaseline( *baseline, to, false, sv.time );
-	bestfound = index;
-
-	// lookup backward for previous 64 states and try to interpret current delta as baseline
-	for( i = index - 1; bestBitCount > 0 && i >= 0 && ( index - i ) < ( MAX_CUSTOM_BASELINES - 1 ); i-- )
 	{
-		// don't worry about underflow in circular buffer
-		entity_state_t	*test = &svs.static_entities[i];
-
-		bitCount = Delta_TestBaseline( test, to, false, sv.time );
-
-		if( bitCount < bestBitCount )
-		{
-			bestBitCount = bitCount;
-			bestfound = i;
-		}
+		if( frame != NULL )
+			*baseline = &svs.packet_entities[(frame->first_entity+bestfound) % svs.num_client_entities];
+		else
+			*baseline = &svs.static_entities[bestfound];
 	}
-
-	// using delta from previous entity as baseline for current
-	if( index != bestfound )
-		*baseline = &svs.static_entities[bestfound];
 	return index - bestfound;
 }
 
@@ -347,7 +322,7 @@ static void SV_EmitPacketEntities( sv_client_t *cl, client_frame_t *to, sizebuf_
 			// trying to reduce message by select optimal baseline
 			if( !sv_instancedbaseline.value || !sv.num_instanced || sv.last_valid_baseline > newnum )
 			{
-				offset = SV_FindBestBaseline( cl, newindex, &baseline, newent, to, player );
+				offset = SV_FindBestBaseline( newindex, &baseline, newent, to, player );
 			}
 			else
 			{
@@ -515,16 +490,17 @@ SV_EmitPings
 
 =============
 */
-void SV_EmitPings( sizebuf_t *msg )
+static void SV_EmitPings( sizebuf_t *msg )
 {
-	sv_client_t	*cl;
-	int		packet_loss;
-	int		i, ping;
+	sv_client_t *cl;
+	int i;
 
 	MSG_BeginServerCmd( msg, svc_pings );
 
 	for( i = 0, cl = svs.clients; i < svs.maxclients; i++, cl++ )
 	{
+		int packet_loss, ping;
+
 		if( cl->state != cs_spawned )
 			continue;
 
@@ -547,7 +523,7 @@ SV_WriteClientdataToMessage
 
 ==================
 */
-void SV_WriteClientdataToMessage( sv_client_t *cl, sizebuf_t *msg )
+static void SV_WriteClientdataToMessage( sv_client_t *cl, sizebuf_t *msg )
 {
 	clientdata_t	nullcd;
 	clientdata_t	*from_cd, *to_cd;
@@ -634,7 +610,7 @@ SV_WriteEntitiesToClient
 
 ==================
 */
-void SV_WriteEntitiesToClient( sv_client_t *cl, sizebuf_t *msg )
+static void SV_WriteEntitiesToClient( sv_client_t *cl, sizebuf_t *msg )
 {
 	client_frame_t	*frame;
 	entity_state_t	*state;
@@ -706,7 +682,7 @@ FRAME UPDATES
 SV_SendClientDatagram
 =======================
 */
-void SV_SendClientDatagram( sv_client_t *cl )
+static void SV_SendClientDatagram( sv_client_t *cl )
 {
 	byte	msg_buf[MAX_DATAGRAM];
 	sizebuf_t	msg;
@@ -752,7 +728,7 @@ void SV_SendClientDatagram( sv_client_t *cl )
 SV_UpdateUserInfo
 =======================
 */
-void SV_UpdateUserInfo( sv_client_t *cl )
+static void SV_UpdateUserInfo( sv_client_t *cl )
 {
 	SV_FullClientUpdate( cl, &sv.reliable_datagram );
 	ClearBits( cl->flags, FCL_RESEND_USERINFO );
@@ -764,7 +740,7 @@ void SV_UpdateUserInfo( sv_client_t *cl )
 SV_UpdateToReliableMessages
 =======================
 */
-void SV_UpdateToReliableMessages( void )
+static void SV_UpdateToReliableMessages( void )
 {
 	sv_client_t	*cl;
 	int		i;
@@ -811,17 +787,17 @@ void SV_UpdateToReliableMessages( void )
 			continue;	// reliables go to all connected or spawned
 
 		if( MSG_GetNumBytesWritten( &sv.reliable_datagram ) < MSG_GetNumBytesLeft( &cl->netchan.message ))
-			MSG_WriteBits( &cl->netchan.message, MSG_GetBuf( &sv.reliable_datagram ), MSG_GetNumBitsWritten( &sv.reliable_datagram ));
+			MSG_WriteBits( &cl->netchan.message, MSG_GetData( &sv.reliable_datagram ), MSG_GetNumBitsWritten( &sv.reliable_datagram ));
 		else Netchan_CreateFragments( &cl->netchan, &sv.reliable_datagram );
 
 		if( MSG_GetNumBytesWritten( &sv.datagram ) < MSG_GetNumBytesLeft( &cl->datagram ))
-			MSG_WriteBits( &cl->datagram, MSG_GetBuf( &sv.datagram ), MSG_GetNumBitsWritten( &sv.datagram ));
+			MSG_WriteBits( &cl->datagram, MSG_GetData( &sv.datagram ), MSG_GetNumBitsWritten( &sv.datagram ));
 		else Con_DPrintf( S_WARN "Ignoring unreliable datagram for %s, would overflow\n", cl->name );
 
 		if( FBitSet( cl->flags, FCL_HLTV_PROXY ))
 		{
 			if( MSG_GetNumBytesWritten( &sv.spec_datagram ) < MSG_GetNumBytesLeft( &cl->datagram ))
-				MSG_WriteBits( &cl->datagram, MSG_GetBuf( &sv.spec_datagram ), MSG_GetNumBitsWritten( &sv.spec_datagram ));
+				MSG_WriteBits( &cl->datagram, MSG_GetData( &sv.spec_datagram ), MSG_GetNumBitsWritten( &sv.spec_datagram ));
 			else Con_DPrintf( S_WARN "Ignoring spectator datagram for %s, would overflow\n", cl->name );
 		}
 	}

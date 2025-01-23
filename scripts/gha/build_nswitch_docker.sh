@@ -12,6 +12,8 @@ build_hlsdk()
 	./waf build install --destdir=../pkgtemp/xash3d || die
 }
 
+git config --global --add safe.directory '*'
+
 echo "Setting up environment..."
 
 # we can't actually download dkp-toolchain-vars even from here, so
@@ -41,12 +43,16 @@ make -C libsolder install || die
 echo "Building engine..."
 
 ./waf configure -T release --nswitch || die_configure
-./waf build install --destdir=pkgtemp/xash3d || die
+./waf build install --destdir=pkgtemp/xash3d -v || die
 
 echo "Building HLSDK..."
 
 pushd hlsdk-portable || die
 build_hlsdk mobile_hacks valve
 build_hlsdk opfor gearbox
-build_hlsdk bshift bshift
+popd
+
+# bshift can be used from mobile_hacks branch
+pushd pkgtemp/xash3d
+cp -v valve/dlls/hl_nswitch_arm64.so bshift/dlls/bshift_nswitch_arm64.so
 popd

@@ -17,30 +17,56 @@ GNU General Public License for more details.
 #include "sound.h"
 #include "client.h"
 
-#define IPAINTBUFFER	0
-#define IROOMBUFFER		1
-#define ISTREAMBUFFER	2
+enum
+{
+	IPAINTBUFFER = 0,
+	IROOMBUFFER,
+	ISTREAMBUFFER,
+	CPAINTBUFFERS,
+};
 
-#define FILTERTYPE_NONE	0
-#define FILTERTYPE_LINEAR	1
-#define FILTERTYPE_CUBIC	2
+enum
+{
+	FILTERTYPE_NONE = 0,
+	FILTERTYPE_LINEAR,
+	FILTERTYPE_CUBIC,
+};
 
 #define CCHANVOLUMES	2
 
-#define SND_SCALE_BITS	7
-#define SND_SCALE_SHIFT	(8 - SND_SCALE_BITS)
-#define SND_SCALE_LEVELS	(1 << SND_SCALE_BITS)
+#define SND_SCALE_BITS   7
+#define SND_SCALE_SHIFT  ( 8 - SND_SCALE_BITS )
+#define SND_SCALE_LEVELS ( 1 << SND_SCALE_BITS )
 
-portable_samplepair_t	*g_curpaintbuffer;
-portable_samplepair_t	streambuffer[(PAINTBUFFER_SIZE+1)];
-portable_samplepair_t	paintbuffer[(PAINTBUFFER_SIZE+1)];
-portable_samplepair_t	roombuffer[(PAINTBUFFER_SIZE+1)];
-portable_samplepair_t	facingbuffer[(PAINTBUFFER_SIZE+1)];
-portable_samplepair_t	temppaintbuffer[(PAINTBUFFER_SIZE+1)];
-paintbuffer_t		paintbuffers[CPAINTBUFFERS];
+// sound mixing buffer
+#define CPAINTFILTERMEM 3
+#define CPAINTFILTERS   4 // maximum number of consecutive upsample passes per paintbuffer
 
-int			snd_scaletable[SND_SCALE_LEVELS][256];
+// fixed point stuff for real-time resampling
+#define FIX_BITS             28
+#define FIX_SCALE			 ( 1 << FIX_BITS )
+#define FIX_MASK             (( 1 << FIX_BITS ) - 1 )
+#define FIX_FLOAT( a )       ((int)(( a ) * FIX_SCALE ))
+#define FIX( a )             (((int)( a )) << FIX_BITS )
+#define FIX_INTPART( a )     (((int)( a )) >> FIX_BITS )
+#define FIX_FRACPART( a )    (( a ) & FIX_MASK )
 
+typedef struct
+{
+	qboolean               factive; // if true, mix to this paintbuffer using flags
+	portable_samplepair_t *pbuf;    // front stereo mix buffer, for 2 or 4 channel mixing
+	int                    ifilter; // current filter memory buffer to use for upsampling pass
+	portable_samplepair_t  fltmem[CPAINTFILTERS][CPAINTFILTERMEM];
+} paintbuffer_t;
+
+static portable_samplepair_t *g_curpaintbuffer;
+static portable_samplepair_t  streambuffer[(PAINTBUFFER_SIZE+1)];
+static portable_samplepair_t  paintbuffer[(PAINTBUFFER_SIZE+1)];
+static portable_samplepair_t  roombuffer[(PAINTBUFFER_SIZE+1)];
+static portable_samplepair_t  temppaintbuffer[(PAINTBUFFER_SIZE+1)];
+static paintbuffer_t          paintbuffers[CPAINTBUFFERS];
+
+static int snd_scaletable[SND_SCALE_LEVELS][256];
 void S_InitScaletable( void )
 {
 	int	i, j;
@@ -58,7 +84,7 @@ S_TransferPaintBuffer
 
 ===================
 */
-void S_TransferPaintBuffer( int endtime )
+static void S_TransferPaintBuffer( int endtime )
 {
 	int	*snd_p, snd_linear_count;
 	int	lpos, lpaintedtime;
@@ -67,7 +93,7 @@ void S_TransferPaintBuffer( int endtime )
 	dword	*pbuf;
 
 	pbuf = (dword *)dma.buffer;
-	snd_p = (int *)PAINTBUFFER;
+	snd_p = (int *)g_curpaintbuffer;
 	lpaintedtime = paintedtime;
 	sampleMask = ((dma.samples >> 1) - 1);
 
@@ -111,20 +137,20 @@ void S_TransferPaintBuffer( int endtime )
 //===============================================================================
 // Activate a paintbuffer.  All active paintbuffers are mixed in parallel within
 // MIX_MixChannelsToPaintbuffer, according to flags
-_inline void MIX_ActivatePaintbuffer( int ipaintbuffer )
+static void MIX_ActivatePaintbuffer( int ipaintbuffer )
 {
 	Assert( ipaintbuffer < CPAINTBUFFERS );
 	paintbuffers[ipaintbuffer].factive = true;
 }
 
-_inline void MIX_SetCurrentPaintbuffer( int ipaintbuffer )
+static void MIX_SetCurrentPaintbuffer( int ipaintbuffer )
 {
 	Assert( ipaintbuffer < CPAINTBUFFERS );
 	g_curpaintbuffer = paintbuffers[ipaintbuffer].pbuf;
 	Assert( g_curpaintbuffer != NULL );
 }
 
-_inline int MIX_GetCurrentPaintbufferIndex( void )
+static int MIX_GetCurrentPaintbufferIndex( void )
 {
 	int	i;
 
@@ -136,7 +162,7 @@ _inline int MIX_GetCurrentPaintbufferIndex( void )
 	return 0;
 }
 
-_inline paintbuffer_t *MIX_GetCurrentPaintbufferPtr( void )
+static paintbuffer_t *MIX_GetCurrentPaintbufferPtr( void )
 {
 	int	ipaint = MIX_GetCurrentPaintbufferIndex();
 
@@ -145,7 +171,7 @@ _inline paintbuffer_t *MIX_GetCurrentPaintbufferPtr( void )
 }
 
 // Don't mix into any paintbuffers
-_inline void MIX_DeactivateAllPaintbuffers( void )
+static void MIX_DeactivateAllPaintbuffers( void )
 {
 	int	i;
 
@@ -154,7 +180,7 @@ _inline void MIX_DeactivateAllPaintbuffers( void )
 }
 
 // set upsampling filter indexes back to 0
-_inline void MIX_ResetPaintbufferFilterCounters( void )
+static void MIX_ResetPaintbufferFilterCounters( void )
 {
 	int	i;
 
@@ -163,13 +189,13 @@ _inline void MIX_ResetPaintbufferFilterCounters( void )
 }
 
 // return pointer to front paintbuffer pbuf, given index
-_inline portable_samplepair_t *MIX_GetPFrontFromIPaint( int ipaintbuffer )
+static portable_samplepair_t *MIX_GetPFrontFromIPaint( int ipaintbuffer )
 {
 	Assert( ipaintbuffer < CPAINTBUFFERS );
 	return paintbuffers[ipaintbuffer].pbuf;
 }
 
-_inline paintbuffer_t *MIX_GetPPaintFromIPaint( int ipaint )
+static paintbuffer_t *MIX_GetPPaintFromIPaint( int ipaint )
 {
 	Assert( ipaint < CPAINTBUFFERS );
 	return &paintbuffers[ipaint];
@@ -201,7 +227,7 @@ CHANNEL MIXING
 
 ===============================================================================
 */
-void S_PaintMonoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, int outCount )
+static void S_PaintMonoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, int outCount )
 {
 	int	*lscale, *rscale;
 	int 	i, data;
@@ -217,7 +243,7 @@ void S_PaintMonoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, in
 	}
 }
 
-void S_PaintStereoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, int outCount )
+static void S_PaintStereoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, int outCount )
 {
 	int	*lscale, *rscale;
 	uint	left, right;
@@ -237,7 +263,7 @@ void S_PaintStereoFrom8( portable_samplepair_t *pbuf, int *volume, byte *pData, 
 	}
 }
 
-void S_PaintMonoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData, int outCount )
+static void S_PaintMonoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData, int outCount )
 {
 	int	left, right;
 	int	i, data;
@@ -252,7 +278,7 @@ void S_PaintMonoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData, 
 	}
 }
 
-void S_PaintStereoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData, int outCount )
+static void S_PaintStereoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData, int outCount )
 {
 	uint	*data;
 	int	left, right;
@@ -273,11 +299,11 @@ void S_PaintStereoFrom16( portable_samplepair_t *pbuf, int *volume, short *pData
 	}
 }
 
-void S_Mix8MonoTimeCompress( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount, int timecompress )
+static void S_Mix8MonoTimeCompress( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount, int timecompress )
 {
 }
 
-void S_Mix8Mono( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount, int timecompress )
+static void S_Mix8Mono( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount, int timecompress )
 {
 	int	i, sampleIndex = 0;
 	uint	sampleFrac = inputOffset;
@@ -309,7 +335,7 @@ void S_Mix8Mono( portable_samplepair_t *pbuf, int *volume, byte *pData, int inpu
 	}
 }
 
-void S_Mix8Stereo( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount )
+static void S_Mix8Stereo( portable_samplepair_t *pbuf, int *volume, byte *pData, int inputOffset, uint rateScale, int outCount )
 {
 	int	i, sampleIndex = 0;
 	uint	sampleFrac = inputOffset;
@@ -335,7 +361,7 @@ void S_Mix8Stereo( portable_samplepair_t *pbuf, int *volume, byte *pData, int in
 	}
 }
 
-void S_Mix16Mono( portable_samplepair_t *pbuf, int *volume, short *pData, int inputOffset, uint rateScale, int outCount )
+static void S_Mix16Mono( portable_samplepair_t *pbuf, int *volume, short *pData, int inputOffset, uint rateScale, int outCount )
 {
 	int	i, sampleIndex = 0;
 	uint	sampleFrac = inputOffset;
@@ -357,7 +383,7 @@ void S_Mix16Mono( portable_samplepair_t *pbuf, int *volume, short *pData, int in
 	}
 }
 
-void S_Mix16Stereo( portable_samplepair_t *pbuf, int *volume, short *pData, int inputOffset, uint rateScale, int outCount )
+static void S_Mix16Stereo( portable_samplepair_t *pbuf, int *volume, short *pData, int inputOffset, uint rateScale, int outCount )
 {
 	int	i, sampleIndex = 0;
 	uint	sampleFrac = inputOffset;
@@ -379,7 +405,7 @@ void S_Mix16Stereo( portable_samplepair_t *pbuf, int *volume, short *pData, int 
 	}
 }
 
-void S_MixChannel( channel_t *pChannel, void *pData, int outputOffset, int inputOffset, uint fracRate, int outCount, int timecompress )
+static void S_MixChannel( channel_t *pChannel, void *pData, int outputOffset, int inputOffset, uint fracRate, int outCount, int timecompress )
 {
 	int			pvol[CCHANVOLUMES];
 	paintbuffer_t		*ppaint = MIX_GetCurrentPaintbufferPtr();
@@ -496,7 +522,7 @@ int S_MixDataToDevice( channel_t *pChannel, int sampleCount, int outRate, int ou
 	return outOffset - startingOffset;
 }
 
-qboolean S_ShouldContinueMixing( channel_t *ch )
+static qboolean S_ShouldContinueMixing( channel_t *ch )
 {
 	if( ch->isSentence )
 	{
@@ -517,12 +543,13 @@ qboolean S_ShouldContinueMixing( channel_t *ch )
 // this routine will fill the paintbuffer to endtime.  Otherwise, fewer samples are mixed.
 // if( endtime - paintedtime ) is not aligned on boundaries of 4,
 // we'll miss data if outputRate < SOUND_DMA_SPEED!
-void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
+static void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
 {
 	channel_t *ch;
 	wavdata_t	*pSource;
 	int	i, sampleCount;
 	qboolean	bZeroVolume;
+	qboolean local = Host_IsLocalGame();
 
 	// mix each channel into paintbuffer
 	ch = channels;
@@ -549,7 +576,7 @@ void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
 			{
 				// play, playvol
 			}
-			else if(( s_listener.inmenu || s_listener.paused ) && !ch->localsound )
+			else if(( s_listener.inmenu || s_listener.paused ) && !ch->localsound && local )
 			{
 				// play only local sounds, keep pause for other
 				continue;
@@ -567,6 +594,7 @@ void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
 
 		// Don't mix sound data for sounds with zero volume. If it's a non-looping sound,
 		// just remove the sound when its volume goes to zero.
+
 		bZeroVolume = !ch->leftvol && !ch->rightvol;
 
 		if( !bZeroVolume )
@@ -576,7 +604,7 @@ void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
 				bZeroVolume = true;
 		}
 
-		if( !pSource || ( bZeroVolume && pSource->loopStart == -1 ))
+		if( !pSource || ( bZeroVolume && !FBitSet( pSource->flags, SOUND_LOOPED )))
 		{
 			if( !pSource )
 			{
@@ -629,7 +657,7 @@ void MIX_MixChannelsToPaintbuffer( int endtime, int rate, int outputRate )
 }
 
 // pass in index -1...count+2, return pointer to source sample in either paintbuffer or delay buffer
-_inline portable_samplepair_t *S_GetNextpFilter( int i, portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem )
+static portable_samplepair_t *S_GetNextpFilter( int i, portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem )
 {
 	// The delay buffer is assumed to precede the paintbuffer by 6 duplicated samples
 	if( i == -1 ) return (&(pfiltermem[0]));
@@ -647,7 +675,7 @@ _inline portable_samplepair_t *S_GetNextpFilter( int i, portable_samplepair_t *p
 // if NULL then perform no filtering.
 // count: how many samples to upsample. will become count*2 samples in buffer, in place.
 
-void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int count )
+static void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int count )
 {
 
 // implement cubic interpolation on 2x upsampled buffer.   Effectively delays buffer contents by 2 samples.
@@ -668,7 +696,8 @@ void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t
 //		c = (x1 - xm1) / 2;
 //		y [outpos] = (((a * finpos) + b) * finpos + c) * finpos + x0;
 
-	int i, upCount = count << 1;
+	int i;
+	const int upCount = Q_min( count << 1, PAINTBUFFER_SIZE );
 	int a, b, c;
 	int xm1, x0, x1, x2;
 	portable_samplepair_t *psamp0;
@@ -676,8 +705,6 @@ void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t
 	portable_samplepair_t *psamp2;
 	portable_samplepair_t *psamp3;
 	int outpos = 0;
-
-	Assert( upCount <= PAINTBUFFER_SIZE );
 
 	// pfiltermem holds 6 samples from previous buffer pass
 	// process 'count' samples
@@ -720,7 +747,8 @@ void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t
 		// write out interpolated sample, increment output counter
 		temppaintbuffer[outpos++].right = a/8 + b/4 + c/2 + x0;
 
-		Assert( outpos <= ( sizeof( temppaintbuffer ) / sizeof( temppaintbuffer[0] )));
+		if( outpos > ARRAYSIZE( temppaintbuffer ))
+			break;
 	}
 
 	Assert( cfltmem >= 3 );
@@ -731,8 +759,7 @@ void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t
 	pfiltermem[2] = pbuffer[upCount - 1];
 
 	// copy temppaintbuffer back into paintbuffer
-	for( i = 0; i < upCount; i++ )
-		pbuffer[i] = temppaintbuffer[i];
+	memcpy( pbuffer, temppaintbuffer, sizeof( *pbuffer ) * upCount );
 }
 
 // pass forward over passed in buffer and linearly interpolate all odd samples
@@ -740,7 +767,7 @@ void S_Interpolate2xCubic( portable_samplepair_t *pbuffer, portable_samplepair_t
 // prevfilter:  filter memory. NOTE: this must match the filtertype ie: filterlinear[] for FILTERTYPE_LINEAR
 // if NULL then perform no filtering.
 // count: how many samples to upsample. will become count*2 samples in buffer, in place.
-void S_Interpolate2xLinear( portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int count )
+static void S_Interpolate2xLinear( portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int count )
 {
 	int	i, upCount = count<<1;
 
@@ -769,7 +796,7 @@ void S_Interpolate2xLinear( portable_samplepair_t *pbuffer, portable_samplepair_
 // if NULL then perform no filtering.
 // cfltmem: max number of sample pairs filter can use
 // filtertype: FILTERTYPE_NONE, _LINEAR, _CUBIC etc.  Must match prevfilter.
-void S_MixBufferUpsample2x( int count, portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int filtertype )
+static void S_MixBufferUpsample2x( int count, portable_samplepair_t *pbuffer, portable_samplepair_t *pfiltermem, int cfltmem, int filtertype )
 {
 	int	upCount = count<<1;
 	int	i, j;
@@ -822,7 +849,7 @@ void MIX_ClearAllPaintBuffers( int SampleCount, qboolean clearFilters )
 // mixes pbuf1 + pbuf2 into pbuf3, count samples
 // fgain is output gain 0-1.0
 // NOTE: pbuf3 may equal pbuf1 or pbuf2!
-void MIX_MixPaintbuffers( int ibuf1, int ibuf2, int ibuf3, int count, float fgain )
+static void MIX_MixPaintbuffers( int ibuf1, int ibuf2, int ibuf3, int count, float fgain )
 {
 	portable_samplepair_t	*pbuf1, *pbuf2, *pbuf3;
 	int			i, gain;
@@ -837,6 +864,14 @@ void MIX_MixPaintbuffers( int ibuf1, int ibuf2, int ibuf3, int count, float fgai
 	pbuf1 = paintbuffers[ibuf1].pbuf;
 	pbuf2 = paintbuffers[ibuf2].pbuf;
 	pbuf3 = paintbuffers[ibuf3].pbuf;
+
+	if( !gain )
+	{
+		// do not mix buf2 into buf3, just copy
+		if( pbuf1 != pbuf3 )
+			memcpy( pbuf3, pbuf1, sizeof( *pbuf1 ) * count );
+		return;
+	}
 
 	// destination buffer stereo - average n chans down to stereo
 
@@ -855,7 +890,7 @@ void MIX_MixPaintbuffers( int ibuf1, int ibuf2, int ibuf3, int count, float fgai
 	}
 }
 
-void MIX_CompressPaintbuffer( int ipaint, int count )
+static void MIX_CompressPaintbuffer( int ipaint, int count )
 {
 	portable_samplepair_t	*pbuf;
 	paintbuffer_t		*ppaint;
@@ -871,7 +906,7 @@ void MIX_CompressPaintbuffer( int ipaint, int count )
 	}
 }
 
-void S_MixUpsample( int sampleCount, int filtertype )
+static void S_MixUpsample( int sampleCount, int filtertype )
 {
 	paintbuffer_t	*ppaint = MIX_GetCurrentPaintbufferPtr();
 	int		ifilter = ppaint->ifilter;
@@ -884,10 +919,10 @@ void S_MixUpsample( int sampleCount, int filtertype )
 	ppaint->ifilter++;
 }
 
-void MIX_MixRawSamplesBuffer( int end )
+static void MIX_MixRawSamplesBuffer( int end )
 {
 	portable_samplepair_t	*pbuf, *roombuf, *streambuf;
-	uint			i, j, stop;
+	uint i, j, stop;
 
 	roombuf = MIX_GetPFrontFromIPaint( IROOMBUFFER );
 	streambuf = MIX_GetPFrontFromIPaint( ISTREAMBUFFER );
@@ -920,7 +955,11 @@ void MIX_MixRawSamplesBuffer( int end )
 		}
 
 		if( ch->entnum > 0 )
-			SND_MoveMouthRaw( ch, &ch->rawsamples[paintedtime & ( ch->max_samples - 1 )], stop - paintedtime );
+		{
+			int pos = paintedtime & ( ch->max_samples - 1 );
+
+			SND_MoveMouthRaw( ch, &ch->rawsamples[pos], bound( 0, ch->max_samples - pos, stop - paintedtime ));
+		}
 	}
 }
 
@@ -928,7 +967,7 @@ void MIX_MixRawSamplesBuffer( int end )
 // IROOMBUFFER, IFACINGBUFFER, IFACINGAWAY
 // dsp fx are then applied to these buffers by the caller.
 // caller also remixes all into final IPAINTBUFFER output.
-void MIX_UpsampleAllPaintbuffers( int end, int count )
+static void MIX_UpsampleAllPaintbuffers( int end, int count )
 {
 	// 11khz sounds are mixed into 3 buffers based on distance from listener, and facing direction
 	// These buffers are facing, facingaway, room
@@ -999,7 +1038,8 @@ void MIX_PaintChannels( int endtime )
 		MIX_UpsampleAllPaintbuffers( end, count );
 
 		// process all sounds with DSP
-		DSP_Process( idsp_room, MIX_GetPFrontFromIPaint( IROOMBUFFER ), count );
+		if( cls.key_dest != key_menu )
+			DSP_Process( MIX_GetPFrontFromIPaint( IROOMBUFFER ), count );
 
 		// add music or soundtrack from movie (no dsp)
 		MIX_MixPaintbuffers( IPAINTBUFFER, IROOMBUFFER, IPAINTBUFFER, count, S_GetMasterVolume() );

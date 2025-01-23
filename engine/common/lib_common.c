@@ -81,8 +81,8 @@ void *COM_FunctionFromName_SR( void *hInstance, const char *pName )
 const char *COM_OffsetNameForFunction( void *function )
 {
 	static string sname;
-	Q_snprintf( sname, MAX_STRING, "ofs:%lu", (size_t)((byte*)function - (byte*)svgame.dllFuncs.pfnGameInit) );
-	Con_Reportf( "COM_OffsetNameForFunction %s\n", sname );
+	Q_snprintf( sname, MAX_STRING, "ofs:%zu", ((byte*)function - (byte*)svgame.dllFuncs.pfnGameInit) );
+	Con_Reportf( "%s: %s\n", __func__, sname );
 	return sname;
 }
 
@@ -166,7 +166,7 @@ Some modders use _i?86 suffix in game library name
 So strip it to follow library naming for non-Intel CPUs
 ==============
 */
-static void COM_StripIntelSuffix( char *out )
+static inline void COM_StripIntelSuffix( char *out )
 {
 	char *suffix = Q_strrchr( out, '_' );
 
@@ -231,9 +231,9 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 		COM_GenerateClientLibraryPath( "menu", out, size );
 		break;
 	case LIBRARY_CLIENT:
-		if( SI.clientlib[0] )
+		if( COM_CheckStringEmpty( host.clientlib ))
 		{
-			Q_strncpy( out, SI.clientlib, size );
+			Q_strncpy( out, host.clientlib, size );
 		}
 		else
 		{
@@ -241,9 +241,9 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 		}
 		break;
 	case LIBRARY_SERVER:
-		if( SI.gamedll[0] )
+		if( COM_CheckStringEmpty( host.gamedll ))
 		{
-			Q_strncpy( out, SI.gamedll, size );
+			Q_strncpy( out, host.gamedll, size );
 		}
 		else
 		{
@@ -359,7 +359,7 @@ static char *COM_GetItaniumName( const char * const in_name )
 
 	if( i == MAX_NESTED_NAMESPACES )
 	{
-		Con_DPrintf( "%s: too much nested namespaces: %s\n", __FUNCTION__, in_name );
+		Con_DPrintf( "%s: too much nested namespaces: %s\n", __func__, in_name );
 		return NULL;
 	}
 
@@ -373,7 +373,7 @@ static char *COM_GetItaniumName( const char * const in_name )
 	return out_name;
 
 invalid_format:
-	Con_DPrintf( "%s: invalid format: %s\n", __FUNCTION__, in_name );
+	Con_DPrintf( "%s: invalid format: %s\n", __func__, in_name );
 	return NULL;
 }
 
@@ -421,7 +421,7 @@ char **COM_ConvertToLocalPlatform( EFunctionMangleType to, const char *from, siz
 
 	if( i == MAX_NESTED_NAMESPACES )
 	{
-		Con_DPrintf( "%s: too much nested namespaces: %s\n", __FUNCTION__, from );
+		Con_DPrintf( "%s: too much nested namespaces: %s\n", __func__, from );
 		return NULL;
 	}
 

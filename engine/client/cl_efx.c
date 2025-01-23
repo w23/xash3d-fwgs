@@ -25,12 +25,15 @@ static CVAR_DEFINE_AUTO( tracerspeed, "6000", 0, "tracer speed" );
 static CVAR_DEFINE_AUTO( tracerlength, "0.8", 0, "tracer length factor" );
 static CVAR_DEFINE_AUTO( traceroffset, "30", 0, "tracer starting offset" );
 
-particle_t	*cl_active_particles;
-particle_t	*cl_active_tracers;
-particle_t	*cl_free_particles;
-particle_t	*cl_particles = NULL;	// particle pool
+static particle_t	*cl_active_particles;
+static particle_t	*cl_active_tracers;
+static particle_t	*cl_free_particles;
+static particle_t	*cl_particles = NULL;	// particle pool
 static vec3_t	cl_avelocities[NUMVERTEXNORMALS];
 static float	cl_lasttimewarn = 0.0f;
+
+// expand debugging BBOX particle hulls by this many units.
+#define BOX_GAP	0.0f
 
 /*
 ================
@@ -175,7 +178,7 @@ particle_t * GAME_EXPORT R_AllocParticle( void (*callback)( particle_t*, float )
 		return NULL;
 
 	// never alloc particles when we not in game
-//	if( tr.frametime == 0.0 ) return NULL;
+	if( cl_clientframetime() == 0.0 ) return NULL;
 
 	if( !cl_free_particles )
 	{
@@ -218,7 +221,7 @@ R_AllocTracer
 can return NULL if particles is out
 ================
 */
-particle_t *R_AllocTracer( const vec3_t org, const vec3_t vel, float life )
+static particle_t *R_AllocTracer( const vec3_t org, const vec3_t vel, float life )
 {
 	particle_t	*p;
 
@@ -226,7 +229,7 @@ particle_t *R_AllocTracer( const vec3_t org, const vec3_t vel, float life )
 		return NULL;
 
 	// never alloc particles when we not in game
-	//if( tr.frametime == 0.0 ) return NULL;
+	if( cl_clientframetime() == 0.0 ) return NULL;
 
 	if( !cl_free_particles )
 	{
@@ -250,7 +253,7 @@ particle_t *R_AllocTracer( const vec3_t org, const vec3_t vel, float life )
 	VectorCopy( vel, p->vel );
 	p->die = cl.time + life;
 	p->ramp = tracerlength.value;
-	p->color = 4; // select custom color
+	p->color = TRACER_COLORINDEX_DEFAULT; // select custom color
 	p->packedColor = 255; // alpha
 
 	return p;
@@ -262,9 +265,9 @@ VIEWBEAMS MANAGEMENT
 
 ==============================================================
 */
-BEAM		*cl_active_beams;
-BEAM		*cl_free_beams;
-BEAM		*cl_viewbeams = NULL;		// beams pool
+static BEAM		*cl_active_beams;
+static BEAM		*cl_free_beams;
+static BEAM		*cl_viewbeams = NULL;		// beams pool
 
 
 /*
@@ -300,7 +303,7 @@ R_BeamAlloc
 
 ==============
 */
-BEAM *R_BeamAlloc( void )
+static BEAM *R_BeamAlloc( void )
 {
 	BEAM	*pBeam;
 
@@ -323,7 +326,7 @@ R_BeamFree
 
 ==============
 */
-void R_BeamFree( BEAM *pBeam )
+static void R_BeamFree( BEAM *pBeam )
 {
 	// free particles that have died off.
 	R_FreeDeadParticles( &pBeam->particles );
@@ -605,7 +608,7 @@ CL_BeamAttemptToDie
 Check for expired beams
 ==============
 */
-qboolean CL_BeamAttemptToDie( BEAM *pBeam )
+static qboolean CL_BeamAttemptToDie( BEAM *pBeam )
 {
 	Assert( pBeam != NULL );
 
@@ -636,12 +639,24 @@ and all particle trails (if this is a beamfollow)
 */
 void GAME_EXPORT R_BeamKill( int deadEntity )
 {
-	cl_entity_t	*pDeadEntity;
+	BEAM *beam;
 
-	pDeadEntity = R_BeamGetEntity( deadEntity );
-	if( !pDeadEntity ) return;
+	for( beam = cl_active_beams; beam; beam = beam->next )
+	{
+		if( FBitSet( beam->flags, FBEAM_STARTENTITY ) && beam->startEntity == deadEntity )
+		{
+			if( beam->type != TE_BEAMFOLLOW )
+				beam->die = cl.time;
 
-	CL_KillDeadBeams( pDeadEntity );
+			ClearBits( beam->flags, FBEAM_STARTENTITY );
+		}
+
+		if( FBitSet( beam->flags, FBEAM_ENDENTITY ) && beam->endEntity == deadEntity )
+		{
+			beam->die = cl.time;
+			ClearBits( beam->flags, FBEAM_ENDENTITY );
+		}
+	}
 }
 
 /*
@@ -1094,9 +1109,7 @@ void GAME_EXPORT R_ParticleExplosion2( const vec3_t org, int colorStart, int col
 	int		colorMod = 0, packedColor;
 	particle_t	*p;
 
-	if( FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
-		packedColor = 255; // use old code for blob particles
-	else packedColor = 0;
+	packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
 
 	for( i = 0; i < 512; i++ )
 	{
@@ -1129,9 +1142,7 @@ void GAME_EXPORT R_BlobExplosion( const vec3_t org )
 	particle_t	*p;
 	int		i, j, packedColor;
 
-	if( FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
-		packedColor = 255; // use old code for blob particles
-	else packedColor = 0;
+	packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
 
 	for( i = 0; i < 1024; i++ )
 	{
@@ -1483,8 +1494,6 @@ R_RocketTrail
 void GAME_EXPORT R_RocketTrail( vec3_t start, vec3_t end, int type )
 {
 	vec3_t		vec, right, up;
-	static int	tracercount;
-	float		s, c, x, y;
 	float		len, dec;
 	particle_t	*p;
 
@@ -1493,15 +1502,18 @@ void GAME_EXPORT R_RocketTrail( vec3_t start, vec3_t end, int type )
 
 	if( type == 7 )
 	{
+		dec = 1.0f;
 		VectorVectors( vec, right, up );
 	}
-
-	if( type < 128 )
+	else if( type < 128 )
 	{
 		dec = 3.0f;
 	}
 	else
 	{
+		// initialize if type will be 7 here
+		VectorVectors( vec, right, up );
+
 		dec = 1.0f;
 		type -= 128;
 	}
@@ -1510,67 +1522,65 @@ void GAME_EXPORT R_RocketTrail( vec3_t start, vec3_t end, int type )
 
 	while( len > 0 )
 	{
-		len -= dec;
-
 		p = R_AllocParticle( NULL );
-		if( !p ) return;
+		if( !p )
+			return;
 
+		len -= dec;
 		p->die = cl.time + 2.0f;
 
 		switch( type )
 		{
-		case 0:	// rocket trail
-			p->ramp = COM_RandomLong( 0, 3 );
+		case 0:
+		case 1:
+			p->ramp = COM_RandomLong( 0 + type * 2, 3 + type * 2 );
 			p->color = ramp3[(int)p->ramp];
 			p->type = pt_fire;
 			VectorAddScalar( start, COM_RandomFloat( -3.0f, 3.0f ), p->org );
 			break;
-		case 1:	// smoke smoke
-			p->ramp = COM_RandomLong( 2, 5 );
-			p->color = ramp3[(int)p->ramp];
-			p->type = pt_fire;
-			VectorAddScalar( start, COM_RandomFloat( -3.0f, 3.0f ), p->org );
-			break;
-		case 2:	// blood
-			p->type = pt_grav;
+		case 2:
 			p->color = COM_RandomLong( 67, 74 );
+			p->type = pt_grav;
 			VectorAddScalar( start, COM_RandomFloat( -3.0f, 3.0f ), p->org );
 			break;
 		case 3:
-		case 5:	// tracer
+		case 5:
+		{
+			static int	tracercount;
 			p->die = cl.time + 0.5f;
+			p->color = ( tracercount & 4 ) * 2;
 
-			if( type == 3 ) p->color = 52 + (( tracercount & 4 )<<1 );
-			else p->color = 230 + (( tracercount & 4 )<<1 );
+			if( type == 3 )
+				p->color += 52;
+			else
+				p->color += 230;
 
 			VectorCopy( start, p->org );
 			tracercount++;
 
-			if( FBitSet( tracercount, 1 ))
-			{
-				p->vel[0] = 30.0f *  vec[1];
-				p->vel[1] = 30.0f * -vec[0];
-			}
-			else
-			{
-				p->vel[0] = 30.0f * -vec[1];
-				p->vel[1] = 30.0f *  vec[0];
-			}
+			p->vel[0] = 30.0f * vec[1];
+			p->vel[1] = 30.0f * vec[0];
+			p->vel[tracercount & 1] = -p->vel[tracercount & 1];
 			break;
-		case 4:	// slight blood
-			p->type = pt_grav;
+		}
+		case 4:
 			p->color = COM_RandomLong( 67, 70 );
+			p->type = pt_grav;
 			VectorAddScalar( start, COM_RandomFloat( -3.0f, 3.0f ), p->org );
 			len -= 3.0f;
 			break;
-		case 6:	// voor trail
-			p->color = COM_RandomLong( 152, 155 );
-			p->die += 0.3f;
-			VectorAddScalar( start, COM_RandomFloat( -8.0f, 8.0f ), p->org );
+		case 6:
+			p->type = pt_fire;
+			p->ramp = COM_RandomLong( 0, 3 );
+			p->color = ramp3[(int)p->ramp];
+			VectorCopy( start, p->org );
 			break;
-		case 7:	// explosion tracer
-			x = COM_RandomLong( 0, 65535 );
-			y = COM_RandomLong( 8, 16 );
+		case 7:
+		{
+			float x = COM_RandomLong( 0, 65535 );
+			float y = COM_RandomLong( 8, 16 );
+			float s, c;
+
 			SinCos( x, &s, &c );
 			s *= y;
 			c *= y;
@@ -1578,18 +1588,88 @@ void GAME_EXPORT R_RocketTrail( vec3_t start, vec3_t end, int type )
 			VectorMAMAM( 1.0f, start, s, right, c, up, p->org );
 			VectorSubtract( start, p->org, p->vel );
 			VectorScale( p->vel, 2.0f, p->vel );
-			VectorMA( p->vel, COM_RandomFloat( 96.0f, 111.0f ), vec, p->vel );
+
+			x = COM_RandomFloat( 96.0f, 111.0f );
+			VectorMA( p->vel, x, vec, p->vel );
+
 			p->ramp = COM_RandomLong( 0, 3 );
 			p->color = ramp3[(int)p->ramp];
 			p->type = pt_explode2;
 			break;
+		}
 		default:
-			// just build line to show error
 			VectorCopy( start, p->org );
 			break;
 		}
 
 		VectorAdd( start, vec, start );
+	}
+}
+
+/*
+===============
+PM_ParticleLine
+
+draw line from particles
+================
+*/
+static void PM_ParticleLine( const vec3_t start, const vec3_t end, int pcolor, float life, float zvel )
+{
+	float	len, curdist;
+	vec3_t	diff, pos;
+
+	// determine distance
+	VectorSubtract( end, start, diff );
+	len = VectorNormalizeLength( diff );
+	curdist = 0;
+
+	while( curdist <= len )
+	{
+		VectorMA( start, curdist, diff, pos );
+		CL_Particle( pos, pcolor, life, 0, zvel );
+		curdist += 2.0f;
+	}
+}
+
+/*
+================
+PM_DrawRectangle
+
+================
+*/
+static void PM_DrawRectangle( const vec3_t tl, const vec3_t bl, const vec3_t tr, const vec3_t br, int pcolor, float life )
+{
+	PM_ParticleLine( tl, bl, pcolor, life, 0 );
+	PM_ParticleLine( bl, br, pcolor, life, 0 );
+	PM_ParticleLine( br, tr, pcolor, life, 0 );
+	PM_ParticleLine( tr, tl, pcolor, life, 0 );
+}
+
+/*
+================
+PM_DrawBBox
+
+================
+*/
+static void PM_DrawBBox( const vec3_t mins, const vec3_t maxs, const vec3_t origin, int pcolor, float life )
+{
+	vec3_t	p[8], tmp;
+	float	gap = BOX_GAP;
+	int	i;
+
+	for( i = 0; i < 8; i++ )
+	{
+		tmp[0] = (i & 1) ? mins[0] - gap : maxs[0] + gap;
+		tmp[1] = (i & 2) ? mins[1] - gap : maxs[1] + gap ;
+		tmp[2] = (i & 4) ? mins[2] - gap : maxs[2] + gap ;
+
+		VectorAdd( tmp, origin, tmp );
+		VectorCopy( tmp, p[i] );
+	}
+
+	for( i = 0; i < 6; i++ )
+	{
+		PM_DrawRectangle( p[boxpnt[i][1]], p[boxpnt[i][0]], p[boxpnt[i][2]], p[boxpnt[i][3]], pcolor, life );
 	}
 }
 
@@ -1754,25 +1834,6 @@ void GAME_EXPORT R_StreakSplash( const vec3_t pos, const vec3_t dir, int color, 
 		p->color = color;
 		p->ramp = 1.0f;
 	}
-}
-
-/*
-===============
-R_DebugParticle
-
-just for debug purposes
-===============
-*/
-void R_DebugParticle( const vec3_t pos, byte r, byte g, byte b )
-{
-	particle_t	*p;
-
-	p = R_AllocParticle( NULL );
-	if( !p ) return;
-
-	VectorCopy( pos, p->org );
-	p->color = R_LookupColor( r, g, b );
-	p->die = cl.time + 0.01f;
 }
 
 /*
@@ -2040,7 +2101,7 @@ void CL_ReadPointFile_f( void )
 	else Con_Printf( "map %s has no leaks!\n", clgame.mapname );
 }
 
-void CL_FreeDeadBeams( void )
+static void CL_FreeDeadBeams( void )
 {
 	BEAM *pBeam, *pNext, *pPrev = NULL;
 	// draw temporary entity beams
@@ -2168,4 +2229,3 @@ void CL_ThinkParticle( double frametime, particle_t *p )
 		break;
 	}
 }
-

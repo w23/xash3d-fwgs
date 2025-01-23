@@ -44,6 +44,18 @@ Platform_GetMousePos
 void GAME_EXPORT Platform_GetMousePos( int *x, int *y )
 {
 	SDL_GetMouseState( x, y );
+
+	if( x && window_width.value && window_width.value != refState.width )
+	{
+		float factor = refState.width / window_width.value;
+		*x = *x * factor;
+	}
+
+	if( y && window_height.value && window_height.value != refState.height )
+	{
+		float factor = refState.height / window_height.value;
+		*y = *y * factor;
+	}
 }
 
 /*
@@ -338,7 +350,7 @@ void Platform_SetCursorType( VGUI_DefaultCursor type )
 	}
 
 	// never disable cursor in touch emulation mode
-	if( !visible && touch_emulate.value )
+	if( !visible && Touch_Emulated( ))
 		return;
 
 	host.mouse_visible = visible;

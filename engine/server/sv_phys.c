@@ -199,8 +199,8 @@ static qboolean SV_TestEntityPosition( edict_t *ent, edict_t *blocker )
 	{
 		// to avoid falling through tracktrain update client mins\maxs here
 		if( FBitSet( ent->v.flags, FL_DUCKING ))
-			SV_SetMinMaxSize( ent, svgame.pmove->player_mins[1], svgame.pmove->player_maxs[1], true );
-		else SV_SetMinMaxSize( ent, svgame.pmove->player_mins[0], svgame.pmove->player_maxs[0], true );
+			SV_SetMinMaxSize( ent, host.player_mins[1], host.player_maxs[1], true );
+		else SV_SetMinMaxSize( ent, host.player_mins[0], host.player_maxs[0], true );
 	}
 
 	trace = SV_Move( ent->v.origin, ent->v.mins, ent->v.maxs, ent->v.origin, MOVE_NORMAL, ent, monsterClip );
@@ -1384,7 +1384,9 @@ static void SV_CheckWaterTransition( edict_t *ent )
 		if( ent->v.watertype == CONTENTS_EMPTY )
 		{
 			// just crossed into water
-			SV_StartSound( ent, CHAN_AUTO, "player/pl_wade1.wav", 1.0f, ATTN_NORM, 0, 100 );
+			const char *snd = SoundList_GetRandom( PlayerWaterEnter );
+			if( snd )
+				SV_StartSound( ent, CHAN_AUTO, snd, 1.0f, ATTN_NORM, 0, 100 );
 			ent->v.velocity[2] *= 0.5f;
 		}
 
@@ -1418,7 +1420,9 @@ static void SV_CheckWaterTransition( edict_t *ent )
 		if( ent->v.watertype != CONTENTS_EMPTY )
 		{
 			// just crossed into water
-			SV_StartSound( ent, CHAN_AUTO, "player/pl_wade2.wav", 1.0f, ATTN_NORM, 0, 100 );
+			const char *snd = SoundList_GetRandom( PlayerWaterExit );
+			if( snd )
+				SV_StartSound( ent, CHAN_AUTO, snd, 1.0f, ATTN_NORM, 0, 100 );
 		}
 		ent->v.watertype = CONTENTS_EMPTY;
 		ent->v.waterlevel = 0;
@@ -1768,7 +1772,7 @@ static void SV_Physics_Entity( edict_t *ent )
 		SV_Physics_Pusher( ent );
 		break;
 	case MOVETYPE_WALK:
-		Host_Error( "SV_Physics: bad movetype %i\n", ent->v.movetype );
+		Host_Error( "%s: bad movetype %i\n", __func__, ent->v.movetype );
 		break;
 	}
 
@@ -1780,21 +1784,23 @@ static void SV_Physics_Entity( edict_t *ent )
 
 static void SV_RunLightStyles( void )
 {
-	int		i, ofs;
-	lightstyle_t	*ls;
-	float		scale;
-
-	scale = sv_lighting_modulate.value;
+	int	i;
 
 	// run lightstyles animation
-	for( i = 0, ls = sv.lightstyles; i < MAX_LIGHTSTYLES; i++, ls++ )
+	for( i = 0; i < MAX_LIGHTSTYLES; i++ )
 	{
+		lightstyle_t *ls = &sv.lightstyles[i];
+		int ofs;
+
 		ls->time += sv.frametime;
 		ofs = (ls->time * 10);
 
-		if( ls->length == 0 ) ls->value = scale; // disable this light
-		else if( ls->length == 1 ) ls->value = ( ls->map[0] / 12.0f ) * scale;
-		else ls->value = ( ls->map[ofs % ls->length] / 12.0f ) * scale;
+		if( ls->length == 0 )
+			ls->value = 1.0f; // disable this light
+		else if( ls->length == 1 )
+			ls->value = ls->map[0] / 12.0f;
+		else
+			ls->value = ls->map[ofs % ls->length] / 12.0f;
 	}
 }
 
@@ -1842,8 +1848,10 @@ void SV_Physics( void )
 	// increase framecount
 	sv.framecount++;
 
+#if 0 // figure out why this causes memory corruption
 	// decrement svgame.numEntities if the highest number entities died
-	for( ; EDICT_NUM( svgame.numEntities - 1 )->free; svgame.numEntities-- );
+	for( ; ( ent = EDICT_NUM( svgame.numEntities - 1 )) && ent->free; svgame.numEntities-- );
+#endif
 }
 
 /*
@@ -1956,11 +1964,11 @@ SV_GetLightStyle
 needs to get correct working SV_LightPoint
 ==================
 */
-const char *GAME_EXPORT SV_GetLightStyle( int style )
+static const char *GAME_EXPORT SV_GetLightStyle( int style )
 {
 	if( style < 0 ) style = 0;
 	if( style >= MAX_LIGHTSTYLES )
-		Host_Error( "SV_GetLightStyle: style: %i >= %d", style, MAX_LIGHTSTYLES );
+		Host_Error( "%s: style: %i >= %d", __func__, style, MAX_LIGHTSTYLES );
 
 	return sv.lightstyles[style].pattern;
 }
@@ -2040,7 +2048,7 @@ pfnWriteBytes
 static void GAME_EXPORT pfnWriteBytes( const byte *bytes, int count )
 {
 	MSG_WriteBytes( &sv.multicast, bytes, count );
-	if( svgame.msg_trace ) Con_Printf( "\t^3%s( %i )\n", __FUNCTION__, count );
+	if( svgame.msg_trace ) Con_Printf( "\t^3%s( %i )\n", __func__, count );
 	svgame.msg_realsize += count;
 }
 
@@ -2116,6 +2124,7 @@ static server_physics_api_t gPhysicsAPI =
 	COM_SaveFile,
 	pfnLoadImagePixels,
 	pfnGetModelName,
+	Sys_GetNativeObject
 };
 
 /*
@@ -2134,23 +2143,23 @@ qboolean SV_InitPhysicsAPI( void )
 	{
 		if( pPhysIface( SV_PHYSICS_INTERFACE_VERSION, &gPhysicsAPI, &svgame.physFuncs ))
 		{
-			Con_Reportf( "SV_LoadProgs: ^2initailized extended PhysicAPI ^7ver. %i\n", SV_PHYSICS_INTERFACE_VERSION );
+			Con_Reportf( "%s: ^2initailized extended PhysicAPI ^7ver. %i\n", __func__, SV_PHYSICS_INTERFACE_VERSION );
 
 			if( svgame.physFuncs.SV_CheckFeatures != NULL )
 			{
 				// grab common engine features (it will be shared across the network)
-				host.features = svgame.physFuncs.SV_CheckFeatures();
-				Host_PrintEngineFeatures ();
+				Host_ValidateEngineFeatures( ENGINE_FEATURES_MASK, svgame.physFuncs.SV_CheckFeatures( ));
 			}
 			return true;
 		}
 
 		// make sure what physic functions is cleared
 		memset( &svgame.physFuncs, 0, sizeof( svgame.physFuncs ));
-
+		Host_ValidateEngineFeatures( ENGINE_FEATURES_MASK, 0 );
 		return false; // just tell user about problems
 	}
 
 	// physic interface is missed
+	Host_ValidateEngineFeatures( ENGINE_FEATURES_MASK, 0 );
 	return true;
 }

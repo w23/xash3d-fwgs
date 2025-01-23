@@ -24,7 +24,7 @@ CVAR_DEFINE_AUTO( scr_centertime, "2.5", 0, "centerprint hold time" );
 CVAR_DEFINE_AUTO( scr_loading, "0", 0, "loading bar progress" );
 CVAR_DEFINE_AUTO( scr_download, "-1", 0, "downloading bar progress" );
 CVAR_DEFINE( scr_viewsize, "viewsize", "120", FCVAR_ARCHIVE, "screen size (quake only)" );
-CVAR_DEFINE_AUTO( cl_testlights, "0", 0, "test dynamic lights" );
+CVAR_DEFINE_AUTO( cl_testlights, "0", FCVAR_CHEAT, "test dynamic lights" );
 CVAR_DEFINE( cl_allow_levelshots, "allow_levelshots", "0", FCVAR_ARCHIVE, "allow engine to use indivdual levelshots instead of 'loading' image" );
 CVAR_DEFINE_AUTO( cl_levelshot_name, "*black", 0, "contains path to current levelshot" );
 static CVAR_DEFINE_AUTO( cl_envshot_size, "256", FCVAR_ARCHIVE, "envshot size of cube side" );
@@ -32,6 +32,8 @@ CVAR_DEFINE_AUTO( v_dark, "0", 0, "starts level from dark screen" );
 static CVAR_DEFINE_AUTO( net_speeds, "0", FCVAR_ARCHIVE, "show network packets" );
 static CVAR_DEFINE_AUTO( cl_showfps, "0", FCVAR_ARCHIVE, "show client fps" );
 static CVAR_DEFINE_AUTO( cl_showpos, "0", FCVAR_ARCHIVE, "show local player position and velocity" );
+static CVAR_DEFINE_AUTO( cl_showents, "0", FCVAR_ARCHIVE | FCVAR_CHEAT, "show entities information (largely undone)" );
+static CVAR_DEFINE_AUTO( cl_showcmd, "0", 0, "visualize usercmd button presses" );
 
 typedef struct
 {
@@ -138,6 +140,131 @@ void SCR_DrawPos( void )
 	MakeRGBA( color, 255, 255, 255, 255 );
 
 	Con_DrawString( refState.width / 2, 4, msg, color );
+}
+
+/*
+==============
+SCR_DrawEnts
+==============
+*/
+void SCR_DrawEnts( void )
+{
+	rgba_t color = { 255, 255, 255, 255 };
+	int i;
+
+	if( cls.state != ca_active || !cl_showents.value || ( cl.maxclients > 1 && !cls.demoplayback ))
+		return;
+
+	// this probably better hook CL_AddVisibleEntities
+	// as entities might get added by client.dll
+	for( i = 0; i < clgame.maxEntities; i++ )
+	{
+		const cl_entity_t *ent = &clgame.entities[i];
+		string msg;
+		vec3_t screen, pos;
+
+		if( ent->curstate.messagenum != cl.parsecount )
+			continue;
+
+		VectorCopy( ent->origin, pos );
+
+		if( ent->model != NULL )
+		{
+			vec3_t v;
+
+			// simple model type filter
+			if( cl_showents.value > 1 )
+			{
+				if( ent->model->type != (modtype_t)( cl_showents.value - 2 ))
+					continue;
+			}
+
+			VectorAverage( ent->model->mins, ent->model->maxs, v );
+			VectorAdd( pos, v, pos );
+		}
+
+		if( !ref.dllFuncs.WorldToScreen( pos, screen ))
+		{
+			Q_snprintf( msg, sizeof( msg ),
+				"entity %d\n"
+				"model %s\n"
+				"movetype %d\n",
+				ent->index,
+				ent->model ? ent->model->name : "(null)",
+				ent->curstate.movetype );
+
+			screen[0] =  0.5f * screen[0] * refState.width;
+			screen[1] = -0.5f * screen[1] * refState.height;
+			screen[0] += 0.5f * refState.width;
+			screen[1] += 0.5f * refState.height;
+
+			Con_DrawString( screen[0], screen[1], msg, color );
+		}
+	}
+}
+
+/*
+==============
+SCR_DrawUserCmd
+
+another debugging aids, shows pressed buttons
+==============
+*/
+void SCR_DrawUserCmd( void )
+{
+	runcmd_t *pcmd = &cl.commands[( cls.netchan.outgoing_sequence - 1 ) & CL_UPDATE_MASK];
+	struct
+	{
+		int mask;
+		const char *name;
+	} buttons[16] =
+	{
+	{ IN_ATTACK, "attack" },
+	{ IN_JUMP, "jump" },
+	{ IN_DUCK, "duck" },
+	{ IN_FORWARD, "forward" },
+	{ IN_BACK, "back" },
+	{ IN_USE, "use" },
+	{ IN_CANCEL, "cancel" },
+	{ IN_LEFT, "left" },
+	{ IN_RIGHT, "right" },
+	{ IN_MOVELEFT, "moveleft" },
+	{ IN_MOVERIGHT, "moveright" },
+	{ IN_ATTACK2, "attack2" },
+	{ IN_RUN, "run" },
+	{ IN_RELOAD, "reload" },
+	{ IN_ALT1, "alt1" },
+	{ IN_SCORE, "score" },
+	};
+	cl_font_t *font = Con_GetCurFont();
+	string msg;
+	int i, ypos = 100;
+
+	if( cls.state != ca_active || !cl_showcmd.value )
+		return;
+
+	for( i = 0; i < ARRAYSIZE( buttons ); i++ )
+	{
+		rgba_t rgba;
+
+		rgba[0] = FBitSet( pcmd->cmd.buttons, buttons[i].mask ) ? 0 : 255;
+		rgba[1] = FBitSet( pcmd->cmd.buttons, buttons[i].mask ) ? 255 : 0;
+		rgba[2] = 0;
+		rgba[3] = 255;
+
+		Con_DrawString( 100, ypos, buttons[i].name, rgba );
+
+		ypos += font->charHeight;
+	}
+
+	Q_snprintf( msg, sizeof( msg ),
+		"F/S/U: %g %g %g\n"
+		"impulse: %u\n"
+		"msec: %u",
+		pcmd->cmd.forwardmove, pcmd->cmd.sidemove, pcmd->cmd.upmove,
+		pcmd->cmd.impulse,
+		pcmd->cmd.msec );
+	Con_DrawString( 100, ypos, msg, g_color_table[7] );
 }
 
 /*
@@ -252,7 +379,7 @@ VID_WriteOverviewScript
 Create overview script file
 ===============
 */
-void VID_WriteOverviewScript( void )
+static void VID_WriteOverviewScript( void )
 {
 	ref_overview_t	*ov = &clgame.overView;
 	string		filename;
@@ -288,9 +415,14 @@ void SCR_MakeScreenShot( void )
 	qboolean	iRet = false;
 	int	viewsize;
 
+	if( cls.scrshot_action == scrshot_inactive )
+		return;
+
 	if( cls.envshot_viewsize > 0 )
 		viewsize = cls.envshot_viewsize;
 	else viewsize = cl_envshot_size.value;
+
+	V_CheckGamma();
 
 	switch( cls.scrshot_action )
 	{
@@ -317,8 +449,6 @@ void SCR_MakeScreenShot( void )
 		if( iRet )
 			VID_WriteOverviewScript(); // store overview script too
 		break;
-	case scrshot_inactive:
-		return;
 	}
 
 	// report
@@ -342,7 +472,7 @@ void SCR_MakeScreenShot( void )
 SCR_DrawPlaque
 ================
 */
-void SCR_DrawPlaque( void )
+static qboolean SCR_DrawPlaque( void )
 {
 	if(( cl_allow_levelshots.value && !cls.changelevel ) || cl.background )
 	{
@@ -350,7 +480,11 @@ void SCR_DrawPlaque( void )
 		ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
 		ref.dllFuncs.R_DrawStretchPic( 0, 0, refState.width, refState.height, 0, 0, 1, 1, levelshot );
 		if( !cl.background ) CL_DrawHUD( CL_LOADING );
+
+		return true;
 	}
+
+	return false;
 }
 
 /*
@@ -360,15 +494,10 @@ SCR_BeginLoadingPlaque
 */
 void SCR_BeginLoadingPlaque( qboolean is_background )
 {
-	float	oldclear = 0;;
 	S_StopAllSounds( true );
 	cl.audio_prepped = false;			// don't play ambients
-	cl.video_prepped = false;
 
-	if( !Host_IsDedicated() )
-		oldclear = gl_clear.value;
-
-	if( CL_IsInMenu( ) && !cls.changedemo && !is_background )
+	if( cls.key_dest == key_menu && !cls.changedemo && !is_background )
 	{
 		UI_SetActiveMenu( false );
 		if( cls.state == ca_disconnected && !(GameState->curstate == STATE_RUNFRAME && GameState->nextstate != STATE_RUNFRAME) )
@@ -381,17 +510,14 @@ void SCR_BeginLoadingPlaque( qboolean is_background )
 	if( cls.key_dest == key_console )
 		return;
 
-	if( !Host_IsDedicated() )
-		gl_clear.value = 0.0f;
-
 	if( is_background ) IN_MouseSavePos( );
 	cls.draw_changelevel = !is_background;
 	SCR_UpdateScreen();
+
+	// set video_prepped after update screen, so engine can draw last remaining frame
+	cl.video_prepped = false;
 	cls.disable_screen = host.realtime;
 	cl.background = is_background;		// set right state before svc_serverdata is came
-
-	if( !Host_IsDedicated() )
-		gl_clear.value = oldclear;
 
 //	SNDDMA_LockSound();
 }
@@ -413,7 +539,7 @@ void SCR_EndLoadingPlaque( void )
 SCR_AddDirtyPoint
 =================
 */
-void SCR_AddDirtyPoint( int x, int y )
+static void SCR_AddDirtyPoint( int x, int y )
 {
 	if( x < scr_dirty.x1 ) scr_dirty.x1 = x;
 	if( x > scr_dirty.x2 ) scr_dirty.x2 = x;
@@ -432,6 +558,18 @@ void SCR_DirtyScreen( void )
 	SCR_AddDirtyPoint( refState.width - 1, refState.height - 1 );
 }
 
+static void R_DrawTileClear( int texnum, int x, int y, int w, int h, float tw, float th )
+{
+	float s1 = x / tw;
+	float t1 = y / th;
+	float s2 = ( x + w ) / tw;
+	float t2 = ( y + h ) / th;
+
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+	ref.dllFuncs.Color4ub( 255, 255, 255, 255 );
+	ref.dllFuncs.R_DrawStretchPic( x, y, w, h, s1, t1, s2, t2, texnum );
+}
+
 /*
 ================
 SCR_TileClear
@@ -439,11 +577,23 @@ SCR_TileClear
 */
 void SCR_TileClear( void )
 {
-	int	i, top, bottom, left, right;
+	int	i, top, bottom, left, right, texnum;
 	dirty_t	clear;
+	float tw, th;
 
-	if( scr_viewsize.value >= 120 )
+	if( likely( scr_viewsize.value >= 120 ))
 		return; // full screen rendering
+
+	if( !cls.tileImage )
+	{
+		cls.tileImage = ref.dllFuncs.GL_LoadTexture( "gfx/backtile.lmp", NULL, 0, TF_NOMIPMAP );
+		if( !cls.tileImage )
+			cls.tileImage = -1;
+	}
+
+	if( cls.tileImage > 0 )
+		texnum = cls.tileImage;
+	else texnum = 0;
 
 	// erase rect will be the union of the past three frames
 	// so tripple buffering works properly
@@ -477,11 +627,14 @@ void SCR_TileClear( void )
 	left = clgame.viewport[0];
 	right = left + clgame.viewport[2] - 1;
 
+	tw = REF_GET_PARM( PARM_TEX_SRC_WIDTH, texnum );
+	th = REF_GET_PARM( PARM_TEX_SRC_HEIGHT, texnum );
+
 	if( clear.y1 < top )
 	{
 		// clear above view screen
 		i = clear.y2 < top-1 ? clear.y2 : top - 1;
-		ref.dllFuncs.R_DrawTileClear( cls.tileImage, clear.x1, clear.y1, clear.x2 - clear.x1 + 1, i - clear.y1 + 1 );
+		R_DrawTileClear( texnum, clear.x1, clear.y1, clear.x2 - clear.x1 + 1, i - clear.y1 + 1, tw, th );
 		clear.y1 = top;
 	}
 
@@ -489,7 +642,7 @@ void SCR_TileClear( void )
 	{
 		// clear below view screen
 		i = clear.y1 > bottom + 1 ? clear.y1 : bottom + 1;
-		ref.dllFuncs.R_DrawTileClear( cls.tileImage, clear.x1, i, clear.x2 - clear.x1 + 1, clear.y2 - i + 1 );
+		R_DrawTileClear( texnum, clear.x1, i, clear.x2 - clear.x1 + 1, clear.y2 - i + 1, tw, th );
 		clear.y2 = bottom;
 	}
 
@@ -497,7 +650,7 @@ void SCR_TileClear( void )
 	{
 		// clear left of view screen
 		i = clear.x2 < left - 1 ? clear.x2 : left - 1;
-		ref.dllFuncs.R_DrawTileClear( cls.tileImage, clear.x1, clear.y1, i - clear.x1 + 1, clear.y2 - clear.y1 + 1 );
+		R_DrawTileClear( texnum, clear.x1, clear.y1, i - clear.x1 + 1, clear.y2 - clear.y1 + 1, tw, th );
 		clear.x1 = left;
 	}
 
@@ -505,7 +658,7 @@ void SCR_TileClear( void )
 	{
 		// clear left of view screen
 		i = clear.x1 > right + 1 ? clear.x1 : right + 1;
-		ref.dllFuncs.R_DrawTileClear( cls.tileImage, i, clear.y1, clear.x2 - i + 1, clear.y2 - clear.y1 + 1 );
+		R_DrawTileClear( texnum, i, clear.y1, clear.x2 - i + 1, clear.y2 - clear.y1 + 1, tw, th );
 		clear.x2 = right;
 	}
 }
@@ -520,6 +673,8 @@ text to the screen.
 */
 void SCR_UpdateScreen( void )
 {
+	qboolean screen_redraw = true; // assume screen has been redrawn
+
 	if( !V_PreRender( )) return;
 
 	switch( cls.state )
@@ -530,7 +685,7 @@ void SCR_UpdateScreen( void )
 	case ca_connecting:
 	case ca_connected:
 	case ca_validate:
-		SCR_DrawPlaque();
+		screen_redraw = SCR_DrawPlaque();
 		break;
 	case ca_active:
 		Con_RunConsole ();
@@ -540,11 +695,15 @@ void SCR_UpdateScreen( void )
 		SCR_DrawCinematic();
 		break;
 	default:
-		Host_Error( "SCR_UpdateScreen: bad cls.state\n" );
+		Host_Error( "%s: bad cls.state\n", __func__ );
 		break;
 	}
 
-	V_PostRender();
+	// during changelevel we might have a few frames when we have nothing to draw
+	// (assuming levelshots are off) and drawing 2d on top of nothing or cleared screen
+	// is ugly, specifically with Adreno and ImgTec GPUs
+	if( screen_redraw || !cls.changelevel || !cls.changedemo )
+		V_PostRender();
 }
 
 /*
@@ -570,15 +729,15 @@ void SCR_LoadCreditsFont( void )
 			"creditsfont_%s.fnt", Cvar_VariableString( "con_charset" )) > 0 )
 		{
 			if( FS_FileExists( charsetFnt, false ))
-				success = Con_LoadVariableWidthFont( charsetFnt, font, scale, kRenderTransAdd, TF_FONT );
+				success = Con_LoadVariableWidthFont( charsetFnt, font, scale, &hud_fontrender, TF_FONT );
 		}
 	}
 
 	if( !success )
-		success = Con_LoadVariableWidthFont( "gfx/creditsfont.fnt", font, scale, kRenderTransAdd, TF_FONT );
+		success = Con_LoadVariableWidthFont( "gfx/creditsfont.fnt", font, scale, &hud_fontrender, TF_FONT );
 
 	if( !success )
-		success = Con_LoadFixedWidthFont( "gfx/conchars", font, scale, kRenderTransAdd, TF_FONT );
+		success = Con_LoadFixedWidthFont( "gfx/conchars", font, scale, &hud_fontrender, TF_FONT );
 
 	// copy font size for client.dll
 	if( success )
@@ -600,7 +759,7 @@ SCR_InstallParticlePalette
 INTERNAL RESOURCE
 ================
 */
-void SCR_InstallParticlePalette( void )
+static void SCR_InstallParticlePalette( void )
 {
 	rgbdata_t	*pic;
 	int	i;
@@ -634,6 +793,18 @@ void SCR_InstallParticlePalette( void )
 	}
 }
 
+int SCR_LoadPauseIcon( void )
+{
+	int texnum = 0;
+
+	if( FS_FileExists( "gfx/paused.lmp", false ))
+		texnum = ref.dllFuncs.GL_LoadTexture( "gfx/paused.lmp", NULL, 0, TF_IMAGE|TF_ALLOW_NEAREST );
+	else if( FS_FileExists( "gfx/pause.lmp", false ))
+		texnum = ref.dllFuncs.GL_LoadTexture( "gfx/pause.lmp", NULL, 0, TF_IMAGE|TF_ALLOW_NEAREST );
+
+	return texnum ? texnum : -1;
+}
+
 /*
 ================
 SCR_RegisterTextures
@@ -644,26 +815,19 @@ INTERNAL RESOURCE
 void SCR_RegisterTextures( void )
 {
 	// register gfx.wad images
-
-	if( FS_FileExists( "gfx/paused.lmp", false ))
-		cls.pauseIcon = ref.dllFuncs.GL_LoadTexture( "gfx/paused.lmp", NULL, 0, TF_IMAGE );
-	else if( FS_FileExists( "gfx/pause.lmp", false ))
-		cls.pauseIcon = ref.dllFuncs.GL_LoadTexture( "gfx/pause.lmp", NULL, 0, TF_IMAGE );
-
 	if( FS_FileExists( "gfx/lambda.lmp", false ))
 	{
 		if( cl_allow_levelshots.value )
-			cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/lambda.lmp", NULL, 0, TF_IMAGE|TF_LUMINANCE );
-		else cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/lambda.lmp", NULL, 0, TF_IMAGE );
+			cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/lambda.lmp", NULL, 0, TF_IMAGE|TF_LUMINANCE|TF_ALLOW_NEAREST );
+		else cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/lambda.lmp", NULL, 0, TF_IMAGE|TF_ALLOW_NEAREST );
 	}
 	else if( FS_FileExists( "gfx/loading.lmp", false ))
 	{
 		if( cl_allow_levelshots.value )
-			cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/loading.lmp", NULL, 0, TF_IMAGE|TF_LUMINANCE );
-		else cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/loading.lmp", NULL, 0, TF_IMAGE );
+			cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/loading.lmp", NULL, 0, TF_IMAGE|TF_LUMINANCE|TF_ALLOW_NEAREST );
+		else cls.loadingBar = ref.dllFuncs.GL_LoadTexture( "gfx/loading.lmp", NULL, 0, TF_IMAGE|TF_ALLOW_NEAREST );
 	}
 
-	cls.tileImage = ref.dllFuncs.GL_LoadTexture( "gfx/backtile.lmp", NULL, 0, TF_NOMIPMAP );
 }
 
 /*
@@ -673,7 +837,7 @@ SCR_SizeUp_f
 Keybinding command
 =================
 */
-void SCR_SizeUp_f( void )
+static void SCR_SizeUp_f( void )
 {
 	Cvar_SetValue( "viewsize", Q_min( scr_viewsize.value + 10, 120 ));
 }
@@ -686,7 +850,7 @@ SCR_SizeDown_f
 Keybinding command
 =================
 */
-void SCR_SizeDown_f( void )
+static void SCR_SizeDown_f( void )
 {
 	Cvar_SetValue( "viewsize", Q_max( scr_viewsize.value - 10, 30 ));
 }
@@ -750,6 +914,10 @@ void SCR_Init( void )
 	Cvar_RegisterVariable( &net_speeds );
 	Cvar_RegisterVariable( &cl_showfps );
 	Cvar_RegisterVariable( &cl_showpos );
+	Cvar_RegisterVariable( &cl_showcmd );
+#ifdef _DEBUG
+	Cvar_RegisterVariable( &cl_showents );
+#endif // NDEBUG
 
 	// register our commands
 	Cmd_AddCommand( "skyname", CL_SetSky_f, "set new skybox by basename" );
@@ -782,7 +950,6 @@ void SCR_Shutdown( void )
 {
 	if( !scr_init ) return;
 
-	Cmd_RemoveCommand( "timerefresh" );
 	Cmd_RemoveCommand( "skyname" );
 	Cmd_RemoveCommand( "viewpos" );
 	UI_SetActiveMenu( false );

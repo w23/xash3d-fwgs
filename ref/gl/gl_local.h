@@ -31,9 +31,10 @@ GNU General Public License for more details.
 #include "enginefeatures.h"
 #include "com_strings.h"
 #include "pm_movevars.h"
-#include "common/cvar.h"
+#include "cvardef.h"
 #include "gl_export.h"
 #include "wadfile.h"
+#include "common/mod_local.h"
 
 #if XASH_PSVITA
 int VGL_ShimInit( void );
@@ -57,10 +58,6 @@ void VGL_ShimEndFrame( void );
 
 #include <stdio.h>
 
-#define WORLD (gEngfuncs.GetWorld())
-#define WORLDMODEL (gEngfuncs.pfnGetModelByIndex( 1 ))
-#define MOVEVARS (gEngfuncs.pfnGetMoveVars())
-
 // make mod_ref.h?
 #define LM_SAMPLE_SIZE             16
 
@@ -79,7 +76,7 @@ extern poolhandle_t r_temppool;
 #define MAX_DRAW_STACK	2		// normal view and menu view
 
 #define SHADEDOT_QUANT 	16		// precalculated dot products for quantized angles
-#define SHADE_LAMBERT	1.495f
+#define SHADE_LAMBERT	1.4953241
 #define DEFAULT_ALPHATEST	0.0f
 
 // refparams
@@ -91,10 +88,10 @@ extern poolhandle_t r_temppool;
 #define RP_NONVIEWERREF	(RP_ENVVIEW)
 #define R_ModelOpaque( rm )	( rm == kRenderNormal )
 #define R_StaticEntity( ent )	( VectorIsNull( ent->origin ) && VectorIsNull( ent->angles ))
-#define RP_LOCALCLIENT( e )	((e) != NULL && (e)->index == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) && e->player )
+#define RP_LOCALCLIENT( e )	((e) != NULL && (e)->index == ( gp_cl->playernum + 1 ) && e->player )
 #define RP_NORMALPASS()	( FBitSet( RI.params, RP_NONVIEWERREF ) == 0 )
 
-#define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
+#define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == ( gp_cl->playernum + 1 ))
 
 #define CULL_VISIBLE	0		// not culled
 #define CULL_BACKSIDE	1		// backside of transparent wall
@@ -105,7 +102,6 @@ extern poolhandle_t r_temppool;
 #define HACKS_RELATED_HLMODS		// some HL-mods works differently under Xash and can't be fixed without some hacks at least at current time
 
 #define SKYBOX_BASE_NUM 5800 // set skybox base (to let some mods load hi-res skyboxes)
-#define SKYBOX_MAX_SIDES 6   // box can only have 6 sides
 
 typedef struct gltexture_s
 {
@@ -134,7 +130,6 @@ typedef struct gltexture_s
 	float		xscale;
 	float		yscale;
 
-	int		servercount;
 	uint		hashValue;
 	struct gltexture_s	*nextHash;
 } gl_texture_t;
@@ -241,7 +236,6 @@ typedef struct
 	int		realframecount;	// not including viewpasses
 	int		framecount;
 
-	qboolean		ignore_lightgamma;
 	qboolean		fCustomRendering;
 	qboolean		fResetVis;
 	qboolean		fFlipViewModel;
@@ -256,7 +250,20 @@ typedef struct
 	// cull info
 	vec3_t		modelorg;		// relative to viewpoint
 
-	qboolean fCustomSkybox;
+	// get from engine
+	world_static_t *world;
+	cl_entity_t *entities;
+	movevars_t *movevars;
+	color24 *palette;
+	cl_entity_t *viewent;
+	dlight_t *dlights;
+	dlight_t *elights;
+	byte *texgammatable;
+	uint *lightgammatable;
+	uint *lineargammatable;
+	uint *screengammatable;
+
+	uint max_entities;
 } gl_globals_t;
 
 typedef struct
@@ -286,6 +293,7 @@ extern gl_globals_t	tr;
 extern float		gldepthmin, gldepthmax;
 #define r_numEntities	(tr.draw_list->num_solid_entities + tr.draw_list->num_trans_entities)
 #define r_numStatics	(r_stats.c_client_ents)
+#define Mod_AllowMaterials() (host_allow_materials->value && !FBitSet( gp_host->features, ENGINE_DISABLE_HDTEXTURES ))
 
 //
 // gl_backend.c
@@ -337,7 +345,6 @@ void R_ClearDecals( void );
 // gl_draw.c
 //
 void R_Set2DMode( qboolean enable );
-void R_DrawTileClear( int texnum, int x, int y, int w, int h );
 void R_UploadStretchRaw( int texture, int cols, int rows, int width, int height, const byte *data );
 
 //
@@ -351,6 +358,7 @@ void R_DrawModelHull( void );
 //
 void R_SetTextureParameters( void );
 gl_texture_t *R_GetTexture( GLenum texnum );
+const char *GL_TargetToString( GLenum target );
 #define GL_LoadTextureInternal( name, pic, flags ) GL_LoadTextureFromBuffer( name, pic, flags, false )
 #define GL_UpdateTextureInternal( name, pic, flags ) GL_LoadTextureFromBuffer( name, pic, flags, true )
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
@@ -361,6 +369,7 @@ int GL_CreateTexture( const char *name, int width, int height, const void *buffe
 int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor );
 void GL_UpdateTexSize( int texnum, int width, int height, int depth );
+qboolean GL_TextureFilteringEnabled( const gl_texture_t *tex );
 void GL_ApplyTextureParams( gl_texture_t *tex );
 int GL_FindTexture( const char *name );
 void GL_FreeTexture( GLenum texnum );
@@ -370,17 +379,17 @@ void R_TextureList_f( void );
 void R_InitImages( void );
 void R_ShutdownImages( void );
 int GL_TexMemory( void );
+qboolean R_SearchForTextureReplacement( char *out, size_t size, const char *modelname, const char *fmt, ... ) FORMAT_CHECK( 4 );
+void R_TextureReplacementReport( const char *modelname, int gl_texturenum, const char *foundpath );
 
 //
 // gl_rlight.c
 //
-void CL_RunLightStyles( void );
+void CL_RunLightStyles( lightstyle_t *ls );
 void R_PushDlights( void );
-void R_AnimateLight( void );
 void R_GetLightSpot( vec3_t lightspot );
 void R_MarkLights( dlight_t *light, int bit, mnode_t *node );
 colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lightspot, vec3_t lightvec );
-int R_CountSurfaceDlights( msurface_t *surf );
 colorVec R_LightPoint( const vec3_t p0 );
 
 //
@@ -395,9 +404,9 @@ void R_TranslateForEntity( cl_entity_t *e );
 void R_RotateForEntity( cl_entity_t *e );
 void R_SetupGL( qboolean set_gl_state );
 void R_AllowFog( qboolean allowed );
+qboolean R_OpaqueEntity( cl_entity_t *ent );
 void R_SetupFrustum( void );
 void R_FindViewLeaf( void );
-void R_CheckGamma( void );
 void R_PushScene( void );
 void R_PopScene( void );
 void R_DrawFog( void );
@@ -428,8 +437,6 @@ void R_DrawWaterSurfaces( void );
 void R_DrawBrushModel( cl_entity_t *e );
 void GL_SubdivideSurface( model_t *mod, msurface_t *fa );
 void GL_BuildPolygonFromSurface( model_t *mod, msurface_t *fa );
-void DrawGLPoly( glpoly_t *p, float xScale, float yScale );
-texture_t *R_TextureAnimation( msurface_t *s );
 void GL_SetupFogColorForSurfaces( void );
 void R_DrawAlphaTextureChains( void );
 void GL_RebuildLightmaps( void );
@@ -439,6 +446,10 @@ void GL_ResetFogColor( void );
 void R_GenerateVBO( void );
 void R_ClearVBO( void );
 void R_AddDecalVBO( decal_t *pdecal, msurface_t *surf );
+void R_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords );
+qboolean R_HasGeneratedVBO( void );
+void R_EnableVBO( qboolean enable );
+qboolean R_HasEnabledVBO( void );
 
 //
 // gl_rpart.c
@@ -483,34 +494,15 @@ void R_AliasInit( void );
 //
 // gl_warp.c
 //
-void R_InitSkyClouds( mip_t *mt, struct texture_s *tx, qboolean custom_palette );
 void R_AddSkyBoxSurface( msurface_t *fa );
 void R_ClearSkyBox( void );
 void R_DrawSkyBox( void );
 void R_DrawClouds( void );
-void EmitWaterPolys( msurface_t *warp, qboolean reverse );
-void R_InitRipples( void );
+void R_UnloadSkybox( void );
+void EmitWaterPolys( msurface_t *warp, qboolean reverse, qboolean ripples );
 void R_ResetRipples( void );
 void R_AnimateRipples( void );
-void R_UpdateRippleTexParams( void );
-void R_UploadRipples( texture_t *image );
-
-//
-// gl_vgui.c
-//
-void VGUI_DrawInit( void );
-void VGUI_DrawShutdown( void );
-void VGUI_SetupDrawingText( int *pColor );
-void VGUI_SetupDrawingRect( int *pColor );
-void VGUI_SetupDrawingImage( int *pColor );
-void VGUI_BindTexture( int id );
-void VGUI_EnableTexture( qboolean enable );
-void VGUI_CreateTexture( int id, int width, int height );
-void VGUI_UploadTexture( int id, const char *buffer, int width, int height );
-void VGUI_UploadTextureBlock( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight );
-void VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr );
-void VGUI_GetTextureSizes( int *width, int *height );
-int VGUI_GenerateTexture( void );
+qboolean R_UploadRipples( texture_t *image );
 
 //#include "vid_common.h"
 
@@ -523,11 +515,11 @@ void GL_SetupAttributes( int safegl );
 void GL_OnContextCreated( void );
 void GL_InitExtensions( void );
 void GL_ClearExtensions( void );
-void VID_CheckChanges( void );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
 void GL_FreeImage( const char *name );
 qboolean VID_ScreenShot( const char *filename, int shot_type );
 qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
+void R_GammaChanged( qboolean do_reset_gamma );
 void R_BeginFrame( qboolean clearScene );
 void R_RenderFrame( const struct ref_viewpass_s *vp );
 void R_EndFrame( void );
@@ -537,12 +529,10 @@ void R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames, int cu
 void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty );
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum );
 qboolean R_SpeedsMessage( char *out, size_t size );
-void R_SetupSky( const char *skyboxname );
 qboolean R_CullBox( const vec3_t mins, const vec3_t maxs );
 int R_WorldToScreen( const vec3_t point, vec3_t screen );
 void R_ScreenToWorld( const vec3_t screen, vec3_t point );
 qboolean R_AddEntity( struct cl_entity_s *pRefEntity, int entityType );
-void Mod_LoadMapSprite( struct model_s *mod, const void *buffer, size_t size, qboolean *loaded );
 void Mod_SpriteUnloadTextures( void *data );
 void Mod_UnloadAliasModel( struct model_s *mod );
 void Mod_AliasUnloadTextures( void *data );
@@ -551,8 +541,6 @@ void R_RunViewmodelEvents( void );
 void R_DrawViewModel( void );
 int R_GetSpriteTexture( const struct model_s *m_pSpriteModel, int frame );
 void R_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t pos, int flags, float scale );
-void R_RemoveEfrags( struct cl_entity_s *ent );
-void R_AddEfrags( struct cl_entity_s *ent );
 void R_DecalRemoveAll( int texture );
 int R_CreateDecalList( decallist_t *pList );
 void R_ClearAllDecals( void );
@@ -569,8 +557,6 @@ void GL_CheckForErrors_( const char *filename, const int fileline );
 const char *GL_ErrorString( int err );
 qboolean GL_Support( int r_ext );
 int GL_MaxTextureUnits( void );
-qboolean GL_CheckExtension( const char *name, const dllfunc_t *funcs, const char *cvarname, int r_ext, float minver );
-void GL_SetExtension( int r_ext, int enable );
 
 //
 // gl_triapi.c
@@ -689,8 +675,6 @@ typedef struct
 
 typedef struct
 {
-
-	int width, height;
 	int		activeTMU;
 	GLint		currentTextures[MAX_TEXTURE_UNITS];
 	GLint		currentTexturesIndex[MAX_TEXTURE_UNITS];
@@ -706,7 +690,6 @@ typedef struct
 	qboolean		in2DMode;
 } glstate_t;
 
-
 typedef struct
 {
 	qboolean		initialized;	// OpenGL subsystem started
@@ -719,9 +702,61 @@ extern glstate_t		glState;
 extern glwstate_t		glw_state;
 extern ref_api_t      gEngfuncs;
 extern ref_globals_t *gpGlobals;
+extern ref_client_t  *gp_cl;
+extern ref_host_t    *gp_host;
 
 #define ENGINE_GET_PARM_ (*gEngfuncs.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
+
+//
+// helper funcs
+//
+static inline cl_entity_t *CL_GetEntityByIndex( int index )
+{
+	if( unlikely( index < 0 || index >= tr.max_entities || !tr.entities ))
+		return NULL;
+
+	return &tr.entities[index];
+}
+
+static inline model_t *CL_ModelHandle( int index )
+{
+	if( unlikely( index < 0 || index >= gp_cl->nummodels ))
+		return NULL;
+
+	return gp_cl->models[index];
+}
+
+static inline byte TextureToGamma( byte b )
+{
+	return !FBitSet( gp_host->features, ENGINE_LINEAR_GAMMA_SPACE ) ? tr.texgammatable[b] : b;
+}
+
+static inline uint LightToTexGamma( uint b )
+{
+	if( unlikely( b >= 1024 ))
+		return 0;
+
+	return !FBitSet( gp_host->features, ENGINE_LINEAR_GAMMA_SPACE ) ? tr.lightgammatable[b] : b;
+}
+
+static inline uint ScreenGammaTable( uint b )
+{
+	if( unlikely( b >= 1024 ))
+		return 0;
+
+	return !FBitSet( gp_host->features, ENGINE_LINEAR_GAMMA_SPACE ) ? tr.screengammatable[b] : b;
+}
+
+static inline uint LinearGammaTable( uint b )
+{
+	if( unlikely( b >= 1024 ))
+		return 0;
+
+	return !FBitSet( gp_host->features, ENGINE_LINEAR_GAMMA_SPACE ) ? tr.lineargammatable[b] : b;
+}
+
+#define WORLDMODEL (gp_cl->models[1])
 
 //
 // renderer cvars
@@ -741,6 +776,8 @@ extern convar_t	gl_nosort;
 extern convar_t	gl_test;		// cvar to testify new effects
 extern convar_t	gl_msaa;
 extern convar_t	gl_stencilbits;
+extern convar_t	gl_overbright;
+extern convar_t gl_fog;
 
 extern convar_t	r_lighting_extended;
 extern convar_t	r_lighting_ambient;
@@ -753,8 +790,11 @@ extern convar_t	r_lockfrustum;
 extern convar_t	r_traceglow;
 extern convar_t	r_vbo;
 extern convar_t	r_vbo_dlightmode;
+extern convar_t	r_vbo_detail;
+extern convar_t	r_vbo_overbrightmode;
 extern convar_t r_studio_sort_textures;
 extern convar_t r_studio_drawelements;
+extern convar_t r_shadows;
 extern convar_t r_ripple;
 extern convar_t r_ripple_updatetime;
 extern convar_t r_ripple_spawntime;
@@ -769,10 +809,14 @@ DECLARE_ENGINE_SHARED_CVAR_LIST()
 //
 #include "crtlib.h"
 
-#define Mem_Malloc( pool, size ) gEngfuncs._Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
-#define Mem_Calloc( pool, size ) gEngfuncs._Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
+void _Mem_Free( void *data, const char *filename, int fileline );
+void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
+	ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
+
+#define Mem_Malloc( pool, size ) _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
+#define Mem_Calloc( pool, size ) _Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
 #define Mem_Realloc( pool, ptr, size ) gEngfuncs._Mem_Realloc( pool, ptr, size, true, __FILE__, __LINE__ )
-#define Mem_Free( mem ) gEngfuncs._Mem_Free( mem, __FILE__, __LINE__ )
+#define Mem_Free( mem ) _Mem_Free( mem, __FILE__, __LINE__ )
 #define Mem_AllocPool( name ) gEngfuncs._Mem_AllocPool( name, __FILE__, __LINE__ )
 #define Mem_FreePool( pool ) gEngfuncs._Mem_FreePool( pool, __FILE__, __LINE__ )
 #define Mem_EmptyPool( pool ) gEngfuncs._Mem_EmptyPool( pool, __FILE__, __LINE__ )

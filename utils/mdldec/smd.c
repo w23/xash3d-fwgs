@@ -23,6 +23,7 @@ GNU General Public License for more details.
 #include "studio.h"
 #include "mdldec.h"
 #include "smd.h"
+#include "utils.h"
 
 static matrix3x4	*bonetransform;
 static matrix3x4	*worldtransform;
@@ -122,19 +123,13 @@ ProperBoneRotationZ
 */
 static void ProperBoneRotationZ( vec_t *motion, float angle )
 {
-	float	c, s, x, y;
-	float	rot;
+	float	tmp, rot;
 
 	rot = DEG2RAD( angle );
 
-	s = sin( rot );
-	c = cos( rot );
-
-	x = motion[0];
-	y = motion[1];
-
-	motion[0] = c * x - s * y;
-	motion[1] = s * x + c * y;
+	tmp = motion[0];
+	motion[0] = motion[1];
+	motion[1] = -tmp;
 
 	motion[5] += rot;
 }
@@ -439,9 +434,12 @@ static void WriteFrameInfo( FILE *fp, mstudioanim_t *anim, mstudioseqdesc_t *seq
 
 		if( bone->parent == -1 )
 		{
-			scale = frame / (float)( seqdesc->numframes - 1 );
+			if( seqdesc->numframes > 1 && frame > 0 )
+			{
+				scale = frame / (float)( seqdesc->numframes - 1 );
 
-			VectorMA( motion, scale, seqdesc->linearmovement, motion );
+				VectorMA( motion, scale, seqdesc->linearmovement, motion );
+			}
 
 			ProperBoneRotationZ( motion, 270.0f );
 		}
@@ -490,7 +488,6 @@ static void WriteReferences( void )
 	FILE			*fp;
 	mstudiomodel_t		*model;
 	mstudiobodyparts_t	*bodypart;
-	char			 name[64];
 	char			 filename[MAX_SYSPATH];
 
 	if( !CreateBoneTransformMatrices( &bonetransform ) )
@@ -517,13 +514,11 @@ static void WriteReferences( void )
 			if( !Q_strncmp( model->name, "blank", 5 ) )
 				continue;
 
-			COM_FileBase( model->name, name, sizeof( name ));
-
-			len = Q_snprintf( filename, MAX_SYSPATH, "%s%s.smd", destdir, name );
+			len = Q_snprintf( filename, MAX_SYSPATH, "%s%s.smd", destdir, model->name );
 
 			if( len == -1 )
 			{
-				fprintf( stderr, "ERROR: Destination path is too long. Can't write %s.smd\n", name );
+				fprintf( stderr, "ERROR: Destination path is too long. Couldn't write %s.smd\n", model->name );
 				goto _fail;
 			}
 
@@ -531,7 +526,7 @@ static void WriteReferences( void )
 
 			if( !fp )
 			{
-				fprintf( stderr, "ERROR: Can't write %s\n", filename );
+				fprintf( stderr, "ERROR: Couldn't write %s\n", filename );
 				goto _fail;
 			}
 
@@ -562,31 +557,41 @@ WriteSequences
 static void WriteSequences( void )
 {
 	int			 i, j;
-	int			 len;
+	int			 len, namelen, emptyplace;
 	FILE			*fp;
-	char			 filename[MAX_SYSPATH];
+	char			 path[MAX_SYSPATH];
 	mstudioseqdesc_t	*seqdesc = (mstudioseqdesc_t *)( (byte *)model_hdr + model_hdr->seqindex );
+
+	len = Q_snprintf( path, MAX_SYSPATH, "%s" DEFAULT_SEQUENCEPATH, destdir );
+
+	if( len == -1 || !MakeDirectory( path ))
+	{
+		fputs( "ERROR: Destination path is too long or write permission denied. Couldn't create directory for sequences\n", stderr );
+		return;
+	}
+
+	emptyplace = MAX_SYSPATH - len;
 
 	for( i = 0; i < model_hdr->numseq; ++i, ++seqdesc )
 	{
 		for( j = 0; j < seqdesc->numblends; j++ )
 		{
 			if( seqdesc->numblends == 1 )
-				len = Q_snprintf( filename, MAX_SYSPATH, "%s%s.smd", destdir, seqdesc->label );
+				namelen = Q_snprintf( &path[len], emptyplace, "%s.smd", seqdesc->label );
 			else
-				len = Q_snprintf( filename, MAX_SYSPATH, "%s%s_blend%02i.smd", destdir, seqdesc->label, j + 1 );
+				namelen = Q_snprintf( &path[len], emptyplace, "%s_blend%02i.smd", seqdesc->label, j + 1 );
 
-			if( len == -1 )
+			if( namelen == -1 )
 			{
-				fprintf( stderr, "ERROR: Destination path is too long. Can't write %s.smd\n", seqdesc->label );
+				fprintf( stderr, "ERROR: Destination path is too long. Couldn't write %s.smd\n", seqdesc->label );
 				return;
 			}
 
-			fp = fopen( filename, "w" );
+			fp = fopen( path, "w" );
 
 			if( !fp )
 			{
-				fprintf( stderr, "ERROR: Can't write %s\n", filename );
+				fprintf( stderr, "ERROR: Couldn't write %s\n", path );
 				return;
 			}
 
@@ -597,7 +602,7 @@ static void WriteSequences( void )
 
 			fclose( fp );
 
-			printf( "Sequence: %s\n", filename );
+			printf( "Sequence: %s\n", path );
 		}
 	}
 }

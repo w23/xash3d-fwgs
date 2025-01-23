@@ -58,7 +58,7 @@ static inline const char *IdToDir( char *dir, size_t size, const char *id )
 
 	if( !Q_strcmp( id, "GAMEDOWNLOAD" ))
 	{
-		Q_snprintf( dir, size, "%s/downloaded", GI->gamefolder );
+		Q_snprintf( dir, size, "%s/" DEFAULT_DOWNLOADED_DIRECTORY , GI->gamefolder );
 		return dir;
 	}
 
@@ -81,7 +81,7 @@ static inline void CopyAndFixSlashes( char *p, const char *in, size_t size )
 	COM_FixSlashes( p );
 }
 
-class CXashFS : public IVFileSystem009
+class CXashFS : public IFileSystem
 {
 private:
 	class CSearchState
@@ -233,6 +233,13 @@ public:
 		return FS_FileTime( p, false );
 	}
 
+	long int GetFileModificationTime( const char *path ) override
+	{
+		// TODO: properly reverse-engineer this
+		FixupPath( p, path );
+		return FS_FileTime( p, false );
+	}
+
 	void FileTimeToString( char *p, int size, long int time ) override
 	{
 		const time_t curtime = time;
@@ -313,6 +320,12 @@ public:
 			return nullptr;
 
 		state = new CSearchState( &searchHead, search );
+		if( !state )
+		{
+			Mem_Free( search );
+			return nullptr;
+		}
+
 		*handle = state->handle;
 		return state->search->filenames[0];
 	}
@@ -354,7 +367,7 @@ public:
 
 		if( i == nullptr )
 		{
-			Con_DPrintf( "FindClose: Can't find search state by handle %d\n", handle );
+			Con_DPrintf( "%s: Can't find search state by handle %d\n", __func__, handle );
 			return;
 		}
 
@@ -422,9 +435,7 @@ public:
 
 	bool GetCurrentDirectory( char *p, int size ) override
 	{
-		Q_strncpy( p, fs_rootdir, size );
-
-		return true;
+		return FS_GetRootDirectory( p, size );
 	}
 
 	void PrintOpenedFiles() override
@@ -518,9 +529,9 @@ extern "C" void EXPORT *CreateInterface( const char *interface, int *retval )
 
 	if( !Q_strcmp( interface, FS_API_CREATEINTERFACE_TAG ))
 	{
-		static fs_api_t copy = { 0 }; // return a copy, to disallow overriding
+		static fs_api_t copy; // return a copy, to disallow overriding
 
-		memcpy( &copy, &g_api, sizeof( copy ));
+		copy = g_api;
 
 		if( retval )
 			*retval = 0;

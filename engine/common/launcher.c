@@ -13,21 +13,18 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-#ifdef SINGLE_BINARY
-
-#include "build.h"
-#include "common.h"
-#ifdef XASH_SDLMAIN
-#include "SDL.h"
+#if XASH_ENABLE_MAIN
+#if XASH_SDLMAIN
+#include <SDL.h>
 #endif
-
 #if XASH_EMSCRIPTEN
 #include <emscripten.h>
 #endif
+#include "build.h"
+#include "common.h"
 
-#define E_GAME	"XASH3D_GAME" // default env dir to start from
 #ifndef XASH_GAMEDIR
-#define XASH_GAMEDIR	"valve"
+#define XASH_GAMEDIR "valve" // !!! Replace with your default (base) game directory !!!
 #endif
 
 #if XASH_WIN32
@@ -40,47 +37,33 @@ static char        **szArgv;
 
 static void Sys_ChangeGame( const char *progname )
 {
-	// a1ba: may never be called within engine
-	// if platform supports execv() function
-	Q_strncpy( szGameDir, progname, sizeof( szGameDir ));
-	Host_Shutdown( );
-	exit( Host_Main( szArgc, szArgv, szGameDir, 1, &Sys_ChangeGame ) );
+	// stub
 }
 
-_inline int Sys_Start( void )
+static int Sys_Start( void )
 {
-	int ret;
-	const char *game = getenv( E_GAME );
+	Q_strncpy( szGameDir, XASH_GAMEDIR, sizeof( szGameDir ));
 
-	if( !game )
-		game = XASH_GAMEDIR;
-
-	Q_strncpy( szGameDir, game, sizeof( szGameDir ));
 #if XASH_EMSCRIPTEN
 #ifdef EMSCRIPTEN_LIB_FS
 	// For some unknown reason emscripten refusing to load libraries later
-	COM_LoadLibrary("menu", 0 );
-	COM_LoadLibrary("server", 0 );
-	COM_LoadLibrary("client", 0 );
+	COM_LoadLibrary( "menu", 0 );
+	COM_LoadLibrary( "server", 0 );
+	COM_LoadLibrary( "client", 0 );
 #endif
 #if XASH_DEDICATED
 	// NodeJS support for debug
-	EM_ASM(try{
-		FS.mkdir('/xash');
-		FS.mount(NODEFS, { root: '.'}, '/xash' );
-		FS.chdir('/xash');
-	}catch(e){};);
+	EM_ASM(try {
+		FS.mkdir( '/xash' );
+		FS.mount( NODEFS, { root: '.'}, '/xash' );
+		FS.chdir( '/xash' );
+	} catch( e ) { };);
 #endif
 #elif XASH_IOS
-	{
-		void IOS_LaunchDialog( void );
-		IOS_LaunchDialog();
-	}
+	IOS_LaunchDialog();
 #endif
 
-	ret = Host_Main( szArgc, szArgv, game, 0, Sys_ChangeGame );
-
-	return ret;
+	return Host_Main( szArgc, szArgv, szGameDir, 0, Sys_ChangeGame );
 }
 
 int main( int argc, char **argv )
@@ -94,4 +77,4 @@ int main( int argc, char **argv )
 #endif // XASH_PSVITA
 	return Sys_Start();
 }
-#endif // SINGLE_BINARY
+#endif // XASH_ENABLE_MAIN

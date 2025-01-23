@@ -46,9 +46,34 @@ static int CL_LoadFontTexture( const char *fontname, uint texFlags, int *width )
 	return tex;
 }
 
-qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float scale, int rendermode, uint texFlags )
+static int CL_FontRenderMode( convar_t *fontrender )
+{
+	switch((int)fontrender->value )
+	{
+	case 0:
+		return kRenderTransAdd;
+	case 1:
+		return kRenderTransAlpha;
+	case 2:
+		return kRenderTransTexture;
+	default:
+		Cvar_DirectSet( fontrender, fontrender->def_string );
+	}
+
+	return kRenderTransTexture;
+}
+
+void CL_SetFontRendermode( cl_font_t *font )
+{
+	ref.dllFuncs.GL_SetRenderMode( CL_FontRenderMode( font->rendermode ));
+}
+
+qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float scale, convar_t *rendermode, uint texFlags )
 {
 	int font_width, i;
+
+	if( !rendermode )
+		return false;
 
 	if( font->valid )
 		return true; // already loaded
@@ -60,7 +85,6 @@ qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float sc
 	font->type = FONT_FIXED;
 	font->valid = true;
 	font->scale = scale;
-	font->nearest = FBitSet( texFlags, TF_NEAREST );
 	font->rendermode = rendermode;
 	font->charHeight = Q_rint( font_width / 16 * scale );
 
@@ -77,12 +101,15 @@ qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float sc
 	return true;
 }
 
-qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float scale, int rendermode, uint texFlags )
+qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float scale, convar_t *rendermode, uint texFlags )
 {
 	fs_offset_t length;
 	qfont_t src;
 	byte *pfile;
 	int font_width, i;
+
+	if( !rendermode )
+		return false;
 
 	if( font->valid )
 		return true;
@@ -106,8 +133,7 @@ qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float
 
 	font->type = FONT_VARIABLE;
 	font->valid = true;
-	font->scale = scale;
-	font->nearest = FBitSet( texFlags, TF_NEAREST );
+	font->scale = scale ? scale : 1.0f;
 	font->rendermode = rendermode;
 	font->charHeight = Q_rint( src.rowheight * scale );
 
@@ -179,7 +205,8 @@ int CL_DrawCharacter( float x, float y, int number, rgba_t color, cl_font_t *fon
 		return font->charWidths[number];
 
 	rc = &font->fontRc[number];
-	if( font->nearest || font->scale <= 1.0f )
+
+	if( font->scale <= 1.f || !REF_GET_PARM( PARM_TEX_FILTERING, font->hFontTexture ))
 		half = 0;
 
 	s1 = ((float)rc->left + half ) / texw;
@@ -193,7 +220,7 @@ int CL_DrawCharacter( float x, float y, int number, rgba_t color, cl_font_t *fon
 		SPR_AdjustSize( &x, &y, &w, &h );
 
 	if( !FBitSet( flags, FONT_DRAW_NORENDERMODE ))
-		ref.dllFuncs.GL_SetRenderMode( font->rendermode );
+		CL_SetFontRendermode( font );
 
 	// don't apply color to fixed fonts it's already colored
 	if( font->type != FONT_FIXED || REF_GET_PARM( PARM_TEX_GLFORMAT, font->hFontTexture ) == 0x8045 ) // GL_LUMINANCE8_ALPHA8
@@ -216,7 +243,7 @@ int CL_DrawString( float x, float y, const char *s, rgba_t color, cl_font_t *fon
 		Con_UtfProcessChar( 0 ); // clear utf state
 
 	if( !FBitSet( flags, FONT_DRAW_NORENDERMODE ))
-		ref.dllFuncs.GL_SetRenderMode( font->rendermode );
+		CL_SetFontRendermode( font );
 
 	Vector4Copy( color, current_color );
 
@@ -341,8 +368,11 @@ void CL_DrawStringLen( cl_font_t *font, const char *s, int *width, int *height, 
 		{
 			draw_len += font->charWidths[number];
 
-			if( draw_len > *width )
-				*width = draw_len;
+			if( width )
+			{
+				if( draw_len > *width )
+					*width = draw_len;
+			}
 		}
 
 		s++;

@@ -29,13 +29,13 @@ V_CalcViewRect
 calc frame rectangle (Quake1 style)
 ===============
 */
-void V_CalcViewRect( void )
+static void V_CalcViewRect( void )
 {
 	qboolean	full = false;
 	int	sb_lines;
 	float	size;
 
-	if( FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
+	if( Host_IsQuakeCompatible( ))
 	{
 		// intermission is always full screen
 		if( cl.intermission ) size = 120.0f;
@@ -88,7 +88,7 @@ void V_CalcViewRect( void )
 V_SetupViewModel
 ===============
 */
-void V_SetupViewModel( void )
+static void V_SetupViewModel( void )
 {
 	cl_entity_t	*view = &clgame.viewent;
 	player_info_t	*info = &cl.players[cl.playernum];
@@ -118,7 +118,7 @@ void V_SetupViewModel( void )
 V_SetRefParams
 ===============
 */
-void V_SetRefParams( ref_params_t *fd )
+static void V_SetRefParams( ref_params_t *fd )
 {
 	memset( fd, 0, sizeof( ref_params_t ));
 
@@ -144,7 +144,9 @@ void V_SetRefParams( ref_params_t *fd )
 	VectorCopy( cl.viewangles, fd->cl_viewangles );
 	fd->health = cl.local.health;
 	VectorCopy( cl.crosshairangle, fd->crosshairangle );
-	fd->viewsize = scr_viewsize.value;
+	if( Host_IsQuakeCompatible( ))
+		fd->viewsize = scr_viewsize.value;
+	else fd->viewsize = 120.0f;
 
 	VectorCopy( cl.punchangle, fd->punchangle );
 	fd->maxclients = cl.maxclients;
@@ -182,7 +184,7 @@ V_MergeOverviewRefdef
 merge refdef with overview settings
 ===============
 */
-void V_RefApplyOverview( ref_viewpass_t *rvp )
+static void V_RefApplyOverview( ref_viewpass_t *rvp )
 {
 	ref_overview_t	*ov = &clgame.overView;
 	float		aspect;
@@ -281,7 +283,7 @@ static void V_AdjustFov( float *fov_x, float *fov_y, float width, float height, 
 V_GetRefParams
 =============
 */
-void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
+static void V_GetRefParams( ref_params_t *fd, ref_viewpass_t *rvp )
 {
 	// part1: deniable updates
 	VectorCopy( fd->simvel, cl.simvel );
@@ -341,11 +343,13 @@ qboolean V_PreRender( void )
 	{
 		if(( host.realtime - cls.disable_screen ) > cl_timeout.value )
 		{
-			Con_Reportf( "V_PreRender: loading plaque timed out\n" );
+			Con_Reportf( "%s: loading plaque timed out\n", __func__ );
 			cls.disable_screen = 0.0f;
 		}
 		return false;
 	}
+
+	V_CheckGamma();
 
 	ref.dllFuncs.R_BeginFrame( !cl.paused && ( cls.state == ca_active ));
 
@@ -406,14 +410,14 @@ void V_RenderView( void )
 #define NODE_INTERVAL_X(x)	(x * 16.0f)
 #define NODE_INTERVAL_Y(x)	(x * 16.0f)
 
-void R_DrawLeafNode( float x, float y, float scale )
+static void R_DrawLeafNode( float x, float y, float scale )
 {
 	float downScale = scale * 0.25f;// * POINT_SIZE;
 
 	ref.dllFuncs.R_DrawStretchPic( x - downScale * 0.5f, y - downScale * 0.5f, downScale, downScale, 0, 0, 1, 1, R_GetBuiltinTexture( REF_PARTICLE_TEXTURE ) );
 }
 
-void R_DrawNodeConnection( float x, float y, float x2, float y2 )
+static void R_DrawNodeConnection( float x, float y, float x2, float y2 )
 {
 	ref.dllFuncs.Begin( TRI_LINES );
 		ref.dllFuncs.Vertex3f( x, y, 0 );
@@ -421,7 +425,7 @@ void R_DrawNodeConnection( float x, float y, float x2, float y2 )
 	ref.dllFuncs.End( );
 }
 
-void R_ShowTree_r( mnode_t *node, float x, float y, float scale, int shownodes, mleaf_t *viewleaf )
+static void R_ShowTree_r( mnode_t *node, float x, float y, float scale, int shownodes, mleaf_t *viewleaf )
 {
 	float	downScale = scale * 0.8f;
 
@@ -462,13 +466,13 @@ void R_ShowTree_r( mnode_t *node, float x, float y, float scale, int shownodes, 
 		R_DrawNodeConnection( x, y, x + scale, y + scale );
 	}
 
-	R_ShowTree_r( node->children[1], x - scale, y + scale, downScale, shownodes, viewleaf );
-	R_ShowTree_r( node->children[0], x + scale, y + scale, downScale, shownodes, viewleaf );
+	R_ShowTree_r( node_child( node, 1, cl.worldmodel ), x - scale, y + scale, downScale, shownodes, viewleaf );
+	R_ShowTree_r( node_child( node, 0, cl.worldmodel ), x + scale, y + scale, downScale, shownodes, viewleaf );
 
 	world.recursion_level--;
 }
 
-void R_ShowTree( void )
+static void R_ShowTree( void )
 {
 	float	x = (float)((refState.width - (int)POINT_SIZE) >> 1);
 	float	y = NODE_INTERVAL_Y(1.0f);
@@ -478,11 +482,9 @@ void R_ShowTree( void )
 		return;
 
 	world.recursion_level = 0;
-	viewleaf = Mod_PointInLeaf( refState.vieworg, cl.worldmodel->nodes );
+	viewleaf = Mod_PointInLeaf( refState.vieworg, cl.worldmodel->nodes, cl.worldmodel );
 
-	//pglEnable( GL_BLEND );
-	//pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	//pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	ref.dllFuncs.TriRenderMode( kRenderTransTexture );
 
 	//pglLineWidth( 2.0f );
 	ref.dllFuncs.Color4f( 1, 0.7f, 0, 1.0f );
@@ -504,7 +506,6 @@ V_PostRender
 */
 void V_PostRender( void )
 {
-	static double	oldtime;
 	qboolean		draw_2d = false;
 
 	ref.dllFuncs.R_AllowFog( false );
@@ -531,7 +532,9 @@ void V_PostRender( void )
 		SCR_RSpeeds();
 		SCR_NetSpeeds();
 		SCR_DrawPos();
+		SCR_DrawEnts();
 		SCR_DrawNetGraph();
+		SCR_DrawUserCmd();
 		SV_DrawOrthoTriangles();
 		CL_DrawDemoRecording();
 		CL_DrawHUD( CL_CHANGELEVEL );
@@ -549,5 +552,8 @@ void V_PostRender( void )
 
 	SCR_MakeScreenShot();
 	ref.dllFuncs.R_AllowFog( true );
+	Platform_SetTimer( 0.0f );
 	ref.dllFuncs.R_EndFrame();
+
+	V_CheckGammaEnd();
 }

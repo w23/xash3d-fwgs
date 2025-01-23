@@ -21,24 +21,25 @@ def options(opt):
 		help = 'enable custom swap allocator. For devices with no swap support')
 
 	grp.add_option('--enable-legacy-sdl', action = 'store_true', dest = 'SDL12', default = False,
-		help = 'enable using SDL1.2 instead of SDL2(not recommended) [default: %default]')
+		help = 'enable using SDL1.2 instead of SDL2(not recommended) [default: %(default)s]')
 
 	grp.add_option('--enable-static-binary', action = 'store_true', dest = 'STATIC', default = False,
-		help = 'build static binary(not recommended, --single-binary required) [default: %default]')
+		help = 'build static binary(not recommended, --single-binary required) [default: %(default)s]')
 
 	grp.add_option('--enable-engine-tests', action = 'store_true', dest = 'ENGINE_TESTS', default = False,
-		help = 'embed tests into the engine, jump into them by -runtests command line switch [default: %default]')
+		help = 'embed tests into the engine, jump into them by -runtests command line switch [default: %(default)s]')
 
 	grp.add_option('--enable-engine-fuzz', action = 'store_true', dest = 'ENGINE_FUZZ', default = False,
-		help = 'add LLVM libFuzzer [default: %default]' )
+		help = 'add LLVM libFuzzer [default: %(default)s]' )
+
+	grp.add_option('--enable-ffmpeg', action = 'store_true', dest = 'FFMPEG', default = False,
+		help = '') # hidden option, does nothing
 
 	opt.load('sdl2')
 
 def configure(conf):
 	# check for dedicated server build
 	if conf.options.DEDICATED:
-		if conf.env.DEST_OS == 'linux':
-			conf.check_cc(lib='rt')
 		conf.define('XASH_DEDICATED', 1)
 	elif conf.env.DEST_OS == 'dos':
 		conf.options.STATIC = True
@@ -49,14 +50,14 @@ def configure(conf):
 		# re-enable undefined reference errors
 		conf.env.CXXFLAGS += ['-Wl,--no-undefined']
 		conf.env.CFLAGS += ['-Wl,--no-undefined']
-		# allow the SDL2 sanity check to complete properly by linking in libstdc++ and lm normally
-		conf.env.LDFLAGS += ['-lstdc++', '-lm']
+		# allow the SDL2 sanity check to complete properly by linking in lm normally
+		conf.env.LDFLAGS += ['-lm']
 		conf.load('sdl2')
 		if not conf.env.HAVE_SDL2:
 			conf.fatal('SDL2 not availiable! Install switch-sdl2!')
 		conf.define('XASH_SDL', 2)
 		# then remove them to avoid them getting linked to shared objects
-		conf.env.LDFLAGS.remove('-lstdc++')
+		conf.env.LIB_SDL2.remove('stdc++') # remove libstdc++ linking from SDL2, we link it later
 		conf.env.LDFLAGS.remove('-lm')
 	elif conf.env.DEST_OS == 'psvita':
 		# allow the SDL2 sanity check to complete properly by linking in some deps missing from the pkg-config file
@@ -73,29 +74,42 @@ def configure(conf):
 		# unused, XASH_LINUX without XASH_SDL gives fbdev & alsa support
 		# conf.define('XASH_FBDEV', 1)
 		conf.check_cc( lib = 'asound' )
-		conf.check_cc( lib = 'rt' )
 	elif conf.options.SDL12:
 		conf.define('XASH_SDL', 12)
 		conf.check_cfg(package='sdl', args='--cflags --libs', uselib_store='SDL2' )
-		if conf.env.DEST_OS == 'linux':
-			conf.check_cc( lib='rt' )
 		conf.env.HAVE_SDL2 = True
 	else:
 		conf.load('sdl2')
-		if not conf.env.HAVE_SDL2:
-			conf.fatal('SDL2 not available! If you want to build dedicated server, specify --dedicated')
-		conf.define('XASH_SDL', 2)
+		if conf.options.SDL3:
+			if not conf.env.HAVE_SDL3:
+				conf.fatal('SDL3 not available! If you want to build dedicated server, specify --dedicated')
+			conf.define('XASH_SDL', 3)
+		else:
+			if not conf.env.HAVE_SDL2:
+				conf.fatal('SDL2 not available! If you want to build dedicated server, specify --dedicated')
+			conf.define('XASH_SDL', 2)
 
 	if conf.env.DEST_OS == 'haiku':
 		conf.env.LIB_HAIKU = ['network']
 		conf.env.LIBPATH_HAIKU = ['/boot/system/lib']
+
+	if conf.env.DEST_OS == 'wasi':
+		conf.options.NO_ASYNC_RESOLVE = True
+		conf.env.append_unique('CFLAGS', '-mllvm')
+		conf.env.append_unique('CFLAGS', '-wasm-enable-sjlj')
+
+	if conf.env.DEST_OS == 'sunos':
+		conf.check_cc(lib='socket')
 
 	if conf.options.STATIC:
 		conf.env.STATIC = True
 		conf.define('XASH_NO_LIBDL',1)
 
 	if not conf.env.DEST_OS in ['win32', 'android'] and not conf.options.NO_ASYNC_RESOLVE:
-		conf.check_pthreads()
+		conf.check_pthreads(mode='c')
+
+	if conf.env.DEST_OS == 'linux':
+		conf.check_cc(lib='rt')
 
 	if hasattr(conf.options, 'DLLEMU'):
 		conf.define_cond('XASH_DLL_LOADER', conf.options.DLLEMU)
@@ -109,14 +123,13 @@ def configure(conf):
 		conf.env.append_unique('CFLAGS', '-fsanitize=fuzzer-no-link')
 		conf.env.append_unique('LINKFLAGS', '-fsanitize=fuzzer')
 
+	conf.define('ENGINE_DLL', 1)
+
 	conf.define_cond('XASH_ENGINE_TESTS', conf.env.ENGINE_TESTS)
 	conf.define_cond('XASH_STATIC_LIBS', conf.env.STATIC_LINKING)
 	conf.define_cond('XASH_CUSTOM_SWAP', conf.options.CUSTOM_SWAP)
-	conf.define_cond('SINGLE_BINARY', conf.env.SINGLE_BINARY)
+	conf.define_cond('XASH_ENABLE_MAIN', conf.env.DISABLE_LAUNCHER)
 	conf.define_cond('XASH_NO_ASYNC_NS_RESOLVE', conf.options.NO_ASYNC_RESOLVE)
-	conf.define_cond('SUPPORT_BSP2_FORMAT', conf.options.SUPPORT_BSP2_FORMAT)
-	conf.define_cond('XASH_64BIT', conf.env.DEST_SIZEOF_VOID_P != 4)
-	conf.define_cond('DBGHELP', conf.env.DEST_OS == 'win32')
 	conf.define_cond('PSAPI_VERSION', conf.env.DEST_OS == 'win32') # will be defined as 1
 
 	for refdll in conf.refdlls:
@@ -127,14 +140,13 @@ def build(bld):
 	bld(name = 'engine_includes', export_includes = '. common common/imagelib', use = 'filesystem_includes')
 
 	is_cxx_link = False
-	libs = [ 'engine_includes', 'public', 'dllemu' ]
+	libs = [ 'engine_includes', 'public', 'dllemu', 'werror' ]
 
 	# basic build: dedicated only
 	source = bld.path.ant_glob([
 		'common/*.c',
 		'common/imagelib/*.c',
 		'common/soundlib/*.c',
-		'common/soundlib/libmpg/*.c',
 		'server/*.c'])
 
 	if bld.env.ENGINE_TESTS:
@@ -169,13 +181,12 @@ def build(bld):
 		source += bld.path.ant_glob(['platform/misc/lib_static.c'])
 		is_cxx_link = True
 
-	if bld.env.HAVE_SDL2:
-		libs.append('SDL2')
+	if bld.env.HAVE_SDL2 or bld.env.HAVE_SDL3:
+		libs.append('SDL3' if bld.env.HAVE_SDL3 else 'SDL2')
 		source += bld.path.ant_glob(['platform/sdl/*.c'])
 
 	if bld.env.MAGX:
 		libs.append('MAGX')
-		source += bld.path.ant_glob(['platform/magx/*.cpp'])
 		is_cxx_link = True
 
 	if bld.env.DEST_OS == 'android':
@@ -189,7 +200,7 @@ def build(bld):
 		# HACK: link in the entirety of libstdc++ so that dynamic libs could use all of it without manual exporting
 		# we can't do this right away because std::filesystem will complain about not having pathconf(),
 		# which we have defined in sys_nswitch.c
-		bld.env.LDFLAGS += ['-Wl,--whole-archive', '-lstdc++', '-Wl,--no-whole-archive', '-lm']
+		bld.env.LDFLAGS += ['-v', '-Wl,--whole-archive', '-lstdc++', '-Wl,--no-whole-archive', '-lm']
 
 	if bld.env.DEST_OS == 'psvita':
 		libs += [ 'VRTLD' ]
@@ -213,48 +224,55 @@ def build(bld):
 			'-lSceKernelDmacMgr_stub'
 		]
 
+	if bld.env.DEST_OS == 'sunos':
+		libs.append('SOCKET')
+
 	# add client files
 	if not bld.env.DEDICATED:
 		source += bld.path.ant_glob([
 			'client/*.c',
 			'client/vgui/*.c',
-			'client/avi/*.c'])
-		libs += ['opus']
+			'client/avi/*.c',
+			'client/soundlib/*.c',
+			'client/soundlib/libmpg/*.c',
+		])
+		is_cxx_link = True
+		libs += ['bzip2', 'MultiEmulator', 'opus', 'opusfile', 'vorbis', 'vorbisfile']
 
-	includes = ['server', 'client', 'client/vgui' ]
+	rpath = bld.env.DEFAULT_RPATH
 
 	# Switch and PSVita have custom parameters
 	if bld.env.DEST_OS in ['nswitch', 'psvita']:
-		bld(source = source,
-			target = 'xash',
-			features = 'c cxxprogram',
-			includes = includes,
-			use = libs,
-			install_path = None,
-			nro_install_path = bld.env.BINDIR,
-			nacp = 'platform/nswitch/xash3d-fwgs.nacp',
-			icon = 'platform/nswitch/icon.jpg',
-			sce_sys = 'platform/psvita/sce_sys',
-			title_id = 'XASH10000',
-			app_name = 'xash3d-fwgs'
-		)
-	else:
-		if bld.env.SINGLE_BINARY:
-			install_path = bld.env.BINDIR
-			program = 'cxxprogram' if is_cxx_link else 'cprogram'
-			if bld.env.STATIC:
-				program += '_static'
-			features = ['c', program]
+		rpath = None
+		install_path = None
+		features = 'cxx c cxxprogram cprogram'
+	# Always build as shared library on Android
+	elif bld.env.DISABLE_LAUNCHER and bld.env.DEST_OS != 'android':
+		install_path = bld.env.BINDIR
+		if bld.env.STATIC:
+			features = 'cxx c cxxprogram_static cprogram_static'
+		elif is_cxx_link:
+			features = 'cxx c cxxprogram cprogram'
 		else:
-			install_path = bld.env.LIBDIR
-			features = ['c', 'cxxshlib' if is_cxx_link else 'cshlib']
+			features = 'c cprogram'
+	else:
+		install_path = bld.env.LIBDIR
+		if is_cxx_link:
+			features = 'cxx c cxxshlib cshlib'
+		else:
+			features = 'c cshlib'
 
-		bld(source   = source,
-			target   = 'xash',
-			features = features,
-			includes = includes,
-			use      = libs,
-			install_path = install_path,
-			subsystem = bld.env.MSVC_SUBSYSTEM,
-			rpath = bld.env.DEFAULT_RPATH,
-		)
+	bld(source = source,
+		target = 'xash',
+		features = features,
+		includes = 'server client client/vgui common/soundlib',
+		use = libs,
+		install_path = install_path,
+		nro_install_path = bld.env.BINDIR,
+		nacp = 'platform/nswitch/xash3d-fwgs.nacp',
+		icon = 'platform/nswitch/icon.jpg',
+		sce_sys = 'platform/psvita/sce_sys',
+		title_id = 'XASH10000',
+		app_name = 'xash3d-fwgs',
+		rpath = rpath,
+	)

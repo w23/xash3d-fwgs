@@ -34,14 +34,9 @@ double Platform_DoubleTime( void )
 
 	return (double)( CurrentTime.QuadPart - g_ClockStart.QuadPart ) / (double)( g_PerformanceFrequency.QuadPart );
 }
-
-void Platform_Sleep( int msec )
-{
-	Sleep( msec );
-}
 #endif // XASH_TIMER == TIMER_WIN32
 
-qboolean Sys_DebuggerPresent( void )
+qboolean Platform_DebuggerPresent( void )
 {
 	return IsDebuggerPresent();
 }
@@ -60,3 +55,4 @@ void Platform_MessageBox( const char *title, const char *message, qboolean paren
 	MessageBox( parentMainWindow ? host.hWnd : NULL, message, title, MB_OK|MB_SETFOREGROUND|MB_ICONSTOP );
 }
 #endif // XASH_MESSAGEBOX == MSGBOX_WIN32
+

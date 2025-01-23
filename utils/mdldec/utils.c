@@ -56,6 +56,61 @@ qboolean MakeDirectory( const char *path )
 
 /*
 ============
+MakeFullPath
+============
+*/
+qboolean MakeFullPath( const char *path )
+{
+	char *p = (char *)path, tmp;
+
+	for( ; *p; )
+	{
+		p = Q_strpbrk( p, "/\\" );
+
+		if( p )
+		{
+			tmp = *p;
+			*p = '\0';
+		}
+
+		if( !MakeDirectory( path ))
+		{
+			fprintf( stderr, "ERROR: Couldn't create directory %s\n", path );
+			return false;
+		}
+
+		if( !p )
+			break;
+
+		*p++ = tmp;
+	}
+
+	return true;
+}
+
+/*
+============
+ExtractFileName
+============
+*/
+void ExtractFileName( char *name, size_t size )
+{
+	char	tmp[MAX_SYSPATH];
+
+	if( !( name && *name ) || size <= 0 )
+		return;
+
+	name[size - 1] = '\0';
+
+	if( Q_strpbrk( name, "/\\" ))
+	{
+		Q_strncpy( tmp, COM_FileWithoutPath( name ), sizeof( tmp ));
+		Q_strncpy( name, tmp, size );
+	}
+}
+
+/*
+============
 GetFileSize
 ============
 */
@@ -75,25 +130,24 @@ off_t GetSizeOfFile( FILE *fp )
 LoadFile
 ============
 */
-byte *LoadFile( const char *filename )
+byte *LoadFile( const char *filename, off_t *size )
 {
 	FILE	*fp;
 	byte	*buf;
-	off_t	 size;
 
 	fp = fopen( filename, "rb" );
 
 	if( !fp )
 		return NULL;
 
-	size = GetSizeOfFile( fp );
+	*size = GetSizeOfFile( fp );
 
-	buf = malloc( size );
+	buf = malloc( *size );
 
 	if( !buf )
 		return NULL;
 
-	fread( buf, size, 1, fp );
+	fread( buf, *size, 1, fp );
 	fclose( fp );
 
 	return buf;

@@ -22,6 +22,8 @@ GNU General Public License for more details.
 #include "version.h"
 #include "mdldec.h"
 #include "utils.h"
+#include "smd.h"
+#include "texture.h"
 #include "qc.h"
 
 static char	**activity_names;
@@ -62,7 +64,7 @@ qboolean LoadActivityList( const char *appname )
 
 		if( !fp )
 		{
-			fputs( "ERROR: Can't open file " ACTIVITIES_FILE ".\n", stderr );
+			fputs( "ERROR: Couldn't open file " ACTIVITIES_FILE ".\n", stderr );
 			return false;
 		}
 	}
@@ -77,7 +79,7 @@ qboolean LoadActivityList( const char *appname )
 			return false;
 		}
 
-		COM_RemoveLineFeed( buf );
+		COM_RemoveLineFeed( buf, sizeof( buf ));
 
 		activity_names[activity_count - 1] = strdup( buf );
 
@@ -321,7 +323,6 @@ static void WriteBodyGroupInfo( FILE *fp )
 	int			 i, j;
 	mstudiobodyparts_t	*bodypart = (mstudiobodyparts_t *) ( (byte *)model_hdr + model_hdr->bodypartindex );
 	mstudiomodel_t		*model;
-	char			 modelname[64];
 
 	fprintf( fp, "// %i reference mesh%s\n", model_hdr->numbodyparts, model_hdr->numbodyparts > 1 ? "es" : "" );
 
@@ -331,9 +332,7 @@ static void WriteBodyGroupInfo( FILE *fp )
 
 		if( bodypart->nummodels == 1 )
 		{
-			COM_FileBase( model->name, modelname, sizeof( modelname ));
-
-			fprintf( fp, "$body \"%s\" \"%s\"\n", bodypart->name, modelname );
+			fprintf( fp, "$body \"%s\" \"%s\"\n", bodypart->name, model->name );
 			continue;
 		}
 
@@ -349,9 +348,7 @@ static void WriteBodyGroupInfo( FILE *fp )
 				continue;
 			}
 
-			COM_FileBase( model->name, modelname, sizeof( modelname ));
-
-			fprintf( fp, "\tstudio \"%s\"\n", modelname );
+			fprintf( fp, "\tstudio \"%s\"\n", model->name );
 		}
 
 		fputs( "}\n", fp );
@@ -479,11 +476,11 @@ static void WriteSequenceInfo( FILE *fp )
 		if( seqdesc->numblends > 1 )
 		{
 			for( j = 0; j < seqdesc->numblends; j++ )
-				fprintf( fp, "\t\"%s_blend%02i\"\n", seqdesc->label, j + 1 );
+				fprintf( fp, "\t\"" DEFAULT_SEQUENCEPATH "%s_blend%02i\"\n", seqdesc->label, j + 1 );
 		}
 		else
 		{
-			fprintf( fp, "\t\"%s\"\n", seqdesc->label );
+			fprintf( fp, "\t\"" DEFAULT_SEQUENCEPATH "%s\"\n", seqdesc->label );
 		}
 
 		if( seqdesc->activity )
@@ -570,7 +567,7 @@ void WriteQCScript( void )
 
 	if( len == -1 )
 	{
-		fprintf( stderr, "ERROR: Destination path is too long. Can't write %s.qc\n", modelfile );
+		fprintf( stderr, "ERROR: Destination path is too long. Couldn't write %s.qc\n", modelfile );
 		return;
 	}
 
@@ -578,7 +575,7 @@ void WriteQCScript( void )
 
 	if( !fp )
 	{
-		fprintf( stderr, "ERROR: Can't write %s\n", filename );
+		fprintf( stderr, "ERROR: Couldn't write %s\n", filename );
 		return;
 	}
 
@@ -599,10 +596,16 @@ void WriteQCScript( void )
 	fprintf( fp, "$modelname \"%s.mdl\"\n", modelfile );
 
 	fputs( "$cd \".\"\n", fp );
-	fputs( "$cdtexture \".\"\n", fp );
+	fputs( "$cdtexture \"./" DEFAULT_TEXTUREPATH "\"\n", fp );
 	fputs( "$cliptotextures\n", fp );
 	fputs( "$scale 1.0\n", fp );
 	fputs( "\n", fp );
+
+	if( model_hdr->flags & STUDIO_HAS_BONEINFO )
+	{
+		if( model_hdr->flags & STUDIO_HAS_BONEWEIGHTS )
+			fputs( "$boneweights\n\n", fp );
+	}
 
 	WriteBodyGroupInfo( fp );
 
@@ -614,10 +617,6 @@ void WriteQCScript( void )
 
 	WriteSkinFamilyInfo( fp );
 	WriteTextureRenderMode( fp );
-
-	if( model_hdr->flags & ( STUDIO_HAS_BONEINFO | STUDIO_HAS_BONEWEIGHTS ) )
-		fputs( "$boneweights\n\n", fp );
-
 	WriteAttachmentInfo( fp );
 
 	fprintf( fp, "$bbox %f %f %f", model_hdr->min[0], model_hdr->min[1], model_hdr->min[2] );

@@ -57,6 +57,12 @@ static qboolean Platform_GetDirectoryCaseSensitivity( const char *dir )
 {
 #if XASH_WIN32 || XASH_PSVITA || XASH_NSWITCH
 	return false;
+#elif XASH_ANDROID
+	// on Android, doing code below causes crash in MediaProviderGoogle.apk!libfuse_jni.so
+	// which in turn makes vold (Android's Volume Daemon) to umount /storage/emulated/0
+	// and because you can't unmount a filesystem when there is file descriptors open
+	// it has no other choice but to terminate and then kill our program
+	return true;
 #elif XASH_LINUX && defined( FS_IOC_GETFLAGS )
 	int flags = 0;
 	int fd;
@@ -66,7 +72,10 @@ static qboolean Platform_GetDirectoryCaseSensitivity( const char *dir )
 		return true;
 
 	if( ioctl( fd, FS_IOC_GETFLAGS, &flags ) < 0 )
+	{
+		close( fd );
 		return true;
+	}
 
 	close( fd );
 
@@ -134,7 +143,7 @@ static void FS_PopulateDirEntries( dir_t *dir, const char *path )
 	}
 
 	stringlistinit( &list );
-	listdirectory( &list, path );
+	listdirectory( &list, path, false );
 	if( !list.numstrings )
 	{
 		dir->numentries = DIRENTRY_EMPTY_DIRECTORY;
@@ -225,7 +234,7 @@ static int FS_MaybeUpdateDirEntries( dir_t *dir, const char *path, const char *e
 	int ret;
 
 	stringlistinit( &list );
-	listdirectory( &list, path );
+	listdirectory( &list, path, false );
 
 	if( list.numstrings == 0 ) // empty directory
 	{
@@ -275,7 +284,7 @@ static inline qboolean FS_AppendToPath( char *dst, size_t *pi, const size_t len,
 
 	if( i >= len )
 	{
-		Con_Printf( S_ERROR "FS_FixFileCase: overflow while searching %s (%s)\n", path, err );
+		Con_Printf( S_ERROR "%s: overflow while appending %s (%s)\n", __func__, path, err );
 		return false;
 	}
 	return true;
@@ -421,7 +430,7 @@ static void FS_Search_DIR( searchpath_t *search, stringlist_t *list, const char 
 	}
 
 	stringlistinit( &dirlist );
-	listdirectory( &dirlist, netpath );
+	listdirectory( &dirlist, netpath, false );
 
 	Q_strncpy( temp, basepath, sizeof( temp ));
 
@@ -449,7 +458,6 @@ static void FS_Search_DIR( searchpath_t *search, stringlist_t *list, const char 
 
 static int FS_FileTime_DIR( searchpath_t *search, const char *filename )
 {
-	int time;
 	char path[MAX_SYSPATH];
 
 	Q_snprintf( path, sizeof( path ), "%s%s", search->filename, filename );
@@ -458,10 +466,14 @@ static int FS_FileTime_DIR( searchpath_t *search, const char *filename )
 
 static file_t *FS_OpenFile_DIR( searchpath_t *search, const char *filename, const char *mode, int pack_ind )
 {
+	file_t *f;
 	char path[MAX_SYSPATH];
 
 	Q_snprintf( path, sizeof( path ), "%s%s", search->filename, filename );
-	return FS_SysOpen( path, mode );
+	f = FS_SysOpen( path, mode );
+	f->searchpath = search;
+
+	return f;
 }
 
 void FS_InitDirectorySearchpath( searchpath_t *search, const char *path, int flags )
