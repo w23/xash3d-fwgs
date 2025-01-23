@@ -23,8 +23,11 @@
 
 #define LOG_MODULE rmain
 
+r_globals_t globals = {0};
 ref_api_t gEngine = {0};
 ref_globals_t *gpGlobals = NULL;
+ref_client_t  *gp_cl = NULL;
+ref_host_t    *gp_host = NULL;
 
 static const char *R_GetConfigName( void )
 {
@@ -524,9 +527,25 @@ static const ref_device_t *pfnGetRenderDevice( unsigned int idx )
 	return &vk_core.devices[idx];
 }
 
+
+static qboolean R_Init(void) {
+	globals.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
+	globals.movevars = (struct movevars_s *)ENGINE_GET_PARM( PARM_GET_MOVEVARS_PTR );
+	globals.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );
+	globals.viewent = (cl_entity_t *)ENGINE_GET_PARM( PARM_GET_VIEWENT_PTR );
+	globals.texgammatable = (byte *)ENGINE_GET_PARM( PARM_GET_TEXGAMMATABLE_PTR );
+	globals.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
+	globals.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
+	globals.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
+	globals.dlights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_DLIGHTS_PTR );
+	globals.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
+
+	return R_VkInit();
+}
+
 static const ref_interface_t gReffuncs =
 {
-	.R_Init = R_VkInit,
+	.R_Init = R_Init,
 	.R_Shutdown = R_VkShutdown,
 	R_GetConfigName,
 	R_SetDisplayTransform,
@@ -666,23 +685,13 @@ static const ref_interface_t gReffuncs =
 	TriFogParams,
 	TriCullFace,
 
-	VGUI_DrawInit,
-	VGUI_DrawShutdown,
-	VGUI_SetupDrawingText,
-	VGUI_SetupDrawingRect,
-	VGUI_SetupDrawingImage,
-	VGUI_BindTexture,
-	VGUI_EnableTexture,
-	VGUI_CreateTexture,
-	VGUI_UploadTexture,
-	VGUI_UploadTextureBlock,
-	VGUI_DrawQuad,
-	VGUI_GetTextureSizes,
-	VGUI_GenerateTexture,
+	.VGUI_SetupDrawing = VGUI_SetupDrawing,
+	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
 
 	pfnGetRenderDevice,
 };
 
+int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
 int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals )
 {
 	if( version != REF_API_VERSION )
@@ -692,6 +701,8 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 	memcpy( funcs, &gReffuncs, sizeof( ref_interface_t ));
 	memcpy( &gEngine, engfuncs, sizeof( ref_api_t ));
 	gpGlobals = globals;
+	gp_cl = (ref_client_t *)ENGINE_GET_PARM( PARM_GET_CLIENT_PTR );
+	gp_host = (ref_host_t *)ENGINE_GET_PARM( PARM_GET_HOST_PTR );
 
 	INFO("GetRefAPI version=%d (REF_API_VERSION=%d) funcs=%p engfuncs=%p globals=%p",
 		version, REF_API_VERSION, funcs, engfuncs, globals);
