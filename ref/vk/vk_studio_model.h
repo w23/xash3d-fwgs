@@ -44,7 +44,7 @@ typedef struct r_studio_submodel_info_s {
 r_studio_submodel_render_t *studioSubmodelRenderModelAcquire(r_studio_submodel_info_t *info);
 void studioSubmodelRenderModelRelease(r_studio_submodel_render_t *render_submodel);
 
-typedef struct {
+typedef struct r_studio_model_info_s {
 	int submodels_count;
 	r_studio_submodel_info_t *submodels;
 } r_studio_model_info_t;

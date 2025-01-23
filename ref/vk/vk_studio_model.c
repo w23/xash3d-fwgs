@@ -1,7 +1,7 @@
 #include "vk_studio_model.h"
 #include "r_speeds.h"
-#include "vk_entity_data.h"
 #include "vk_logs.h"
+#include "vk_studio.h"
 
 #include "xash3d_mathlib.h"
 
