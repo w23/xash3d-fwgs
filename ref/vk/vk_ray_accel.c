@@ -572,8 +572,6 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args) {
 		.srcAccelerationStructure = VK_NULL_HANDLE,
 	};
 
-	qboolean is_update = false;
-
 	switch (blas->usage) {
 		case kBlasBuildStatic:
 			break;

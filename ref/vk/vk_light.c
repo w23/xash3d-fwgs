@@ -217,7 +217,6 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 			{
 				const char *wad_name = NULL;
 				char *texture_name = Q_strchr(name, '/');
-				string texname;
 				int tex_id;
 				const qboolean enabled = (r != 0 || g != 0 || b != 0);
 
@@ -453,7 +452,6 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 			origin[0], origin[1], origin[2], radius);
 
 	for (int i = 0; i <= map->numleafs; ++i) {
-		const mleaf_t *leaf = map->leafs + i;
 		if( !CHECKVISBIT( g_lights_bsp.accum.visbytes, i ))
 			continue;
 
@@ -571,6 +569,7 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 	return true;
 }
 
+/*
 static qboolean canSurfaceLightAffectAABB(const model_t *mod, const msurface_t *surf, const vec3_t emissive, const float minmax[6]) {
 	//APROF_SCOPE_BEGIN_EARLY(canSurfaceLightAffectAABB); // DO NOT DO THIS. We have like 600k of these calls per frame :feelsbadman:
 	qboolean retval = true;
@@ -605,6 +604,7 @@ static qboolean canSurfaceLightAffectAABB(const model_t *mod, const msurface_t *
 
 	return retval;
 }
+*/
 
 static void addLightIndexToLeaf( const mleaf_t *leaf, int index ) {
 	const int min_x = floorf(leaf->minmaxs[0] / LIGHT_GRID_CELL_SIZE);
@@ -1040,6 +1040,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 			continue;
 
 		if (bitArrayCheckOrSet(&g_lights_.visited_cells, cell_index)) {
+			/*
 			const float minmaxs[6] = {
 				x * LIGHT_GRID_CELL_SIZE,
 				y * LIGHT_GRID_CELL_SIZE,
@@ -1049,7 +1050,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 				(z+1) * LIGHT_GRID_CELL_SIZE,
 			};
 
-			/* TODO if (static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, minmaxs)) */
+			TODO if (static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, minmaxs)) */
 			/* 	continue; */
 
 			if (!addSurfaceLightToCell(cell_index, poly_index)) {

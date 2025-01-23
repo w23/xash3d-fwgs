@@ -410,6 +410,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	g_brush.stat.water_polys_drawn += indices / 3;
 }
 
+/*
 static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	switch (render_mode) {
 		case kRenderNormal:       return kVkRenderTypeSolid;
@@ -423,6 +424,7 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 
 	return kVkRenderTypeSolid;
 }
+*/
 
 typedef enum {
 	BrushSurface_Hidden = 0,

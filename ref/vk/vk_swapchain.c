@@ -182,7 +182,7 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 }
 
 qboolean R_VkSwapchainInit( VkRenderPass render_pass, VkFormat depth_format ) {
-	const uint32_t prev_num_images = g_swapchain.num_images;
+	//const uint32_t prev_num_images = g_swapchain.num_images;
 
 	VkSurfaceCapabilitiesKHR surface_caps;
 	XVK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk_core.physical_device.device, vk_core.surface.surface, &surface_caps));

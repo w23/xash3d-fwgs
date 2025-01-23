@@ -66,6 +66,7 @@ static int LM_AllocBlock( int w, int h, int *x, int *y )
 	return true;
 }
 
+/*
 static void LM_UploadDynamicBlock( void )
 {
 	int	height = 0, i;
@@ -79,6 +80,7 @@ static void LM_UploadDynamicBlock( void )
 	gEngine.Con_Printf(S_ERROR "VK NOT IMPLEMENTED %s\n", __FUNCTION__);
 	//pglTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, BLOCK_SIZE, height, GL_RGBA, GL_UNSIGNED_BYTE, gl_lms.lightmap_buffer );
 }
+*/
 
 static void LM_UploadBlock( qboolean dynamic )
 {

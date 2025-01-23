@@ -707,6 +707,7 @@ static void processGraphCvar( void ) {
 	g_speeds.r_speeds_graphs->flags &= ~FCVAR_CHANGED;
 }
 
+/*
 static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 	switch (type) {
 		case kSpeedsMetricCount: return "count";
@@ -716,6 +717,7 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 
 	return "UNKNOWN";
 }
+*/
 
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
 // We can't just directly call this function from little command handler ones, because

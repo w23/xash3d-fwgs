@@ -433,7 +433,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
 	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
 
-	const VkCommandBuffer cmdbuf = args->combuf->cmdbuf;
 	// const xvk_ray_frame_images_t* current_frame = g_rtx.frames + (g_rtx.frame_number % 2);
 
 	ASSERT(vk_core.rtx);

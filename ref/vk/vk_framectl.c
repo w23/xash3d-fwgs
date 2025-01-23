@@ -221,6 +221,7 @@ static void waitForFrameFence( void ) {
 	APROF_SCOPE_END(wait_for_frame_fence);
 }
 
+/*
 static void updateGamma( void ) {
 	// FIXME when
 	{
@@ -242,6 +243,7 @@ static void updateGamma( void ) {
 		}
 	}
 }
+*/
 
 void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_DECLARE_BEGIN(begin_frame_tail, "R_BeginFrame_tail");
@@ -273,7 +275,7 @@ void R_BeginFrame( qboolean clearScene ) {
 	}
 	ClearBits( rt_enable->flags, FCVAR_CHANGED );
 
-	updateGamma();
+	//updateGamma();
 
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 

@@ -159,6 +159,7 @@ qboolean R_BeamCull( const vec3_t start, const vec3_t end, qboolean pvsOnly )
 	return true;
 }
 
+/*
 static float clampf(float v, float min, float max) {
 	if (v < min) return min;
 	if (v > max) return max;
@@ -170,6 +171,7 @@ static void applyBrightness( float brightness, rgba_t out ) {
 	out[0] = out[1] = out[2] = clampf(brightness, 0, 1) * 255.f;
 	out[3] = 255;
 }
+*/
 
 static void TriBrightness( float brightness ) {
 	TriColor4f( brightness, brightness, brightness, 1.f );

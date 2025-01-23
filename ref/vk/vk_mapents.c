@@ -103,9 +103,11 @@ static unsigned parseEntPropVec3(const char* value, vec3_t *out, unsigned bit) {
 	return (3 == sscanf(value, "%f %f %f", &(*out)[0], &(*out)[1], &(*out)[2])) ? bit : 0;
 }
 
+/*
 static unsigned parseEntPropVec4(const char* value, vec4_t *out, unsigned bit) {
 	return (4 == sscanf(value, "%f %f %f %f", &(*out)[0], &(*out)[1], &(*out)[2], &(*out)[3])) ? bit : 0;
 }
+*/
 
 static unsigned parseEntPropRgbav(const char* value, vec3_t *out, unsigned bit) {
 	float scale = 1.f;

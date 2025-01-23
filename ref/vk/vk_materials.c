@@ -372,7 +372,6 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				ERR("material: max include depth %d reached when including '%s' from '%s'", MAX_INCLUDE_DEPTH, value, filename);
 			}
 		} else {
-			int *tex_id_dest = NULL;
 			if (Q_stricmp(key, "basecolor_map") == 0) {
 				Q_strncpy(basecolor_map, value, sizeof(basecolor_map));
 				//fields |= kMatField_basecolor_map;
