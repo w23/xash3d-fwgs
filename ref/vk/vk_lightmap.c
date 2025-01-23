@@ -155,9 +155,9 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 		const uint scale = g_lightmap.lightstylevalue[surf->styles[map]];
 		for( i = 0, bl = r_blocklights; i < size; i++, bl += 3, lm++ )
 		{
-			bl[0] += gEngine.LightToTexGamma( lm->r ) * scale;
-			bl[1] += gEngine.LightToTexGamma( lm->g ) * scale;
-			bl[2] += gEngine.LightToTexGamma( lm->b ) * scale;
+			bl[0] += LightToTexGamma( lm->r ) * scale;
+			bl[1] += LightToTexGamma( lm->g ) * scale;
+			bl[2] += LightToTexGamma( lm->b ) * scale;
 		}
 	}
 

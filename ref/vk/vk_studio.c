@@ -1155,9 +1155,9 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
 
-			light.r = gEngine.LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
-			light.g = gEngine.LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
-			light.b = gEngine.LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
+			light.r = LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
+			light.g = LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
+			light.b = LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
 		}
 	}
 
@@ -1240,9 +1240,9 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 			VectorAdd( lightDir, dist, lightDir );
 
-			finalLight[0] += gEngine.LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
-			finalLight[1] += gEngine.LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
-			finalLight[2] += gEngine.LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
+			finalLight[0] += LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
+			finalLight[1] += LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
+			finalLight[2] += LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
 		}
 	}
 
@@ -1343,9 +1343,9 @@ void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k].r = gEngine.LightToTexGamma( el->color.r );
-				g_studio.locallightcolor[k].g = gEngine.LightToTexGamma( el->color.g );
-				g_studio.locallightcolor[k].b = gEngine.LightToTexGamma( el->color.b );
+				g_studio.locallightcolor[k].r = LightToTexGamma( el->color.r );
+				g_studio.locallightcolor[k].g = LightToTexGamma( el->color.g );
+				g_studio.locallightcolor[k].b = LightToTexGamma( el->color.b );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;

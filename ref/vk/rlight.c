@@ -159,9 +159,9 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			}
 			else */
 			{
-				cv->r += gEngine.LightToTexGamma( lm->r ) * scale;
-				cv->g += gEngine.LightToTexGamma( lm->g ) * scale;
-				cv->b += gEngine.LightToTexGamma( lm->b ) * scale;
+				cv->r += LightToTexGamma( lm->r ) * scale;
+				cv->g += LightToTexGamma( lm->g ) * scale;
+				cv->b += LightToTexGamma( lm->b ) * scale;
 			}
 			lm += size; // skip to next lightmap
 

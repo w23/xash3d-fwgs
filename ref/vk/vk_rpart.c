@@ -100,9 +100,10 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 			if( alpha > 255 || p->type == pt_static )
 				alpha = 255;
 
-			TriColor4ub_( gEngine.LightToTexGamma( pColor->r ),
-				gEngine.LightToTexGamma( pColor->g ),
-				gEngine.LightToTexGamma( pColor->b ), alpha );
+			TriColor4ub_(
+				LightToTexGamma( pColor->r ),
+				LightToTexGamma( pColor->g ),
+				LightToTexGamma( pColor->b ), alpha );
 
 			TriTexCoord2f( 0.0f, 1.0f );
 			TriVertex3f( p->org[0] - right[0] + up[0], p->org[1] - right[1] + up[1], p->org[2] - right[2] + up[2] );
