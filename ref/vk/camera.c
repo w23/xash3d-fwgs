@@ -7,8 +7,6 @@
 
 vk_global_camera_t g_camera;
 
-#define WORLDMODEL (gEngine.pfnGetModelByIndex( 1 ))
-#define MOVEVARS (gEngine.pfnGetMoveVars())
 static float R_GetFarClip( void )
 {
 	if( WORLDMODEL /* FIXME VK && RI.drawWorld */ )
