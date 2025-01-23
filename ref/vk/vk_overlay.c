@@ -289,17 +289,7 @@ void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, c
 	PRINT_NOT_IMPLEMENTED();
 }
 
-void R_DrawTileClear( int texnum, int x, int y, int w, int h )
+void CL_FillRGBA( int rendermode, float x, float y, float w, float h, byte r, byte g, byte b, byte a )
 {
-	PRINT_NOT_IMPLEMENTED_ARGS("%s", R_TextureGetNameByIndex(texnum));
-}
-
-void CL_FillRGBA( float x, float y, float w, float h, int r, int g, int b, int a )
-{
-	drawFill(x, y, w, h, r, g, b, a, kRenderTransAdd);
-}
-
-void CL_FillRGBABlend( float x, float y, float w, float h, int r, int g, int b, int a )
-{
-	drawFill(x, y, w, h, r, g, b, a, kRenderTransColor);
+	drawFill(x, y, w, h, r, g, b, a, rendermode);
 }
