@@ -41,6 +41,11 @@ void VK_LoadCvarsAfterInit( void )
 	if (vk_core.rtx) {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
 		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
+		rt_only_diffuse_gi = gEngine.Cvar_Get("rt_only_diffuse_gi", "", FCVAR_GLCONFIG, "Make global illumination only diffuse");
+		rt_separated_reflection = gEngine.Cvar_Get("rt_separated_reflection", "", FCVAR_GLCONFIG, "Add separated high quality reflection pass");
+		rt_denoise_gi_by_sh = gEngine.Cvar_Get("rt_denoise_gi_by_sh", "", FCVAR_GLCONFIG, "Denoise global illumination by spherical harmonics");
+		rt_disable_gi = gEngine.Cvar_Get("rt_disable_gi", "", FCVAR_GLCONFIG, "Disable global illumination calculation");
+		rt_spatial_reconstruction = gEngine.Cvar_Get("rt_spatial_reconstruction", "", FCVAR_GLCONFIG, "Apply spatial reconstruction to specular");
 	} else {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}

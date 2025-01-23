@@ -32,6 +32,8 @@ layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
+layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
+layout(set = 0, binding = 23, rgba32f) uniform writeonly image2D out_reflection_direction_pdf; // for spatial reconstruction
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -94,6 +96,8 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		payload.hit_t.w = L;
 		payload.emissive.rgb = sampleSkybox(direction);
 		return false;
+	} else {
+		payload.emissive.rgb = vec3(0.); // emissive polygons already calculated in directional polygon lighting pass (remove fireflyes here)
 	}
 
 	primaryRayHit(rq, payload);
@@ -118,13 +122,13 @@ const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
 const float kRayNormalOffsetFudge = .01;
 
 ivec2 pix;
-void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse, inout vec3 specular) {
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout vec3 first_bounce_direction) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
 	int first_brdf_type = BRDF_TYPE_NONE;
 
-	for (int i = 0; i < kMaxBounces; ++i) {
+	for (int i = 0; i < bouncesCount; ++i) {
 		vec3 bounce_direction;
 
 		// TODO blue noise
@@ -219,6 +223,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, inout vec3 diffuse
 		else
 			specular += contribution;
 
+		if (i == 0)
+			first_bounce_direction = hit_pos - pos;
+
 		if (!did_hit)
 			break;
 
@@ -243,6 +250,12 @@ void main() {
 		return;
 	}
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
+	
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_GI) != 0) {
+		imageStore(out_indirect_diffuse, pix, vec4(0.));
+		imageStore(out_indirect_specular, pix, vec4(0.));
+		return;
+	}
 
 #ifdef BRDF_COMPARE
 	g_mat_gltf2 = pix.x > ubo.ubo.res.x / INDIRECT_SCALE / 2.;
@@ -250,6 +263,7 @@ void main() {
 
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
+	vec3 first_bounce_direction = vec3(0.), reflection_direction = vec3(0.);
 	if (pos_t.w > 0.) {
 		const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
 		const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
@@ -265,12 +279,34 @@ void main() {
 
 		MaterialEx mat;
 		mat.prop.base_color = base_a.rgb;
-		mat.prop.metalness = material_data.g;
-		mat.prop.roughness = material_data.r;
 		mat.geometry_normal = geometry_normal;
 		mat.shading_normal = shading_normal;
 
-		computeBounces(mat, pos_t.xyz, direction, diffuse, specular);
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
+			mat.prop.metalness = 0.0;
+			mat.prop.roughness = 1.0;
+		} else {
+			mat.prop.metalness = material_data.g;
+			mat.prop.roughness = material_data.r;
+		}
+
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, first_bounce_direction);
+
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
+			diffuse += specular;
+			specular = vec3(0.);
+		}
+
+		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0) {
+			specular = vec3(0.);
+
+			mat.prop.base_color = vec3(1.);
+			mat.prop.metalness = 1.0;
+			mat.prop.roughness = material_data.r;
+
+			vec3 unusedDiffuse = vec3(0.);
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, reflection_direction);
+		}
 	}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -288,6 +324,12 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("bounce.specular", specular, 0., 1e6);
 #endif
 
+	if (any(equal(reflection_direction, vec3(0.)))) {
+		reflection_direction = first_bounce_direction;
+	}
+
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
+	imageStore(out_first_bounce_direction, pix, vec4(first_bounce_direction, 0.f)); // for spherical harmonics denoising
+	imageStore(out_reflection_direction_pdf, pix, vec4(reflection_direction, 0.f)); // TODO: calculate specular pdf in w for spatial reconstruction
 }

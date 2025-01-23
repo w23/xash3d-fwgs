@@ -7,6 +7,10 @@
 #include "ray_interop.h"
 #undef GLSL
 
+#define DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT 0.8
+#define SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT 0.8
+#define DIELECTRIC_SPECULAR_MULTIPLIER 0.02 // default value from pbr papers, but 0.04 in Unreal Engine
+
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform image2D out_dest;
@@ -29,23 +33,25 @@ layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
 
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
 layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
-layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular;
+layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular_reconstructed;
+layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
+layout(set = 0, binding = 16, rgba32f) uniform readonly image2D reflection_direction_pdf;
 
-layout(set = 0, binding = 15, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 16, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 19, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 20, rgba16f) uniform image2D prev_temporal_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 19) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 21) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 20, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
 
-//layout(set = 0, binding = 21) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
 
 #include "atrous.glsl"
 
@@ -87,6 +93,12 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
+vec3 closestColor(vec3 color1, vec3 color2, vec3 sampleColor) {
+    float dist1 = dot(color1 - sampleColor, color1 - sampleColor);
+    float dist2 = dot(color2 - sampleColor, color2 - sampleColor);
+    return (dist1 < dist2) ? color1 : color2;
+}
+
 struct Components {
 	vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
 };
@@ -98,10 +110,14 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	const ivec2 p_indirect = pix / INDIRECT_SCALE;
 	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
 	c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	c.indirect_diffuse += imageLoad(indirect_diffuse, p_indirect).rgb;
+	} else {
+		c.indirect_diffuse += imageLoad(indirect_diffuse_denoised_by_sh, p).rgb;
+	}
 	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
 	c.direct_specular += imageLoad(light_point_specular, p).rgb;
-	c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb;
+	c.indirect_specular += imageLoad(indirect_specular_reconstructed, p_indirect).rgb;
 	return c;
 }
 
@@ -142,13 +158,24 @@ Components boxBlurSamples(ivec2 res, ivec2 pix) {
 
 	res /= 2;
 	pix /= 2;
+	
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
 	BOX_BLUR(c.indirect_diffuse, indirect_diffuse, res, pix, INDIRECT_DIFFUSE_KERNEL);
-	BOX_BLUR(c.indirect_specular, indirect_specular, res, pix, INDIRECT_SPECULAR_KERNEL);
+	}
+
+	BOX_BLUR(c.indirect_specular, indirect_specular_reconstructed, res, pix, INDIRECT_SPECULAR_KERNEL);
 
 	return c;
 }
 
-Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal) {
+vec3 restoreSpecular(vec3 decolorized_specular, vec3 base_color, float metalness) {
+	// TODO: add fresnel and do like PBR
+	const vec3 plasticSpecular = decolorized_specular * DIELECTRIC_SPECULAR_MULTIPLIER;
+	const vec3 metalSpecular = decolorized_specular * base_color;
+	return mix(plasticSpecular, metalSpecular, metalness);
+}
+
+Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal, vec3 base_color, float metalness) {
 	Components c;
 	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
@@ -228,7 +255,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					const bool do_indirect = all(lessThan(p_scaled, res_scaled));
 					if (do_indirect) {
 						weight_total_indirect_specular += weight;
-						c.indirect_specular += imageLoad(indirect_specular, p_scaled).rgb * weight;
+						c.indirect_specular += restoreSpecular(imageLoad(indirect_specular_reconstructed, p_scaled).rgb, base_color, metalness) * weight;
 					}
 				}
 			}
@@ -309,7 +336,8 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
-			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
+			if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 &&
+				all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_DIFFUSE_KERNEL))) && do_indirect)
 			{
 				// TODO indirect operates at different scale, do a separate pass
 				const float indirect_diffuse_scale = scale
@@ -340,7 +368,7 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 					// TODO indirect operates at different scale, do a separate pass
 					const float specular_scale = scale * normpdf(x, indirect_specular_sigma) * normpdf(y, indirect_specular_sigma);
 					indirect_specular_total += specular_scale;
-					c.indirect_specular += imageLoad(indirect_specular, p_indirect).rgb * specular_scale;
+					c.indirect_specular += imageLoad(indirect_specular_reconstructed, p_indirect).rgb * specular_scale;
 				}
 			}
 		}
@@ -388,6 +416,10 @@ void main() {
 	}
 
 	const vec3 position = imageLoad(position_t, pix).xyz;
+
+	const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
+	const float metalness = imageLoad(material_rmxx, pix).g;
+
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
 
@@ -420,7 +452,7 @@ void main() {
 	//const Components c = blurSamples(res, pix);
 	//const Components c = boxBlurSamples(res, pix);
 	//const Components c = dontBlurSamples(res, pix);
-	const Components c = blurATrous(res, pix, position, shading_normal, geometry_normal);
+	const Components c = blurATrous(res, pix, position, shading_normal, geometry_normal, base_color, metalness);
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
@@ -452,6 +484,11 @@ void main() {
 
 	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
 	vec3 specular = c.direct_specular + c.indirect_specular;
+
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		diffuse += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+	}
+
 	{
 //#define DISABLE_TEMPORAL_DENOISER
 #ifndef DISABLE_TEMPORAL_DENOISER
@@ -465,31 +502,69 @@ void main() {
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth_nessesary = length(prev_position - prev_origin);
 		const float depth_treshold = 0.01 * clip_space.w;
-
 		float better_depth_offset = depth_treshold;
 		vec3 history_diffuse = diffuse;
 		vec3 history_specular = specular;
-		const int TEMPORAL_KERNEL = 1; // lifekilled says it should be fixed
-		for(int x = -TEMPORAL_KERNEL; x <=TEMPORAL_KERNEL; x++) {
-			for(int y = -TEMPORAL_KERNEL; y <=TEMPORAL_KERNEL; y++) {
-				const ivec2 p = reproj_pix + ivec2(x, y);
-				if (any(greaterThanEqual(p, res)) || any(lessThan(p, ivec2(0)))) {
+		
+		if (any(greaterThanEqual(reproj_pix, ivec2(0))) && any(lessThan(reproj_pix, res))) {			
+			const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
+			const vec4 history_specular_sample = imageLoad( prev_temporal_specular, reproj_pix );
+
+			const float history_depth = history_diffuse_depth.w;
+			const float depth_offset = abs(history_depth - depth_nessesary);
+			if ( depth_offset < better_depth_offset ) {
+				better_depth_offset = depth_offset;
+				history_diffuse = history_diffuse_depth.rgb;
+				history_specular = history_specular_sample.rgb;
+			}
+		}
+
+		// parallax reprojecting for specular
+		float average_ray_length = 0.;
+		float ray_length_samples_count = 0.;
+		const int AVERAGE_RAY_LENGTH_KERNEL = 1;
+		for(int x = -AVERAGE_RAY_LENGTH_KERNEL; x <=AVERAGE_RAY_LENGTH_KERNEL; x++) {
+			for(int y = -AVERAGE_RAY_LENGTH_KERNEL; y <=AVERAGE_RAY_LENGTH_KERNEL; y++) {
+				const ivec2 p = pix / INDIRECT_SCALE + ivec2(x, y);
+				if (any(greaterThanEqual(p, res / INDIRECT_SCALE)) || any(lessThan(p, ivec2(0)))) {
 					continue;
 				}
 
-				if (any(greaterThanEqual(reproj_pix, res)) || any(lessThan(reproj_pix, ivec2(0)))) {
-					continue;
-				}
-				const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
-				const vec4 history_specular_sample = imageLoad( prev_temporal_specular, reproj_pix );
+				average_ray_length += length(imageLoad( reflection_direction_pdf, p ).xyz);
+				ray_length_samples_count += 1.;
+			}
+		}
+		if (ray_length_samples_count > 0. && average_ray_length > 0.) {
+			average_ray_length /= ray_length_samples_count;
 
-				const float history_depth = history_diffuse_depth.w;
-				const float depth_offset = abs(history_depth - depth_nessesary);
-				if ( depth_offset < better_depth_offset ) {
-					better_depth_offset = depth_offset;
-					history_diffuse = history_diffuse_depth.rgb;
-					history_specular = history_specular_sample.rgb;
-				}
+			//	origin (camera)
+			//	       []<          reflection destination
+			//		 	| \        (UwU) (reflected in
+			//			|   \     /  |    surface texel)
+			//			|     \ /    |
+			//	--------x------x-----x------------
+			//	origin on      ^   reflection on plane
+			//	   plane	   |
+			//				reflection center
+			//		(surface texel in current frame)
+			//	  (need to find this in previous frame)
+			//		
+
+			const vec3 refl_position = reflect(normalize(position - origin), geometry_normal) * average_ray_length + position;
+			const float refl_distance_to_plane = dot(geometry_normal, refl_position - prev_position);
+			const vec3 refl_on_plane = refl_position - geometry_normal * refl_distance_to_plane;
+			const float prev_distance_to_plane = dot(geometry_normal, prev_origin - prev_position);
+			const vec3 prev_origin_on_plane = prev_origin - geometry_normal * prev_distance_to_plane;
+			const float refl_center = prev_distance_to_plane / (prev_distance_to_plane + refl_distance_to_plane);
+			const vec3 parallax_position = mix(prev_origin_on_plane, refl_on_plane, refl_center);
+
+			const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(parallax_position, 1.)).xyz, 1.);
+			const vec2 parallax_uv = clip_space.xy / clip_space.w;
+			const ivec2 parallax_pix = ivec2((parallax_uv * 0.5 + vec2(0.5)) * vec2(res));
+
+			if (any(greaterThanEqual(parallax_pix, ivec2(0))) && any(lessThan(parallax_pix, res))) {
+				const vec4 history_specular_sample = imageLoad( prev_temporal_specular, parallax_pix );
+				history_specular = closestColor(history_specular_sample.xyz, history_specular, specular);
 			}
 		}
 
@@ -506,8 +581,8 @@ void main() {
 #endif
 
 		if (better_depth_offset < depth_treshold) {
-			diffuse = mix(diffuse, history_diffuse, 0.8);
-			specular = mix(specular, history_specular, 0.3);
+			diffuse = mix(diffuse, history_diffuse, DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT);
+			specular = mix(specular, history_specular, SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -537,8 +612,6 @@ void main() {
 	vec3 colour = vec3(0.);
 
 	if (ubo.ubo.debug_display_only != DEBUG_DISPLAY_LIGHTING) {
-		const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
-		const float metalness = imageLoad(material_rmxx, pix).g;
 		colour = mixFinalColor(base_color, diffuse, specular, metalness);
 	} else {
 		colour = diffuse + specular;

@@ -168,7 +168,7 @@ finalize:
 	return ret;
 }
 
-#define MAX_BINDINGS 32
+#define MAX_BINDINGS 64
 static qboolean readBindings(load_context_t *ctx, VkDescriptorSetLayoutBinding *bindings, vk_meatpipe_pass_t* pass ) {
 	pass->resource_map = NULL;
 	int write_from = -1;
