@@ -504,7 +504,7 @@ void R_VkMaterialsReload( void ) {
 
 	// Load materials by map/BSP file
 	{
-		const model_t *map = gEngine.pfnGetModelByIndex( 1 );
+		const model_t *map = WORLDMODEL;
 		const char *filename = COM_FileWithoutPath(map->name);
 		const int no_ext_len = findFilenameExtension(filename, -1);
 		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, no_ext_len, filename);

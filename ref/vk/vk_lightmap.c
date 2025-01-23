@@ -242,7 +242,7 @@ void VK_RunLightStyles( void )
 	float		frametime = (gp_cl->time -   gp_cl->oldtime);
 	float		scale;
 	lightstyle_t	*ls;
-	const model_t *world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t *world = WORLDMODEL;
 
 	if( !world ) return;
 

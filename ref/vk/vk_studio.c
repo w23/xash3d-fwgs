@@ -3002,7 +3002,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		if( pplayer->weaponmodel )
 		{
 			cl_entity_t	saveent = *RI.currententity;
-			model_t		*pweaponmodel = gEngine.pfnGetModelByIndex( pplayer->weaponmodel );
+			model_t		*pweaponmodel = gp_cl->models[pplayer->weaponmodel];
 
 			m_pStudioHeader = (studiohdr_t *)gEngine.Mod_Extradata( mod_studio, pweaponmodel );
 
@@ -3490,7 +3490,7 @@ static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *for
 
 static model_t *pfnModelHandle( int modelindex )
 {
-	return gEngine.pfnGetModelByIndex( modelindex );
+	return gp_cl->models[modelindex];
 }
 
 static void *pfnMod_CacheCheck( struct cache_user_s *c )

@@ -401,7 +401,7 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 }
 
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 	const int num_surfaces = map->numsurfaces;
 	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_material && props->_xvk_material[0] == '\0');
 
@@ -856,7 +856,7 @@ static void parsePatches( const model_t *const map ) {
 }
 
 void XVK_ParseMapEntities( void ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 
 	ASSERT(map);
 
@@ -878,7 +878,7 @@ void XVK_ParseMapEntities( void ) {
 }
 
 void XVK_ParseMapPatches( void ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 
 	parsePatches( map );
 

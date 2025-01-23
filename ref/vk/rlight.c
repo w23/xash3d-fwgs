@@ -197,7 +197,7 @@ static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t
 	float	last_fraction;
 	int	i, maxEnts = 1;
 	colorVec	light, cv;
-    const model_t* world_model = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* world_model = WORLDMODEL;
 
 	if( lspot ) VectorClear( lspot );
 	if( lvec ) VectorClear( lvec );

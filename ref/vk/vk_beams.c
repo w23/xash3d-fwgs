@@ -920,7 +920,7 @@ void R_BeamDraw( BEAM *pbeam, float frametime )
 	int render_mode;
 	int	texturenum;
 
-	model = gEngine.pfnGetModelByIndex( pbeam->modelIndex );
+	model = gp_cl->models[pbeam->modelIndex];
 	SetBits( pbeam->flags, FBEAM_ISACTIVE );
 
 	if( !model || model->type != mod_sprite )
@@ -1126,7 +1126,7 @@ passed through this
 */
 static void R_BeamSetup( BEAM *pbeam, vec3_t start, vec3_t end, int modelIndex, float life, float width, float amplitude, float brightness, float speed )
 {
-	model_t	*sprite = gEngine.pfnGetModelByIndex( modelIndex );
+	model_t	*sprite = gp_cl->models[modelIndex];
 
 	if( !sprite ) return;
 
