@@ -1098,7 +1098,7 @@ static int R_StudioCheckBBox( void )
 
 void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
-	movevars_t	*mv = gEngine.pfnGetMoveVars();
+	movevars_t	*mv = MOVEVARS;
 	vec3_t		lightDir, vecSrc, vecEnd;
 	vec3_t		origin, dist, finalLight;
 	float		add, radius, total;

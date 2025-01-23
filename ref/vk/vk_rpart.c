@@ -196,8 +196,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 
 	TriRenderMode( kRenderTransAdd );
 
-#define MOVEVARS (gEngine.pfnGetMoveVars())
-	gravity = frametime * MOVEVARS->gravity;
+	gravity = frametime * globals.movevars->gravity;
 	scale = 1.0 - (frametime * 0.9);
 	if( scale < 0.0f ) scale = 0.0f;
 
