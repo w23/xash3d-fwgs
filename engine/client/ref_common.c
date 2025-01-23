@@ -16,6 +16,7 @@ CVAR_DEFINE_AUTO( gl_msaa_samples, "0", FCVAR_GLCONFIG, "samples number for mult
 CVAR_DEFINE_AUTO( gl_clear, "0", FCVAR_ARCHIVE, "clearing screen after each frame" );
 CVAR_DEFINE_AUTO( r_showtree, "0", FCVAR_ARCHIVE, "build the graph of visible BSP tree" );
 static CVAR_DEFINE_AUTO( r_refdll, "", FCVAR_RENDERINFO, "choose renderer implementation, if supported" );
+static CVAR_DEFINE_AUTO( r_refdll_loaded, "", FCVAR_READ_ONLY, "currently loaded renderer" );
 
 void R_GetTextureParms( int *w, int *h, int texnum )
 {
@@ -356,6 +357,10 @@ static ref_api_t gEngfuncs =
 	&clgame.drawFuncs,
 
 	&g_fsapi,
+
+	XVK_GetInstanceExtensions,
+	XVK_GetVkGetInstanceProcAddr,
+	XVK_CreateSurface,
 };
 
 static void R_UnloadProgs( void )
@@ -519,6 +524,7 @@ static qboolean R_LoadRenderer( const char *refopt )
 		return false;
 	}
 
+	Cvar_FullSet( "r_refdll_loaded", refopt, FCVAR_READ_ONLY );
 	Con_Reportf( "Renderer %s initialized\n", refdll );
 
 	return true;
@@ -570,6 +576,9 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_SOFT_ENABLED
 		"soft",
 #endif
+#if XASH_REF_VULKAN_ENABLED
+		"vk"
+#endif
 	};
 
 	// ordering is important here too!
@@ -590,11 +599,73 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_SOFT_ENABLED
 		"Software",
 #endif
+#if XASH_REF_VULKAN_ENABLED
+		"Vulkan"
+#endif
 	};
 
 	ref.numRenderers = ARRAYSIZE( shortNames );
 	ref.shortNames = shortNames;
 	ref.readableNames = readableNames;
+}
+
+const ref_device_t *R_GetRenderDevice( unsigned int idx )
+{
+	if( !Q_stricmp( r_refdll_loaded.string, "vk" ))
+	{
+		if( !ref.dllFuncs.pfnGetVulkanRenderDevice )
+			return NULL;
+
+		return ref.dllFuncs.pfnGetVulkanRenderDevice( idx );
+	}
+
+	// TODO: implement?
+	return NULL;
+}
+
+static const char *R_DeviceTypeToString( ref_device_type_t type )
+{
+	switch( type )
+	{
+	case REF_DEVICE_TYPE_DISCRETE_GPU:
+		return "^2Discrete^7";
+	case REF_DEVICE_TYPE_INTERGRATED_GPU:
+		return "^3Integrated^7";
+	case REF_DEVICE_TYPE_VIRTUAL_GPU:
+		return "^4Virtual^7";
+	case REF_DEVICE_TYPE_CPU:
+		return "^5Software^7";
+	}
+
+	return "^6Unknown^7";
+}
+
+static void R_GetRenderDevices_f( void )
+{
+	int i = 0;
+	const ref_device_t *device = NULL;
+
+	if( Q_stricmp( r_refdll_loaded.string, "vk" ) ||
+	    !ref.dllFuncs.pfnGetVulkanRenderDevice )
+	{
+		Con_Printf( "Renderer %s doesn't implement this!\n", r_refdll_loaded.string );
+		return;
+	}
+
+	Con_Printf( "Num ID      Type    Name\n" );
+	Con_Printf( "------------------------------------------------\n" );
+
+	for( i = 0;; i++ )
+	{
+		device = R_GetRenderDevice( i );
+		if( !device )
+			break;
+
+		Con_Printf( "%-3i %04x:%04x %-10s %s\n",
+			i, device->vendorID, device->deviceID,
+			R_DeviceTypeToString( device->deviceType ), device->deviceName );
+	}
+
 }
 
 qboolean R_Init( void )
@@ -610,6 +681,7 @@ qboolean R_Init( void )
 	Cvar_RegisterVariable( &gl_clear );
 	Cvar_RegisterVariable( &r_showtree );
 	Cvar_RegisterVariable( &r_refdll );
+	Cvar_RegisterVariable( &r_refdll_loaded );
 
 	// cvars that are expected to exist
 	Cvar_Get( "r_speeds", "0", FCVAR_ARCHIVE, "shows renderer speeds" );
@@ -632,6 +704,8 @@ qboolean R_Init( void )
 	// refdll should just get pointer to them
 	Cvar_Get( "r_drawentities", "1", FCVAR_CHEAT, "render entities" );
 	Cvar_Get( "cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer" );
+
+	Cmd_AddCommand( "r_show_devices", R_GetRenderDevices_f, "print all available GPUs in the system" );
 
 	// cvars are created, execute video config
 	Cbuf_AddText( "exec video.cfg" );

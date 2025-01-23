@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 #if !XASH_DEDICATED
 #include <SDL.h>
+#include <SDL_vulkan.h>
 #include "common.h"
 #include "client.h"
 #include "vid_common.h"
@@ -486,6 +487,9 @@ GL_UpdateSwapInterval
 void GL_UpdateSwapInterval( void )
 {
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
+	if (glw_state.context_type != REF_GL)
+		return;
+
 	// disable VSync while level is loading
 	if( cls.state < ca_active )
 	{
@@ -560,7 +564,7 @@ void VID_SaveWindowSize( int width, int height, qboolean maximized )
 	int render_w = width, render_h = height;
 
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
-	if( !glw_state.software )
+	if( glw_state.context_type != REF_SOFTWARE )
 		SDL_GL_GetDrawableSize( host.hWnd, &render_w, &render_h );
 	else
 		SDL_RenderSetLogicalSize( sw.renderer, width, height );
@@ -741,8 +745,16 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 
 	if( vid_highdpi.value )
 		SetBits( wndFlags, SDL_WINDOW_ALLOW_HIGHDPI );
-	if( !glw_state.software )
-		SetBits( wndFlags, SDL_WINDOW_OPENGL );
+
+	switch (glw_state.context_type)
+	{
+		case REF_GL:
+			wndFlags |= SDL_WINDOW_OPENGL;
+			break;
+		case REF_VULKAN:
+			wndFlags |= SDL_WINDOW_VULKAN;
+			break;
+	}
 
 #if !XASH_MOBILE_PLATFORM
 	if( window_mode == WINDOW_MODE_WINDOWED )
@@ -811,7 +823,7 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 	VID_SetWindowIcon( host.hWnd );
 	SDL_ShowWindow( host.hWnd );
 
-	if( glw_state.software )
+	if( glw_state.context_type == REF_SOFTWARE )
 	{
 		int sdl_renderer = -2;
 		char cmd[64];
@@ -832,7 +844,7 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 			}
 		}
 	}
-	else
+	else if( glw_state.context_type == REF_GL )
 	{
 		if( !glw_state.initialized )
 		{
@@ -849,7 +861,11 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 
 		if( !GL_UpdateContext( ))
 		return false;
-
+	}
+	else if( glw_state.context_type == REF_VULKAN )
+	{
+		// FIXME this is probably not correct place or way to do it, just copypasting GL stuff
+		VID_StartupGamma();
 	}
 
 #else // SDL_VERSION_ATLEAST( 2, 0, 0 )
@@ -858,8 +874,14 @@ qboolean VID_CreateWindow( int width, int height, window_mode_t window_mode )
 	if( window_mode != WINDOW_MODE_WINDOWED )
 		SetBits( flags, SDL_FULLSCREEN|SDL_HWSURFACE );
 
-	if( !glw_state.software )
-		SetBits( flags, SDL_OPENGL );
+	if( glw_state.context_type == REF_SOFTWARE )
+	{
+		// flags |= SDL_ASYNCBLIT;
+	}
+	else
+	{
+		flags |= SDL_OPENGL;
+	}
 
 	if( !VID_CreateWindowWithSafeGL( wndname, xpos, ypos, width, height, wndFlags ))
 		return false;
@@ -1003,6 +1025,35 @@ int GL_GetAttribute( int attr, int *val )
 #define EGL_LIB NULL
 #endif
 
+int XVK_GetInstanceExtensions( unsigned int count, const char **pNames )
+{
+	if (!SDL_Vulkan_GetInstanceExtensions(host.hWnd, &count, pNames))
+	{
+		Con_Reportf( S_ERROR  "Couldn't get Vulkan extensions: %s\n", SDL_GetError());
+		return -1;
+	}
+
+	return (int)count;
+}
+
+void *XVK_GetVkGetInstanceProcAddr( void )
+{
+	return SDL_Vulkan_GetVkGetInstanceProcAddr();
+}
+
+VkSurfaceKHR XVK_CreateSurface( VkInstance instance )
+{
+	VkSurfaceKHR surface;
+
+	if (!SDL_Vulkan_CreateSurface(host.hWnd, instance, &surface))
+	{
+		Con_Reportf( S_ERROR  "Couldn't create Vulkan surface: %s\n", SDL_GetError());
+		return 0;
+	}
+
+	return surface;
+}
+
 /*
 ==================
 R_Init_Video
@@ -1039,10 +1090,10 @@ qboolean R_Init_Video( const int type )
 	WIN_SetDPIAwareness();
 #endif
 
+	glw_state.context_type = type;
 	switch( type )
 	{
 	case REF_SOFTWARE:
-		glw_state.software = true;
 		break;
 	case REF_GL:
 		if( !glw_state.safe && Sys_GetParmFromCmdLine( "-safegl", safe ) )
@@ -1056,6 +1107,8 @@ qboolean R_Init_Video( const int type )
 			Con_Reportf( S_ERROR  "Couldn't initialize OpenGL: %s\n", SDL_GetError());
 			return false;
 		}
+		break;
+	case REF_VULKAN:
 		break;
 	default:
 		Host_Error( "Can't initialize unknown context type %d!\n", type );

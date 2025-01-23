@@ -20,6 +20,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h" // !!svgame.hInstance
 #include "vid_common.h"
+#include "ref_common.h"
 
 static void 	UI_UpdateUserinfo( void );
 
@@ -1211,6 +1212,7 @@ static ui_extendedfuncs_t gExtendedfuncs =
 	pfnParseFileSafe,
 	NET_AdrToString,
 	NET_CompareAdrSort,
+	R_GetRenderDevice
 };
 
 void UI_UnloadProgs( void )

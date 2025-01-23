@@ -75,6 +75,7 @@ SUBDIRS = [
 	Subproject('3rdparty/gl4es',        lambda x: not x.env.DEDICATED and x.env.GL4ES),
 	Subproject('ref/gl',                lambda x: not x.env.DEDICATED and (x.env.GL or x.env.NANOGL or x.env.GLWES or x.env.GL4ES)),
 	Subproject('ref/soft',              lambda x: not x.env.DEDICATED and x.env.SOFT),
+	Subproject('ref/vk',                lambda x: not x.env.DEDICATED and x.env.VULKAN),
 	Subproject('3rdparty/mainui',       lambda x: not x.env.DEDICATED),
 	Subproject('3rdparty/vgui_support', lambda x: not x.env.DEDICATED),
 	Subproject('stub/client',           lambda x: not x.env.DEDICATED),
@@ -96,6 +97,7 @@ SUBDIRS = [
 REFDLLS = [
 	RefDll('soft', True),
 	RefDll('gl', True),
+	RefDll('vulkan', True),
 	RefDll('gles1', False, 'NANOGL'),
 	RefDll('gles2', False, 'GLWES'),
 	RefDll('gl4es', False),
@@ -205,6 +207,7 @@ def configure(conf):
 		conf.options.SDL12            = True
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = False
+		conf.options.VK               = False
 		conf.options.LOW_MEMORY       = 1
 		conf.options.SINGLE_BINARY    = True
 		conf.options.NO_ASYNC_RESOLVE = True
@@ -218,12 +221,14 @@ def configure(conf):
 		conf.options.SINGLE_BINARY    = True
 		conf.options.NO_ASYNC_RESOLVE = True
 		conf.options.USE_STBTT        = True
+		conf.options.VULKAN           = False # https://github.com/w23/xash3d-fwgs/issues/429
 	elif conf.env.DEST_OS == 'psvita':
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = True
 		conf.options.SINGLE_BINARY    = True
 		conf.options.NO_ASYNC_RESOLVE = True
 		conf.options.USE_STBTT        = True
+		conf.options.VULKAN           = False
 		# we'll specify -fPIC by hand for shared libraries only
 		enforce_pic                   = False
 
@@ -471,7 +476,7 @@ int main(int argc, char **argv) { strchrnul(argv[1], 'x'); return 0; }'''
 		if conf.check_cfg(package='opus', uselib_store='opus', args='opus >= 1.4 --cflags --libs', mandatory=False):
 			# now try to link with export that only exists with CUSTOM_MODES defined
 			frag='''#include <opus_custom.h>
-int main(void) { return !opus_custom_encoder_init(0, 0, 0); }'''
+int main(void) { return !opus_custom_encoder_init((OpusCustomEncoder *)1, (const OpusCustomMode *)1, 1); }'''
 
 			if conf.check_cc(msg='Checking if opus supports custom modes', defines='CUSTOM_MODES=1', use='opus', fragment=frag, mandatory=False):
 				conf.env.HAVE_SYSTEM_OPUS = True

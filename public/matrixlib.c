@@ -290,6 +290,13 @@ void Matrix4x4_ConcatTransforms( matrix4x4 out, const matrix4x4 in1, const matri
 	out[2][3] = in1[2][0] * in2[0][3] + in1[2][1] * in2[1][3] + in1[2][2] * in2[2][3] + in1[2][3];
 }
 
+void Matrix4x4_SetOrigin( matrix4x4 out, float x, float y, float z )
+{
+	out[0][3] = x;
+	out[1][3] = y;
+	out[2][3] = z;
+}
+
 void Matrix4x4_CreateFromEntity( matrix4x4 out, const vec3_t angles, const vec3_t origin, float scale )
 {
 	float	angle, sr, sp, sy, cr, cp, cy;

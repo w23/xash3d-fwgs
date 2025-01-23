@@ -22,6 +22,7 @@ GNU General Public License for more details.
 #include "defaults.h"
 #include "cursor_type.h"
 #include "key_modifiers.h"
+#include "ref_vulkan.h"
 
 /*
 ==============================================================================
@@ -139,17 +140,6 @@ static inline void Platform_Shutdown( void )
 #endif
 }
 
-static inline void *Platform_GetNativeObject( const char *name )
-{
-	void *ptr = NULL;
-
-#if XASH_ANDROID
-	ptr = Android_GetNativeObject( name );
-#endif
-
-	return ptr;
-}
-
 /*
 ==============================================================================
 
@@ -158,7 +148,6 @@ static inline void *Platform_GetNativeObject( const char *name )
 ==============================================================================
 */
 void Platform_Vibrate( float life, char flags );
-void*Platform_GetNativeObject( const char *name );
 
 /*
 ==============================================================================
@@ -226,7 +215,6 @@ void GL_SwapBuffers( void );
 void *SW_LockBuffer( void );
 void SW_UnlockBuffer( void );
 qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *r, uint *g, uint *b );
-
 
 //
 // in_evdev.c

@@ -2,6 +2,9 @@
 
 . scripts/lib.sh
 
+# waf will detect vulkan sdk installed by deps_win32.sh based on $VULKAN_SDK environment variable
+export VULKAN_SDK=$BUILDDIR/vulkan_sdk
+
 # Build engine
 cd $BUILDDIR
 

@@ -6,6 +6,7 @@
 
 # Other
 *.save
+prefix/
 
 # Qt Creator for some reason creates *.user.$version files, so exclude it too
 *.user*
@@ -217,7 +218,7 @@ publish/
 # Publish Web Output
 *.[Pp]ublish.xml
 *.azurePubxml
-# TODO: Comment the next line if you want to checkin your web deploy settings 
+# TODO: Comment the next line if you want to checkin your web deploy settings
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
 *.publishproj
@@ -322,11 +323,17 @@ build_current
 *.unsuccessfulbuild
 __pycache__
 *.pyc
+.waf*
 
 # MSVC projects
 *.vcproj
 *.sln
 *.vcxproj
+
+# vim/cscope/coc/clangd
+compile_commands.json
+cscope.out
+core
 
 # Visual Studio Code
 .vscode/*

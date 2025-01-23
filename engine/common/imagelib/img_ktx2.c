@@ -65,6 +65,22 @@ static void Image_KTX2Format( uint32_t ktx2_format )
 	}
 }
 
+static const int g_remap_cube_layer[6] = {
+/* Face order
+ 0   1   2   3   4   5  -- index
+ft, bk, up, dn, rt, lf  -- xash
++x, -x, +y, -y, +z, -z  -- KTX2
+rt, lf, bk, ft, up, dn  -- ref_vk
+
+texture[face] = ktx2[map[face]], e.g.:
+texture[rt] = ktx2[+z = 4]
+texture[lf] = ktx2[-z = 5]
+texture[bk] = ktx2[-x = 1]
+...
+*/
+	4, 5, 1, 0, 2, 3
+};
+
 static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer, fs_offset_t filesize )
 {
 	ktx2_index_t index;
@@ -93,7 +109,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		return false;
 	}
 
-	if( header->faceCount > 1 )
+	if( header->faceCount != 1 && header->faceCount != 6 )
 	{
 		Con_DPrintf( S_ERROR "%s: unsupported KTX2 faceCount %d\n", __FUNCTION__, header->faceCount );
 		return false;
@@ -128,10 +144,10 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		ktx2_level_t level;
 		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
 
-		if( mip_size != level.byteLength )
+		if( mip_size * header->faceCount != level.byteLength )
 		{
-			Con_DPrintf( S_ERROR "%s: mip=%d size mismatch read=%d, but computed=%d\n",
-				__FUNCTION__, mip, (int)level.byteLength, mip_size );
+			Con_DPrintf( S_ERROR "%s: mip=%d size mismatch read=%d, but computed=%d(mip=%d * faces=%d)\n",
+				__FUNCTION__, mip, (int)level.byteLength, mip_size * header->faceCount, mip_size, header->faceCount );
 			return false;
 		}
 
@@ -139,8 +155,11 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 		max_offset = Q_max( max_offset, level.byteLength + level.byteOffset );
 	}
 
-	if( max_offset > filesize )
+	if( max_offset > filesize ) {
+		Con_DPrintf( S_ERROR "%s: size to read %d exceeds file size %d\n",
+			__FUNCTION__, (int)max_offset, (int)filesize );
 		return false;
+	}
 
 	image.size = total_size;
 	image.num_mips = header->levelCount;
@@ -148,12 +167,29 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
 	memcpy( image.rgba, buffer, image.size );
 
-	for( int mip = 0, cursor = 0; mip < header->levelCount; ++mip )
 	{
-		ktx2_level_t level;
-		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
-		memcpy( image.rgba + cursor, buffer + level.byteOffset, level.byteLength );
-		cursor += level.byteLength;
+		int cursors[6] = {0};
+		if ( header->faceCount == 6 ) {
+			image.flags |= IMAGE_CUBEMAP;
+
+			for ( int face = 0; face < header->faceCount; ++face )
+				cursors[face] = g_remap_cube_layer[face] * total_size / header->faceCount;
+		}
+
+		for( int mip = 0; mip < header->levelCount; ++mip )
+		{
+			ktx2_level_t level;
+			int face_size = 0;
+
+			memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+			face_size = level.byteLength / header->faceCount;
+
+			for ( int face = 0; face < header->faceCount; ++face )
+			{
+				memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
+				cursors[face] += face_size;
+			}
+		}
 	}
 
 	return true;
@@ -179,7 +215,7 @@ qboolean Image_LoadKTX2( const char *name, const byte *buffer, fs_offset_t files
 	image.depth = Q_max( 1, header.pixelDepth );
 	image.num_mips = 1;
 
-	ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA );
+	ClearBits( image.flags, IMAGE_HAS_COLOR | IMAGE_HAS_ALPHA | IMAGE_HAS_LUMA | IMAGE_CUBEMAP );
 
 	if( !Image_KTX2Parse( &header, buffer, filesize ))
 	{
