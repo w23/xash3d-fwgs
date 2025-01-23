@@ -1346,7 +1346,7 @@ void RT_LightsFrameEnd( void ) {
 	}
 
 	for (int i = 0; i < MAX_ELIGHTS; ++i) {
-		const dlight_t *dlight = gEngine.GetEntityLight(i);
+		const dlight_t *dlight = globals.elights + i;
 		if (!dlight)
 			continue;
 
@@ -1367,7 +1367,7 @@ void RT_LightsFrameEnd( void ) {
 
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
-		const dlight_t *dlight = gEngine.GetDynamicLight(i);
+		const dlight_t *dlight = globals.dlights + i;
 		if( !dlight || dlight->die < gp_cl->time || !dlight->radius )
 			continue;
 

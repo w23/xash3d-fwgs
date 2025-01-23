@@ -1220,7 +1220,7 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 	for( lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
 	{
-		dl = gEngine.GetDynamicLight( lnum );
+		dl = globals.dlights + lnum;
 
 		if( dl->die < g_studio.time) // VK FIXME || !r_dynamic->value )
 			continue;
@@ -1304,7 +1304,7 @@ void R_StudioEntityLight( alight_t *lightinfo )
 
 	for( lnum = 0; lnum < MAX_ELIGHTS; lnum++ )
 	{
-		el = gEngine.GetEntityLight( lnum );
+		el = globals.elights + lnum;
 
 		if( el->die < g_studio.time || el->radius <= 0.0f )
 			continue;
