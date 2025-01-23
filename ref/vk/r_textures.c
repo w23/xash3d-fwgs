@@ -235,7 +235,6 @@ static void createDefaultTextures( void )
 		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR | IMAGE_CUBEMAP );
 		memset(pic->buffer, 0, pic->size);
 
-		const qboolean is_placeholder = true;
 		R_VkTexturesSkyboxUpload( "skybox_placeholder", pic, kColorspaceGamma, kSkyboxPlaceholder );
 	}
 }
@@ -471,8 +470,6 @@ void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags
 ///////////// Render API funcs /////////////
 int R_TextureFindByName( const char *name )
 {
-	vk_texture_t *tex;
-
 	if( !checkTextureName( name ))
 		return 0;
 
@@ -605,8 +602,6 @@ static void destroyTexture( uint texnum ) {
 // Decrement refcount and destroy the texture if refcount has reached zero
 static void releaseTexture( unsigned int texnum, qboolean ref_interface ) {
 	vk_texture_t *tex;
-	vk_texture_t **prev;
-	vk_texture_t *cur;
 
 	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
 
@@ -725,7 +720,6 @@ static void skyboxParseInfo( const char *name ) {
 	Q_snprintf(filename, sizeof(filename), "%s.mat", name);
 	byte *data = gEngine.fsapi->LoadFile( filename, 0, false );
 
-	qboolean success = false;
 	if (!data) {
 		INFO("Couldn't read skybox info '%s'", filename);
 		goto cleanup;
@@ -765,8 +759,6 @@ static void skyboxParseInfo( const char *name ) {
 			WARN("Unexpected key '%s' in skybox info '%s'", key, filename);
 			break;
 		}
-
-		success = true;
 	}
 
 cleanup:
@@ -801,7 +793,6 @@ static qboolean skyboxLoadF(skybox_slot_e slot, const char *fmt, ...) {
 	}
 
 	{
-		const qboolean is_placeholder = false;
 		success = R_VkTexturesSkyboxUpload( buffer, pic, kColorspaceGamma, slot );
 	}
 
@@ -887,10 +878,12 @@ static void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean fo
 	tglob.fCustomSkybox = is_custom;
 }
 
-void R_TextureSetupCustomSky( const char *skyboxname ) {
-	const qboolean is_custom = true;
-	const qboolean force_reload = false;
-	skyboxSetup(skyboxname, is_custom, force_reload);
+void R_TextureSetupCustomSky( int *skyboxTextures ) {
+	PRINT_NOT_IMPLEMENTED();
+//void R_TextureSetupCustomSky( const char *skyboxname ) {
+	//const qboolean is_custom = true;
+	//const qboolean force_reload = false;
+	//skyboxSetup(skyboxname, is_custom, force_reload);
 }
 
 void R_TextureSetupSky( const char *skyboxname, qboolean force_reload ) {
@@ -918,8 +911,7 @@ int R_TextureFindByNameF( const char *fmt, ...) {
 }
 
 int R_TextureFindByNameLike( const char *texture_name ) {
-	const model_t *map = gEngine.pfnGetModelByIndex( 1 );
-	string texname;
+	const model_t *map = WORLDMODEL;
 
 	// Try texture name as-is first
 	int tex_id = R_TextureFindByNameF("%s", texture_name);

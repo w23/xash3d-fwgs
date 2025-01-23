@@ -42,11 +42,6 @@ static struct {
 	vk_texture_t blue_noise;
 } g_vktextures;
 
-// Exported from r_textures.h
-size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
-int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
-void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
-
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
 
@@ -174,8 +169,6 @@ qboolean R_VkTexturesInit( void ) {
 
 	return true;
 }
-
-static void textureDestroy( unsigned int index );
 
 void R_VkTexturesShutdown( void ) {
 	R_VkTexturesSkyboxUnload();
@@ -342,7 +335,6 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 	DEBUG("Uploading raw KTX2 texture[%d] %s", tex_index, TEX_NAME(tex));
 
 	const byte *const data = pic->buffer;
-	const int size = pic->size;
 
 	const ktx2_header_t* header;
 	const ktx2_index_t* index;
