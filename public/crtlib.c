@@ -18,7 +18,6 @@ GNU General Public License for more details.
 #include "const.h"
 #include <math.h>
 #include <stdarg.h>
-#include <ctype.h>
 #include <time.h>
 #include "stdio.h"
 #include "crtlib.h"
@@ -26,112 +25,42 @@ GNU General Public License for more details.
 
 void Q_strnlwr( const char *in, char *out, size_t size_out )
 {
-	if( size_out == 0 ) return;
+	size_t len, i;
 
-	while( *in && size_out > 1 )
+	len = Q_strncpy( out, in, size_out );
+
+	for( i = 0; i < len; i++ )
+		out[i] = Q_tolower( out[i] );
+}
+
+int Q_atoi_hex( int sign, const char *str )
+{
+	int c, val = 0;
+
+	if( str[0] == '0' && ( str[1] == 'x' || str[1] == 'X' ))
+		str += 2;
+
+	while( 1 )
 	{
-		if( *in >= 'A' && *in <= 'Z' )
-			*out++ = *in++ + 'a' - 'A';
-		else *out++ = *in++;
-		size_out--;
+		c = *str++;
+		if( c >= '0' && c <= '9' ) val = (val<<4) + c - '0';
+		else if( c >= 'a' && c <= 'f' ) val = (val<<4) + c - 'a' + 10;
+		else if( c >= 'A' && c <= 'F' ) val = (val<<4) + c - 'A' + 10;
+		else return val * sign;
 	}
-	*out = '\0';
 }
 
-qboolean Q_isdigit( const char *str )
+static int Q_atoi_character( int sign, const char *str )
 {
-	if( str && *str )
-	{
-		while( isdigit( *str )) str++;
-		if( !*str ) return true;
-	}
-	return false;
+	return sign * str[1];
 }
 
-qboolean Q_isspace( const char *str )
+static const char *Q_atoi_strip_whitespace( const char *str )
 {
-	if( str && *str )
-	{
-		while( isspace( *str ) ) str++;
-		if( !*str ) return true;
-	}
-	return false;
-}
+	while( str && *str == ' ' )
+		str++;
 
-size_t Q_colorstr( const char *string )
-{
-	size_t		len;
-	const char	*p;
-
-	if( !string ) return 0;
-
-	len = 0;
-	p = string;
-	while( *p )
-	{
-		if( IsColorString( p ))
-		{
-			len += 2;
-			p += 2;
-			continue;
-		}
-		p++;
-	}
-
-	return len;
-}
-
-char Q_toupper( const char in )
-{
-	char	out;
-
-	if( in >= 'a' && in <= 'z' )
-		out = in + 'A' - 'a';
-	else out = in;
-
-	return out;
-}
-
-char Q_tolower( const char in )
-{
-	char	out;
-
-	if( in >= 'A' && in <= 'Z' )
-		out = in + 'a' - 'A';
-	else out = in;
-
-	return out;
-}
-
-size_t Q_strncat( char *dst, const char *src, size_t size )
-{
-	register char	*d = dst;
-	register const char	*s = src;
-	register size_t	n = size;
-	size_t		dlen;
-
-	if( !dst || !src || !size )
-		return 0;
-
-	// find the end of dst and adjust bytes left but don't go past end
-	while( n-- != 0 && *d != '\0' ) d++;
-	dlen = d - dst;
-	n = size - dlen;
-
-	if( n == 0 ) return( dlen + Q_strlen( s ));
-
-	while( *s != '\0' )
-	{
-		if( n != 1 )
-		{
-			*d++ = *s;
-			n--;
-		}
-		s++;
-	}
-
-	*d = '\0';
-	return( dlen + ( s - src )); // count does not include NULL
+	return str;
 }
 
 int Q_atoi( const char *str )
@@ -139,13 +68,13 @@ int Q_atoi( const char *str )
 	int val = 0;
 	int c, sign;
 
-	if( !str ) return 0;
+	if( !COM_CheckString( str ))
+		return 0;
 
-	// check for empty charachters in string
-	while( str && *str == ' ' )
-		str++;
+	str = Q_atoi_strip_whitespace( str );
 
-	if( !str ) return 0;
+	if( !COM_CheckString( str ))
+		return 0;
 
 	if( *str == '-' )
 	{
@@ -156,21 +85,11 @@ int Q_atoi( const char *str )
 
 	// check for hex
 	if( str[0] == '0' && ( str[1] == 'x' || str[1] == 'X' ))
-	{
-		str += 2;
-		while( 1 )
-		{
-			c = *str++;
-			if( c >= '0' && c <= '9' ) val = (val<<4) + c - '0';
-			else if( c >= 'a' && c <= 'f' ) val = (val<<4) + c - 'a' + 10;
-			else if( c >= 'A' && c <= 'F' ) val = (val<<4) + c - 'A' + 10;
-			else return val * sign;
-		}
-	}
+		return Q_atoi_hex( sign, str );
 
 	// check for character
 	if( str[0] == '\'' )
-		return sign * str[1];
+		return Q_atoi_character( sign, str );
 
 	// assume decimal
 	while( 1 )
@@ -188,13 +107,13 @@ float Q_atof( const char *str )
 	double	val = 0;
 	int	c, sign, decimal, total;
 
-	if( !str ) return 0.0f;
+	if( !COM_CheckString( str ))
+		return 0;
 
-	// check for empty charachters in string
-	while( str && *str == ' ' )
-		str++;
+	str = Q_atoi_strip_whitespace( str );
 
-	if( !str ) return 0.0f;
+	if( !COM_CheckString( str ))
+		return 0;
 
 	if( *str == '-' )
 	{
@@ -205,20 +124,11 @@ float Q_atof( const char *str )
 
 	// check for hex
 	if( str[0] == '0' && ( str[1] == 'x' || str[1] == 'X' ))
-	{
-		str += 2;
-		while( 1 )
-		{
-			c = *str++;
-			if( c >= '0' && c <= '9' ) val = (val * 16) + c - '0';
-			else if( c >= 'a' && c <= 'f' ) val = (val * 16) + c - 'a' + 10;
-			else if( c >= 'A' && c <= 'F' ) val = (val * 16) + c - 'A' + 10;
-			else return val * sign;
-		}
-	}
+		return Q_atoi_hex( sign, str );
 
 	// check for character
-	if( str[0] == '\'' ) return sign * str[1];
+	if( str[0] == '\'' )
+		return Q_atoi_character( sign, str );
 
 	// assume decimal
 	decimal = -1;
@@ -253,13 +163,11 @@ float Q_atof( const char *str )
 
 void Q_atov( float *vec, const char *str, size_t siz )
 {
-	string	buffer;
-	char	*pstr, *pfront;
+	const char *pstr, *pfront;
 	int	j;
 
-	Q_strncpy( buffer, str, sizeof( buffer ));
-	memset( vec, 0, sizeof( vec_t ) * siz );
-	pstr = pfront = buffer;
+	memset( vec, 0, sizeof( *vec ) * siz );
+	pstr = pfront = str;
 
 	for( j = 0; j < siz; j++ )
 	{
@@ -350,12 +258,18 @@ const byte *Q_memmem( const byte *haystack, size_t haystacklen, const byte *need
 	return NULL;
 }
 
+void Q_memor( byte *XASH_RESTRICT dst, const byte *XASH_RESTRICT src, size_t len )
+{
+	size_t i;
+	for( i = 0; i < len; i++ ) // msvc likes to optimize this loop form
+		dst[i] |= src[i];
+}
+
 const char* Q_timestamp( int format )
 {
 	static string	timestamp;
 	time_t		crt_time;
 	const struct tm	*crt_tm;
-	string		timestring;
 
 	time( &crt_time );
 	crt_tm = localtime( &crt_time );
@@ -364,37 +278,37 @@ const char* Q_timestamp( int format )
 	{
 	case TIME_FULL:
 		// Build the full timestamp (ex: "Apr03 2007 [23:31.55]");
-		strftime( timestring, sizeof( timestring ), "%b%d %Y [%H:%M.%S]", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%b%d %Y [%H:%M.%S]", crt_tm );
 		break;
 	case TIME_DATE_ONLY:
 		// Build the date stamp only (ex: "Apr03 2007");
-		strftime( timestring, sizeof( timestring ), "%b%d %Y", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%b%d %Y", crt_tm );
 		break;
 	case TIME_TIME_ONLY:
 		// Build the time stamp only (ex: "23:31.55");
-		strftime( timestring, sizeof( timestring ), "%H:%M.%S", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%H:%M.%S", crt_tm );
 		break;
 	case TIME_NO_SECONDS:
 		// Build the time stamp exclude seconds (ex: "13:46");
-		strftime( timestring, sizeof( timestring ), "%H:%M", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%H:%M", crt_tm );
 		break;
 	case TIME_YEAR_ONLY:
 		// Build the date stamp year only (ex: "2006");
-		strftime( timestring, sizeof( timestring ), "%Y", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%Y", crt_tm );
 		break;
 	case TIME_FILENAME:
 		// Build a timestamp that can use for filename (ex: "Nov2006-26 (19.14.28)");
-		strftime( timestring, sizeof( timestring ), "%b%Y-%d_%H.%M.%S", crt_tm );
+		strftime( timestamp, sizeof( timestamp ), "%b%Y-%d_%H.%M.%S", crt_tm );
 		break;
-	default: return NULL;
+	default:
+		Q_snprintf( timestamp, sizeof( timestamp ), "%s: unknown format %d", __func__, format );
+		break;
 	}
-
-	Q_strncpy( timestamp, timestring, sizeof( timestamp ));
 
 	return timestamp;
 }
 
-#if !defined( HAVE_STRCASESTR )
+#if !HAVE_STRCASESTR
 char *Q_stristr( const char *string, const char *string2 )
 {
 	int	c;
@@ -464,9 +378,9 @@ int Q_snprintf( char *buffer, size_t buffersize, const char *format, ... )
 
 void COM_StripColors( const char *in, char *out )
 {
-	while ( *in )
+	while( *in )
 	{
-		if ( IsColorString( in ) )
+		if( IsColorString( in ))
 			in += 2;
 		else *out++ = *in++;
 	}
@@ -477,9 +391,9 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 {
 	static char	output[8][32];
 	static int	current;
-	float		onekb = 1024.0f;
-	float		onemb = onekb * onekb;
-	char		suffix[8];
+	const float onekb = 1024.0f;
+	const float onemb = onekb * onekb;
+	const char *suffix;
 	char		*out = output[current];
 	char		val[32], *i, *o, *dot;
 	int		pos;
@@ -490,14 +404,17 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 	if( value > onemb )
 	{
 		value /= onemb;
-		Q_strncpy( suffix, " Mb", sizeof( suffix ));
+		suffix = " Mb";
 	}
 	else if( value > onekb )
 	{
 		value /= onekb;
-		Q_strncpy( suffix, " Kb", sizeof( suffix ));
+		suffix = " Kb";
 	}
-	else Q_strncpy( suffix, " bytes", sizeof( suffix ));
+	else
+	{
+		suffix = " bytes";
+	}
 
 	// clamp to >= 0
 	digitsafterdecimal = Q_max( digitsafterdecimal, 0 );
@@ -591,22 +508,16 @@ COM_FileExtension
 */
 const char *COM_FileExtension( const char *in )
 {
-	const char *separator, *backslash, *colon, *dot;
-
-	separator = Q_strrchr( in, '/' );
-	backslash = Q_strrchr( in, '\\' );
-
-	if( !separator || separator < backslash )
-		separator = backslash;
-
-	colon = Q_strrchr( in, ':' );
-
-	if( !separator || separator < colon )
-		separator = colon;
+	const char *dot;
 
 	dot = Q_strrchr( in, '.' );
 
-	if( dot == NULL || ( separator && ( dot < separator )))
+	// quickly exit if there is no dot at all
+	if( dot == NULL )
+		return "";
+
+	// if there are any of these special symbols after the dot, the file has no extension
+	if( Q_strpbrk( dot + 1, "\\/:" ))
 		return "";
 
 	return dot + 1;
@@ -721,76 +632,37 @@ void COM_ReplaceExtension( char *path, const char *extension, size_t size )
 COM_RemoveLineFeed
 ============
 */
-void COM_RemoveLineFeed( char *str )
+void COM_RemoveLineFeed( char *str, size_t bufsize )
 {
-	while( *str != '\0' )
+	size_t i;
+
+	for( i = 0; i < bufsize && *str != '\0'; i++, str++ )
 	{
 		if( *str == '\r' || *str == '\n' )
 			*str = '\0';
-
-		++str;
-	}
-}
-
-/*
-============
-COM_FixSlashes
-
-Changes all '\' characters into '/' characters, in place.
-============
-*/
-void COM_FixSlashes( char *pname )
-{
-	for( ; *pname; pname++ )
-	{
-		if( *pname == '\\' )
-			*pname = '/';
 	}
 }
 
 /*
 ============
 COM_PathSlashFix
+
+ensure directory path always ends on forward slash
 ============
 */
 void COM_PathSlashFix( char *path )
 {
-	size_t	len;
+	size_t len = Q_strlen( path );
 
-	len = Q_strlen( path );
-
-	if( path[len - 1] != '\\' && path[len - 1] != '/' )
+	if( path[len - 1] == '\\' )
+	{
+		path[len - 1] = '/';
+	}
+	else if( path[len - 1] != '/' )
 	{
 		path[len] = '/';
 		path[len + 1] = '\0';
 	}
-}
-
-/*
-============
-COM_Hex2Char
-============
-*/
-char COM_Hex2Char( uint8_t hex )
-{
-	if( hex >= 0x0 && hex <= 0x9 )
-		hex += '0';
-	else if( hex >= 0xA && hex <= 0xF )
-		hex += '7';
-
-	return (char)hex;
-}
-
-/*
-============
-COM_Hex2String
-============
-*/
-void COM_Hex2String( uint8_t hex, char *str )
-{
-	*str++ = COM_Hex2Char( hex >> 4 );
-	*str++ = COM_Hex2Char( hex & 0x0F );
-	*str = '\0';
 }
 
 /*
@@ -851,8 +723,8 @@ skipwhite:
 		data++;
 	}
 
-	// skip // comments
-	if( c == '/' && data[1] == '/' )
+	// skip // or #, if requested, comments
+	if(( c == '/' && data[1] == '/' ) || ( c == '#' && FBitSet( flags, PFILE_IGNOREHASHCMT )))
 	{
 		while( *data && *data != '\n' )
 			data++;

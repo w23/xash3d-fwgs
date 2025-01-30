@@ -497,19 +497,19 @@ Con_CreateConsole
 create win32 console
 ================
 */
-void Wcon_CreateConsole( void )
+void Wcon_CreateConsole( qboolean con_showalways )
 {
 	if( Sys_CheckParm( "-log" ))
 		s_wcd.log_active = true;
 
 	if( host.type == HOST_NORMAL )
 	{
-		Q_strncpy( s_wcd.title, "Xash3D " XASH_VERSION, sizeof( s_wcd.title ));
+		Q_strncpy( s_wcd.title, XASH_ENGINE_NAME " " XASH_VERSION, sizeof( s_wcd.title ));
 		Q_strncpy( s_wcd.log_path, "engine.log", sizeof( s_wcd.log_path ));
 	}
 	else // dedicated console
 	{
-		Q_strncpy( s_wcd.title, "XashDS " XASH_VERSION, sizeof( s_wcd.title ));
+		Q_strncpy( s_wcd.title, XASH_DEDICATED_SERVER_NAME " " XASH_VERSION, sizeof( s_wcd.title ));
 		Q_strncpy( s_wcd.log_path, "dedicated.log", sizeof( s_wcd.log_path ));
 		s_wcd.log_active = true; // always make log
 	}
@@ -544,7 +544,7 @@ void Wcon_CreateConsole( void )
 		SetWindowPos( s_wcd.hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOREPOSITION | SWP_SHOWWINDOW );
 
 		// show console if needed
-		if( host.con_showalways )
+		if( con_showalways )
 		{
 			// make console visible
 			ShowWindow( s_wcd.hWnd, SW_SHOWDEFAULT );
@@ -586,9 +586,9 @@ destroy win32 console
 void Wcon_DestroyConsole( void )
 {
 	// last text message into console or log
-	Con_Reportf( "Sys_FreeLibrary: Unloading xash.dll\n" );
+	Con_Reportf( "%s: Unloading xash.dll\n", __func__ );
 
-	Sys_CloseLog();
+	Sys_CloseLog( NULL );
 
 	if( !s_wcd.attached )
 	{ 
@@ -608,10 +608,6 @@ void Wcon_DestroyConsole( void )
 	}
 
 	FreeConsole();
-
-	// place it here in case Sys_Crash working properly
-	if( host.hMutex )
-		CloseHandle( host.hMutex );
 }
 
 /*

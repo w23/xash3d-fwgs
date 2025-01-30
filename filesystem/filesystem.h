@@ -25,13 +25,14 @@ GNU General Public License for more details.
 #include "xash3d_types.h"
 #include "const.h"
 #include "com_model.h"
+#include "gameinfo.h"
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif // __cplusplus
 
-#define FS_API_VERSION 2 // not stable yet!
+#define FS_API_VERSION 3 // not stable yet!
 #define FS_API_CREATEINTERFACE_TAG   "XashFileSystem002" // follow FS_API_VERSION!!!
 #define FILESYSTEM_INTERFACE_VERSION "VFileSystem009" // never change this!
 
@@ -45,8 +46,18 @@ enum
 	FS_GAMERODIR_PATH = BIT( 4 ), // gamedir but read-only
 
 	FS_SKIP_ARCHIVED_WADS = BIT( 5 ), // don't mount wads inside archives automatically
+	FS_LOAD_PACKED_WAD = BIT( 6 ), // this wad is packed inside other archive
 
 	FS_GAMEDIRONLY_SEARCH_FLAGS = FS_GAMEDIR_PATH | FS_CUSTOM_PATH | FS_GAMERODIR_PATH
+};
+
+typedef struct searchpath_s searchpath_t;
+
+// IsArchiveExtensionSupported flags
+enum
+{
+	// excludes directories and pk3dir, i.e. archives that cannot be represented as a single file
+	IAES_ONLY_REAL_ARCHIVES = BIT( 0 ),
 };
 
 typedef struct
@@ -106,21 +117,23 @@ typedef struct gameinfo_s
 
 	int		quicksave_aged_count; // min is 1, max is 99
 	int		autosave_aged_count; // min is 1, max is 99
-} gameinfo_t;
 
-typedef enum
-{
-	GAME_NORMAL,
-	GAME_SINGLEPLAYER_ONLY,
-	GAME_MULTIPLAYER_ONLY
-} gametype_t;
+	// HL25 compatibility keys
+	qboolean hd_background;
+	qboolean animated_title;
+
+	char demomap[MAX_QPATH];
+
+	qboolean rodir; // if true, parsed from rodir
+	int64_t mtime;
+} gameinfo_t;
 
 typedef struct fs_dllinfo_t
 {
-	string fullPath;
-	string shortPath;
-	qboolean encrypted;
-	qboolean custom_loader;
+	char fullPath[2048]; // absolute disk path
+	string shortPath; // vfs path
+	qboolean encrypted; // do we need encrypted DLL loader?
+	qboolean custom_loader; // do we need memory DLL loader?
 } fs_dllinfo_t;
 
 typedef struct fs_globals_t
@@ -130,7 +143,7 @@ typedef struct fs_globals_t
 	int		numgames;
 } fs_globals_t;
 
-typedef void (*fs_event_callback_t)( const char *path );
+typedef struct file_s file_t;
 
 typedef struct fs_api_t
 {
@@ -164,7 +177,7 @@ typedef struct fs_api_t
 	int (*UnGetc)( file_t *file, char c );
 	int (*Getc)( file_t *file );
 	int (*VPrintf)( file_t *file, const char *format, va_list ap );
-	int (*Printf)( file_t *file, const char *format, ... ) _format( 2 );
+	int (*Printf)( file_t *file, const char *format, ... ) FORMAT_CHECK( 2 );
 	int (*Print)( file_t *file, const char *msg );
 	fs_offset_t (*FileLength)( file_t *f );
 	qboolean (*FileCopy)( file_t *pOutput, file_t *pInput, int fileSize );
@@ -187,34 +200,64 @@ typedef struct fs_api_t
 	qboolean (*SysFileExists)( const char *path );
 	const char *(*GetDiskPath)( const char *name, qboolean gamedironly );
 
-	// reserved
-	void (*Unused0)( void );
-	void *(*MountArchive_Fullpath)( const char *path, int flags );
+	const char *(*ArchivePath)( file_t *f ); // returns path to archive from which file was opened or "plain"
+	void *(*MountArchive_Fullpath)( const char *path, int flags ); // mounts the archive by path, if supported
 
 	qboolean (*GetFullDiskPath)( char *buffer, size_t size, const char *name, qboolean gamedironly );
+
+	// like LoadFile but returns pointer that can be free'd using standard library function
+	byte *(*LoadFileMalloc)( const char *path, fs_offset_t *filesizeptr, qboolean gamedironly );
+
+	// **** archive interface ****
+	// query supported formats
+	qboolean (*IsArchiveExtensionSupported)( const char *ext, uint flags );
+
+	// to speed up archive lookups, this function can be used to get the archive object by it's name
+	// because archive can share the name, you can call this function repeatedly to get all archives
+	searchpath_t *(*GetArchiveByName)( const char *name, searchpath_t *prev );
+
+	// return an index into the archive and a true path, if possible
+	int (*FindFileInArchive)( searchpath_t *sp, const char *path, char *outpath, size_t len );
+
+	// similarly to Open, opens file but from specified archive
+	// NOTE: for speed reasons, path is case-sensitive here!
+	// Use FindFileInArchive to retrieve real path from caseinsensitive FS emulation!
+	file_t *(*OpenFileFromArchive)( searchpath_t *, const char *path, const char *mode, int pack_ind );
+
+	// similarly to LoadFile, loads whole file into memory from specified archive
+	// NOTE: for speed reasons, path is case-sensitive here!
+	// Use FindFileInArchive to retrieve real path from caseinsensitive FS emulation!
+	byte *(*LoadFileFromArchive)( searchpath_t *sp, const char *path, int pack_ind, fs_offset_t *filesizeptr, const qboolean sys_malloc );
+
+	// gets current root directory, set by InitStdio
+	qboolean (*GetRootDirectory)( char *path, size_t size );
+
+	void (*MakeGameInfo)( void );
 } fs_api_t;
 
 typedef struct fs_interface_t
 {
 	// logging
-	void    (*_Con_Printf)( const char *fmt, ... ) _format( 1 ); // typical console allowed messages
-	void    (*_Con_DPrintf)( const char *fmt, ... ) _format( 1 ); // -dev 1
-	void    (*_Con_Reportf)( const char *fmt, ... ) _format( 1 ); // -dev 2
+	void    (*_Con_Printf)( const char *fmt, ... ) FORMAT_CHECK( 1 ); // typical console allowed messages
+	void    (*_Con_DPrintf)( const char *fmt, ... ) FORMAT_CHECK( 1 ); // -dev 1
+	void    (*_Con_Reportf)( const char *fmt, ... ) FORMAT_CHECK( 1 ); // -dev 2
 
-	void    (*_Sys_Error)( const char *fmt, ... ) _format( 1 );
+	void    (*_Sys_Error)( const char *fmt, ... ) FORMAT_CHECK( 1 );
 
 	// memory
 	poolhandle_t (*_Mem_AllocPool)( const char *name, const char *filename, int fileline );
 	void  (*_Mem_FreePool)( poolhandle_t *poolptr, const char *filename, int fileline );
-	void *(*_Mem_Alloc)( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline );
-	void *(*_Mem_Realloc)( poolhandle_t poolptr, void *memptr, size_t size, qboolean clear, const char *filename, int fileline );
+	void *(*_Mem_Alloc)( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
+		ALLOC_CHECK( 2 ) WARN_UNUSED_RESULT;
+	void *(*_Mem_Realloc)( poolhandle_t poolptr, void *memptr, size_t size, qboolean clear, const char *filename, int fileline )
+		ALLOC_CHECK( 3 ) WARN_UNUSED_RESULT;
 	void  (*_Mem_Free)( void *data, const char *filename, int fileline );
 
 	// platform
 	void *(*_Sys_GetNativeObject)( const char *object );
 } fs_interface_t;
 
-typedef int (*FSAPI)( int version, fs_api_t *api, fs_globals_t **globals, fs_interface_t *interface );
+typedef int (*FSAPI)( int version, fs_api_t *api, fs_globals_t **globals, const fs_interface_t *interface );
 #define GET_FS_API "GetFSAPI"
 
 #ifdef __cplusplus

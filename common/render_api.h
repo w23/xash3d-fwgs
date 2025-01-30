@@ -108,7 +108,8 @@ typedef enum
 	TF_ARB_FLOAT	= (1<<26),	// float textures
 	TF_NOCOMPARE	= (1<<27),	// disable comparing for depth textures
 	TF_ARB_16BIT	= (1<<28),	// keep image as 16-bit (not 24)
-	TF_MULTISAMPLE	= (1<<29)	// multisampling texture
+	TF_MULTISAMPLE	= (1<<29),	// multisampling texture
+	TF_ALLOW_NEAREST = (1<<30),	// allows toggling nearest filtering for TF_NOMIPMAP textures
 } texFlags_t;
 
 typedef enum
@@ -230,7 +231,7 @@ typedef struct render_api_s
 	void		(*R_Reserved0)( void );
 
 	// static allocations
-	void		*(*pfnMemAlloc)( size_t cb, const char *filename, const int fileline );
+	void		*(*pfnMemAlloc)( size_t cb, const char *filename, const int fileline ) ALLOC_CHECK( 1 );
 	void		(*pfnMemFree)( void *mem, const char *filename, const int fileline );
 
  	// engine utils (not related with render API but placed here)

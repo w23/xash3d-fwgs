@@ -23,24 +23,25 @@ GNU General Public License for more details.
 #include "library.h"
 #include "vid_common.h"
 #include "pm_local.h"
+#include "multi_emulator.h"
 
-#define MAX_TOTAL_CMDS		32
-#define MAX_CMD_BUFFER		8000
-#define CONNECTION_PROBLEM_TIME	15.0	// 15 seconds
-#define CL_CONNECTION_RETRIES		10
-#define CL_TEST_RETRIES_NORESPONCE	3
-#define CL_TEST_RETRIES		5
+#define MAX_CMD_BUFFER        8000
+#define CL_CONNECTION_TIMEOUT 15.0f
+#define CL_CONNECTION_RETRIES 10
+#define CL_TEST_RETRIES       5
 
+CVAR_DEFINE_AUTO( showpause, "1", 0, "show pause logo when paused" );
 CVAR_DEFINE_AUTO( mp_decals, "300", FCVAR_ARCHIVE, "decals limit in multiplayer" );
-CVAR_DEFINE_AUTO( dev_overview, "0", 0, "draw level in overview-mode" );
-CVAR_DEFINE_AUTO( cl_resend, "6.0", 0, "time to resend connect" );
+static CVAR_DEFINE_AUTO( dev_overview, "0", 0, "draw level in overview-mode" );
+static CVAR_DEFINE_AUTO( cl_resend, "6.0", 0, "time to resend connect" );
 CVAR_DEFINE( cl_allow_download, "cl_allowdownload", "1", FCVAR_ARCHIVE, "allow to downloading resources from the server" );
-CVAR_DEFINE_AUTO( cl_allow_upload, "1", FCVAR_ARCHIVE, "allow to uploading resources to the server" );
+static CVAR_DEFINE( cl_allow_upload, "cl_allowupload", "1", FCVAR_ARCHIVE, "allow to uploading resources to the server" );
 CVAR_DEFINE_AUTO( cl_download_ingame, "1", FCVAR_ARCHIVE, "allow to downloading resources while client is active" );
-CVAR_DEFINE_AUTO( cl_logofile, "lambda", FCVAR_ARCHIVE, "player logo name" );
-CVAR_DEFINE_AUTO( cl_logocolor, "orange", FCVAR_ARCHIVE, "player logo color" );
-CVAR_DEFINE_AUTO( cl_logoext, "bmp", FCVAR_ARCHIVE, "temporary cvar to tell engine which logo must be packed" );
-CVAR_DEFINE_AUTO( cl_test_bandwidth, "1", FCVAR_ARCHIVE, "test network bandwith before connection" );
+static CVAR_DEFINE_AUTO( cl_logofile, "lambda", FCVAR_ARCHIVE, "player logo name" );
+static CVAR_DEFINE_AUTO( cl_logocolor, "orange", FCVAR_ARCHIVE, "player logo color" );
+static CVAR_DEFINE_AUTO( cl_logoext, "bmp", FCVAR_ARCHIVE, "temporary cvar to tell engine which logo must be packed" );
+CVAR_DEFINE_AUTO( cl_logomaxdim, "96", FCVAR_ARCHIVE, "maximum decal dimension" );
+static CVAR_DEFINE_AUTO( cl_test_bandwidth, "1", FCVAR_ARCHIVE, "test network bandwith before connection" );
 
 CVAR_DEFINE( cl_draw_particles, "r_drawparticles", "1", FCVAR_CHEAT, "render particles" );
 CVAR_DEFINE( cl_draw_tracers, "r_drawtracers", "1", FCVAR_CHEAT, "render tracers" );
@@ -49,44 +50,54 @@ CVAR_DEFINE( cl_draw_beams, "r_drawbeams", "1", FCVAR_CHEAT, "render beams" );
 static CVAR_DEFINE_AUTO( rcon_address, "", FCVAR_PRIVILEGED, "remote control address" );
 CVAR_DEFINE_AUTO( cl_timeout, "60", 0, "connect timeout (in-seconds)" );
 CVAR_DEFINE_AUTO( cl_nopred, "0", FCVAR_ARCHIVE|FCVAR_USERINFO, "disable client movement prediction" );
-CVAR_DEFINE_AUTO( cl_nodelta, "0", 0, "disable delta-compression for server messages" );
+static CVAR_DEFINE_AUTO( cl_nodelta, "0", 0, "disable delta-compression for server messages" );
 CVAR_DEFINE( cl_crosshair, "crosshair", "1", FCVAR_ARCHIVE, "show weapon chrosshair" );
 static CVAR_DEFINE_AUTO( cl_cmdbackup, "10", FCVAR_ARCHIVE, "how many additional history commands are sent" );
 CVAR_DEFINE_AUTO( cl_showerror, "0", FCVAR_ARCHIVE, "show prediction error" );
 CVAR_DEFINE_AUTO( cl_bmodelinterp, "1", FCVAR_ARCHIVE, "enable bmodel interpolation" );
-CVAR_DEFINE_AUTO( cl_lightstyle_lerping, "0", FCVAR_ARCHIVE, "enables animated light lerping (perfomance option)" );
+static CVAR_DEFINE_AUTO( cl_lightstyle_lerping, "0", FCVAR_ARCHIVE, "enables animated light lerping (perfomance option)" );
 CVAR_DEFINE_AUTO( cl_idealpitchscale, "0.8", 0, "how much to look up/down slopes and stairs when not using freelook" );
 CVAR_DEFINE_AUTO( cl_nosmooth, "0", FCVAR_ARCHIVE, "disable smooth up stair climbing" );
 CVAR_DEFINE_AUTO( cl_smoothtime, "0.1", FCVAR_ARCHIVE, "time to smooth up" );
 CVAR_DEFINE_AUTO( cl_clockreset, "0.1", FCVAR_ARCHIVE, "frametime delta maximum value before reset" );
-CVAR_DEFINE_AUTO( cl_fixtimerate, "7.5", FCVAR_ARCHIVE, "time in msec to client clock adjusting" );
+static CVAR_DEFINE_AUTO( cl_fixtimerate, "7.5", FCVAR_ARCHIVE, "time in msec to client clock adjusting" );
 CVAR_DEFINE_AUTO( hud_fontscale, "1.0", FCVAR_ARCHIVE|FCVAR_LATCH, "scale hud font texture" );
+CVAR_DEFINE_AUTO( hud_fontrender, "0", FCVAR_ARCHIVE, "hud font render mode (0: additive, 1: holes, 2: trans)" );
 CVAR_DEFINE_AUTO( hud_scale, "0", FCVAR_ARCHIVE|FCVAR_LATCH, "scale hud at current resolution" );
+CVAR_DEFINE_AUTO( hud_scale_minimal_width, "640", FCVAR_ARCHIVE|FCVAR_LATCH, "if hud_scale results in a HUD virtual screen smaller than this value, it won't be applied" );
 CVAR_DEFINE_AUTO( cl_solid_players, "1", 0, "Make all players not solid (can't traceline them)" );
 CVAR_DEFINE_AUTO( cl_updaterate, "20", FCVAR_USERINFO|FCVAR_ARCHIVE, "refresh rate of server messages" );
 CVAR_DEFINE_AUTO( cl_showevents, "0", FCVAR_ARCHIVE, "show events playback" );
 CVAR_DEFINE_AUTO( cl_cmdrate, "60", FCVAR_ARCHIVE, "Max number of command packets sent to server per second" );
 CVAR_DEFINE( cl_interp, "ex_interp", "0.1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "Interpolate object positions starting this many seconds in past" );
-CVAR_DEFINE_AUTO( cl_nointerp, "0", FCVAR_CLIENTDLL, "disable interpolation of entities and players" );
+CVAR_DEFINE_AUTO( cl_nointerp, "0", 0, "disable interpolation of entities and players" );
 static CVAR_DEFINE_AUTO( cl_dlmax, "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "max allowed outcoming fragment size" );
 static CVAR_DEFINE_AUTO( cl_upmax, "1200", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
 
 CVAR_DEFINE_AUTO( cl_lw, "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
 CVAR_DEFINE_AUTO( cl_charset, "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
-CVAR_DEFINE_AUTO( cl_trace_messages, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable message names tracing (good for developers)");
-CVAR_DEFINE_AUTO( cl_trace_events, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable events tracing (good for developers)");
+CVAR_DEFINE_AUTO( cl_trace_consistency, "0", FCVAR_ARCHIVE, "enable consistency info tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_stufftext, "0", FCVAR_ARCHIVE, "enable stufftext (server-to-client console commands) tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_messages, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable message names tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_events, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable events tracing (good for developers)" );
 static CVAR_DEFINE_AUTO( cl_nat, "0", 0, "show servers running under NAT" );
 CVAR_DEFINE_AUTO( hud_utf8, "0", FCVAR_ARCHIVE, "Use utf-8 encoding for hud text" );
 CVAR_DEFINE_AUTO( ui_renderworld, "0", FCVAR_ARCHIVE, "render world when UI is visible" );
+static CVAR_DEFINE_AUTO( cl_maxframetime, "0", 0, "set deadline timer for client rendering to catch freezes" );
+CVAR_DEFINE_AUTO( cl_fixmodelinterpolationartifacts, "1", 0, "try to fix up models interpolation on a moving platforms (monsters on trains for example)" );
 
 //
 // userinfo
 //
-static CVAR_DEFINE_AUTO( name, "player", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_PRINTABLEONLY|FCVAR_FILTERABLE, "player name" );
+static char username[32];
+static CVAR_DEFINE_AUTO( name, username, FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_PRINTABLEONLY|FCVAR_FILTERABLE, "player name" );
 static CVAR_DEFINE_AUTO( model, "", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player model ('player' is a singleplayer model)" );
 static CVAR_DEFINE_AUTO( topcolor, "0", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player top color" );
 static CVAR_DEFINE_AUTO( bottomcolor, "0", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player bottom color" );
 CVAR_DEFINE_AUTO( rate, "3500", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player network rate" );
+
+static CVAR_DEFINE_AUTO( cl_ticket_generator, "revemu2013", FCVAR_ARCHIVE, "you wouldn't steal a car" );
+
 
 client_t		cl;
 client_static_t	cls;
@@ -111,15 +122,10 @@ qboolean CL_IsInGame( void )
 	if( host.type == HOST_DEDICATED )
 		return true; // always active for dedicated servers
 
-	if( cl.background || CL_GetMaxClients() > 1 )
+	if( cl.background || cl.maxclients > 1 )
 		return true; // always active for multiplayer or background map
 
 	return ( cls.key_dest == key_game ); // active if not menu or console
-}
-
-qboolean CL_IsInMenu( void )
-{
-	return ( cls.key_dest == key_menu );
 }
 
 qboolean CL_IsInConsole( void )
@@ -140,11 +146,6 @@ qboolean CL_IsPlaybackDemo( void )
 qboolean CL_IsRecordDemo( void )
 {
 	return cls.demorecording;
-}
-
-qboolean CL_IsTimeDemo( void )
-{
-	return cls.timedemo;
 }
 
 qboolean CL_DisableVisibility( void )
@@ -168,6 +169,11 @@ int CL_IsDevOverviewMode( void )
 	return 0;
 }
 
+connprotocol_t CL_Protocol( void )
+{
+	return cls.legacymode;
+}
+
 /*
 ===============
 CL_CheckClientState
@@ -176,7 +182,7 @@ finalize connection process and begin new frame
 with new cls.state
 ===============
 */
-void CL_CheckClientState( void )
+static void CL_CheckClientState( void )
 {
 	// first update is the pre-final signon stage
 	if(( cls.state == ca_connected || cls.state == ca_validate ) && ( cls.signon == SIGNONS ))
@@ -194,18 +200,34 @@ void CL_CheckClientState( void )
 	}
 }
 
-int CL_GetFragmentSize( void *unused, fragsize_t mode )
+static int CL_GetGoldSrcFragmentSize( void *unused, fragsize_t mode )
 {
-	if( mode == FRAGSIZE_SPLIT )
+	switch( mode )
+	{
+	case FRAGSIZE_SPLIT:
+		return 1200; // MAX_RELIABLE_PAYLOAD
+	case FRAGSIZE_UNRELIABLE:
+		return 1400; // MAX_ROUTABLE_PACKET
+	default:
+		if( cls.state == ca_active )
+			return bound( 16, cl_dlmax.value, 1024 );
+		return 128;
+	}
+}
+
+static int CL_GetFragmentSize( void *unused, fragsize_t mode )
+{
+	switch( mode )
+	{
+	case FRAGSIZE_SPLIT:
 		return 0;
-
-	if( mode == FRAGSIZE_UNRELIABLE )
+	case FRAGSIZE_UNRELIABLE:
 		return NET_MAX_MESSAGE;
-
-	if( Netchan_IsLocal( &cls.netchan ))
-		return FRAGMENT_LOCAL_SIZE;
-
-	return cl_upmax.value;
+	default:
+		if( Netchan_IsLocal( &cls.netchan ))
+			return FRAGMENT_LOCAL_SIZE;
+		return cl_upmax.value;
+	}
 }
 
 /*
@@ -215,15 +237,15 @@ CL_SignonReply
 An svc_signonnum has been received, perform a client side setup
 =====================
 */
-void CL_SignonReply( void )
+void CL_SignonReply( connprotocol_t proto )
 {
 	// g-cont. my favorite message :-)
-	Con_Reportf( "CL_SignonReply: %i\n", cls.signon );
+	Con_Reportf( "%s: %i\n", __func__, cls.signon );
 
 	switch( cls.signon )
 	{
 	case 1:
-		CL_ServerCommand( true, "begin" );
+		CL_ServerCommand( true, proto == PROTO_GOLDSRC ? "sendents" : "begin" );
 		if( host_developer.value >= DEV_EXTENDED )
 			Mem_PrintStats();
 		break;
@@ -276,7 +298,7 @@ CL_DriftInterpolationAmount
 Drift interpolation value (this is used for server unlag system)
 ===============
 */
-int CL_DriftInterpolationAmount( int goal )
+static int CL_DriftInterpolationAmount( int goal )
 {
 	float	fgoal, maxmove, diff;
 	int	msec;
@@ -304,7 +326,7 @@ CL_ComputeClientInterpolationAmount
 Validate interpolation cvars, calc interpolation window
 ===============
 */
-void CL_ComputeClientInterpolationAmount( usercmd_t *cmd )
+static void CL_ComputeClientInterpolationAmount( usercmd_t *cmd )
 {
 	const float epsilon = 0.001f; // to avoid float invalid comparision
 	float min_interp;
@@ -350,32 +372,22 @@ CL_ComputePacketLoss
 
 =================
 */
-void CL_ComputePacketLoss( void )
+static void CL_ComputePacketLoss( void )
 {
-	int	i, frm;
-	frame_t	*frame;
-	int	count = 0;
-	int	lost = 0;
+	int i, lost = 0;
 
 	if( host.realtime < cls.packet_loss_recalc_time )
 		return;
 
-	// recalc every second
 	cls.packet_loss_recalc_time = host.realtime + 1.0;
 
-	// compuate packet loss
 	for( i = cls.netchan.incoming_sequence - CL_UPDATE_BACKUP + 1; i <= cls.netchan.incoming_sequence; i++ )
 	{
-		frm = i;
-		frame = &cl.frames[frm & CL_UPDATE_MASK];
-
-		if( frame->receivedtime == -1.0 )
+		if( cl.frames[i & CL_UPDATE_MASK].receivedtime == -1.0 )
 			lost++;
-		count++;
 	}
 
-	if( count <= 0 ) cls.packet_loss = 0.0f;
-	else cls.packet_loss = ( 100.0f * (float)lost ) / (float)count;
+	cls.packet_loss = lost * 100.0f / (float)CL_UPDATE_BACKUP;
 }
 
 /*
@@ -395,7 +407,7 @@ void CL_UpdateFrameLerp( void )
 	cl.commands[(cls.netchan.outgoing_sequence - 1) & CL_UPDATE_MASK].frame_lerp = cl.lerpFrac;
 }
 
-void CL_FindInterpolatedAddAngle( float t, float *frac, pred_viewangle_t **prev, pred_viewangle_t **next )
+static void CL_FindInterpolatedAddAngle( float t, float *frac, pred_viewangle_t **prev, pred_viewangle_t **next )
 {
 	int	i, i0, i1, imod;
 	float	at;
@@ -437,7 +449,7 @@ void CL_FindInterpolatedAddAngle( float t, float *frac, pred_viewangle_t **prev,
 	*frac = bound( 0.0f, *frac, 1.0f );
 }
 
-void CL_ApplyAddAngle( void )
+static void CL_ApplyAddAngle( void )
 {
 	pred_viewangle_t	*prev = NULL, *next = NULL;
 	float		addangletotal = 0.0f;
@@ -473,17 +485,16 @@ CL_ProcessShowTexturesCmds
 navigate around texture atlas
 ===============
 */
-qboolean CL_ProcessShowTexturesCmds( usercmd_t *cmd )
+static qboolean CL_ProcessShowTexturesCmds( usercmd_t *cmd )
 {
 	static int	oldbuttons;
 	int		changed;
-	int		pressed, released;
+	int		released;
 
 	if( !r_showtextures.value || CL_IsDevOverviewMode( ))
 		return false;
 
 	changed = (oldbuttons ^ cmd->buttons);
-	pressed =  changed & cmd->buttons;
 	released = changed & (~cmd->buttons);
 
 	if( released & ( IN_RIGHT|IN_MOVERIGHT ))
@@ -502,7 +513,7 @@ CL_ProcessOverviewCmds
 Transform user movement into overview adjust
 ===============
 */
-qboolean CL_ProcessOverviewCmds( usercmd_t *cmd )
+static qboolean CL_ProcessOverviewCmds( usercmd_t *cmd )
 {
 	ref_overview_t	*ov = &clgame.overView;
 	int		sign = 1;
@@ -554,7 +565,7 @@ CL_UpdateClientData
 tell the client.dll about player origin, angles, fov, etc
 =================
 */
-void CL_UpdateClientData( void )
+static void CL_UpdateClientData( void )
 {
 	client_data_t	cdat;
 
@@ -581,22 +592,39 @@ void CL_UpdateClientData( void )
 CL_CreateCmd
 =================
 */
-void CL_CreateCmd( void )
+static void CL_CreateCmd( void )
 {
-	usercmd_t	nullcmd, *cmd;
-	runcmd_t		*pcmd;
-	vec3_t		angles;
-	qboolean		active;
-	int		input_override;
-	int		i, ms;
+	usercmd_t nullcmd = { 0 }, *cmd;
+	runcmd_t  *pcmd;
+	qboolean  active;
+	double    accurate_ms;
+	vec3_t    angles;
+	int       input_override;
+	int       i, ms;
 
-	if( cls.state < ca_connected || cls.state == ca_cinematic )
+	if( cls.state <= ca_connected || cls.state == ca_cinematic )
 		return;
 
 	// store viewangles in case it's will be freeze
 	VectorCopy( cl.viewangles, angles );
-	ms = bound( 1, host.frametime * 1000, 255 );
 	input_override = 0;
+
+	// fix rounding error and framerate depending player move
+	accurate_ms = host.frametime * 1000;
+	ms = (int)accurate_ms;
+	cl.frametime_remainder += accurate_ms - ms; // accumulate rounding error each frame
+
+	// add a ms if error accumulates enough
+	if( cl.frametime_remainder >= 1.0 )
+	{
+		int ms2 = (int)cl.frametime_remainder;
+
+		ms += ms2;
+		cl.frametime_remainder -= ms2;
+	}
+
+	// ms can't be negative, rely on error accumulation only if FPS > 1000
+	ms = Q_min( ms, 255 );
 
 	CL_SetSolidEntities();
 	CL_PushPMStates();
@@ -605,10 +633,10 @@ void CL_CreateCmd( void )
 	// message we are constructing.
 	i = cls.netchan.outgoing_sequence & CL_UPDATE_MASK;
 	pcmd = &cl.commands[i];
-	pcmd->processedfuncs = false;
 
 	if( !cls.demoplayback )
 	{
+		pcmd->processedfuncs = false;
 		pcmd->senttime = host.realtime;
 		memset( &pcmd->cmd, 0, sizeof( pcmd->cmd ));
 		pcmd->receivedtime = -1.0;
@@ -618,14 +646,13 @@ void CL_CreateCmd( void )
 	}
 	else
 	{
-		memset( &nullcmd, 0, sizeof( nullcmd ));
 		cmd = &nullcmd;
 	}
 
 	active = (( cls.signon == SIGNONS ) && !cl.paused && !cls.demoplayback );
 	Platform_PreCreateMove();
 	clgame.dllFuncs.CL_CreateMove( host.frametime, cmd, active );
-	IN_EngineAppendMove( host.frametime, cmd, active  );
+	IN_EngineAppendMove( host.frametime, cmd, active );
 
 	CL_PopPMStates();
 
@@ -653,28 +680,26 @@ void CL_CreateCmd( void )
 	CL_PredictMovement( false );
 }
 
-void CL_WriteUsercmd( sizebuf_t *msg, int from, int to )
+void CL_WriteUsercmd( connprotocol_t proto, sizebuf_t *msg, int from, int to )
 {
-	usercmd_t	nullcmd;
-	usercmd_t	*f, *t;
+	const usercmd_t nullcmd = { 0 };
+	const usercmd_t	*f;
+	usercmd_t *t;
 
 	Assert( from == -1 || ( from >= 0 && from < MULTIPLAYER_BACKUP ));
 	Assert( to >= 0 && to < MULTIPLAYER_BACKUP );
 
-	if( from == -1 )
-	{
-		memset( &nullcmd, 0, sizeof( nullcmd ));
-		f = &nullcmd;
-	}
-	else
-	{
-		f = &cl.commands[from].cmd;
-	}
-
+	f = from == -1 ? &nullcmd : &cl.commands[from].cmd;
 	t = &cl.commands[to].cmd;
 
 	// write it into the buffer
-	MSG_WriteDeltaUsercmd( msg, f, t );
+	if( proto == PROTO_GOLDSRC )
+	{
+		MSG_StartBitWriting( msg );
+		Delta_WriteGSFields( msg, DT_USERCMD_T, f, t, 0.0f );
+		MSG_EndBitWriting( msg );
+	}
+	else MSG_WriteDeltaUsercmd( msg, f, t );
 }
 
 /*
@@ -685,185 +710,166 @@ Create and send the command packet to the server
 Including both the reliable commands and the usercmds
 ===================
 */
-void CL_WritePacket( void )
+static void CL_WritePacket( void )
 {
-	sizebuf_t		buf;
-	qboolean		send_command = false;
-	byte		data[MAX_CMD_BUFFER];
-	int		i, from, to, key, size;
-	int		numbackup = 2;
-	int		numcmds;
-	int		newcmds;
-	int		cmdnumber;
+	sizebuf_t buf;
+	byte data[MAX_CMD_BUFFER] = { 0 };
+	runcmd_t *pcmd;
+	int numbackup, maxbackup, maxcmds;
+	const connprotocol_t proto = cls.legacymode;
+
+	// FIXME: on Xash protocol we don't send move commands until ca_active
+	// to prevent outgoing_command outrun incoming_acknowledged
+	// which is fatal for some buggy mods like TFC
+	//
+	// ... but GoldSrc don't have (real) ca_validate state, so we consider
+	// ca_validate the same as ca_active, otherwise we don't pass validation
+	// of server-side mods like ReAuthCheck
+	const connstate_t min_state = proto == PROTO_GOLDSRC ? ca_validate : ca_active;
 
 	// don't send anything if playing back a demo
 	if( cls.demoplayback || cls.state < ca_connected || cls.state == ca_cinematic )
 		return;
 
-	CL_ComputePacketLoss ();
+	if( cls.state < min_state )
+	{
+		Netchan_TransmitBits( &cls.netchan, 0, "" );
+		return;
+	}
+	// cls.state can only be ca_validate or ca_active from here
 
-	memset( data, 0, sizeof( data ));
+	CL_ComputePacketLoss( );
+
 	MSG_Init( &buf, "ClientData", data, sizeof( data ));
 
-	// Determine number of backup commands to send along
-	numbackup = bound( 0, cl_cmdbackup.value, cls.legacymode ? MAX_LEGACY_BACKUP_CMDS : MAX_BACKUP_COMMANDS );
-	if( cls.state == ca_connected ) numbackup = 0;
+	switch( proto )
+	{
+	case PROTO_GOLDSRC:
+		maxbackup = MAX_GOLDSRC_BACKUP_CMDS;
+		maxcmds = MAX_GOLDSRC_TOTAL_CMDS;
+		break;
+	case PROTO_LEGACY:
+		maxbackup = MAX_LEGACY_BACKUP_CMDS;
+		maxcmds = MAX_LEGACY_TOTAL_CMDS;
+		break;
+	default:
+		maxbackup = MAX_BACKUP_COMMANDS;
+		maxcmds = MAX_TOTAL_CMDS;
+		break;
+	}
+
+	numbackup = bound( 0, cl_cmdbackup.value, maxbackup );
+
+	// allow extended usercmd limit
+	if( proto == PROTO_GOLDSRC && cls.build_num >= 5971 )
+		maxcmds = MAX_GOLDSRC_EXTENDED_TOTAL_CMDS - numbackup;
 
 	// clamp cmdrate
 	if( cl_cmdrate.value < 10.0f )
-	{
 		Cvar_DirectSet( &cl_cmdrate, "10" );
-	}
 	else if( cl_cmdrate.value > 100.0f )
-	{
 		Cvar_DirectSet( &cl_cmdrate, "100" );
-	}
 
-	// Check to see if we can actually send this command
+	// are we hltv spectator?
+	if( cls.spectator && cl.delta_sequence == cl.validsequence && ( !cls.demorecording || !cls.demowaiting ) && cls.nextcmdtime + 1.0f > host.realtime )
+		return;
 
-	// In single player, send commands as fast as possible
-	// Otherwise, only send when ready and when not choking bandwidth
-	if( cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ))
-		send_command = true;
+	// can send this command?
+	pcmd = &cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK];
 
-	if(( host.realtime >= cls.nextcmdtime ) && Netchan_CanPacket( &cls.netchan, true ))
-		send_command = true;
+	if( cl.maxclients == 1 || ( NET_IsLocalAddress( cls.netchan.remote_address ) && !host_limitlocal.value ) || ( host.realtime >= cls.nextcmdtime && Netchan_CanPacket( &cls.netchan, true )))
+		pcmd->heldback = false;
+	else pcmd->heldback = true;
 
-	if( cl.send_reply )
+	// immediately add it to the demo, regardless if we send the message or not
+	if( cls.demorecording )
+		CL_WriteDemoUserCmd( cls.netchan.outgoing_sequence & CL_UPDATE_MASK );
+
+	if( !pcmd->heldback )
 	{
-		cl.send_reply = false;
-		send_command = true;
-	}
+		int newcmds, numcmds;
+		int from, i, key;
 
-	// spectator is not sending cmds to server
-	if( cls.spectator && cls.state == ca_active && cl.delta_sequence == cl.validsequence )
-	{
-		if( !( cls.demorecording && cls.demowaiting ) && cls.nextcmdtime + 1.0f > host.realtime )
-			return;
-	}
+		cls.nextcmdtime = host.realtime + ( 1.0f / cl_cmdrate.value );
 
-	if(( cls.netchan.outgoing_sequence - cls.netchan.incoming_acknowledged ) >= CL_UPDATE_MASK )
-	{
-		if(( host.realtime - cls.netchan.last_received ) > CONNECTION_PROBLEM_TIME )
+		if( cls.lastoutgoingcommand < 0 )
+			cls.lastoutgoingcommand = cls.netchan.outgoing_sequence;
+
+		newcmds = cls.netchan.outgoing_sequence - cls.lastoutgoingcommand;
+		newcmds = bound( 0, newcmds, maxcmds );
+		numcmds = newcmds + numbackup;
+
+		// goldsrc starts writing clc_move earlier but it doesn't make sense if it's not going to be sent
+		MSG_BeginClientCmd( &buf, clc_move );
+
+		if( proto == PROTO_GOLDSRC )
+			MSG_WriteByte( &buf, 0 ); // command length
+
+		key = MSG_GetRealBytesWritten( &buf );
+		MSG_WriteByte( &buf, 0 );
+
+		MSG_WriteByte( &buf, bound( 0, (int)cls.packet_loss, 100 ));
+		MSG_WriteByte( &buf, numbackup );
+		MSG_WriteByte( &buf, newcmds );
+
+		for( from = -1, i = numcmds - 1; i >= 0; i-- )
+		{
+			int to = ( cls.netchan.outgoing_sequence - i ) & CL_UPDATE_MASK;
+
+			CL_WriteUsercmd( proto, &buf, from, to );
+			from = to;
+		}
+
+		// finalize message
+		if( proto == PROTO_GOLDSRC )
+		{
+			int size = MSG_GetRealBytesWritten( &buf ) - key - 1;
+
+			buf.pData[key - 1] = Q_min( size, 255 );
+			buf.pData[key] = CRC32_BlockSequence( &buf.pData[key + 1], size, cls.netchan.outgoing_sequence );
+			COM_Munge( &buf.pData[key + 1], Q_min( size, 255 ), cls.netchan.outgoing_sequence );
+		}
+		else if( !Host_IsLocalClient( ))
+		{
+			int size = MSG_GetRealBytesWritten( &buf ) - key - 1;
+			buf.pData[key] = CRC32_BlockSequence( &buf.pData[key + 1], size, cls.netchan.outgoing_sequence );
+		}
+
+		// check if we're timing out
+		if( cls.netchan.outgoing_sequence - cls.netchan.incoming_acknowledged >= CL_UPDATE_MASK && host.realtime - cls.netchan.last_received >= CL_CONNECTION_TIMEOUT )
 		{
 			Con_NPrintf( 1, "^3Warning:^1 Connection Problem^7\n" );
 			Con_NPrintf( 2, "^1Auto-disconnect in %.1f seconds^7", cl_timeout.value - ( host.realtime - cls.netchan.last_received ));
 			cl.validsequence = 0;
 		}
-	}
 
-	if( cl_nodelta.value )
-		cl.validsequence = 0;
+		if( cl_nodelta.value )
+			cl.validsequence = 0;
 
-	if( send_command )
-	{
-		int	outgoing_sequence;
-
-		if( cl_cmdrate.value > 0 ) // clamped between 10 and 100 fps
-			cls.nextcmdtime = host.realtime + bound( 0.1f, ( 1.0f / cl_cmdrate.value ), 0.01f );
-		else cls.nextcmdtime = host.realtime; // always able to send right away
-
-		if( cls.lastoutgoingcommand == -1 )
-		{
-			outgoing_sequence = cls.netchan.outgoing_sequence;
-			cls.lastoutgoingcommand = cls.netchan.outgoing_sequence;
-		}
-		else outgoing_sequence = cls.lastoutgoingcommand + 1;
-
-		// begin a client move command
-		MSG_BeginClientCmd( &buf, clc_move );
-
-		// save the position for a checksum byte
-		key = MSG_GetRealBytesWritten( &buf );
-		MSG_WriteByte( &buf, 0 );
-
-		// write packet lossage percentation
-		MSG_WriteByte( &buf, cls.packet_loss );
-
-		// say how many backups we'll be sending
-		MSG_WriteByte( &buf, numbackup );
-
-		// how many real commands have queued up
-		newcmds = ( cls.netchan.outgoing_sequence - cls.lastoutgoingcommand );
-
-		// put an upper/lower bound on this
-		newcmds = bound( 0, newcmds, cls.legacymode ? MAX_LEGACY_TOTAL_CMDS: MAX_TOTAL_CMDS );
-		if( cls.state == ca_connected ) newcmds = 0;
-
-		MSG_WriteByte( &buf, newcmds );
-
-		numcmds = newcmds + numbackup;
-
-		from = -1;
-
-		for( i = numcmds - 1; i >= 0; i-- )
-		{
-			cmdnumber = ( cls.netchan.outgoing_sequence - i ) & CL_UPDATE_MASK;
-
-			to = cmdnumber;
-			CL_WriteUsercmd( &buf, from, to );
-			from = to;
-
-			if( MSG_CheckOverflow( &buf ))
-				Host_Error( "CL_WritePacket: overflowed command buffer (%i bytes)\n", MAX_CMD_BUFFER );
-		}
-
-		// calculate a checksum over the move commands
-		size = MSG_GetRealBytesWritten( &buf ) - key - 1;
-		buf.pData[key] = CRC32_BlockSequence( buf.pData + key + 1, size, cls.netchan.outgoing_sequence );
-
-		// message we are constructing.
-		i = cls.netchan.outgoing_sequence & CL_UPDATE_MASK;
-
-		// determine if we need to ask for a new set of delta's.
-		if( cl.validsequence && (cls.state == ca_active) && !( cls.demorecording && cls.demowaiting ))
+		if( cl.validsequence && ( !cls.demorecording || !cls.demowaiting ))
 		{
 			cl.delta_sequence = cl.validsequence;
-
 			MSG_BeginClientCmd( &buf, clc_delta );
-			MSG_WriteByte( &buf, cl.validsequence & 0xFF );
+			MSG_WriteByte( &buf, cl.validsequence & 0xff );
 		}
-		else
-		{
-			// request delta compression of entities
-			cl.delta_sequence = -1;
-		}
+		else cl.delta_sequence = -1;
 
-		if( MSG_CheckOverflow( &buf ))
-			Host_Error( "CL_WritePacket: overflowed command buffer (%i bytes)\n", MAX_CMD_BUFFER );
-
-		// remember outgoing command that we are sending
+		// command finished, remember last sent sequence id
 		cls.lastoutgoingcommand = cls.netchan.outgoing_sequence;
+		pcmd->sendsize = MSG_GetNumBytesWritten( &buf );
 
-		// update size counter for netgraph
-		cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK].sendsize = MSG_GetNumBytesWritten( &buf );
-		cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK].heldback = false;
-
-		// send voice data to the server
 		CL_AddVoiceToDatagram();
 
-		// composite the rest of the datagram..
+		// now add unreliable, if there is enough space
 		if( MSG_GetNumBitsWritten( &cls.datagram ) <= MSG_GetNumBitsLeft( &buf ))
 			MSG_WriteBits( &buf, MSG_GetData( &cls.datagram ), MSG_GetNumBitsWritten( &cls.datagram ));
 		MSG_Clear( &cls.datagram );
 
-		// deliver the message (or update reliable)
 		Netchan_TransmitBits( &cls.netchan, MSG_GetNumBitsWritten( &buf ), MSG_GetData( &buf ));
 	}
 	else
 	{
-		// mark command as held back so we'll send it next time
-		cl.commands[cls.netchan.outgoing_sequence & CL_UPDATE_MASK].heldback = true;
-
-		// increment sequence number so we can detect that we've held back packets.
 		cls.netchan.outgoing_sequence++;
-	}
-
-	if( cls.demorecording && numbackup > 0 )
-	{
-		// Back up one because we've incremented outgoing_sequence each frame by 1 unit
-		cmdnumber = ( cls.netchan.outgoing_sequence - 1 ) & CL_UPDATE_MASK;
-		CL_WriteDemoUserCmd( cmdnumber );
 	}
 
 	// update download/upload slider.
@@ -877,7 +883,7 @@ CL_SendCommand
 Called every frame to builds and sends a command packet to the server.
 =================
 */
-void CL_SendCommand( void )
+static void CL_SendCommand( void )
 {
 	// we create commands even if a demo is playing,
 	CL_CreateCmd();
@@ -891,7 +897,7 @@ void CL_SendCommand( void )
 CL_BeginUpload_f
 ==================
 */
-void CL_BeginUpload_f( void )
+static void CL_BeginUpload_f( void )
 {
 	const char		*name;
 	resource_t	custResource;
@@ -916,16 +922,16 @@ void CL_BeginUpload_f( void )
 	memset( &custResource, 0, sizeof( custResource ));
 	COM_HexConvert( name + 4, 32, md5 );
 
-	if( HPAK_ResourceForHash( CUSTOM_RES_PATH, md5, &custResource ))
+	if( HPAK_ResourceForHash( hpk_custom_file.string, md5, &custResource ))
 	{
 		if( memcmp( md5, custResource.rgucMD5_hash, 16 ))
 		{
-			Con_Reportf( "Bogus data retrieved from %s, attempting to delete entry\n", CUSTOM_RES_PATH );
-			HPAK_RemoveLump( CUSTOM_RES_PATH, &custResource );
+			Con_Reportf( "Bogus data retrieved from %s, attempting to delete entry\n", hpk_custom_file.string );
+			HPAK_RemoveLump( hpk_custom_file.string, &custResource );
 			return;
 		}
 
-		if( HPAK_GetDataPointer( CUSTOM_RES_PATH, &custResource, &buf, &size ))
+		if( HPAK_GetDataPointer( hpk_custom_file.string, &custResource, &buf, &size ))
 		{
 			byte		md5[16];
 			MD5Context_t	ctx;
@@ -941,7 +947,7 @@ void CL_BeginUpload_f( void )
 				Con_Reportf( "Purported:  %s\n", MD5_Print( custResource.rgucMD5_hash ) );
 				Con_Reportf( "Actual   :  %s\n", MD5_Print( md5 ) );
 				Con_Reportf( "Removing conflicting lump\n" );
-				HPAK_RemoveLump( CUSTOM_RES_PATH, &custResource );
+				HPAK_RemoveLump( hpk_custom_file.string, &custResource );
 				return;
 			}
 		}
@@ -963,7 +969,7 @@ CL_Quit_f
 void CL_Quit_f( void )
 {
 	CL_Disconnect();
-	Sys_Quit();
+	Sys_Quit( "command" );
 }
 
 /*
@@ -980,6 +986,69 @@ void CL_Drop( void )
 	CL_Disconnect();
 }
 
+static void CL_GetCDKey( char *protinfo, size_t protinfosize )
+{
+	byte hash[16] = { 0 };
+	MD5Context_t ctx = { 0 };
+	char key[64];
+	int keylength;
+
+	keylength = Q_snprintf( key, sizeof( key ), "%u", COM_RandomLong( 0, 0x7ffffffe ));
+
+	MD5Init( &ctx );
+	MD5Update( &ctx, key, keylength );
+	MD5Final( hash, &ctx );
+
+	Q_strnlwr( MD5_Print( hash ), key, sizeof( key ));
+
+	Info_SetValueForKey( protinfo, "cdkey", key, protinfosize );
+}
+
+static void CL_WriteSteamTicket( sizebuf_t *send )
+{
+	const char *s;
+	uint32_t crc;
+	char buf[768] = { 0 }; // setti and steamemu return 768
+	size_t i = sizeof( buf );
+
+	if( !Q_strcmp( cl_ticket_generator.string, "null" ))
+	{
+		MSG_WriteBytes( send, buf, 512 ); // specifically 512 bytes of zeros
+		return;
+	}
+
+	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
+	//{
+	//	i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
+	//	MSG_WriteBytes( send, buf, i );
+	//	return;
+	//}
+
+	s = ID_GetMD5();
+	CRC32_Init( &crc );
+	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
+	crc = CRC32_Final( crc );
+
+	if( !Q_stricmp( cl_ticket_generator.string, "revemu2013" ))
+		i = GenerateRevEmu2013( buf, crc );
+	else if( !Q_stricmp( cl_ticket_generator.string, "sc2009" ))
+		i = GenerateSC2009( buf, crc );
+	else if( !Q_stricmp( cl_ticket_generator.string, "oldrevemu" ))
+		i = GenerateOldRevEmu( buf, crc );
+	else if( !Q_stricmp( cl_ticket_generator.string, "steamemu" ))
+		i = GenerateSteamEmu( buf, crc );
+	else if( !Q_stricmp( cl_ticket_generator.string, "revemu" ))
+		i = GenerateRevEmu( buf, crc );
+	else if( !Q_stricmp( cl_ticket_generator.string, "setti" ))
+		i = GenerateSetti( buf );
+	else if( !Q_stricmp( cl_ticket_generator.string, "avsmp" ))
+		i = GenerateAVSMP( buf, crc, true );
+	else
+		Con_Printf( "%s: unknown generator %s, supported are: null, revemu2003, sc2009, oldrevemu, steamemu, revemu, setti, avsmp\n", __func__, cl_ticket_generator.string );
+
+	MSG_WriteBytes( send, buf, i );
+}
+
 /*
 =======================
 CL_SendConnectPacket
@@ -988,37 +1057,31 @@ We have gotten a challenge from the server, so try and
 connect.
 ======================
 */
-void CL_SendConnectPacket( void )
+static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 {
-	char	protinfo[MAX_INFO_STRING];
-	const char	*qport;
-	const char	*key;
-	netadr_t	adr;
+	char protinfo[MAX_INFO_STRING];
+	const char *key = ID_GetMD5();
+	netadr_t adr = { 0 };
+	int input_devices;
+
+	protinfo[0] = 0;
 
 	if( !NET_StringToAdr( cls.servername, &adr ))
 	{
-		Con_Printf( "CL_SendConnectPacket: bad server address\n");
+		Con_Printf( "%s: bad server address\n", __func__ );
 		cls.connect_time = 0;
 		return;
 	}
 
 	if( adr.port == 0 ) adr.port = MSG_BigShort( PORT_SERVER );
-	qport = Cvar_VariableString( "net_qport" );
-	key = ID_GetMD5();
 
-	memset( protinfo, 0, sizeof( protinfo ));
+	input_devices = IN_CollectInputDevices();
+	IN_LockInputDevices( adr.type != NA_LOOPBACK ? true : false );
 
-	if( adr.type == NA_LOOPBACK )
+	// GoldSrc doesn't need sv_cheats set to 0, it's handled by svc_goldsrc_sendextrainfo
+	// it also doesn't need useragent string
+	if( adr.type != NA_LOOPBACK && proto != PROTO_GOLDSRC )
 	{
-		IN_LockInputDevices( false );
-	}
-	else
-	{
-		int input_devices;
-
-		input_devices = IN_CollectInputDevices();
-		IN_LockInputDevices( true );
-
 		Cvar_SetCheatState();
 		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
 
@@ -1029,30 +1092,71 @@ void CL_SendConnectPacket( void )
 		Info_SetValueForKey( protinfo, "a", Q_buildarch(), sizeof( protinfo ) );
 	}
 
-	if( cls.legacymode )
+	if( proto == PROTO_GOLDSRC )
 	{
-		// set related userinfo keys
-		if( cl_dlmax.value >= 40000 || cl_dlmax.value < 100 )
-			Info_SetValueForKey( cls.userinfo, "cl_maxpacket", "1400", sizeof( cls.userinfo ) );
-		else
-			Info_SetValueForKey( cls.userinfo, "cl_maxpacket", cl_dlmax.string, sizeof( cls.userinfo ) );
+		const char *name;
+		sizebuf_t send;
+		byte send_buf[2048];
 
-		if( !*Info_ValueForKey( cls.userinfo,"cl_maxpayload") )
+		Info_SetValueForKey( protinfo, "prot", "3", sizeof( protinfo )); // steam auth type
+		Info_SetValueForKeyf( protinfo, "unique", sizeof( protinfo ), "%i", 0xffffffff );
+		Info_SetValueForKey( protinfo, "raw", "steam", sizeof( protinfo ));
+		CL_GetCDKey( protinfo, sizeof( protinfo ));
+
+		// remove keys set for legacy protocol
+		Info_RemoveKey( cls.userinfo, "cl_maxpacket" );
+		Info_RemoveKey( cls.userinfo, "cl_maxpayload" );
+
+		name = Info_ValueForKey( cls.userinfo, "name" );
+		if( Q_strnicmp( name, "[Xash3D]", 8 ))
+			Info_SetValueForKeyf( cls.userinfo, "name", sizeof( cls.userinfo ), "[Xash3D]%s", name );
+
+		MSG_Init( &send, "GoldSrcConnect", send_buf, sizeof( send_buf ));
+		MSG_WriteLong( &send, NET_HEADER_OUTOFBANDPACKET );
+		MSG_WriteStringf( &send, C2S_CONNECT" %i %i \"%s\" \"%s\"\n",
+			PROTOCOL_GOLDSRC_VERSION, challenge, protinfo, cls.userinfo );
+		MSG_SeekToBit( &send, -8, SEEK_CUR ); // rewrite null terminator
+		CL_WriteSteamTicket( &send );
+
+		if( MSG_CheckOverflow( &send ))
+			Con_Printf( S_ERROR "%s: %s overflow!\n", __func__, MSG_GetName( &send ) );
+
+		NET_SendPacket( NS_CLIENT, MSG_GetNumBytesWritten( &send ), MSG_GetData( &send ), adr );
+		Con_Printf( "Trying to connect with GoldSrc 48 protocol\n" );
+	}
+	else if( proto == PROTO_LEGACY )
+	{
+		const char *dlmax;
+		int qport = Cvar_VariableInteger( "net_qport" );
+
+		// reset nickname from cvar value
+		Info_SetValueForKey( cls.userinfo, "name", name.string, sizeof( cls.userinfo ));
+
+		// set related userinfo keys
+		dlmax = ( cl_dlmax.value >= 100 && cl_dlmax.value < 40000 ) ? cl_dlmax.string : "1400";
+		Info_SetValueForKey( cls.userinfo, "cl_maxpacket", dlmax, sizeof( cls.userinfo ));
+
+		if( !COM_CheckStringEmpty( Info_ValueForKey( cls.userinfo, "cl_maxpayload" )))
 			Info_SetValueForKey( cls.userinfo, "cl_maxpayload", "1000", sizeof( cls.userinfo ) );
 
-		Info_SetValueForKey( protinfo, "i", key, sizeof( protinfo ) );
+		Info_SetValueForKey( protinfo, "i", key, sizeof( protinfo ));
 
-		Netchan_OutOfBandPrint( NS_CLIENT, adr, "connect %i %i %i \"%s\" %d \"%s\"\n",
-			PROTOCOL_LEGACY_VERSION, Q_atoi( qport ), cls.challenge, cls.userinfo, NET_LEGACY_EXT_SPLIT, protinfo );
-		Con_Printf( "Trying to connect by legacy protocol\n" );
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, C2S_CONNECT" %i %i %i \"%s\" %d \"%s\"\n",
+			PROTOCOL_LEGACY_VERSION, qport, challenge, cls.userinfo, NET_LEGACY_EXT_SPLIT, protinfo );
+		Con_Printf( "Trying to connect with legacy protocol\n" );
 	}
 	else
 	{
+		const char *qport = Cvar_VariableString( "net_qport" );
 		int extensions = NET_EXT_SPLITSIZE;
 
-		if( cl_dlmax.value > FRAGMENT_MAX_SIZE  || cl_dlmax.value < FRAGMENT_MIN_SIZE )
-			Cvar_SetValue( "cl_dlmax", FRAGMENT_DEFAULT_SIZE );
+		// reset nickname from cvar value
+		Info_SetValueForKey( cls.userinfo, "name", name.string, sizeof( cls.userinfo ));
 
+		if( cl_dlmax.value > FRAGMENT_MAX_SIZE || cl_dlmax.value < FRAGMENT_MIN_SIZE )
+			Cvar_DirectSetValue( &cl_dlmax, FRAGMENT_DEFAULT_SIZE );
+
+		// remove keys set for legacy protocol
 		Info_RemoveKey( cls.userinfo, "cl_maxpacket" );
 		Info_RemoveKey( cls.userinfo, "cl_maxpayload" );
 
@@ -1060,11 +1164,35 @@ void CL_SendConnectPacket( void )
 		Info_SetValueForKey( protinfo, "qport", qport, sizeof( protinfo ));
 		Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", extensions);
 
-		Netchan_OutOfBandPrint( NS_CLIENT, adr, "connect %i %i \"%s\" \"%s\"\n", PROTOCOL_VERSION, cls.challenge, protinfo, cls.userinfo );
-		Con_Printf( "Trying to connect by modern protocol\n" );
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, C2S_CONNECT" %i %i \"%s\" \"%s\"\n", PROTOCOL_VERSION, challenge, protinfo, cls.userinfo );
+		Con_Printf( "Trying to connect with modern protocol\n" );
 	}
 
 	cls.timestart = Sys_DoubleTime();
+}
+
+/*
+=================
+CL_GetTestFragmentSize
+
+Returns bandwidth test fragment size
+=================
+*/
+static int CL_GetTestFragmentSize( void )
+{
+	const int fragmentSizes[CL_TEST_RETRIES] = { 64000, 32000, 10666, 5200, 1400 };
+	if( cls.connect_retry >= 0 && cls.connect_retry < CL_TEST_RETRIES )
+		return bound( FRAGMENT_MIN_SIZE, fragmentSizes[cls.connect_retry], FRAGMENT_MAX_SIZE );
+	else
+		return FRAGMENT_MIN_SIZE;
+}
+
+static void CL_SendGetChallenge( netadr_t to )
+{
+	// always send GoldSrc-styled getchallenge message
+	// Xash servers will ignore it but for GoldSrc it will help
+	// in auto-detection
+	Netchan_OutOfBandPrint( NS_CLIENT, to, C2S_GETCHALLENGE" steam\n" );
 }
 
 /*
@@ -1074,10 +1202,11 @@ CL_CheckForResend
 Resend a connect message if the last one has timed out
 =================
 */
-void CL_CheckForResend( void )
+static void CL_CheckForResend( void )
 {
 	netadr_t adr;
 	net_gai_state_t res;
+	float resendTime;
 	qboolean bandwidthTest;
 
 	if( cls.internetservers_wait )
@@ -1090,9 +1219,10 @@ void CL_CheckForResend( void )
 		cls.state = ca_connecting;
 		Q_strncpy( cls.servername, "localhost", sizeof( cls.servername ));
 		cls.serveradr.type = NA_LOOPBACK;
+		cls.legacymode = PROTO_CURRENT;
 
 		// we don't need a challenge on the localhost
-		CL_SendConnectPacket();
+		CL_SendConnectPacket( PROTO_CURRENT, 0 );
 		return;
 	}
 
@@ -1101,14 +1231,17 @@ void CL_CheckForResend( void )
 		return;
 
 	if( cl_resend.value < CL_MIN_RESEND_TIME )
-		Cvar_SetValue( "cl_resend", CL_MIN_RESEND_TIME );
+		Cvar_DirectSetValue( &cl_resend, CL_MIN_RESEND_TIME );
 	else if( cl_resend.value > CL_MAX_RESEND_TIME )
-		Cvar_SetValue( "cl_resend", CL_MAX_RESEND_TIME );
+		Cvar_DirectSetValue( &cl_resend, CL_MAX_RESEND_TIME );
 
-	if(( host.realtime - cls.connect_time ) < cl_resend.value )
+	bandwidthTest = cls.legacymode == PROTO_CURRENT && cl_test_bandwidth.value && cls.connect_retry <= CL_TEST_RETRIES;
+	resendTime = bandwidthTest ? 1.0f : cl_resend.value;
+
+	if(( host.realtime - cls.connect_time ) < resendTime )
 		return;
 
-	res = NET_StringToAdrNB( cls.servername, &adr );
+	res = NET_StringToAdrNB( cls.servername, &adr, false );
 
 	if( res == NET_EAI_NONAME )
 	{
@@ -1125,42 +1258,43 @@ void CL_CheckForResend( void )
 	// only retry so many times before failure.
 	if( cls.connect_retry >= CL_CONNECTION_RETRIES )
 	{
-		Con_DPrintf( S_ERROR "CL_CheckForResend: couldn't connected\n" );
+		Con_DPrintf( S_ERROR "%s: couldn't connect\n", __func__ );
 		CL_Disconnect();
 		return;
 	}
 
 	if( adr.port == 0 ) adr.port = MSG_BigShort( PORT_SERVER );
 
-	if( cls.connect_retry == CL_TEST_RETRIES_NORESPONCE )
+	if( cls.connect_retry == CL_TEST_RETRIES )
 	{
 		// too many fails use default connection method
-		Con_Printf( "hi-speed connection is failed, use default method\n" );
-		Netchan_OutOfBandPrint( NS_CLIENT, adr, "getchallenge\n" );
-		Cvar_SetValue( "cl_dlmax", FRAGMENT_MIN_SIZE );
+		Con_Printf( "Bandwidth test failed, fallback to default connecting method\n" );
+		Con_Printf( "Connecting to %s... (retry #%i)\n", cls.servername, cls.connect_retry + 1 );
+		CL_SendGetChallenge( adr );
+		Cvar_DirectSetValue( &cl_dlmax, FRAGMENT_MIN_SIZE );
 		cls.connect_time = host.realtime;
 		cls.connect_retry++;
 		return;
 	}
 
-	bandwidthTest = !cls.legacymode && cl_test_bandwidth.value;
 	cls.serveradr = adr;
-	cls.max_fragment_size = Q_min( FRAGMENT_MAX_SIZE, cls.max_fragment_size / (cls.connect_retry + 1));
+	cls.max_fragment_size = CL_GetTestFragmentSize();
 	cls.connect_time = host.realtime; // for retransmit requests
 	cls.connect_retry++;
 
 	if( bandwidthTest )
-		Con_Printf( "Connecting to %s... [retry #%i, max fragment size %i]\n", cls.servername, cls.connect_retry, cls.max_fragment_size );
+	{
+		Con_Printf( "Connecting to %s... (retry #%i, fragment size %i)\n", cls.servername, cls.connect_retry, cls.max_fragment_size );
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, C2S_BANDWIDTHTEST" %i %i\n", PROTOCOL_VERSION, cls.max_fragment_size );
+	}
 	else
-		Con_Printf( "Connecting to %s... [retry #%i]\n", cls.servername, cls.connect_retry );
-
-	if( bandwidthTest )
-		Netchan_OutOfBandPrint( NS_CLIENT, adr, "bandwidth %i %i\n", PROTOCOL_VERSION, cls.max_fragment_size );
-	else
-		Netchan_OutOfBandPrint( NS_CLIENT, adr, "getchallenge\n" );
+	{
+		Con_Printf( "Connecting to %s... (retry #%i)\n", cls.servername, cls.connect_retry );
+		CL_SendGetChallenge( adr );
+	}
 }
 
-resource_t *CL_AddResource( resourcetype_t type, const char *name, int size, qboolean bFatalIfMissing, int index )
+static resource_t *CL_AddResource( resourcetype_t type, const char *name, int size, qboolean bFatalIfMissing, int index )
 {
 	resource_t	*r = &cl.resourcelist[cl.num_resources];
 
@@ -1177,10 +1311,10 @@ resource_t *CL_AddResource( resourcetype_t type, const char *name, int size, qbo
 	return r;
 }
 
-void CL_CreateResourceList( void )
+static void CL_CreateResourceList( void )
 {
 	char szFileName[MAX_OSPATH];
-	byte		rgucMD5_hash[16];
+	byte rgucMD5_hash[16] = { 0 };
 	resource_t	*pNewResource;
 	int		nSize;
 	file_t		*fp;
@@ -1189,13 +1323,19 @@ void CL_CreateResourceList( void )
 	cl.num_resources = 0;
 	memset( rgucMD5_hash, 0, sizeof( rgucMD5_hash ));
 
-	// sanitize cvar value
-	if( Q_strcmp( cl_logoext.string, "bmp" ) &&
-		 Q_strcmp( cl_logoext.string, "png" ))
-		Cvar_DirectSet( &cl_logoext, "bmp" );
+	if( cls.legacymode == PROTO_GOLDSRC )
+	{
+		// TODO: actually repack remapped.bmp into a WAD for GoldSrc servers
+		Q_strncpy( szFileName, "tempdecal.wad", sizeof( szFileName ));
+	}
+	else
+	{
+		// sanitize cvar value
+		if( Q_strcmp( cl_logoext.string, "bmp" ) && Q_strcmp( cl_logoext.string, "png" ))
+			Cvar_DirectSet( &cl_logoext, "bmp" );
 
-	Q_snprintf( szFileName, sizeof( szFileName ),
-		"logos/remapped.%s", cl_logoext.string );
+		Q_snprintf( szFileName, sizeof( szFileName ), "logos/remapped.%s", cl_logoext.string );
+	}
 	fp = FS_Open( szFileName, "rb", true );
 
 	if( !fp )
@@ -1212,11 +1352,36 @@ void CL_CreateResourceList( void )
 		{
 			SetBits( pNewResource->ucFlags, RES_CUSTOM );
 			memcpy( pNewResource->rgucMD5_hash, rgucMD5_hash, 16 );
-			HPAK_AddLump( false, CUSTOM_RES_PATH, pNewResource, NULL, fp );
+			HPAK_AddLump( false, hpk_custom_file.string, pNewResource, NULL, fp );
 		}
 	}
 
 	FS_Close( fp );
+}
+
+static qboolean CL_StringToProtocol( const char *s, connprotocol_t *proto )
+{
+	if( !Q_stricmp( s, "current" ) || !Q_strcmp( s, "49" ))
+	{
+		*proto = PROTO_CURRENT;
+		return true;
+	}
+
+	if( !Q_stricmp( s, "legacy" ) || !Q_strcmp( s, "48" ))
+	{
+		*proto = PROTO_LEGACY;
+		return true;
+	}
+
+	if( !Q_stricmp( s, "goldsrc" ) || !Q_stricmp( s, "gs" ))
+	{
+		*proto = PROTO_GOLDSRC;
+		return true;
+	}
+
+	// quake protocol only used for demos
+	Con_Printf( "Unknown protocol. Supported are: 49 (current), 48 (legacy), gs (goldsrc)\n" );
+	return false;
 }
 
 /*
@@ -1225,26 +1390,23 @@ CL_Connect_f
 
 ================
 */
-void CL_Connect_f( void )
+static void CL_Connect_f( void )
 {
 	string	server;
-	qboolean legacyconnect = false;
+	connprotocol_t proto = PROTO_CURRENT;
 
-	// hidden hint to connect by using legacy protocol
-	if( Cmd_Argc() == 3 )
+	// hint to connect by using legacy protocol
+	if( Cmd_Argc() == 3 && !CL_StringToProtocol( Cmd_Argv( 2 ), &proto ) && Cmd_Argc() != 2 )
 	{
-		legacyconnect = !Q_strcmp( Cmd_Argv( 2 ), "legacy" );
-	}
-	else if( Cmd_Argc() != 2 )
-	{
-		Con_Printf( S_USAGE "connect <server>\n" );
+		Con_Printf( S_USAGE "connect <server> [protocol]\n" );
 		return;
 	}
 
 	Q_strncpy( server, Cmd_Argv( 1 ), sizeof( server ));
 
 	// if running a local server, kill it and reissue
-	if( SV_Active( )) Host_ShutdownServer();
+	if( SV_Active( ))
+		SV_Shutdown( "Server was killed due to connection to remote server\n" );
 	NET_Config( true, !cl_nat.value ); // allow remote
 
 	Con_Printf( "server %s\n", server );
@@ -1255,7 +1417,7 @@ void CL_Connect_f( void )
 	Key_SetKeyDest( key_console );
 
 	cls.state = ca_connecting;
-	cls.legacymode = legacyconnect;
+	cls.legacymode = proto;
 	Q_strncpy( cls.servername, server, sizeof( cls.servername ));
 	cls.connect_time = MAX_HEARTBEAT; // CL_CheckForResend() will fire immediately
 	cls.max_fragment_size = FRAGMENT_MAX_SIZE; // guess a we can establish connection with maximum fragment size
@@ -1272,11 +1434,11 @@ Send the rest of the command line over as
 an unconnected command.
 =====================
 */
-void CL_Rcon_f( void )
+static void CL_Rcon_f( void )
 {
-	char	message[1024];
-	netadr_t	to;
-	string command;
+	char message[1024];
+	sizebuf_t msg;
+	netadr_t to;
 	int	i;
 
 	if( !COM_CheckString( rcon_password.string ))
@@ -1285,24 +1447,7 @@ void CL_Rcon_f( void )
 		return;
 	}
 
-	message[0] = (char)255;
-	message[1] = (char)255;
-	message[2] = (char)255;
-	message[3] = (char)255;
-	message[4] = 0;
-
 	NET_Config( true, false );	// allow remote
-
-	Q_strncat( message, "rcon ", sizeof( message ));
-	Q_strncat( message, rcon_password.string, sizeof( message ));
-	Q_strncat( message, " ", sizeof( message ) );
-
-	for( i = 1; i < Cmd_Argc(); i++ )
-	{
-		Cmd_Escape( command, Cmd_Argv( i ), sizeof( command ));
-		Q_strncat( message, command, sizeof( message ));
-		Q_strncat( message, " ", sizeof( message ));
-	}
 
 	if( cls.state >= ca_connected )
 	{
@@ -1317,10 +1462,27 @@ void CL_Rcon_f( void )
 		}
 
 		NET_StringToAdr( rcon_address.string, &to );
-		if( to.port == 0 ) to.port = MSG_BigShort( PORT_SERVER );
+		if( to.port == 0 )
+			to.port = MSG_BigShort( PORT_SERVER );
 	}
 
-	NET_SendPacket( NS_CLIENT, Q_strlen( message ) + 1, message, to );
+	MSG_Init( &msg, "RconMessage", message, sizeof( message ));
+	MSG_WriteLong( &msg, -1 );
+	MSG_WriteStringf( &msg, C2S_RCON" %s ", rcon_password.string );
+	MSG_SeekToBit( &msg, -8, SEEK_CUR );
+
+	for( i = 1; i < Cmd_Argc(); i++ )
+	{
+		string command;
+
+		Cmd_Escape( command, Cmd_Argv( i ), sizeof( command ));
+		MSG_WriteString( &msg, command );
+		MSG_SeekToBit( &msg, -8, SEEK_CUR );
+		MSG_WriteChar( &msg, ' ' );
+	}
+	MSG_WriteByte( &msg, 0 );
+
+	NET_SendPacket( NS_CLIENT, MSG_GetNumBytesWritten( &msg ), MSG_GetData( &msg ), to );
 }
 
 
@@ -1379,7 +1541,7 @@ CL_SendDisconnectMessage
 Sends a disconnect message to the server
 =====================
 */
-void CL_SendDisconnectMessage( void )
+static void CL_SendDisconnectMessage( connprotocol_t proto )
 {
 	sizebuf_t	buf;
 	byte	data[32];
@@ -1388,7 +1550,9 @@ void CL_SendDisconnectMessage( void )
 
 	MSG_Init( &buf, "LastMessage", data, sizeof( data ));
 	MSG_BeginClientCmd( &buf, clc_stringcmd );
-	MSG_WriteString( &buf, "disconnect" );
+	if( proto == PROTO_GOLDSRC )
+		MSG_WriteString( &buf, "dropclient\n" );
+	else MSG_WriteString( &buf, "disconnect" );
 
 	if( !cls.netchan.remote_address.type )
 		cls.netchan.remote_address.type = NA_LOOPBACK;
@@ -1401,20 +1565,50 @@ void CL_SendDisconnectMessage( void )
 
 int CL_GetSplitSize( void )
 {
-	int splitsize;
+	int splitsize = (int)cl_dlmax.value;
 
-	if( Host_IsDedicated() )
-		return 0;
-
-	if( !(cls.extensions & NET_EXT_SPLITSIZE) )
+	if( !FBitSet( cls.extensions, NET_EXT_SPLITSIZE ))
 		return 1400;
 
-	splitsize = cl_dlmax.value;
-
-	if( splitsize < FRAGMENT_MIN_SIZE || splitsize > FRAGMENT_MAX_SIZE )
+	if(( splitsize < FRAGMENT_MIN_SIZE ) || ( splitsize > FRAGMENT_MAX_SIZE ))
+	{
 		Cvar_SetValue( "cl_dlmax", FRAGMENT_DEFAULT_SIZE );
+		return FRAGMENT_DEFAULT_SIZE;
+	}
 
-	return cl_dlmax.value;
+	return (int)cl_dlmax.value;
+}
+
+void CL_SetupNetchanForProtocol( connprotocol_t proto )
+{
+	int (*pfnBlockSize)( void *, fragsize_t ) = CL_GetFragmentSize;
+	uint flags = 0;
+
+	switch( proto )
+	{
+	case PROTO_GOLDSRC:
+		SetBits( flags, NETCHAN_USE_MUNGE | NETCHAN_USE_BZIP2 | NETCHAN_GOLDSRC );
+		pfnBlockSize = CL_GetGoldSrcFragmentSize;
+		break;
+	case PROTO_LEGACY:
+		if( FBitSet( Q_atoi( Cmd_Argv( 1 )), NET_LEGACY_EXT_SPLIT ))
+		{
+			SetBits( flags, NETCHAN_USE_LEGACY_SPLIT );
+			Con_Reportf( "^2NET_EXT_SPLIT enabled^7 (packet sizes is %d/%d)\n", (int)cl_dlmax.value, 65536 );
+		}
+		break;
+	default:
+		if( !Host_IsLocalClient( ))
+			SetBits( flags, NETCHAN_USE_LZSS );
+
+		cls.extensions = Q_atoi( Info_ValueForKey( Cmd_Argv( 1 ), "ext" ));
+
+		if( FBitSet( cls.extensions, NET_EXT_SPLITSIZE ))
+			Con_Reportf( "^2NET_EXT_SPLITSIZE enabled^7 (packet size is %d)\n", (int)cl_dlmax.value );
+		break;
+	}
+
+	Netchan_Setup( NS_CLIENT, &cls.netchan, net_from, Cvar_VariableInteger( "net_qport" ), NULL, pfnBlockSize, flags );
 }
 
 /*
@@ -1424,33 +1618,11 @@ CL_Reconnect
 build a request to reconnect client
 =====================
 */
-void CL_Reconnect( qboolean setup_netchan )
+static void CL_Reconnect( qboolean setup_netchan )
 {
 	if( setup_netchan )
 	{
-		Netchan_Setup( NS_CLIENT, &cls.netchan, net_from, Cvar_VariableInteger( "net_qport" ), NULL, CL_GetFragmentSize );
-
-		if( cls.legacymode )
-		{
-			unsigned int extensions = Q_atoi( Cmd_Argv( 1 ) );
-
-			if( extensions & NET_LEGACY_EXT_SPLIT )
-			{
-				// only enable incoming split for legacy mode
-				cls.netchan.split = true;
-				Con_Reportf( "^2NET_EXT_SPLIT enabled^7 (packet sizes is %d/%d)\n", (int)cl_dlmax.value, 65536 );
-			}
-		}
-		else
-		{
-			cls.extensions = Q_atoi( Info_ValueForKey( Cmd_Argv( 1 ), "ext" ));
-
-			if( cls.extensions & NET_EXT_SPLITSIZE )
-			{
-				Con_Reportf( "^2NET_EXT_SPLITSIZE enabled^7 (packet size is %d)\n", (int)cl_dlmax.value );
-			}
-		}
-
+		CL_SetupNetchanForProtocol( cls.legacymode );
 	}
 	else
 	{
@@ -1485,8 +1657,6 @@ This is also called on Host_Error, so it shouldn't cause any errors
 */
 void CL_Disconnect( void )
 {
-	cls.legacymode = false;
-
 	if( cls.state == ca_disconnected )
 		return;
 
@@ -1497,7 +1667,7 @@ void CL_Disconnect( void )
 	CL_Stop_f();
 
 	// send a disconnect message to the server
-	CL_SendDisconnectMessage();
+	CL_SendDisconnectMessage( cls.legacymode );
 	CL_ClearState ();
 
 	S_StopBackgroundTrack ();
@@ -1513,9 +1683,10 @@ void CL_Disconnect( void )
 	cls.set_lastdemo = false;
 	cls.connect_retry = 0;
 	cls.signon = 0;
+	cls.legacymode = PROTO_CURRENT;
 
 	// back to menu in non-developer mode
-	if( host_developer.value || CL_IsInMenu( ))
+	if( host_developer.value || cls.key_dest == key_menu )
 		return;
 
 	UI_SetActiveMenu( true );
@@ -1540,7 +1711,7 @@ void CL_Crashed( void )
 	CL_Stop_f(); // stop any demos
 
 	// send a disconnect message to the server
-	CL_SendDisconnectMessage();
+	CL_SendDisconnectMessage( cls.legacymode );
 
 	Host_WriteOpenGLConfig();
 	Host_WriteConfig();	// write config
@@ -1551,7 +1722,7 @@ void CL_Crashed( void )
 CL_LocalServers_f
 =================
 */
-void CL_LocalServers_f( void )
+static void CL_LocalServers_f( void )
 {
 	netadr_t	adr;
 
@@ -1563,10 +1734,10 @@ void CL_LocalServers_f( void )
 	// send a broadcast packet
 	adr.type = NA_BROADCAST;
 	adr.port = MSG_BigShort( PORT_SERVER );
-	Netchan_OutOfBandPrint( NS_CLIENT, adr, "info %i", PROTOCOL_VERSION );
+	Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
 
 	adr.type = NA_MULTICAST_IP6;
-	Netchan_OutOfBandPrint( NS_CLIENT, adr, "info %i", PROTOCOL_VERSION );
+	Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
 }
 
 /*
@@ -1594,8 +1765,16 @@ static size_t NONNULL CL_BuildMasterServerScanRequest( char *buf, size_t size, u
 #ifndef XASH_ALL_SERVERS
 	Info_SetValueForKey( info, "gamedir", GI->gamefolder, remaining );
 #endif
-	Info_SetValueForKey( info, "clver", XASH_VERSION, remaining ); // let master know about client version
+	// let master know about client version
+	Info_SetValueForKey( info, "clver", XASH_VERSION, remaining );
 	Info_SetValueForKey( info, "nat", nat ? "1" : "0", remaining );
+	Info_SetValueForKey( info, "commit", g_buildcommit, remaining );
+	Info_SetValueForKey( info, "branch", g_buildbranch, remaining );
+	Info_SetValueForKey( info, "os", Q_buildos(), remaining );
+	Info_SetValueForKey( info, "arch", Q_buildarch(), remaining );
+
+	Q_snprintf( temp, sizeof( temp ), "%d", Q_buildnum() );
+	Info_SetValueForKey( info, "buildnum", temp, remaining );
 
 	Q_snprintf( temp, sizeof( temp ), "%x", *key );
 	Info_SetValueForKey( info, "key", temp, remaining );
@@ -1620,7 +1799,7 @@ static void CL_SendMasterServerScanRequest( void )
 CL_InternetServers_f
 =================
 */
-void CL_InternetServers_f( void )
+static void CL_InternetServers_f( void )
 {
 	qboolean nat = cl_nat.value != 0.0f;
 	uint32_t key;
@@ -1642,6 +1821,45 @@ void CL_InternetServers_f( void )
 	CL_SendMasterServerScanRequest();
 }
 
+static void CL_QueryServer_f( void )
+{
+	netadr_t adr;
+	connprotocol_t proto;
+
+	if( Cmd_Argc( ) != 3 )
+	{
+		Con_Printf( S_USAGE "queryserver <adr> <protocol>\n" );
+		return;
+	}
+
+	NET_Config( true, false );
+
+	if( !NET_StringToAdr( Cmd_Argv( 1 ), &adr ))
+	{
+		Con_Printf( S_ERROR "%s: can't parse %s", __func__, Cmd_Argv( 1 ));
+		return;
+	}
+
+	if( adr.port == 0 )
+		adr.port = PORT_SERVER;
+
+	if( !CL_StringToProtocol( Cmd_Argv( 2 ), &proto ))
+		return;
+
+	switch( proto )
+	{
+	case PROTO_GOLDSRC:
+		Netchan_OutOfBand( NS_CLIENT, adr, sizeof( A2S_GOLDSRC_INFO ), A2S_GOLDSRC_INFO ); // includes null terminator!
+		break;
+	case PROTO_LEGACY:
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_LEGACY_VERSION );
+		break;
+	case PROTO_CURRENT:
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, A2A_INFO" %i", PROTOCOL_VERSION );
+		break;
+	}
+}
+
 /*
 =================
 CL_Reconnect_f
@@ -1649,7 +1867,7 @@ CL_Reconnect_f
 The server is changing levels
 =================
 */
-void CL_Reconnect_f( void )
+static void CL_Reconnect_f( void )
 {
 	if( cls.state == ca_disconnected )
 		return;
@@ -1664,7 +1882,7 @@ void CL_Reconnect_f( void )
 
 	if( COM_CheckString( cls.servername ))
 	{
-		qboolean legacy = cls.legacymode;
+		connprotocol_t proto = cls.legacymode;
 
 		if( cls.state >= ca_connected )
 			CL_Disconnect();
@@ -1673,7 +1891,7 @@ void CL_Reconnect_f( void )
 		cls.demonum = cls.movienum = -1;	// not in the demo loop now
 		cls.state = ca_connecting;
 		cls.signon = 0;
-		cls.legacymode = legacy; // don't change protocol
+		cls.legacymode = proto; // don't change protocol
 
 		Con_Printf( "reconnecting...\n" );
 	}
@@ -1686,7 +1904,7 @@ CL_FixupColorStringsForInfoString
 all the keys and values must be ends with ^7
 =================
 */
-void CL_FixupColorStringsForInfoString( const char *in, char *out )
+static void CL_FixupColorStringsForInfoString( const char *in, char *out, size_t len )
 {
 	qboolean	hasPrefix = false;
 	qboolean	endOfKeyVal = false;
@@ -1699,7 +1917,7 @@ void CL_FixupColorStringsForInfoString( const char *in, char *out )
 		count++;
 	}
 
-	while( *in && count < MAX_INFO_STRING )
+	while( *in && count < len )
 	{
 		if( IsColorString( in ))
 			color = ColorIndex( *(in+1));
@@ -1750,17 +1968,17 @@ CL_ParseStatusMessage
 Handle a reply from a info
 =================
 */
-void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
+static void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 {
-	static char	infostring[MAX_INFO_STRING+8];
+	static char	infostring[512+8];
 	char		*s = MSG_ReadString( msg );
 	int i;
-	const char *magic = ": wrong version\n";
+	const char *magic = ": wrong version\n", *p;
 	size_t len = Q_strlen( s ), magiclen = Q_strlen( magic );
 
 	if( len >= magiclen && !Q_strcmp( s + len - magiclen, magic ))
 	{
-		Netchan_OutOfBandPrint( NS_CLIENT, from, "info %i", PROTOCOL_LEGACY_VERSION );
+		Netchan_OutOfBandPrint( NS_CLIENT, from, A2A_INFO" %i", PROTOCOL_LEGACY_VERSION );
 		return;
 	}
 
@@ -1770,7 +1988,7 @@ void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 		return;
 	}
 
-	CL_FixupColorStringsForInfoString( s, infostring );
+	CL_FixupColorStringsForInfoString( s, infostring, sizeof( infostring ));
 
 	if( !COM_CheckString( Info_ValueForKey( infostring, "gamedir" )))
 	{
@@ -1778,9 +1996,18 @@ void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 		return; // unsupported proto
 	}
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "p" )))
+	Info_RemoveKey( infostring, "gs" ); // don't let servers pretend they're something else
+
+	p = Info_ValueForKey( infostring, "p" );
+	if( !COM_CheckStringEmpty( p ))
 	{
-		Info_SetValueForKey( infostring, "legacy", "1", sizeof( infostring ) );
+		Info_SetValueForKey( infostring, "legacy", "1", sizeof( infostring ));
+		Info_SetValueForKey( infostring, "p", "48", sizeof( infostring ));
+		Con_Printf( "^3Server^7: %s, Game: %s\n", NET_AdrToString( from ), Info_ValueForKey( infostring, "gamedir" ));
+	}
+	else if( !Q_strcmp( p, "48" ))
+	{
+		Info_SetValueForKey( infostring, "legacy", "1", sizeof( infostring ));
 		Con_Printf( "^3Server^7: %s, Game: %s\n", NET_AdrToString( from ), Info_ValueForKey( infostring, "gamedir" ));
 	}
 	else
@@ -1792,6 +2019,85 @@ void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 	UI_AddServerToList( from, infostring );
 }
 
+static void CL_ParseGoldSrcStatusMessage( netadr_t from, sizebuf_t *msg )
+{
+	static char	s[512+8];
+	int p, numcl, maxcl, password, remaining;
+	string host, map, gamedir, version;
+	connprotocol_t proto;
+	char *replace;
+
+	// set to beginning but skip header
+	MSG_SeekToBit( msg, (sizeof( uint32_t ) + sizeof( uint8_t )) << 3, SEEK_SET );
+
+	p = MSG_ReadByte( msg );
+	Q_strncpy( host, MSG_ReadString( msg ), sizeof( host ));
+	Q_strncpy( map, MSG_ReadString( msg ), sizeof( map ));
+	Q_strncpy( gamedir, MSG_ReadString( msg ), sizeof( gamedir ));
+	MSG_ReadString( msg ); // game description
+	MSG_ReadShort( msg ); // app id
+	numcl = MSG_ReadByte( msg );
+	maxcl = MSG_ReadByte( msg );
+	MSG_ReadByte( msg ); // bots count
+	MSG_ReadByte( msg ); // dedicated
+	MSG_ReadByte( msg ); // operating system
+	password = MSG_ReadByte( msg );
+	Q_strncpy( version, MSG_ReadString( msg ), sizeof( version ));
+
+	if( MSG_CheckOverflow( msg ))
+	{
+		Con_Printf( "%s: malfored info packet from %s\n", __func__, NET_AdrToString( from ));
+		return;
+	}
+
+	// time to figure out protocol
+	if( p == PROTOCOL_VERSION )
+		proto = PROTO_CURRENT;
+	else if( p == PROTOCOL_LEGACY_VERSION )
+	{
+		if( Q_stristr( version, "Stdio" ))
+			proto = PROTO_GOLDSRC;
+		else
+			proto = PROTO_LEGACY;
+	}
+	else
+	{
+		Con_Printf( "%s: unsupported protocol %d from %s\n", __func__, p, NET_AdrToString( from ));
+		return;
+	}
+
+	// now construct infostring for mainui
+	Info_SetValueForKeyf( s, "p", sizeof( s ), "%i", proto == PROTO_CURRENT ? PROTOCOL_VERSION : PROTOCOL_LEGACY_VERSION );
+	Info_SetValueForKey( s, "gs", proto == PROTO_GOLDSRC ? "1" : "0", sizeof( s ));
+	Info_SetValueForKey( s, "map", map, sizeof( s ));
+	Info_SetValueForKey( s, "dm", "0", sizeof( s )); // obsolete keys
+	Info_SetValueForKey( s, "team", "0", sizeof( s ));
+	Info_SetValueForKey( s, "coop", "0", sizeof( s ));
+	Info_SetValueForKeyf( s, "numcl", sizeof( s ), "%i", numcl );
+	Info_SetValueForKeyf( s, "maxcl", sizeof( s ), "%i", maxcl );
+	Info_SetValueForKey( s, "gamedir", gamedir, sizeof( s ));
+	Info_SetValueForKey( s, "password", password ? "1" : "0", sizeof( s ));
+
+	// write host last so we can try to cut off too long hostnames
+	// TODO: value size limit for infostrings
+	remaining = sizeof( s ) - Q_strlen( s ) - sizeof( "\\host\\" ) - 1;
+	if( remaining < 0 )
+	{
+		// should never happen?
+		Con_Printf( S_ERROR "%s: infostring overflow!\n", __func__ );
+		return;
+	}
+
+	while(( replace = Q_strpbrk( host, "\\\"" )))
+	{
+		*replace = ' '; // find a better replacement?
+	}
+
+	Info_SetValueForKey( s, "host", host, sizeof( s ));
+
+	UI_AddServerToList( from, s );
+}
+
 /*
 =================
 CL_ParseNETInfoMessage
@@ -1799,52 +2105,87 @@ CL_ParseNETInfoMessage
 Handle a reply from a netinfo
 =================
 */
-void CL_ParseNETInfoMessage( netadr_t from, sizebuf_t *msg, const char *s )
+static void CL_ParseNETInfoMessage( netadr_t from, const char *s )
 {
-	net_request_t	*nr;
-	static char	infostring[MAX_INFO_STRING+8];
+	net_request_t	*nr = NULL;
+	static char	infostring[MAX_PRINT_MSG];
 	int		i, context, type;
 	int		errorBits = 0;
 	const char		*val;
+	size_t slen;
 
 	context = Q_atoi( Cmd_Argv( 1 ));
 	type = Q_atoi( Cmd_Argv( 2 ));
-	while( *s != '\\' ) s++; // fetching infostring
 
-	// check for errors
-	val = Info_ValueForKey( s, "neterror" );
-
-	if( !Q_stricmp( val, "protocol" ))
-		SetBits( errorBits, NET_ERROR_PROTO_UNSUPPORTED );
-	else if( !Q_stricmp( val, "undefined" ))
-		SetBits( errorBits, NET_ERROR_UNDEFINED );
-
-	CL_FixupColorStringsForInfoString( s, infostring );
-
-	// find a request with specified context
+	// find request with specified context and type
 	for( i = 0; i < MAX_REQUESTS; i++ )
 	{
-		nr = &clgame.net_requests[i];
-
-		if( nr->resp.context == context && nr->resp.type == type )
+		if( clgame.net_requests[i].resp.context == context && clgame.net_requests[i].resp.type == type )
 		{
-			// setup the answer
-			nr->resp.response = infostring;
-			nr->resp.remote_address = from;
-			nr->resp.error = NET_SUCCESS;
-			nr->resp.ping = host.realtime - nr->timesend;
-
-			if( nr->timeout <= host.realtime )
-				SetBits( nr->resp.error, NET_ERROR_TIMEOUT );
-			SetBits( nr->resp.error, errorBits ); // misc error bits
-
-			nr->pfnFunc( &nr->resp );
-
-			if( !FBitSet( nr->flags, FNETAPI_MULTIPLE_RESPONSE ))
-				memset( nr, 0, sizeof( *nr )); // done
-			return;
+			nr = &clgame.net_requests[i];
+			break;
 		}
 	}
+
+	// not found, ignore
+	if( nr == NULL )
+		return;
+
+	// find the payload
+	s = Q_strchr( s, ' ' ); // skip netinfo
+	if( !s )
+		return;
+
+	s = Q_strchr( s + 1, ' ' ); // skip challenge
+	if( !s )
+		return;
+
+	s = Q_strchr( s + 1, ' ' ); // skip type
+	if( s )
+		s++; // skip final whitespace
+	else if( type != NETAPI_REQUEST_PING ) // ping have no payload, and that's ok
+		return;
+
+	if( s )
+	{
+		if( s[0] == '\\' )
+		{
+			// check for errors
+			val = Info_ValueForKey( s, "neterror" );
+
+			if( !Q_stricmp( val, "protocol" ))
+				SetBits( errorBits, NET_ERROR_PROTO_UNSUPPORTED );
+			else if( !Q_stricmp( val, "undefined" ))
+				SetBits( errorBits, NET_ERROR_UNDEFINED );
+			else if( !Q_stricmp( val, "forbidden" ))
+				SetBits( errorBits, NET_ERROR_FORBIDDEN );
+
+			CL_FixupColorStringsForInfoString( s, infostring, sizeof( infostring ));
+		}
+		else
+		{
+			Q_strncpy( infostring, s, sizeof( infostring ));
+		}
+	}
+	else
+	{
+		infostring[0] = 0;
+	}
+
+	// setup the answer
+	nr->resp.response = infostring;
+	nr->resp.remote_address = from;
+	nr->resp.error = NET_SUCCESS;
+	nr->resp.ping = host.realtime - nr->timesend;
+
+	if( nr->timeout <= host.realtime )
+		SetBits( nr->resp.error, NET_ERROR_TIMEOUT );
+	SetBits( nr->resp.error, errorBits ); // misc error bits
+
+	nr->pfnFunc( &nr->resp );
+
+	if( !FBitSet( nr->flags, FNETAPI_MULTIPLE_RESPONSE ))
+		memset( nr, 0, sizeof( *nr )); // done
 }
 
 /*
@@ -1854,7 +2195,7 @@ CL_ProcessNetRequests
 check for timeouts
 =================
 */
-void CL_ProcessNetRequests( void )
+static void CL_ProcessNetRequests( void )
 {
 	net_request_t	*nr;
 	int		i;
@@ -1929,6 +2270,246 @@ static qboolean CL_IsFromConnectingServer( netadr_t from )
 		NET_CompareAdr( cls.serveradr, from );
 }
 
+static void CL_HandleTestPacket( netadr_t from, sizebuf_t *msg )
+{
+	byte	recv_buf[NET_MAX_FRAGMENT];
+	dword	crcValue;
+	int	realsize;
+	dword	crcValue2 = 0;
+
+	// this message only used during connection
+	// it doesn't make sense after client_connect
+	if( cls.state != ca_connecting )
+		return;
+
+	if( !CL_IsFromConnectingServer( from ))
+		return;
+
+	crcValue = MSG_ReadLong( msg );
+	realsize = MSG_GetMaxBytes( msg ) - MSG_GetNumBytesRead( msg );
+
+	if( cls.max_fragment_size != MSG_GetMaxBytes( msg ))
+	{
+		if( cls.connect_retry >= CL_TEST_RETRIES )
+		{
+			// too many fails use default connection method
+			Con_Printf( "hi-speed connection is failed, use default method\n" );
+			CL_SendGetChallenge( from );
+			Cvar_SetValue( "cl_dlmax", FRAGMENT_DEFAULT_SIZE );
+			cls.connect_time = host.realtime;
+			return;
+		}
+
+		// if we waiting more than cl_timeout or packet was trashed
+		cls.connect_time = MAX_HEARTBEAT;
+		return; // just wait for a next responce
+	}
+
+	// reading test buffer
+	MSG_ReadBytes( msg, recv_buf, realsize );
+
+	// procssing the CRC
+	CRC32_ProcessBuffer( &crcValue2, recv_buf, realsize );
+
+	if( crcValue == crcValue2 )
+	{
+		// packet was sucessfully delivered, adjust the fragment size and get challenge
+
+		Con_DPrintf( "CRC %x is matched, get challenge, fragment size %d\n", crcValue, cls.max_fragment_size );
+		CL_SendGetChallenge( from );
+		Cvar_SetValue( "cl_dlmax", cls.max_fragment_size );
+		cls.connect_time = host.realtime;
+	}
+	else
+	{
+		if( cls.connect_retry >= CL_TEST_RETRIES )
+		{
+			// too many fails use default connection method
+			Con_Printf( "hi-speed connection is failed, use default method\n" );
+			CL_SendGetChallenge( from );
+			Cvar_SetValue( "cl_dlmax", FRAGMENT_MIN_SIZE );
+			cls.connect_time = host.realtime;
+			return;
+		}
+
+		Msg( "got testpacket, CRC mismatched 0x%08x should be 0x%08x, trying next fragment size %d\n", crcValue2, crcValue, cls.max_fragment_size >> 1 );
+
+		// trying the next size of packet
+		cls.connect_time = MAX_HEARTBEAT;
+	}
+}
+
+static void CL_ClientConnect( connprotocol_t proto, const char *c, netadr_t from )
+{
+	if( !CL_IsFromConnectingServer( from ))
+		return;
+
+	if( cls.state == ca_connected )
+	{
+		Con_DPrintf( S_ERROR "dup connect received. ignored\n");
+		return;
+	}
+
+	if( proto == PROTO_GOLDSRC )
+	{
+		if( Q_strcmp( c, S2C_GOLDSRC_CONNECTION ))
+		{
+			Con_DPrintf( S_ERROR "GoldSrc client connect expected but wasn't received, ignored\n");
+			return;
+		}
+
+		if( Cmd_Argc() > 4 )
+			cls.build_num = Q_atoi( Cmd_Argv( 4 ));
+	}
+	else if( !Q_strcmp( c, S2C_GOLDSRC_CONNECTION ))
+	{
+		Con_DPrintf( S_ERROR "GoldSrc client connect received but wasn't expected, ignored\n");
+		return;
+	}
+
+	CL_Reconnect( true );
+	UI_SetActiveMenu( cl.background );
+}
+
+static void CL_Print( const char *c, const char *args, netadr_t from, sizebuf_t *msg )
+{
+	const char *s;
+
+	s = c[0] == A2C_GOLDSRC_PRINT ? args + 1 : MSG_ReadString( msg );
+
+	if( !COM_CheckStringEmpty( s ))
+		return;
+
+	Con_Printf( "Remote message from %s:\n", NET_AdrToString( from ));
+	Con_Printf( "%s%c", s, s[Q_strlen( s ) - 1] != '\n' ? '\n' : '\0' );
+}
+
+static void CL_Challenge( const char *c, netadr_t from )
+{
+	if( cls.state != ca_connecting )
+		return;
+
+	if( !CL_IsFromConnectingServer( from ))
+		return;
+
+	// try to autodetect protocol by challenge response
+	if( !Q_strcmp( c, S2C_GOLDSRC_CHALLENGE ))
+		cls.legacymode = PROTO_GOLDSRC;
+
+	// challenge from the server we are connecting to
+	CL_SendConnectPacket( cls.legacymode, Q_atoi( Cmd_Argv( 1 )));
+}
+
+static void CL_ErrorMsg( const char *c, const char *args, netadr_t from, sizebuf_t *msg )
+{
+	char formatted_msg[MAX_VA_STRING];
+
+	if( !CL_IsFromConnectingServer( from ))
+		return;
+
+	if( msg != NULL && !Q_strcmp( c, S2C_ERRORMSG ))
+	{
+		const char *s = MSG_ReadString( msg );
+		Q_snprintf( formatted_msg, sizeof( formatted_msg ), "^3Server message^7\n%s", s );
+	}
+	else if( c[0] == S2C_GOLDSRC_REJECT )
+	{
+		Q_snprintf( formatted_msg, sizeof( formatted_msg ), "^3Server message^7\n%s", args + 1 );
+	}
+	else if( c[0] == S2C_GOLDSRC_REJECT_BADPASSWORD )
+	{
+		if( !Q_strnicmp( &c[1], "BADPASSWORD", 11 ))
+			Q_snprintf( formatted_msg, sizeof( formatted_msg ), "^3Server message^7\n%s", args + 12 );
+		else
+			Q_snprintf( formatted_msg, sizeof( formatted_msg ), "^3Server message^7\n%s", args + 1 );
+	}
+
+	// in case we're in console or it's classic mainui which doesn't support messageboxes
+	if( !UI_IsVisible() || !UI_ShowMessageBox( formatted_msg ))
+		Msg( "%s\n", formatted_msg );
+
+	// don't disconnect, errormsg is a FWGS extension and
+	// always followed by disconnect message
+}
+
+static void CL_Reject( const char *c, const char *args, netadr_t from )
+{
+	// this message only used during connection
+	// it doesn't make sense after client_connect
+	if( cls.state != ca_connecting )
+		return;
+
+	if( !CL_IsFromConnectingServer( from ))
+		return;
+
+	CL_ErrorMsg( c, args, from, NULL );
+
+	// a disconnect message from the server, which will happen if the server
+	// dropped the connection but it is still getting packets from us
+	CL_Disconnect_f();
+}
+
+static void CL_ServerList( netadr_t from, sizebuf_t *msg )
+{
+	if( !NET_IsMasterAdr( from ))
+	{
+		Con_Printf( S_WARN "unexpected server list packet from %s\n", NET_AdrToString( from ));
+		return;
+	}
+
+	// check the extra header
+	if( MSG_ReadByte( msg ) == 0x7f )
+	{
+		uint32_t key = MSG_ReadDword( msg );
+
+		if( cls.internetservers_key != key )
+		{
+			Con_Printf( S_WARN "unexpected server list packet from %s (invalid key)\n", NET_AdrToString( from ));
+			return;
+		}
+
+		MSG_ReadByte( msg ); // reserved byte
+	}
+	else
+	{
+		Con_Printf( S_WARN "invalid server list packet from %s (missing extra header)\n", NET_AdrToString( from ));
+		return;
+	}
+
+	// serverlist got from masterserver
+	while( MSG_GetNumBitsLeft( msg ) > 8 )
+	{
+		uint8_t addr[16];
+		netadr_t	servadr;
+
+		if( from.type6 == NA_IP6 ) // IPv6 master server only sends IPv6 addresses
+		{
+			MSG_ReadBytes( msg, addr, sizeof( addr ));
+			NET_IP6BytesToNetadr( &servadr, addr );
+			servadr.type6 = NA_IP6;
+		}
+		else
+		{
+			MSG_ReadBytes( msg, servadr.ip, sizeof( servadr.ip ));	// 4 bytes for IP
+			servadr.type = NA_IP;
+		}
+		servadr.port = MSG_ReadShort( msg );			// 2 bytes for Port
+
+		// list is ends here
+		if( !servadr.port )
+			break;
+
+		NET_Config( true, false ); // allow remote
+		Netchan_OutOfBandPrint( NS_CLIENT, servadr, A2A_INFO" %i", PROTOCOL_VERSION );
+	}
+
+	if( cls.internetservers_pending )
+	{
+		UI_ResetPing();
+		cls.internetservers_pending = false;
+	}
+}
+
 /*
 =================
 CL_ConnectionlessPacket
@@ -1936,14 +2517,10 @@ CL_ConnectionlessPacket
 Responses to broadcasts, etc
 =================
 */
-void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
+static void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 {
-	char	*args;
-	const char	*c;
-	char	buf[MAX_SYSPATH];
-	int	len = sizeof( buf );
-	int	dataoffset = 0;
-	netadr_t	servadr;
+	char *args;
+	const char *c;
 
 	MSG_Clear( msg );
 	MSG_ReadLong( msg ); // skip the -1
@@ -1953,266 +2530,77 @@ void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 	Cmd_TokenizeString( args );
 	c = Cmd_Argv( 0 );
 
-	Con_Reportf( "CL_ConnectionlessPacket: %s : %s\n", NET_AdrToString( from ), c );
+	Con_Reportf( "%s: %s : %s\n", __func__, NET_AdrToString( from ), c );
 
 	// server connection
-	if( !Q_strcmp( c, "client_connect" ))
+	if( !Q_strcmp( c, S2C_GOLDSRC_CONNECTION ) || !Q_strcmp( c, S2C_CONNECTION ))
 	{
-		if( !CL_IsFromConnectingServer( from ))
-			return;
+		CL_ClientConnect( cls.legacymode, c, from );
+	}
+	else if( !Q_strcmp( c, A2A_INFO ))
+	{
+		CL_ParseStatusMessage( from, msg ); // server responding to a status broadcast
+	}
+	else if( c[0] == S2A_GOLDSRC_INFO )
+	{
+		CL_ParseGoldSrcStatusMessage( from, msg );
+	}
+	else if( !Q_strcmp( c, A2A_NETINFO ))
+	{
+		CL_ParseNETInfoMessage( from, args ); // server responding to a status broadcast
+	}
+	else if( c[0] == A2C_GOLDSRC_PRINT || !Q_strcmp( c, A2C_PRINT ))
+	{
+		CL_Print( c, args, from, msg );
+	}
+	else if( !Q_strcmp( c, S2C_BANDWIDTHTEST ))
+	{
+		CL_HandleTestPacket( from, msg );
+	}
+	else if( !Q_strcmp( c, A2A_PING ))
+	{
+		Netchan_OutOfBandPrint( NS_CLIENT, from, A2A_ACK );
+	}
+	else if( !Q_strcmp( c, A2A_GOLDSRC_PING ))
+	{
+		Netchan_OutOfBandPrint( NS_CLIENT, from, A2A_GOLDSRC_ACK );
+	}
+	else if( !Q_strcmp( c, A2A_ACK ) || !Q_strcmp( c, A2A_GOLDSRC_ACK ))
+	{
+		// no-op
+	}
+	else if( !Q_strcmp( c, S2C_CHALLENGE ) || !Q_strcmp( c, S2C_GOLDSRC_CHALLENGE ))
+	{
+		CL_Challenge( c, from );
+	}
+	else if( !Q_strcmp( c, S2C_REJECT ) || c[0] == S2C_GOLDSRC_REJECT || c[0] == S2C_GOLDSRC_REJECT_BADPASSWORD )
+	{
+		CL_Reject( c, args, from );
+	}
+	else if( !Q_strcmp( c, S2C_ERRORMSG ))
+	{
+		CL_ErrorMsg( c, args, from, msg );
+	}
+	else if( !Q_strcmp( c, M2A_SERVERSLIST ))
+	{
+		CL_ServerList( from, msg );
+	}
+	else
+	{
+		char buf[MAX_SYSPATH];
+		int len = sizeof( buf );
 
-		if( cls.state == ca_connected )
+		if( clgame.dllFuncs.pfnConnectionlessPacket( &from, args, buf, &len ))
 		{
-			Con_DPrintf( S_ERROR "dup connect received. ignored\n");
-			return;
-		}
-
-		CL_Reconnect( true );
-		UI_SetActiveMenu( cl.background );
-	}
-	else if( !Q_strcmp( c, "info" ))
-	{
-		// server responding to a status broadcast
-		CL_ParseStatusMessage( from, msg );
-	}
-	else if( !Q_strcmp( c, "netinfo" ))
-	{
-		// server responding to a status broadcast
-		CL_ParseNETInfoMessage( from, msg, args );
-	}
-	else if( !Q_strcmp( c, "cmd" ))
-	{
-		// remote command from gui front end
-		if( !NET_IsLocalAddress( from ))
-		{
-			Con_Printf( "Command packet from remote host. Ignored.\n" );
-			return;
-		}
-
-#if XASH_SDL == 2
-		SDL_ShowWindow( host.hWnd );
-#endif
-		args = MSG_ReadString( msg );
-		Cbuf_AddText( args );
-		Cbuf_AddText( "\n" );
-	}
-	else if( !Q_strcmp( c, "print" ))
-	{
-		// print command from somewhere
-		Con_Printf( "%s", MSG_ReadString( msg ));
-	}
-	else if( !Q_strcmp( c, "testpacket" ))
-	{
-		byte	recv_buf[NET_MAX_FRAGMENT];
-		dword	crcValue;
-		int	realsize;
-		dword	crcValue2 = 0;
-
-		// this message only used during connection
-		// it doesn't make sense after client_connect
-		if( cls.state != ca_connecting )
-			return;
-
-		if( !CL_IsFromConnectingServer( from ))
-			return;
-
-		crcValue = MSG_ReadLong( msg );
-		realsize = MSG_GetMaxBytes( msg ) - MSG_GetNumBytesRead( msg );
-
-		if( cls.max_fragment_size != MSG_GetMaxBytes( msg ))
-		{
-			if( cls.connect_retry >= CL_TEST_RETRIES )
-			{
-				// too many fails use default connection method
-				Con_Printf( "hi-speed connection is failed, use default method\n" );
-				Netchan_OutOfBandPrint( NS_CLIENT, from, "getchallenge\n" );
-				Cvar_SetValue( "cl_dlmax", FRAGMENT_DEFAULT_SIZE );
-				cls.connect_time = host.realtime;
-				return;
-			}
-
-			// if we waiting more than cl_timeout or packet was trashed
-			cls.connect_time = MAX_HEARTBEAT;
-			return; // just wait for a next responce
-		}
-
-		// reading test buffer
-		MSG_ReadBytes( msg, recv_buf, realsize );
-
-		// procssing the CRC
-		CRC32_ProcessBuffer( &crcValue2, recv_buf, realsize );
-
-		if( crcValue == crcValue2 )
-		{
-			// packet was sucessfully delivered, adjust the fragment size and get challenge
-
-			Con_DPrintf( "CRC %x is matched, get challenge, fragment size %d\n", crcValue, cls.max_fragment_size );
-			Netchan_OutOfBandPrint( NS_CLIENT, from, "getchallenge\n" );
-			Cvar_SetValue( "cl_dlmax", cls.max_fragment_size );
-			cls.connect_time = host.realtime;
+			// user out of band message (must be handled in SV_ConnectionlessPacket)
+			if( len > 0 )
+				Netchan_OutOfBand( NS_SERVER, from, len, (byte *)buf );
 		}
 		else
 		{
-			if( cls.connect_retry >= CL_TEST_RETRIES )
-			{
-				// too many fails use default connection method
-				Con_Printf( "hi-speed connection is failed, use default method\n" );
-				Netchan_OutOfBandPrint( NS_CLIENT, from, "getchallenge\n" );
-				Cvar_SetValue( "cl_dlmax", FRAGMENT_MIN_SIZE );
-				cls.connect_time = host.realtime;
-				return;
-			}
-
-			Msg( "got testpacket, CRC mismatched 0x%08x should be 0x%08x, trying next fragment size %d\n", crcValue2, crcValue, cls.max_fragment_size >> 1 );
-
-			// trying the next size of packet
-			cls.connect_time = MAX_HEARTBEAT;
+			Con_DPrintf( S_ERROR "bad connectionless packet from %s:\n%s\n", NET_AdrToString( from ), args );
 		}
 	}
-	else if( !Q_strcmp( c, "ping" ))
-	{
-		// ping from somewhere
-		Netchan_OutOfBandPrint( NS_CLIENT, from, "ack" );
-	}
-	else if( !Q_strcmp( c, "challenge" ))
-	{
-		// this message only used during connection
-		// it doesn't make sense after client_connect
-		if( cls.state != ca_connecting )
-			return;
-
-		if( !CL_IsFromConnectingServer( from ))
-			return;
-
-		// challenge from the server we are connecting to
-		cls.challenge = Q_atoi( Cmd_Argv( 1 ));
-		CL_SendConnectPacket();
-		return;
-	}
-	else if( !Q_strcmp( c, "echo" ))
-	{
-		if( !CL_IsFromConnectingServer( from ))
-			return;
-
-		// echo request from server
-		Netchan_OutOfBandPrint( NS_CLIENT, from, "%s", Cmd_Argv( 1 ));
-	}
-	else if( !Q_strcmp( c, "disconnect" ))
-	{
-		// this message only used during connection
-		// it doesn't make sense after client_connect
-		if( cls.state != ca_connecting )
-			return;
-
-		if( !CL_IsFromConnectingServer( from ))
-			return;
-
-		// a disconnect message from the server, which will happen if the server
-		// dropped the connection but it is still getting packets from us
-		CL_Disconnect_f();
-
-		if( NET_CompareAdr( from, cls.legacyserver ))
-		{
-			Cbuf_AddTextf( "connect %s legacy\n", NET_AdrToString( from ));
-			memset( &cls.legacyserver, 0, sizeof( cls.legacyserver ));
-		}
-	}
-	else if( !Q_strcmp( c, "errormsg" ))
-	{
-		if( !CL_IsFromConnectingServer( from ))
-			return;
-
-		args = MSG_ReadString( msg );
-
-		if( !Q_strcmp( args, "Server uses protocol version 48.\n" ))
-		{
-			cls.legacyserver = from;
-		}
-		else
-		{
-			if( UI_IsVisible() )
-				UI_ShowMessageBox( va("^3Server message^7\n%s", args ) );
-			Msg( "%s", args );
-		}
-	}
-	else if( !Q_strcmp( c, "updatemsg" ))
-	{
-		// got an update message from master server
-		// show update dialog from menu
-		netadr_t adr;
-		qboolean preferStore = true;
-
-		if( !Q_strcmp( Cmd_Argv( 1 ), "nostore" ) )
-			preferStore = false;
-
-		// trust only hardcoded master server
-		if( NET_StringToAdr( MASTERSERVER_ADR, &adr ) )
-		{
-			if( NET_CompareAdr( from, adr ))
-			{
-				UI_ShowUpdateDialog( preferStore );
-			}
-		}
-		else
-		{
-			// in case we don't have master anymore
-			UI_ShowUpdateDialog( preferStore );
-		}
-	}
-	else if( !Q_strcmp( c, "f" ))
-	{
-		if( !NET_IsMasterAdr( from ))
-		{
-			Con_Printf( S_WARN "unexpected server list packet from %s\n", NET_AdrToString( from ));
-			return;
-		}
-
-		// check the extra header
-		if( MSG_ReadByte( msg ) == 0x7f )
-		{
-			uint32_t key = MSG_ReadDword( msg );
-
-			if( cls.internetservers_key != key )
-			{
-				Con_Printf( S_WARN "unexpected server list packet from %s (invalid key)\n", NET_AdrToString( from ));
-				return;
-			}
-
-			MSG_ReadByte( msg ); // reserved byte
-		}
-		else
-		{
-			Con_Printf( S_WARN "invalid server list packet from %s (missing extra header)\n", NET_AdrToString( from ));
-			return;
-		}
-
-		// serverlist got from masterserver
-		while( MSG_GetNumBitsLeft( msg ) > 8 )
-		{
-			MSG_ReadBytes( msg, servadr.ip, sizeof( servadr.ip ));	// 4 bytes for IP
-			servadr.port = MSG_ReadShort( msg );			// 2 bytes for Port
-			servadr.type = NA_IP;
-
-			// list is ends here
-			if( !servadr.port )
-				break;
-
-			NET_Config( true, false ); // allow remote
-			Netchan_OutOfBandPrint( NS_CLIENT, servadr, "info %i", PROTOCOL_VERSION );
-		}
-
-		if( cls.internetservers_pending )
-		{
-			UI_ResetPing();
-			cls.internetservers_pending = false;
-		}
-	}
-	else if( clgame.dllFuncs.pfnConnectionlessPacket( &from, args, buf, &len ))
-	{
-		// user out of band message (must be handled in CL_ConnectionlessPacket)
-		if( len > 0 ) Netchan_OutOfBand( NS_SERVER, from, len, (byte *)buf );
-	}
-	else Con_DPrintf( S_ERROR "bad connectionless packet from %s:\n%s\n", NET_AdrToString( from ), args );
 }
 
 /*
@@ -2222,33 +2610,67 @@ CL_GetMessage
 Handles recording and playback of demos, on top of NET_ code
 ====================
 */
-int CL_GetMessage( byte *data, size_t *length )
+static qboolean CL_GetMessage( byte *data, size_t *length )
 {
 	if( cls.demoplayback )
-	{
-		if( CL_DemoReadMessage( data, length ))
-			return true;
-		return false;
-	}
+		return CL_DemoReadMessage( data, length );
 
-	if( NET_GetPacket( NS_CLIENT, &net_from, data, length ))
-		return true;
-	return false;
+	return NET_GetPacket( NS_CLIENT, &net_from, data, length );
 }
+
+static void CL_ParseNetMessage( sizebuf_t *msg, void (*parsefn)( sizebuf_t * ))
+{
+	cls.starting_count = MSG_GetNumBytesRead( msg ); // updates each frame
+	CL_Parse_Debug( true ); // begin parsing
+
+	parsefn( msg );
+
+	cl.frames[cl.parsecountmod].graphdata.msgbytes += MSG_GetNumBytesRead( msg ) - cls.starting_count;
+	CL_Parse_Debug( false ); // done
+
+	// we don't know if it is ok to save a demo message until
+	// after we have parsed the frame
+	if( !cls.demoplayback )
+	{
+		if( cls.state != ca_active )
+			CL_WriteDemoMessage( true, cls.starting_count, msg );
+
+		if( cls.demorecording && !cls.demowaiting )
+			CL_WriteDemoMessage( false, cls.starting_count, msg );
+	}
+}
+
 
 /*
 =================
 CL_ReadNetMessage
 =================
 */
-void CL_ReadNetMessage( void )
+static void CL_ReadNetMessage( void )
 {
 	size_t	curSize;
+	void (*parsefn)( sizebuf_t *msg );
+
+	switch( cls.legacymode )
+	{
+	case PROTO_LEGACY:
+		parsefn = CL_ParseLegacyServerMessage;
+		break;
+	case PROTO_QUAKE:
+		parsefn = CL_ParseQuakeMessage;
+		break;
+	case PROTO_GOLDSRC:
+		parsefn = CL_ParseGoldSrcServerMessage;
+		break;
+	default:
+		parsefn = CL_ParseServerMessage;
+		break;
+	}
 
 	while( CL_GetMessage( net_message_buffer, &curSize ))
 	{
 		const int split_header = LittleLong( 0xFFFFFFFE );
-		if( cls.legacymode && !memcmp( &split_header, net_message_buffer, sizeof( split_header )))
+		if( cls.legacymode == PROTO_LEGACY && !memcmp( &split_header, net_message_buffer, sizeof( split_header )))
 		{
 			// Will rewrite existing packet by merged
 			if( !NetSplit_GetLong( &cls.netchan.netsplit, &net_from, net_message_buffer, &curSize ) )
@@ -2267,28 +2689,36 @@ void CL_ReadNetMessage( void )
 		// can't be a valid sequenced packet
 		if( cls.state < ca_connected ) continue;
 
-		if( !cls.demoplayback && MSG_GetMaxBytes( &net_message ) < 8 )
+		if( !cls.demoplayback )
 		{
-			Con_Printf( S_WARN "CL_ReadPackets: %s:runt packet\n", NET_AdrToString( net_from ));
-			continue;
+			if( MSG_GetMaxBytes( &net_message ) < 8 )
+			{
+				Con_Printf( S_WARN "%s: %s:runt packet\n", __func__, NET_AdrToString( net_from ));
+				continue;
+			}
+
+			// packet from server
+			if( !NET_CompareAdr( net_from, cls.netchan.remote_address ))
+			{
+				Con_DPrintf( S_ERROR "%s: %s:sequenced packet without connection\n", __func__, NET_AdrToString( net_from ));
+				continue;
+			}
+
+			if( !Netchan_Process( &cls.netchan, &net_message ))
+				continue;	// wasn't accepted for some reason
 		}
 
-		// packet from server
-		if( !cls.demoplayback && !NET_CompareAdr( net_from, cls.netchan.remote_address ))
+		if( cls.state == ca_active )
 		{
-			Con_DPrintf( S_ERROR "CL_ReadPackets: %s:sequenced packet without connection\n", NET_AdrToString( net_from ));
-			continue;
+			cl.frames[cls.netchan.incoming_sequence & CL_UPDATE_MASK].valid = false;
+			cl.frames[cls.netchan.incoming_sequence & CL_UPDATE_MASK].choked = false;
+		}
+		else
+		{
+			CL_ResetFrame( &cl.frames[cls.netchan.incoming_sequence & CL_UPDATE_MASK] );
 		}
 
-		if( !cls.demoplayback && !Netchan_Process( &cls.netchan, &net_message ))
-			continue;	// wasn't accepted for some reason
-
-		// run special handler for quake demos
-		if( cls.demoplayback == DEMO_QUAKE1 )
-			CL_ParseQuakeMessage( &net_message, true );
-		else if( cls.legacymode ) CL_ParseLegacyServerMessage( &net_message, true );
-		else CL_ParseServerMessage( &net_message, true );
-		cl.send_reply = true;
+		CL_ParseNetMessage( &net_message, parsefn );
 	}
 
 	// build list of all solid entities per next frame (exclude clients)
@@ -2301,7 +2731,7 @@ void CL_ReadNetMessage( void )
 		if( Netchan_CopyNormalFragments( &cls.netchan, &net_message, &curSize ))
 		{
 			MSG_Init( &net_message, "ServerData", net_message_buffer, curSize );
-			CL_ParseServerMessage( &net_message, false );
+			CL_ParseNetMessage( &net_message, parsefn );
 		}
 
 		if( Netchan_CopyFileFragments( &cls.netchan, &net_message ))
@@ -2325,7 +2755,7 @@ Updates the local time and reads/handles messages
 on client net connection.
 =================
 */
-void CL_ReadPackets( void )
+static void CL_ReadPackets( void )
 {
 	// decide the simulation time
 	cl.oldtime = cl.time;
@@ -2389,7 +2819,7 @@ CL_CleanFileName
 Replace the displayed name for some resources
 ====================
 */
-const char *CL_CleanFileName( const char *filename )
+static const char *CL_CleanFileName( const char *filename )
 {
 	if( COM_CheckString( filename ) && filename[0] == '!' )
 		return "customization";
@@ -2405,7 +2835,7 @@ CL_RegisterCustomization
 register custom resource for player
 ====================
 */
-void CL_RegisterCustomization( resource_t *resource )
+static void CL_RegisterCustomization( resource_t *resource )
 {
 	qboolean		bFound = false;
 	customization_t	*pList;
@@ -2444,7 +2874,6 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 {
 	int		sound_len = sizeof( DEFAULT_SOUNDPATH ) - 1;
 	byte		rgucMD5_hash[16];
-	const char	*pfilename;
 	resource_t	*p;
 
 	if( COM_CheckString( filename ) && successfully_received )
@@ -2452,10 +2881,10 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 		if( filename[0] != '!' )
 			Con_Printf( "processing %s\n", filename );
 
-		if( !Q_strnicmp( filename, "downloaded/", 11 ))
+		if( !Q_strnicmp( filename, DEFAULT_DOWNLOADED_DIRECTORY, sizeof( DEFAULT_DOWNLOADED_DIRECTORY ) - 1 ))
 		{
 			// skip "downloaded/" part to avoid mismatch with needed resources list
-			filename += 11; 
+			filename += sizeof( DEFAULT_DOWNLOADED_DIRECTORY ) - 1;
 		}
 	}
 	else if( !successfully_received )
@@ -2463,10 +2892,11 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 		Con_Printf( S_ERROR "server failed to transmit file '%s'\n", CL_CleanFileName( filename ));
 	}
 
-	if( cls.legacymode )
+	if( cls.legacymode == PROTO_LEGACY )
 	{
 		if( host.downloadcount > 0 )
 			host.downloadcount--;
+
 		if( !host.downloadcount )
 		{
 			MSG_WriteByte( &cls.netchan.message, clc_stringcmd );
@@ -2474,11 +2904,6 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 		}
 		return;
 	}
-
-	pfilename = filename;
-
-	if( !Q_strnicmp( filename, DEFAULT_SOUNDPATH, sound_len ))
-		pfilename += sound_len;
 
 	for( p = cl.resourcesneeded.pNext; p != &cl.resourcesneeded; p = p->pNext )
 	{
@@ -2489,18 +2914,20 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 			if( !memcmp( p->rgucMD5_hash, rgucMD5_hash, 16 ))
 				break;
 		}
+		else if( p->type == t_sound )
+		{
+			const char *pfilename = filename;
+
+			if( !Q_strnicmp( filename, DEFAULT_SOUNDPATH, sound_len ))
+				pfilename += sound_len;
+
+			if( !Q_stricmp( p->szFileName, pfilename ))
+				break;
+		}
 		else
 		{
-			if( p->type == t_generic )
-			{
-				if( !Q_stricmp( p->szFileName, filename ))
+			if( !Q_stricmp( p->szFileName, filename ))
 					break;
-			}
-			else
-			{
-				if( !Q_stricmp( p->szFileName, pfilename ))
-					break;
-			}
 		}
 	}
 
@@ -2517,14 +2944,14 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 				{
 					if( p->ucFlags & RES_CUSTOM )
 					{
-						HPAK_AddLump( true, CUSTOM_RES_PATH, p, cls.netchan.tempbuffer, NULL );
+						HPAK_AddLump( true, hpk_custom_file.string, p, cls.netchan.tempbuffer, NULL );
 						CL_RegisterCustomization( p );
 					}
 				}
 				else
 				{
 					Con_Printf( "Downloaded %i bytes for purported %i byte file, ignoring download\n",
-					cls.netchan.tempbuffersize, p->nDownloadSize );
+						cls.netchan.tempbuffersize, p->nDownloadSize );
 				}
 
 				if( cls.netchan.tempbuffer )
@@ -2554,7 +2981,7 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 			MSG_Init( &msg, "Resource Registration", msg_buf, sizeof( msg_buf ));
 
 			if( CL_PrecacheResources( ))
-				CL_RegisterResources( &msg );
+				CL_RegisterResources( &msg, cls.legacymode );
 
 			if( MSG_GetNumBytesWritten( &msg ) > 0 )
 			{
@@ -2565,7 +2992,7 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 
 		if( cls.netchan.tempbuffer )
 		{
-			Con_Printf( "Received a decal %s, but didn't find it in resources needed list!\n", pfilename );
+			Con_Printf( "Received a decal %s, but didn't find it in resources needed list!\n", filename );
 			Mem_Free( cls.netchan.tempbuffer );
 		}
 
@@ -2605,13 +3032,45 @@ void CL_ServerCommand( qboolean reliable, const char *fmt, ... )
 	}
 }
 
+/*
+===============
+CL_UpdateInfo
+
+tell server about changed userinfo
+===============
+*/
+void CL_UpdateInfo( const char *key, const char *value )
+{
+	switch( cls.legacymode )
+	{
+	case PROTO_LEGACY:
+		if( cls.state != ca_active )
+			break;
+
+		MSG_BeginClientCmd( &cls.netchan.message, clc_legacy_userinfo );
+		MSG_WriteString( &cls.netchan.message, cls.userinfo );
+		break;
+	case PROTO_GOLDSRC:
+		if( !Q_stricmp( key, "name" ) && Q_strnicmp( value, "[Xash3D]", 8 ))
+		{
+			// always prepend [Xash3D] on GoldSrc protocol :)
+			CL_ServerCommand( true, "setinfo \"%s\" \"[Xash3D]%s\"\n", key, value );
+			break;
+		}
+		// intentional fallthrough
+	default:
+		CL_ServerCommand( true, "setinfo \"%s\" \"%s\"\n", key, value );
+		break;
+	}
+}
+
 //=============================================================================
 /*
 ==============
 CL_SetInfo_f
 ==============
 */
-void CL_SetInfo_f( void )
+static void CL_SetInfo_f( void )
 {
 	convar_t	*var;
 
@@ -2619,7 +3078,7 @@ void CL_SetInfo_f( void )
 	{
 		Con_Printf( "User info settings:\n" );
 		Info_Print( cls.userinfo );
-		Con_Printf( "Total %i symbols\n", Q_strlen( cls.userinfo ));
+		Con_Printf( "Total %zu symbols\n", Q_strlen( cls.userinfo ));
 		return;
 	}
 
@@ -2639,7 +3098,7 @@ void CL_SetInfo_f( void )
 	{
 		Cvar_DirectSet( var, Cmd_Argv( 2 ));
 	}
-	else if( Info_SetValueForKey( cls.userinfo, Cmd_Argv( 1 ), Cmd_Argv( 2 ), MAX_INFO_STRING ))
+	else if( Info_SetValueForKey( cls.userinfo, Cmd_Argv( 1 ), Cmd_Argv( 2 ), sizeof( cls.userinfo )))
 	{
 		// send update only on successfully changed userinfo
 		Cmd_ForwardToServer ();
@@ -2651,16 +3110,45 @@ void CL_SetInfo_f( void )
 CL_Physinfo_f
 ==============
 */
-void CL_Physinfo_f( void )
+static void CL_Physinfo_f( void )
 {
 	Con_Printf( "Phys info settings:\n" );
 	Info_Print( cls.physinfo );
-	Con_Printf( "Total %i symbols\n", Q_strlen( cls.physinfo ));
+	Con_Printf( "Total %zu symbols\n", Q_strlen( cls.physinfo ));
+}
+
+static qboolean CL_ShouldRescanFilesystem( void )
+{
+	resource_t *res;
+	qboolean retval = false;
+
+	for( res = cl.resourcesonhand.pNext; res && res != &cl.resourcesonhand; res = res->pNext )
+	{
+		if( res->type == t_generic )
+		{
+			const char *ext = COM_FileExtension( res->szFileName );
+
+			if( !g_fsapi.IsArchiveExtensionSupported( ext, IAES_ONLY_REAL_ARCHIVES ))
+				continue;
+
+			if( FBitSet( res->ucExtraFlags, RES_EXTRA_ARCHIVE_CHECKED ))
+				continue;
+
+			SetBits( res->ucExtraFlags, RES_EXTRA_ARCHIVE_CHECKED );
+			retval = true;
+		}
+	}
+
+	return retval;
 }
 
 qboolean CL_PrecacheResources( void )
 {
 	resource_t	*pRes;
+
+	// if we downloaded new WAD files or any other archives they must be added to searchpath
+	if( CL_ShouldRescanFilesystem( ))
+		g_fsapi.Rescan();
 
 	// NOTE: world need to be loaded as first model
 	for( pRes = cl.resourcesonhand.pNext; pRes && pRes != &cl.resourcesonhand; pRes = pRes->pNext )
@@ -2714,7 +3202,7 @@ qboolean CL_PrecacheResources( void )
 		switch( pRes->type )
 		{
 		case t_sound:
-			if( pRes->nIndex != -1 )
+			if( pRes->nIndex >= 0 && pRes->nIndex < ARRAYSIZE( cl.sound_precache ) && pRes->nIndex < ARRAYSIZE( cl.sound_index ))
 			{
 				if( FBitSet( pRes->ucFlags, RES_WASMISSING ))
 				{
@@ -2747,40 +3235,49 @@ qboolean CL_PrecacheResources( void )
 		case t_skin:
 			break;
 		case t_model:
-			cl.nummodels = Q_max( cl.nummodels, pRes->nIndex + 1 );
-			if( pRes->szFileName[0] != '*' )
+			if( pRes->nIndex >= 0 && pRes->nIndex < ARRAYSIZE( cl.models ))
 			{
-				if( pRes->nIndex != -1 )
+				cl.nummodels = Q_max( cl.nummodels, pRes->nIndex + 1 );
+				if( pRes->szFileName[0] != '*' )
 				{
-					cl.models[pRes->nIndex] = Mod_ForName( pRes->szFileName, false, true );
-
-					if( cl.models[pRes->nIndex] == NULL )
+					if( pRes->nIndex != -1 )
 					{
-						if( FBitSet( pRes->ucFlags, RES_FATALIFMISSING ))
+						cl.models[pRes->nIndex] = Mod_ForName( pRes->szFileName, false, true );
+
+						if( cl.models[pRes->nIndex] == NULL )
 						{
-							S_EndRegistration();
-							CL_Disconnect_f();
-							return false;
+							if( FBitSet( pRes->ucFlags, RES_FATALIFMISSING ))
+							{
+								S_EndRegistration();
+								CL_Disconnect_f();
+								return false;
+							}
 						}
 					}
-				}
-				else
-				{
-					CL_LoadClientSprite( pRes->szFileName );
+					else
+					{
+						CL_LoadClientSprite( pRes->szFileName );
+					}
 				}
 			}
 			break;
 		case t_decal:
-			if( !FBitSet( pRes->ucFlags, RES_CUSTOM ))
+			if( !FBitSet( pRes->ucFlags, RES_CUSTOM ) && pRes->nIndex >= 0 && pRes->nIndex < ARRAYSIZE( host.draw_decals ))
 				Q_strncpy( host.draw_decals[pRes->nIndex], pRes->szFileName, sizeof( host.draw_decals[0] ));
 			break;
 		case t_generic:
-			Q_strncpy( cl.files_precache[pRes->nIndex], pRes->szFileName, sizeof( cl.files_precache[0] ));
-			cl.numfiles = Q_max( cl.numfiles, pRes->nIndex + 1 );
+			if( pRes->nIndex >= 0 && pRes->nIndex < ARRAYSIZE( cl.files_precache ))
+			{
+				Q_strncpy( cl.files_precache[pRes->nIndex], pRes->szFileName, sizeof( cl.files_precache[0] ));
+				cl.numfiles = Q_max( cl.numfiles, pRes->nIndex + 1 );
+			}
 			break;
 		case t_eventscript:
-			Q_strncpy( cl.event_precache[pRes->nIndex], pRes->szFileName, sizeof( cl.event_precache[0] ));
-			CL_SetEventIndex( cl.event_precache[pRes->nIndex], pRes->nIndex );
+			if( pRes->nIndex >= 0 && pRes->nIndex < ARRAYSIZE( cl.event_precache ))
+			{
+				Q_strncpy( cl.event_precache[pRes->nIndex], pRes->szFileName, sizeof( cl.event_precache[0] ));
+				CL_SetEventIndex( cl.event_precache[pRes->nIndex], pRes->nIndex );
+			}
 			break;
 		default:
 			break;
@@ -2806,7 +3303,7 @@ CL_FullServerinfo_f
 Sent by server when serverinfo changes
 ==================
 */
-void CL_FullServerinfo_f( void )
+static void CL_FullServerinfo_f( void )
 {
 	if( Cmd_Argc() != 2 )
 	{
@@ -2824,7 +3321,7 @@ CL_Escape_f
 Escape to menu from game
 =================
 */
-void CL_Escape_f( void )
+static void CL_Escape_f( void )
 {
 	if( cls.key_dest == key_menu )
 		return;
@@ -2837,12 +3334,28 @@ void CL_Escape_f( void )
 	else UI_SetActiveMenu( true );
 }
 
+static void CL_ListMessages_f( void )
+{
+	int i;
+
+	Con_Printf( "num size name\n" );
+	for( i = 0; i < MAX_USER_MESSAGES; i++ )
+	{
+		if( !COM_CheckStringEmpty( clgame.msg[i].name ))
+			break;
+
+		Con_Printf( "%3d\t%3d\t%s\n", clgame.msg[i].number, clgame.msg[i].size, clgame.msg[i].name );
+	}
+
+	Con_Printf( "Total %i messages\n", i );
+}
+
 /*
 =================
 CL_InitLocal
 =================
 */
-void CL_InitLocal( void )
+static void CL_InitLocal( void )
 {
 	cls.state = ca_disconnected;
 	cls.signon = 0;
@@ -2851,6 +3364,9 @@ void CL_InitLocal( void )
 	cl.resourcesneeded.pNext = cl.resourcesneeded.pPrev = &cl.resourcesneeded;
 	cl.resourcesonhand.pNext = cl.resourcesonhand.pPrev = &cl.resourcesonhand;
 
+	Cvar_RegisterVariable( &cl_ticket_generator );
+
+	Cvar_RegisterVariable( &showpause );
 	Cvar_RegisterVariable( &mp_decals );
 	Cvar_RegisterVariable( &dev_overview );
 	Cvar_RegisterVariable( &cl_resend );
@@ -2860,6 +3376,7 @@ void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_logofile );
 	Cvar_RegisterVariable( &cl_logocolor );
 	Cvar_RegisterVariable( &cl_logoext );
+	Cvar_RegisterVariable( &cl_logomaxdim );
 	Cvar_RegisterVariable( &cl_test_bandwidth );
 
 	Voice_RegisterCvars();
@@ -2877,13 +3394,16 @@ void CL_InitLocal( void )
 
 	Cvar_RegisterVariable( &rcon_address );
 
+	Cvar_RegisterVariable( &cl_trace_consistency );
+	Cvar_RegisterVariable( &cl_trace_stufftext );
 	Cvar_RegisterVariable( &cl_trace_messages );
 	Cvar_RegisterVariable( &cl_trace_events );
 
 	// userinfo
 	Cvar_RegisterVariable( &cl_nopred );
+	Q_strncpy( username, Sys_GetCurrentUser(), sizeof( username ));	// initialize before registering variable
 	Cvar_RegisterVariable( &name );
-	Cvar_DirectSet( &name, Sys_GetCurrentUser( ));
+	Cvar_Get( "ui_username", username, FCVAR_READ_ONLY|FCVAR_PRIVILEGED, "default user name" );
 	Cvar_RegisterVariable( &model );
 	Cvar_RegisterVariable( &cl_updaterate );
 	Cvar_RegisterVariable( &cl_dlmax );
@@ -2912,15 +3432,15 @@ void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_clockreset );
 	Cvar_RegisterVariable( &cl_fixtimerate );
 	Cvar_RegisterVariable( &hud_fontscale );
+	Cvar_RegisterVariable( &hud_fontrender );
 	Cvar_RegisterVariable( &hud_scale );
+	Cvar_RegisterVariable( &hud_scale_minimal_width );
 	Cvar_Get( "cl_background", "0", FCVAR_READ_ONLY, "indicate what background map is running" );
 	Cvar_RegisterVariable( &cl_showevents );
 	Cvar_Get( "lastdemo", "", FCVAR_ARCHIVE, "last played demo" );
 	Cvar_RegisterVariable( &ui_renderworld );
-
-	// these two added to shut up CS 1.5 about 'unknown' commands
-	Cvar_Get( "lightgamma", "1", FCVAR_ARCHIVE, "ambient lighting level (legacy, unused)" );
-	Cvar_Get( "direct", "1", FCVAR_ARCHIVE, "direct lighting level (legacy, unused)" );
+	Cvar_RegisterVariable( &cl_maxframetime );
+	Cvar_RegisterVariable( &cl_fixmodelinterpolationartifacts );
 
 	// server commands
 	Cmd_AddCommand ("noclip", NULL, "enable or disable no clipping mode" );
@@ -2941,8 +3461,9 @@ void CL_InitLocal( void )
 
 	// register our commands
 	Cmd_AddCommand ("pause", NULL, "pause the game (if the server allows pausing)" );
-	Cmd_AddCommand ("localservers", CL_LocalServers_f, "collect info about local servers" );
-	Cmd_AddCommand ("internetservers", CL_InternetServers_f, "collect info about internet servers" );
+	Cmd_AddRestrictedCommand( "localservers", CL_LocalServers_f, "collect info about local servers" );
+	Cmd_AddRestrictedCommand( "internetservers", CL_InternetServers_f, "collect info about internet servers" );
+	Cmd_AddRestrictedCommand( "queryserver", CL_QueryServer_f, "query server info from console" );
 	Cmd_AddCommand ("cd", CL_PlayCDTrack_f, "Play cd-track (not real cd-player of course)" );
 	Cmd_AddCommand ("mp3", CL_PlayCDTrack_f, "Play mp3-track (based on virtual cd-player)" );
 	Cmd_AddCommand ("waveplaylen", CL_WavePlayLen_f, "Get approximate length of wave file");
@@ -2959,6 +3480,7 @@ void CL_InitLocal( void )
 	Cmd_AddCommand ("demos", CL_Demos_f, "restart looping demos defined by the last startdemos command" );
 	Cmd_AddCommand ("movie", CL_PlayVideo_f, "play a movie" );
 	Cmd_AddCommand ("stop", CL_Stop_f, "stop playing or recording a demo" );
+	Cmd_AddCommand( "listdemo", CL_ListDemo_f, "list demo entries" );
 	Cmd_AddCommand ("info", NULL, "collect info about local servers with specified protocol" );
 	Cmd_AddCommand ("escape", CL_Escape_f, "escape from game to menu" );
 	Cmd_AddCommand ("togglemenu", CL_Escape_f, "toggle between game and menu" );
@@ -2970,12 +3492,12 @@ void CL_InitLocal( void )
 	Cmd_AddRestrictedCommand ("quit", CL_Quit_f, "quit from game" );
 	Cmd_AddRestrictedCommand ("exit", CL_Quit_f, "quit from game" );
 
-	Cmd_AddCommand ("screenshot", CL_ScreenShot_f, "takes a screenshot of the next rendered frame" );
-	Cmd_AddCommand ("snapshot", CL_SnapShot_f, "takes a snapshot of the next rendered frame" );
-	Cmd_AddCommand ("envshot", CL_EnvShot_f, "takes a six-sides cubemap shot with specified name" );
-	Cmd_AddCommand ("skyshot", CL_SkyShot_f, "takes a six-sides envmap (skybox) shot with specified name" );
+	Cmd_AddCommand ("screenshot", CL_GenericShot_f, "takes a screenshot of the next rendered frame" );
+	Cmd_AddCommand ("snapshot", CL_GenericShot_f, "takes a snapshot of the next rendered frame" );
+	Cmd_AddCommand ("envshot", CL_GenericShot_f, "takes a six-sides cubemap shot with specified name" );
+	Cmd_AddCommand ("skyshot", CL_GenericShot_f, "takes a six-sides envmap (skybox) shot with specified name" );
 	Cmd_AddCommand ("levelshot", CL_LevelShot_f, "same as \"screenshot\", used for create plaque images" );
-	Cmd_AddCommand ("saveshot", CL_SaveShot_f, "used for create save previews with LoadGame menu" );
+	Cmd_AddCommand ("saveshot", CL_GenericShot_f, "used for create save previews with LoadGame menu" );
 
 	Cmd_AddCommand ("connect", CL_Connect_f, "connect to a server by hostname" );
 	Cmd_AddCommand ("reconnect", CL_Reconnect_f, "reconnect to current level" );
@@ -2983,6 +3505,10 @@ void CL_InitLocal( void )
 	Cmd_AddCommand ("rcon", CL_Rcon_f, "sends a command to the server console (rcon_password and rcon_address required)" );
 	Cmd_AddCommand ("precache", CL_LegacyPrecache_f, "legacy server compatibility" );
 
+	Cmd_AddCommand( "richpresence_gamemode", Cmd_Null_f, "compatibility command, does nothing" );
+	Cmd_AddCommand( "richpresence_update", Cmd_Null_f, "compatibility command, does nothing" );
+
+	Cmd_AddCommand( "cl_list_messages", CL_ListMessages_f, "list registered user messages" );
 }
 
 //============================================================================
@@ -2994,7 +3520,7 @@ slowly adjuct client clock
 to smooth lag effect
 ==================
 */
-void CL_AdjustClock( void )
+static void CL_AdjustClock( void )
 {
 	if( cl.timedelta == 0.0f || !cl_fixtimerate.value )
 		return;
@@ -3057,6 +3583,8 @@ void Host_ClientFrame( void )
 {
 	// if client is not active, do nothing
 	if( !cls.initialized ) return;
+	if( cls.key_dest == key_game && cls.state == ca_active && !Con_Visible() )
+		Platform_SetTimer( cl_maxframetime.value );
 
 	// if running the server remotely, send intentions now after
 	// the incoming messages have been read
@@ -3126,7 +3654,7 @@ void CL_Init( void )
 
 	VID_Init();	// init video
 	S_Init();	// init sound
-	Voice_Init( VOICE_DEFAULT_CODEC, 3 ); // init voice
+	Voice_Init( VOICE_DEFAULT_CODEC, 3, true ); // init voice (do not open the device)
 
 	// unreliable buffer. unsed for unreliable commands and voice stream
 	MSG_Init( &cls.datagram, "cls.datagram", cls.datagram_buf, sizeof( cls.datagram_buf ));
@@ -3135,9 +3663,12 @@ void CL_Init( void )
 
 	COM_GetCommonLibraryPath( LIBRARY_CLIENT, libpath, sizeof( libpath ));
 
-	if( !CL_LoadProgs( libpath ) )
-		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError() );
+	if( !CL_LoadProgs( libpath ))
+		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError( ));
 
+	ID_Init();
+
+	cls.build_num = 0;
 	cls.initialized = true;
 	cl.maxclients = 1; // allow to drawing player in menu
 	cls.olddemonum = -1;
@@ -3152,7 +3683,7 @@ CL_Shutdown
 */
 void CL_Shutdown( void )
 {
-	Con_Printf( "CL_Shutdown()\n" );
+	Con_Printf( "%s()\n", __func__ );
 
 	if( !host.crashed && cls.initialized )
 	{

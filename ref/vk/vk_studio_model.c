@@ -1,7 +1,7 @@
 #include "vk_studio_model.h"
 #include "r_speeds.h"
-#include "vk_entity_data.h"
 #include "vk_logs.h"
+#include "vk_studio.h"
 
 #include "xash3d_mathlib.h"
 
@@ -22,7 +22,7 @@ static struct {
 	int submodels_cached_static;
 } g_studio_cache;
 
-void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
+static void studioRenderSubmodelDestroy( r_studio_submodel_render_t *submodel ) {
 	R_RenderModelDestroy(&submodel->model);
 	R_GeometryRangeFree(&submodel->geometry_range);
 	if (submodel->geometries)
@@ -87,7 +87,7 @@ static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const
 	}
 }
 
-qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsilon )
+static qboolean Vector4CompareEpsilon( const vec4_t vec1, const vec4_t vec2, vec_t epsilon )
 {
 	vec_t	ax, ay, az, aw;
 
@@ -223,11 +223,9 @@ const r_studio_model_info_t* R_StudioModelPreload(model_t *mod) {
 
 	studioModelProcessBonesAnimations(mod, hdr, submodels, submodels_count);
 
-	qboolean is_dynamic = false;
 	DEBUG(" submodels_count: %d", submodels_count);
 	for (int i = 0; i < submodels_count; ++i) {
 		const r_studio_submodel_info_t *const subinfo = submodels + i;
-		is_dynamic |= subinfo->is_dynamic;
 		//DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d has_bonecontroller=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic, subinfo->has_bonecontroller);
 		DEBUG("  Submodel %d/%d: name=\"%s\", is_dynamic=%d", i, submodels_count-1, subinfo->submodel_key->name, subinfo->is_dynamic);
 	}

@@ -46,6 +46,7 @@ extern void *__aeabi_idivmod;
 extern void *__aeabi_uidivmod;
 extern void *__aeabi_d2ulz;
 extern void *__aeabi_ul2d;
+extern void *__aeabi_ul2f;
 
 static const vrtld_export_t aux_exports[] =
 {
@@ -55,6 +56,7 @@ static const vrtld_export_t aux_exports[] =
 	VRTLD_EXPORT_SYMBOL( __aeabi_uidivmod ),
 	VRTLD_EXPORT_SYMBOL( __aeabi_uidiv ),
 	VRTLD_EXPORT_SYMBOL( __aeabi_ul2d ),
+	VRTLD_EXPORT_SYMBOL( __aeabi_ul2f ),
 	VRTLD_EXPORT_SYMBOL( _impure_ptr ),
 	VRTLD_EXPORT_SYMBOL( ctime ),
 	VRTLD_EXPORT_SYMBOL( vasprintf ),
@@ -68,6 +70,7 @@ static const vrtld_export_t aux_exports[] =
 	VRTLD_EXPORT_SYMBOL( isalnum ),
 	VRTLD_EXPORT_SYMBOL( isalpha ),
 	VRTLD_EXPORT_SYMBOL( strchrnul ),
+	VRTLD_EXPORT_SYMBOL( strtok ),
 	VRTLD_EXPORT_SYMBOL( stpcpy ),
 	VRTLD_EXPORT_SYMBOL( rand ),
 	VRTLD_EXPORT_SYMBOL( srand ),

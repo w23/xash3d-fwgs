@@ -95,8 +95,6 @@ const char *Q_PlatformStringByID( const int platform )
 		return "win32";
 	case PLATFORM_ANDROID:
 		return "android";
-	case PLATFORM_LINUX_UNKNOWN:
-		return "linuxunkabi";
 	case PLATFORM_LINUX:
 		return "linux";
 	case PLATFORM_APPLE:
@@ -121,6 +119,10 @@ const char *Q_PlatformStringByID( const int platform )
 		return "nswitch";
 	case PLATFORM_PSVITA:
 		return "psvita";
+	case PLATFORM_WASI:
+		return "wasi";
+	case PLATFORM_SUNOS:
+		return "sunos";
 	}
 
 	assert( 0 );
@@ -206,6 +208,8 @@ const char *Q_ArchitectureStringByID( const int arch, const uint abi, const int 
 			return is64 ? "riscv64d" : "riscv32d";
 		}
 		break;
+	case ARCHITECTURE_WASM:
+		return is64 ? "wasm64" : "wasm32";
 	}
 
 	assert( 0 );
@@ -233,25 +237,5 @@ const char *Q_buildarch( void )
 		false
 #endif
 	);
-}
-
-/*
-=============
-Q_buildcommit
-
-Returns a short hash of current commit in VCS as string.
-XASH_BUILD_COMMIT must be passed in quotes
-
-if XASH_BUILD_COMMIT is not defined,
-Q_buildcommit will identify this build as "notset"
-=============
-*/
-const char *Q_buildcommit( void )
-{
-#ifdef XASH_BUILD_COMMIT
-	return XASH_BUILD_COMMIT;
-#else
-	return "notset";
-#endif
 }
 

@@ -18,7 +18,7 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
-#define MAX_SCRATCH_BUFFER (32*1024*1024)
+#define MAX_SCRATCH_BUFFER (64*1024*1024)
 // FIXME compute this by lazily allocating #define MAX_ACCELS_BUFFER (128*1024*1024)
 #define MAX_ACCELS_BUFFER (256*1024*1024)
 
@@ -571,8 +571,6 @@ struct rt_blas_s* RT_BlasCreate(rt_blas_create_t args) {
 		.geometryCount = args.geoms_count,
 		.srcAccelerationStructure = VK_NULL_HANDLE,
 	};
-
-	qboolean is_update = false;
 
 	switch (blas->usage) {
 		case kBlasBuildStatic:

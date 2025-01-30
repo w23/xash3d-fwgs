@@ -13,12 +13,18 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2025-01-30 E389
+- [ ] run render tests
+- [ ] check diff wrt non-ref-vk changes
+- [x] `PARM_TEX_FILTERING`
+- [x] Fix some missing textures
+
 ## 2025-01-23 E387
 - [x] (local) waf prefix shenanigans
-- [ ] merge resources branch into vulkan
+- [x] merge resources branch into vulkan
   - [x] reverse-merge vulkan
   - [x] ghci upload s/v3/v4/
-- [ ] merge from upstream
+- [x] merge from upstream
 - [ ] discuss further agenda
 
 ## 2024-12-17 E385

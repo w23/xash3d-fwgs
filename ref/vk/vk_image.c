@@ -458,7 +458,7 @@ void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, cons
 	const uint32_t width = Q_max(1, img->width >> mip);
 	const uint32_t height = Q_max(1, img->height >> mip);
 	const uint32_t depth = Q_max(1, img->depth >> mip);
-	const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(img->format);
+	//const uint32_t texel_block_size = R_VkImageFormatTexelBlockSize(img->format);
 
 	ASSERT(img->upload_slot >= 0);
 	ASSERT(img->upload_slot < g_image_upload.images.count);

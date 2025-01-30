@@ -10,6 +10,7 @@
 
 render_state_t vk_renderstate = {0};
 
+/*
 static const char *renderModeName(int mode)
 {
 	switch(mode)
@@ -23,6 +24,7 @@ static const char *renderModeName(int mode)
 		default: return "INVALID";
 	}
 }
+*/
 
 void GL_SetRenderMode( int renderMode )
 {

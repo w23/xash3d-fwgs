@@ -32,15 +32,15 @@ GNU General Public License for more details.
 ==============================================================================
 */
 double Platform_DoubleTime( void );
-void Platform_Sleep( int msec );
 void Platform_ShellExecute( const char *path, const char *parms );
 void Platform_MessageBox( const char *title, const char *message, qboolean parentMainWindow );
-qboolean Sys_DebuggerPresent( void ); // optional, see Sys_DebugBreak
 void Platform_SetStatus( const char *status );
+qboolean Platform_DebuggerPresent( void );
 
 // legacy iOS port functions
 #if TARGET_OS_IOS
 const char *IOS_GetDocsDir( void );
+void IOS_LaunchDialog( void );
 #endif // TARGET_OS_IOS
 
 #if XASH_WIN32 || XASH_LINUX
@@ -51,10 +51,12 @@ const char *IOS_GetDocsDir( void );
 
 #if XASH_POSIX
 void Posix_Daemonize( void );
+void Posix_SetupSigtermHandling( void );
+char *Posix_Input( void );
 #endif
 
 #if XASH_SDL
-void SDLash_Init( void );
+void SDLash_Init( const char *basedir );
 void SDLash_Shutdown( void );
 #endif
 
@@ -65,11 +67,17 @@ void Android_SaveID( const char *id );
 void Android_Init( void );
 void *Android_GetNativeObject( const char *name );
 int Android_GetKeyboardHeight( void );
+void Android_Shutdown( void );
 #endif
 
 #if XASH_WIN32
-void Wcon_CreateConsole( void );
+void Wcon_CreateConsole( qboolean con_showalways );
 void Wcon_DestroyConsole( void );
+void Wcon_InitConsoleCommands( void );
+void Wcon_ShowConsole( qboolean show );
+void Wcon_DisableInput( void );
+char *Wcon_Input( void );
+void Wcon_WinPrint( const char *pMsg );
 #endif
 
 #if XASH_NSWITCH
@@ -93,9 +101,11 @@ void DOS_Shutdown( void );
 #if XASH_LINUX
 void Linux_Init( void );
 void Linux_Shutdown( void );
+void Linux_SetTimer( float time );
+int Linux_GetProcessID( void );
 #endif
 
-static inline void Platform_Init( void )
+static inline void Platform_Init( qboolean con_showalways, const char *basedir )
 {
 #if XASH_POSIX
 	// daemonize as early as possible, because we need to close our file descriptors
@@ -103,7 +113,7 @@ static inline void Platform_Init( void )
 #endif
 
 #if XASH_SDL
-	SDLash_Init( );
+	SDLash_Init( basedir );
 #endif
 
 #if XASH_ANDROID
@@ -115,7 +125,7 @@ static inline void Platform_Init( void )
 #elif XASH_DOS
 	DOS_Init( );
 #elif XASH_WIN32
-	Wcon_CreateConsole( );
+	Wcon_CreateConsole( con_showalways );
 #elif XASH_LINUX
 	Linux_Init( );
 #endif
@@ -139,6 +149,49 @@ static inline void Platform_Shutdown( void )
 	SDLash_Shutdown( );
 #endif
 }
+
+static inline qboolean Sys_DebuggerPresent( void )
+{
+#if XASH_LINUX || XASH_WIN32
+	return Platform_DebuggerPresent();
+#else
+	return false;
+#endif
+}
+
+static inline void Platform_SetupSigtermHandling( void )
+{
+#if XASH_POSIX
+	Posix_SetupSigtermHandling( );
+#endif
+}
+
+static inline void Platform_Sleep( int msec )
+{
+#if XASH_TIMER == TIMER_SDL
+	SDL_Delay( msec );
+#elif XASH_TIMER == TIMER_POSIX
+	usleep( msec * 1000 );
+#elif XASH_TIMER == TIMER_WIN32
+	Sleep( msec );
+#else
+	// stub
+#endif
+}
+
+#if XASH_WIN32 || XASH_FREEBSD || XASH_NETBSD || XASH_OPENBSD || XASH_ANDROID || XASH_LINUX
+void Sys_SetupCrashHandler( void );
+void Sys_RestoreCrashHandler( void );
+#else
+static inline void Sys_SetupCrashHandler( void )
+{
+}
+
+static inline void Sys_RestoreCrashHandler( void )
+{
+}
+#endif
+
 
 /*
 ==============================================================================
@@ -182,6 +235,24 @@ void Platform_SetClipboardText( const char *buffer );
 #if !XASH_SDL
 #define SDL_VERSION_ATLEAST( x, y, z ) 0
 #endif
+
+static inline void Platform_SetTimer( float time )
+{
+#if XASH_LINUX
+	Linux_SetTimer( time );
+#endif
+}
+
+static inline char *Platform_Input( void )
+{
+#if XASH_WIN32
+	return Wcon_Input();
+#elif XASH_POSIX && !XASH_MOBILE_PLATFORM && !XASH_LOW_MEMORY
+	return Posix_Input();
+#else
+	return NULL;
+#endif
+}
 
 /*
 ==============================================================================
@@ -247,5 +318,94 @@ qboolean VoiceCapture_Init( void );
 void VoiceCapture_Shutdown( void );
 qboolean VoiceCapture_Activate( qboolean activate );
 qboolean VoiceCapture_Lock( qboolean lock );
+
+// this allows to make break in current line, without entering libc code
+// libc built with -fomit-frame-pointer may just eat stack frame (hello, glibc), making entering libc even more useless
+// calling syscalls directly allows to make break like if it was asm("int $3") on x86
+#if XASH_LINUX && XASH_X86
+	#define INLINE_RAISE(x) asm volatile( "int $3;" );
+	#define INLINE_NANOSLEEP1() // nothing!
+#elif XASH_LINUX && XASH_ARM && !XASH_64BIT
+	#include <sys/syscall.h>
+	#include <sys/types.h>
+	#define INLINE_RAISE(x) do \
+		{ \
+			int raise_pid = getpid(); \
+			pid_t raise_tid = Linux_GetProcessID(); \
+			int raise_sig = (x); \
+			__asm__ volatile (  \
+				"mov r7,#268\n\t" \
+				"mov r0,%0\n\t" \
+				"mov r1,%1\n\t" \
+				"mov r2,%2\n\t" \
+				"svc 0\n\t" \
+				: \
+				: "r"(raise_pid), "r"(raise_tid), "r"(raise_sig) \
+				: "r0", "r1", "r2", "r7", "memory" \
+			); \
+		} while( 0 )
+	#define INLINE_NANOSLEEP1() do \
+		{ \
+			struct timespec ns_t1 = {1, 0}; \
+			struct timespec ns_t2 = {0, 0}; \
+			__asm__ volatile ( \
+				"mov r7,#162\n\t" \
+				"mov r0,%0\n\t" \
+				"mov r1,%1\n\t" \
+				"svc 0\n\t" \
+				: \
+				: "r"(&ns_t1), "r"(&ns_t2) \
+				: "r0", "r1", "r7", "memory" \
+			); \
+		} while( 0 )
+#elif XASH_LINUX && XASH_ARM && XASH_64BIT
+	#include <sys/syscall.h>
+	#include <sys/types.h>
+	#define INLINE_RAISE(x) do \
+		{ \
+			int raise_pid = getpid(); \
+			pid_t raise_tid = Linux_GetProcessID(); \
+			int raise_sig = (x); \
+			__asm__ volatile ( \
+				"mov x8,#131\n\t" \
+				"mov x0,%0\n\t" \
+				"mov x1,%1\n\t" \
+				"mov x2,%2\n\t" \
+				"svc 0\n\t" \
+				: \
+				: "r"(raise_pid), "r"(raise_tid), "r"(raise_sig) \
+				: "x0", "x1", "x2", "x8", "memory", "cc" \
+			); \
+		} while( 0 )
+	#define INLINE_NANOSLEEP1() do \
+		{ \
+			struct timespec ns_t1 = {1, 0}; \
+			struct timespec ns_t2 = {0, 0}; \
+			__asm__ volatile ( \
+				"mov x8,#101\n\t" \
+				"mov x0,%0\n\t" \
+				"mov x1,%1\n\t" \
+				"svc 0\n\t" \
+				: \
+				: "r"(&ns_t1), "r"(&ns_t2) \
+				: "x0", "x1", "x8", "memory", "cc" \
+			); \
+		} while( 0 )
+#elif XASH_LINUX
+	#if defined( __NR_tgkill )
+		#define INLINE_RAISE(x) syscall( __NR_tgkill, getpid(), Linux_GetProcessID(), x )
+	#else // __NR_tgkill
+		#define INLINE_RAISE(x) raise(x)
+	#endif // __NR_tgkill
+	#define INLINE_NANOSLEEP1() do \
+		{ \
+			struct timespec ns_t1 = {1, 0}; \
+			struct timespec ns_t2 = {0, 0}; \
+			nanosleep( &ns_t1, &ns_t2 ); \
+		} while( 0 )
+#else // generic
+	#define INLINE_RAISE(x) raise(x)
+	#define INLINE_NANOSLEEP1() sleep(1)
+#endif // generic
 
 #endif // PLATFORM_H

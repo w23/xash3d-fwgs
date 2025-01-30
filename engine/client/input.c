@@ -17,6 +17,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "client.h"
 #include "vgui_draw.h"
+#include "cursor_type.h"
 
 #if XASH_SDL
 #include <SDL.h>
@@ -45,6 +46,8 @@ static CVAR_DEFINE_AUTO( m_rawinput, "1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "ena
 static CVAR_DEFINE_AUTO( cl_forwardspeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default forward move speed" );
 static CVAR_DEFINE_AUTO( cl_backspeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default back move speed"  );
 static CVAR_DEFINE_AUTO( cl_sidespeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default side move speed"  );
+
+static CVAR_DEFINE_AUTO( m_grab_debug, "0", FCVAR_PRIVILEGED, "show debug messages on mouse state change" );
 
 /*
 ================
@@ -107,7 +110,7 @@ void IN_LockInputDevices( qboolean lock )
 IN_StartupMouse
 ===========
 */
-void IN_StartupMouse( void )
+static void IN_StartupMouse( void )
 {
 	Cvar_RegisterVariable( &m_ignore );
 
@@ -115,17 +118,13 @@ void IN_StartupMouse( void )
 	Cvar_RegisterVariable( &m_yaw );
 	Cvar_RegisterVariable( &look_filter );
 	Cvar_RegisterVariable( &m_rawinput );
+	Cvar_RegisterVariable( &m_grab_debug );
 
 	// You can use -nomouse argument to prevent using mouse from client
 	// -noenginemouse will disable all mouse input
 	if( Sys_CheckParm(  "-noenginemouse" )) return;
 
 	in_mouseinitialized = true;
-}
-
-void GAME_EXPORT IN_SetCursor( void *hCursor )
-{
-	// stub
 }
 
 /*
@@ -172,8 +171,6 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 {
 	if( newstate == oldstate )
 		return;
-	if( m_ignore.value )
-		return;
 
 	// since SetCursorType controls cursor visibility
 	// execute it first, and then check mouse grab state
@@ -194,6 +191,10 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 #endif
 	}
 
+	// don't leave the user without cursor if they enabled m_ignore
+	if( m_ignore.value )
+		return;
+
 	if( oldstate == key_game )
 	{
 		IN_DeactivateMouse();
@@ -204,68 +205,81 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 	}
 }
 
-void IN_CheckMouseState( qboolean active )
+static void IN_SetRelativeMouseMode( qboolean set, qboolean verbose )
 {
-	static qboolean s_bRawInput, s_bMouseGrab;
+	static qboolean s_bRawInput;
+
+	if( set && !s_bRawInput )
+	{
+#if XASH_SDL == 2
+		SDL_GetRelativeMouseState( NULL, NULL );
+		SDL_SetRelativeMouseMode( SDL_TRUE );
+#endif
+		s_bRawInput = true;
+		if( verbose )
+			Con_Printf( "%s: true\n", __func__ );
+	}
+	else if( !set && s_bRawInput )
+	{
+#if XASH_SDL == 2
+		SDL_GetRelativeMouseState( NULL, NULL );
+		SDL_SetRelativeMouseMode( SDL_FALSE );
+#endif
+		s_bRawInput = false;
+		if( verbose )
+			Con_Printf( "%s: false\n", __func__ );
+	}
+}
+
+static void IN_SetMouseGrab( qboolean set, qboolean verbose )
+{
+	static qboolean s_bMouseGrab;
+
+	if( set && !s_bMouseGrab )
+	{
+#if XASH_SDL
+		SDL_SetWindowGrab( host.hWnd, SDL_TRUE );
+#endif
+		s_bMouseGrab = true;
+		if( verbose )
+			Con_Printf( "%s: true\n", __func__ );
+	}
+	else if( !set && s_bMouseGrab )
+	{
+#if XASH_SDL
+		SDL_SetWindowGrab( host.hWnd, SDL_FALSE );
+#endif
+
+		s_bMouseGrab = false;
+		if( verbose )
+			Con_Printf( "%s: false\n", __func__ );
+	}
+}
+
+static void IN_CheckMouseState( qboolean active )
+{
+	qboolean use_raw_input, verbose;
 
 #if XASH_WIN32
-	qboolean useRawInput = ( m_rawinput.value && clgame.client_dll_uses_sdl ) || clgame.dllFuncs.pfnLookEvent != NULL;
+	use_raw_input = ( m_rawinput.value && clgame.client_dll_uses_sdl ) || clgame.dllFuncs.pfnLookEvent != NULL;
 #else
-	qboolean useRawInput = true; // always use SDL code
+	use_raw_input = true; // always use SDL code
 #endif
+
+	verbose = m_grab_debug.value ? true : false;
 
 	if( m_ignore.value )
-		return;
+		active = false;
 
-	if( active && useRawInput && !host.mouse_visible && cls.state == ca_active )
-	{
-		if( !s_bRawInput )
-		{
-#if XASH_SDL == 2
-			SDL_GetRelativeMouseState( NULL, NULL );
-			SDL_SetRelativeMouseMode( SDL_TRUE );
-#endif
-
-			// Con_Printf( "Enable relative mode\n" );
-			s_bRawInput = true;
-		}
-	}
+	if( active && use_raw_input && !host.mouse_visible && cls.state == ca_active )
+		IN_SetRelativeMouseMode( true, verbose );
 	else
-	{
-		if( s_bRawInput )
-		{
-#if XASH_SDL == 2
-			SDL_GetRelativeMouseState( NULL, NULL );
-			SDL_SetRelativeMouseMode( SDL_FALSE );
-#endif
-			// Con_Printf( "Disable relative mode\n" );
-			s_bRawInput = false;
-		}
-	}
+		IN_SetRelativeMouseMode( false, verbose );
 
 	if( active && !host.mouse_visible && cls.state == ca_active )
-	{
-		if( !s_bMouseGrab )
-		{
-#if XASH_SDL
-			SDL_SetWindowGrab( host.hWnd, SDL_TRUE );
-#endif
-			// Con_Printf( "Enable grab\n" );
-			s_bMouseGrab = true;
-		}
-	}
+		IN_SetMouseGrab( true, verbose );
 	else
-	{
-		if( s_bMouseGrab )
-		{
-#if XASH_SDL
-			SDL_SetWindowGrab( host.hWnd, SDL_FALSE );
-#endif
-
-			// Con_Printf( "Disable grab\n" );
-			s_bMouseGrab = false;
-		}
-	}
+		IN_SetMouseGrab( false, verbose );
 }
 
 /*
@@ -311,14 +325,14 @@ void IN_DeactivateMouse( void )
 IN_MouseMove
 ================
 */
-void IN_MouseMove( void )
+static void IN_MouseMove( void )
 {
 	int x, y;
 
 	if( !in_mouseinitialized )
 		return;
 
-	if( touch_emulate.value )
+	if( Touch_Emulated( ))
 	{
 		// touch emulation overrides all input
 		Touch_KeyEvent( 0, 0 );
@@ -349,7 +363,7 @@ void IN_MouseEvent( int key, int down )
 	else ClearBits( in_mstate, BIT( key ));
 
 	// touch emulation overrides all input
-	if( touch_emulate.value )
+	if( Touch_Emulated( ))
 	{
 		Touch_KeyEvent( K_MOUSE1 + key, down );
 	}
@@ -555,10 +569,9 @@ IN_EngineAppendMove
 Called from cl_main.c after generating command in client
 ================
 */
-void IN_EngineAppendMove( float frametime, void *cmd1, qboolean active )
+void IN_EngineAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 {
 	float forward, side, pitch, yaw;
-	usercmd_t *cmd = cmd1;
 
 	if( clgame.dllFuncs.pfnLookEvent )
 		return;
@@ -586,7 +599,7 @@ void IN_EngineAppendMove( float frametime, void *cmd1, qboolean active )
 	}
 }
 
-void IN_Commands( void )
+static void IN_Commands( void )
 {
 #if XASH_USE_EVDEV
 	IN_EvdevFrame();
@@ -620,8 +633,6 @@ Called every frame, even if not generating commands
 */
 void Host_InputFrame( void )
 {
-	Sys_SendKeyEvents ();
-
 	IN_Commands();
 
 	IN_MouseMove();

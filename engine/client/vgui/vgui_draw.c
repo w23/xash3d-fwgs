@@ -23,55 +23,227 @@ GNU General Public License for more details.
 #include "input.h"
 #include "platform/platform.h"
 
-CVAR_DEFINE_AUTO( vgui_utf8, "0", FCVAR_ARCHIVE, "enable utf-8 support for vgui text" );
+#define VGUI_MAX_TEXTURES 1024
 
-static void GAME_EXPORT *VGUI_EngineMalloc( size_t size );
-static void GAME_EXPORT VGUI_GetMousePos( int *, int * );
-static void GAME_EXPORT VGUI_CursorSelect( VGUI_DefaultCursor );
-static byte GAME_EXPORT VGUI_GetColor( int, int );
-static int GAME_EXPORT VGUI_UtfProcessChar( int in );
-static qboolean GAME_EXPORT VGUI_IsInGame( void );
+typedef struct vgui_reusable_texture_s
+{
+	int gl_texturenum;
+	byte hash[16];
+} vgui_reusable_texture_t;
 
-static struct
+typedef struct vgui_static_s
 {
 	qboolean initialized;
-	vguiapi_t dllFuncs;
 	VGUI_DefaultCursor cursor;
+	vguiapi_t dllFuncs;
+
+	vgui_reusable_texture_t *textures;
+	int texture_id;
+	int max_textures;
+	int bound_texture;
+	byte color[4];
+	qboolean enable_texture;
 
 	HINSTANCE hInstance;
 
+	poolhandle_t mempool;
+
 	enum VGUI_KeyCode virtualKeyTrans[256];
-} vgui =
-{
-	false,
-	{
-		false, // Not initialized yet
-		NULL, // VGUI_DrawInit,
-		NULL, // VGUI_DrawShutdown,
-		NULL, // VGUI_SetupDrawingText,
-		NULL, // VGUI_SetupDrawingRect,
-		NULL, // VGUI_SetupDrawingImage,
-		NULL, // VGUI_BindTexture,
-		NULL, // VGUI_EnableTexture,
-		NULL, // VGUI_CreateTexture,
-		NULL, // VGUI_UploadTexture,
-		NULL, // VGUI_UploadTextureBlock,
-		NULL, // VGUI_DrawQuad,
-		NULL, // VGUI_GetTextureSizes,
-		NULL, // VGUI_GenerateTexture,
-		VGUI_EngineMalloc,
-		VGUI_CursorSelect,
-		VGUI_GetColor,
-		VGUI_IsInGame,
-		Key_EnableTextInput,
-		VGUI_GetMousePos,
-		VGUI_UtfProcessChar,
-		Platform_GetClipboardText,
-		Platform_SetClipboardText,
-		Platform_GetKeyModifiers,
-	},
-	-1
+} vgui_static_t;
+
+static vgui_static_t vgui = {
+	false, -1
 };
+static CVAR_DEFINE_AUTO( vgui_utf8, "0", FCVAR_ARCHIVE, "enable utf-8 support for vgui text" );
+
+static void GAME_EXPORT VGUI_DrawInit( void )
+{
+	if( vgui.mempool )
+		Mem_EmptyPool( vgui.mempool );
+	else vgui.mempool = Mem_AllocPool( "VGui Support Pool" );
+
+	vgui.textures = NULL;
+
+	memset( vgui.color, 0, sizeof( vgui.color ));
+	vgui.texture_id = 0;
+	vgui.bound_texture = 0;
+	vgui.max_textures = 0;
+	vgui.enable_texture = true;
+}
+
+static void GAME_EXPORT VGUI_DrawShutdown( void )
+{
+	int i;
+
+	for( i = 1; i < vgui.texture_id; i++ )
+		ref.dllFuncs.GL_FreeTexture( vgui.textures[i].gl_texturenum );
+
+	Mem_FreePool( &vgui.mempool );
+	vgui.textures = NULL;
+
+	memset( vgui.color, 0, sizeof( vgui.color ));
+	vgui.texture_id = 0;
+	vgui.bound_texture = 0;
+	vgui.max_textures = 0;
+}
+
+static int GAME_EXPORT VGUI_GenerateTexture( void )
+{
+	// allocate new
+	if( vgui.texture_id + 1 >= vgui.max_textures )
+	{
+		if( vgui.max_textures + VGUI_MAX_TEXTURES >= VGUI_MAX_TEXTURES * VGUI_MAX_TEXTURES )
+		{
+			// in theory it might look up texture that hasn't been bound for a while and
+			// reuse that but it will eventually overwrite some important textures anyway
+			Con_Printf( S_ERROR "%s: Refusing resizing VGUI textures array due to memory leak\n", __func__ );
+			return vgui.texture_id;
+		}
+
+		vgui.max_textures += VGUI_MAX_TEXTURES;
+
+		// this potentially might leak memory if VGUI is used incorrectly!
+		// (like in Cry of Fear)
+		vgui.textures = Mem_Realloc( vgui.mempool, vgui.textures, sizeof( *vgui.textures ) * vgui.max_textures );
+
+		// warn mod developer
+		if( vgui.max_textures >= VGUI_MAX_TEXTURES * 4 )
+			Con_Printf( S_ERROR "%s: Potential memory leak in VGUI code is detected!\n", __func__ );
+	}
+
+	return ++vgui.texture_id;
+}
+
+static void GAME_EXPORT VGUI_UploadTexture( int id, const char *buffer, int width, int height )
+{
+	rgbdata_t r_image = { 0 };
+	char texName[32];
+	MD5Context_t ctx;
+	byte hash[16];
+
+	if( id <= 0 || id >= vgui.max_textures || width <= 0 || height <= 0 )
+	{
+		Con_DPrintf( S_ERROR "%s: bad texture %i. Ignored\n", __func__, id );
+		return;
+	}
+
+	// need to do this as some mods tend to upload same texture over and over
+	// exhausing engine-wide limit on textures and leaking vram
+	MD5Init( &ctx );
+	MD5Update( &ctx, buffer, width * height * 4 );
+	MD5Final( hash, &ctx );
+
+	// it's a new texture, try to find a copy
+	if( vgui.textures[id].gl_texturenum == 0 )
+	{
+		int i;
+
+		for( i = 1; i < vgui.texture_id; i++ )
+		{
+			if( vgui.textures[i].gl_texturenum != 0 && !memcmp( vgui.textures[i].hash, hash, sizeof( hash )))
+			{
+				// copy data to new texture id
+				vgui.textures[id] = vgui.textures[i];
+				return;
+			}
+		}
+	}
+
+	Q_snprintf( texName, sizeof( texName ), "*vgui%i", id );
+
+	r_image.width = width;
+	r_image.height = height;
+	r_image.type = PF_RGBA_32;
+	r_image.size = width * height * 4;
+	r_image.flags = IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA;
+	r_image.buffer = (byte*)buffer;
+
+	vgui.textures[id].gl_texturenum = GL_LoadTextureInternal( texName, &r_image, TF_IMAGE );
+	memcpy( vgui.textures[id].hash, hash, sizeof( hash ));
+}
+
+static void GAME_EXPORT VGUI_CreateTexture( int id, int width, int height )
+{
+	// nothing uses it, it can be removed
+	Host_Error( "%s: deprecated\n", __func__ );
+
+}
+
+static void GAME_EXPORT VGUI_UploadTextureBlock( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
+{
+	// nothing uses it, it can be removed
+	Host_Error( "%s: deprecated\n", __func__ );
+}
+
+static void GAME_EXPORT VGUI_BindTexture( int id )
+{
+	if( id <= 0 || id >= vgui.max_textures || !vgui.textures[id].gl_texturenum )
+		id = 1; // NOTE: same as bogus index 2700 in GoldSrc
+
+	ref.dllFuncs.GL_Bind( XASH_TEXTURE0, vgui.textures[id].gl_texturenum );
+	vgui.bound_texture = id;
+}
+
+static void GAME_EXPORT VGUI_GetTextureSizes( int *w, int *h )
+{
+	int texnum;
+
+	if( vgui.bound_texture )
+		texnum = vgui.textures[vgui.bound_texture].gl_texturenum;
+	else
+		texnum = R_GetBuiltinTexture( REF_DEFAULT_TEXTURE );
+
+	R_GetTextureParms( w, h, texnum );
+}
+
+static void GAME_EXPORT VGUI_SetupDrawingRect( int *pColor )
+{
+	ref.dllFuncs.VGUI_SetupDrawing( true );
+	Vector4Set( vgui.color, pColor[0], pColor[1], pColor[2], 255 - pColor[3] );
+}
+
+static void GAME_EXPORT VGUI_SetupDrawingText( int *pColor )
+{
+	ref.dllFuncs.VGUI_SetupDrawing( false );
+	Vector4Set( vgui.color, pColor[0], pColor[1], pColor[2], 255 - pColor[3] );
+}
+
+static void GAME_EXPORT VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
+{
+	float x, y, w, h;
+
+	if( !ul || !lr )
+		return;
+
+	x = ul->point[0];
+	y = ul->point[1];
+	w = lr->point[0] - x;
+	h = lr->point[1] - y;
+
+	SPR_AdjustSize( &x, &y, &w, &h );
+
+	if( vgui.enable_texture )
+	{
+		float s1, s2, t1, t2;
+
+		s1 = ul->coord[0];
+		t1 = ul->coord[1];
+		s2 = lr->coord[0];
+		t2 = lr->coord[1];
+
+		ref.dllFuncs.Color4ub( vgui.color[0], vgui.color[1], vgui.color[2], vgui.color[3] );
+		ref.dllFuncs.R_DrawStretchPic( x, y, w, h, s1, t1, s2, t2, vgui.textures[vgui.bound_texture].gl_texturenum );
+	}
+	else
+	{
+		ref.dllFuncs.FillRGBA( kRenderTransTexture, x, y, w, h, vgui.color[0], vgui.color[1], vgui.color[2], vgui.color[3] );
+	}
+}
+
+static void GAME_EXPORT VGUI_EnableTexture( qboolean enable )
+{
+	vgui.enable_texture = enable;
+}
 
 static void GAME_EXPORT *VGUI_EngineMalloc( size_t size )
 {
@@ -117,32 +289,45 @@ qboolean VGui_IsActive( void )
 	return vgui.initialized;
 }
 
-static void VGui_FillAPIFromRef( vguiapi_t *to, const ref_interface_t *from )
-{
-	to->DrawInit = from->VGUI_DrawInit;
-	to->DrawShutdown = from->VGUI_DrawShutdown;
-	to->SetupDrawingText = from->VGUI_SetupDrawingText;
-	to->SetupDrawingRect = from->VGUI_SetupDrawingRect;
-	to->SetupDrawingImage = from->VGUI_SetupDrawingImage;
-	to->BindTexture = from->VGUI_BindTexture;
-	to->EnableTexture = from->VGUI_EnableTexture;
-	to->CreateTexture = from->VGUI_CreateTexture;
-	to->UploadTexture = from->VGUI_UploadTexture;
-	to->UploadTextureBlock = from->VGUI_UploadTextureBlock;
-	to->DrawQuad = from->VGUI_DrawQuad;
-	to->GetTextureSizes = from->VGUI_GetTextureSizes;
-	to->GenerateTexture = from->VGUI_GenerateTexture;
-}
-
 void VGui_RegisterCvars( void )
 {
 	Cvar_RegisterVariable( &vgui_utf8 );
 }
 
+static const vguiapi_t gEngfuncs =
+{
+	false, // Not initialized yet
+	VGUI_DrawInit, // VGUI_DrawInit,
+	VGUI_DrawShutdown, // VGUI_DrawShutdown,
+	VGUI_SetupDrawingText, // VGUI_SetupDrawingText,
+	VGUI_SetupDrawingRect, // VGUI_SetupDrawingRect,
+	VGUI_SetupDrawingText, // VGUI_SetupDrawingImage, (same as text)
+	VGUI_BindTexture, // VGUI_BindTexture,
+	VGUI_EnableTexture, // VGUI_EnableTexture,
+	VGUI_CreateTexture, // VGUI_CreateTexture,
+	VGUI_UploadTexture, // VGUI_UploadTexture,
+	VGUI_UploadTextureBlock, // VGUI_UploadTextureBlock,
+	VGUI_DrawQuad, // VGUI_DrawQuad,
+	VGUI_GetTextureSizes, // VGUI_GetTextureSizes,
+	VGUI_GenerateTexture, // VGUI_GenerateTexture,
+	VGUI_EngineMalloc,
+	VGUI_CursorSelect,
+	VGUI_GetColor,
+	VGUI_IsInGame,
+	Key_EnableTextInput,
+	VGUI_GetMousePos,
+	VGUI_UtfProcessChar,
+	Platform_GetClipboardText,
+	Platform_SetClipboardText,
+	Platform_GetKeyModifiers,
+};
+
 qboolean VGui_LoadProgs( HINSTANCE hInstance )
 {
 	void (*F)( vguiapi_t* );
 	qboolean client = hInstance != NULL;
+
+	vgui.dllFuncs = gEngfuncs;
 
 	// not loading interface from client.dll, load vgui_support.dll instead
 	if( !client )
@@ -167,7 +352,7 @@ qboolean VGui_LoadProgs( HINSTANCE hInstance )
 		{
 			if( FS_FileExists( vguiloader, false ))
 				Con_Reportf( S_ERROR "Failed to load vgui_support library: %s\n", COM_GetLibraryError() );
-			else Con_Reportf( "vgui_support: not found\n" );
+			else Con_Reportf( "%s: not found\n", __func__ );
 
 			return false;
 		}
@@ -178,16 +363,15 @@ qboolean VGui_LoadProgs( HINSTANCE hInstance )
 
 	if( F )
 	{
-		VGui_FillAPIFromRef( &vgui.dllFuncs, &ref.dllFuncs );
 		F( &vgui.dllFuncs );
 
 		vgui.initialized = vgui.dllFuncs.initialized = true;
-		Con_Reportf( "vgui_support: initialized legacy API in %s module\n", client ? "client" : "support" );
+		Con_Reportf( "%s: initialized legacy API in %s module\n", __func__, client ? "client" : "support" );
 
 		return true;
 	}
 
-	Con_Reportf( S_ERROR "Failed to find VGUI support API entry point in %s module\n", client ? "client" : "support" );
+	Con_Reportf( S_ERROR "%s: Failed to find VGUI support API entry point in %s module\n", __func__, client ? "client" : "support" );
 	return false;
 }
 
@@ -233,8 +417,9 @@ void VGui_Shutdown( void )
 	if( vgui.hInstance )
 		COM_FreeLibrary( vgui.hInstance );
 
+	// drop pointers to now unloaded vgui_support
+	vgui.dllFuncs = gEngfuncs;
 	vgui.hInstance = NULL;
-	vgui.initialized = false;
 }
 
 

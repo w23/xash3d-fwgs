@@ -66,12 +66,12 @@ realcheck:
 	start[2] = mins[2];
 
 	if( !FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ))
-		start[2] += svgame.movevars.stepsize;
+		start[2] += sv_stepsize.value;
 
 	// the midpoint must be within 16 of the bottom
 	start[0] = stop[0] = (mins[0] + maxs[0]) * 0.5f;
 	start[1] = stop[1] = (mins[1] + maxs[1]) * 0.5f;
-	stop[2] = start[2] - 2.0f * svgame.movevars.stepsize;
+	stop[2] = start[2] - 2.0f * sv_stepsize.value;
 
 	if( iMode == WALKMOVE_WORLDONLY )
 		trace = SV_MoveNoEnts( start, vec3_origin, vec3_origin, stop, MOVE_NOMONSTERS, ent );
@@ -96,7 +96,7 @@ realcheck:
 
 			if( trace.fraction != 1.0f && trace.endpos[2] > bottom )
 				bottom = trace.endpos[2];
-			if( trace.fraction == 1.0f || mid - trace.endpos[2] > svgame.movevars.stepsize )
+			if( trace.fraction == 1.0f || mid - trace.endpos[2] > sv_stepsize.value )
 				return false;
 		}
 	}
@@ -150,21 +150,9 @@ void SV_WaterMove( edict_t *ent )
 		if( flags & FL_INWATER )
 		{
 			// leave the water.
-			switch( COM_RandomLong( 0, 3 ))
-			{
-			case 0:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade1.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 1:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade2.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 2:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade3.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 3:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade4.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			}
+			const char *snd = SoundList_GetRandom( EntityWaterExit );
+			if( snd )
+				SV_StartSound( ent, CHAN_BODY, snd, 1.0f, ATTN_NORM, 0, 100 );
 
 			ent->v.flags = flags & ~FL_INWATER;
 		}
@@ -197,21 +185,9 @@ void SV_WaterMove( edict_t *ent )
 		if( watertype == CONTENTS_WATER )
 		{
 			// entering the water
-			switch( COM_RandomLong( 0, 3 ))
-			{
-			case 0:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade1.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 1:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade2.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 2:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade3.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			case 3:
-				SV_StartSound( ent, CHAN_BODY, "player/pl_wade4.wav", 1.0f, ATTN_NORM, 0, 100 );
-				break;
-			}
+			const char *snd = SoundList_GetRandom( EntityWaterEnter );
+			if( snd )
+				SV_StartSound( ent, CHAN_BODY, snd, 1.0f, ATTN_NORM, 0, 100 );
 		}
 
 		ent->v.flags = flags | FL_INWATER;
@@ -307,7 +283,7 @@ qboolean SV_MoveStep( edict_t *ent, vec3_t move, qboolean relink )
 	}
 	else
 	{
-		dz = svgame.movevars.stepsize;
+		dz = sv_stepsize.value;
 		neworg[2] += dz;
 		VectorCopy( neworg, end );
 		end[2] -= dz * 2.0f;
@@ -372,7 +348,7 @@ qboolean SV_MoveTest( edict_t *ent, vec3_t move, qboolean relink )
 	VectorCopy( ent->v.origin, oldorg );
 	VectorAdd( ent->v.origin, move, neworg );
 
-	temp = svgame.movevars.stepsize;
+	temp = sv_stepsize.value;
 
 	neworg[2] += temp;
 	VectorCopy( neworg, end );
@@ -429,7 +405,7 @@ qboolean SV_MoveTest( edict_t *ent, vec3_t move, qboolean relink )
 	}
 }
 
-qboolean SV_StepDirection( edict_t *ent, float yaw, float dist )
+static qboolean SV_StepDirection( edict_t *ent, float yaw, float dist )
 {
 	int	ret;
 	float	cSin, cCos;
@@ -445,7 +421,7 @@ qboolean SV_StepDirection( edict_t *ent, float yaw, float dist )
 	return ret;
 }
 
-qboolean SV_FlyDirection( edict_t *ent, vec3_t move )
+static qboolean SV_FlyDirection( edict_t *ent, vec3_t move )
 {
 	int	ret;
 
@@ -455,7 +431,7 @@ qboolean SV_FlyDirection( edict_t *ent, vec3_t move )
 	return ret;
 }
 
-void SV_NewChaseDir( edict_t *actor, vec3_t destination, float dist )
+static void SV_NewChaseDir( edict_t *actor, vec3_t destination, float dist )
 {
 	float	deltax, deltay;
 	float	tempdir, olddir, turnaround;

@@ -50,7 +50,29 @@ const char *CL_MsgInfo( int cmd )
 	if( cmd >= 0 && cmd <= svc_lastmsg )
 	{
 		// get engine message name
-		Q_strncpy( sz, svc_strings[cmd], sizeof( sz ));
+		const char *svc_string = NULL;
+
+		switch( cls.legacymode )
+		{
+		case PROTO_CURRENT:
+			svc_string = svc_strings[cmd];
+			break;
+		case PROTO_LEGACY:
+			svc_string = svc_legacy_strings[cmd];
+			break;
+		case PROTO_QUAKE:
+			svc_string = svc_quake_strings[cmd];
+			break;
+		case PROTO_GOLDSRC:
+			svc_string = svc_goldsrc_strings[cmd];
+			break;
+		}
+
+		// fall back to current protocol strings
+		if( !svc_string )
+			svc_string = svc_strings[cmd];
+
+		Q_strncpy( sz, svc_string, sizeof( sz ));
 	}
 	else if( cmd > svc_lastmsg && cmd <= ( svc_lastmsg + MAX_USER_MESSAGES ))
 	{
@@ -131,6 +153,7 @@ static void CL_WriteErrorMessage( int current_count, sizebuf_t *msg )
 
 	FS_Write( fp, &cls.starting_count, sizeof( int ));
 	FS_Write( fp, &current_count, sizeof( int ));
+	FS_Write( fp, &cls.legacymode, sizeof( cls.legacymode ));
 	FS_Write( fp, MSG_GetData( msg ), MSG_GetMaxBytes( msg ));
 	FS_Close( fp );
 
@@ -146,7 +169,7 @@ list last 32 messages for debugging net troubleshooting
 */
 void CL_WriteMessageHistory( void )
 {
-	oldcmd_t	*old, *failcommand;
+	oldcmd_t	*old;
 	sizebuf_t	*msg = &net_message;
 	int	i, thecmd;
 
@@ -170,9 +193,8 @@ void CL_WriteMessageHistory( void )
 		thecmd++;
 	}
 
-	failcommand = &cls_message_debug.oldcmd[thecmd];
-	Con_Printf( "BAD:  %3i:%s\n", MSG_GetNumBytesRead( msg ) - 1, CL_MsgInfo( failcommand->command ));
-	if( host_developer.value >= DEV_EXTENDED )
-		CL_WriteErrorMessage( MSG_GetNumBytesRead( msg ) - 1, msg );
+	old = &cls_message_debug.oldcmd[thecmd];
+	Con_Printf( S_RED "BAD: " S_DEFAULT "%i %04i %s\n", old->frame_number, old->starting_offset, CL_MsgInfo( old->command ));
+	CL_WriteErrorMessage( old->starting_offset, msg );
 	cls_message_debug.parsing = false;
 }

@@ -34,13 +34,13 @@ typedef struct keyname_s
 	const char	*binding;	// default bind
 } keyname_t;
 
-enginekey_t	keys[256];
+static enginekey_t	keys[256];
 
-keyname_t keynames[] =
+static const keyname_t keynames[] =
 {
 {"TAB",		K_TAB,		""		},
 {"ENTER",		K_ENTER,		""		},
-{"ESCAPE",	K_ESCAPE, 	"escape"		}, // hardcoded
+{"ESCAPE",	K_ESCAPE, 	"cancelselect"		}, // hardcoded
 {"SPACE",		K_SPACE,		"+jump"		},
 {"BACKSPACE",	K_BACKSPACE,	""		},
 {"UPARROW",	K_UPARROW,	"+forward"	},
@@ -51,7 +51,7 @@ keyname_t keynames[] =
 {"CTRL",		K_CTRL,		"+attack"		},
 {"SHIFT",		K_SHIFT,		"+speed"		},
 {"CAPSLOCK",	K_CAPSLOCK,	""		},
-{"SCROLLOCK",	K_SCROLLOCK,	""		},
+{"SCROLLOCK",	K_SCROLLLOCK,	""		},
 {"F1",		K_F1,		"cmd help"	},
 {"F2",		K_F2,		"menu_savegame"	},
 {"F3",		K_F3,		"menu_loadgame"	},
@@ -106,7 +106,7 @@ keyname_t keynames[] =
 {"Y_BUTTON", K_Y_BUTTON, "impulse 100"}, // Flashlight
 {"BACK",   K_BACK_BUTTON, "pause"}, // Menu
 {"MODE",   K_MODE_BUTTON, ""},
-{"START",  K_START_BUTTON, "escape"},
+{"START",  K_START_BUTTON, "cancelselect"},
 {"STICK1", K_LSTICK, "+speed"},
 {"STICK2", K_RSTICK, "+duck"},
 {"L1_BUTTON",  K_L1_BUTTON, "+duck"},
@@ -139,7 +139,6 @@ keyname_t keynames[] =
 
 // raw semicolon seperates commands
 {"SEMICOLON",	';',		""		},
-{NULL,		0,		NULL		},
 };
 
 static void OSK_EnableTextInput( qboolean enable, qboolean force );
@@ -172,48 +171,25 @@ the K_* names are matched up.
 to be configured even if they don't have defined names.
 ===================
 */
-int Key_StringToKeynum( const char *str )
+static int Key_StringToKeynum( const char *str )
 {
-	keyname_t		*kn;
+	int i;
 
-	if( !str || !str[0] ) return -1;
-	if( !str[1] ) return str[0];
+	if( !str || !str[0] )
+		return -1;
+
+	if( !str[1] )
+		return str[0];
 
 	// check for hex code
 	if( str[0] == '0' && str[1] == 'x' && Q_strlen( str ) == 4 )
-	{
-		int	n1, n2;
-
-		n1 = str[2];
-		if( n1 >= '0' && n1 <= '9' )
-		{
-			n1 -= '0';
-		}
-		else if( n1 >= 'a' && n1 <= 'f' )
-		{
-			n1 = n1 - 'a' + 10;
-		}
-		else n1 = 0;
-
-		n2 = str[3];
-		if( n2 >= '0' && n2 <= '9' )
-		{
-			n2 -= '0';
-		}
-		else if( n2 >= 'a' && n2 <= 'f' )
-		{
-			n2 = n2 - 'a' + 10;
-		}
-		else n2 = 0;
-
-		return n1 * 16 + n2;
-	}
+		return COM_Nibble( str[2] ) << 4 | COM_Nibble( str[3] );
 
 	// scan for a text match
-	for( kn = keynames; kn->name; kn++ )
+	for( i = 0; i < ARRAYSIZE( keynames ); i++ )
 	{
-		if( !Q_stricmp( str, kn->name ))
-			return kn->keynum;
+		if( !Q_stricmp( str, keynames[i].name ))
+			return keynames[i].keynum;
 	}
 
 	return -1;
@@ -229,15 +205,17 @@ given keynum.
 */
 const char *Key_KeynumToString( int keynum )
 {
-	keyname_t		*kn;
 	static char	tinystr[5];
 	int		i, j;
 
-	if ( keynum == -1 ) return "<KEY NOT FOUND>";
-	if ( keynum < 0 || keynum > 255 ) return "<OUT OF RANGE>";
+	if( keynum == -1 )
+		return "<KEY NOT FOUND>";
+
+	if( keynum < 0 || keynum > 255 )
+		return "<OUT OF RANGE>";
 
 	// check for printable ascii (don't use quote)
-	if( keynum > 32 && keynum < 127 && keynum != '"' && keynum != ';' && keynum != K_SCROLLOCK )
+	if( keynum > 32 && keynum < 127 && keynum != '"' && keynum != ';' && keynum != K_SCROLLLOCK )
 	{
 		tinystr[0] = keynum;
 		tinystr[1] = 0;
@@ -245,10 +223,10 @@ const char *Key_KeynumToString( int keynum )
 	}
 
 	// check for a key string
-	for( kn = keynames; kn->name; kn++ )
+	for( i = 0; i < ARRAYSIZE( keynames ); i++ )
 	{
-		if( keynum == kn->keynum )
-			return kn->name;
+		if( keynum == keynames[i].keynum )
+			return keynames[i].name;
 	}
 
 	// make a hex string
@@ -301,7 +279,7 @@ const char *Key_GetBinding( int keynum )
 Key_GetKey
 ===================
 */
-int Key_GetKey( const char *pBinding )
+static int Key_GetKey( const char *pBinding )
 {
 	int		 i, len;
 	const char	*p;
@@ -328,11 +306,22 @@ int Key_GetKey( const char *pBinding )
 }
 
 /*
+=============
+Key_LookupBinding
+
+=============
+*/
+const char *Key_LookupBinding( const char *pBinding )
+{
+	return Key_KeynumToString( Key_GetKey( pBinding ));
+}
+
+/*
 ===================
 Key_Unbind_f
 ===================
 */
-void Key_Unbind_f( void )
+static void Key_Unbind_f( void )
 {
 	int	b;
 
@@ -350,6 +339,12 @@ void Key_Unbind_f( void )
 		return;
 	}
 
+	if( b == K_ESCAPE )
+	{
+		Con_Printf( "Can't unbind ESCAPE key\n" );
+		return;
+	}
+
 	Key_SetBinding( b, "" );
 }
 
@@ -358,7 +353,7 @@ void Key_Unbind_f( void )
 Key_Unbindall_f
 ===================
 */
-void Key_Unbindall_f( void )
+static void Key_Unbindall_f( void )
 {
 	int	i;
 
@@ -369,8 +364,8 @@ void Key_Unbindall_f( void )
 	}
 
 	// set some defaults
-	Key_SetBinding( K_ESCAPE, "escape" );
-	Key_SetBinding( K_START_BUTTON, "escape" );
+	Key_SetBinding( K_ESCAPE, "cancelselect" );
+	Key_SetBinding( K_START_BUTTON, "cancelselect" );
 }
 
 /*
@@ -378,9 +373,8 @@ void Key_Unbindall_f( void )
 Key_Reset_f
 ===================
 */
-void Key_Reset_f( void )
+static void Key_Reset_f( void )
 {
-	keyname_t	*kn;
 	int	i;
 
 	// clear all keys first
@@ -391,8 +385,8 @@ void Key_Reset_f( void )
 	}
 
 	// apply default values
-	for( kn = keynames; kn->name; kn++ )
-		Key_SetBinding( kn->keynum, kn->binding );
+	for( i = 0; i < ARRAYSIZE( keynames ); i++ )
+		Key_SetBinding( keynames[i].keynum, keynames[i].binding );
 }
 
 /*
@@ -400,7 +394,7 @@ void Key_Reset_f( void )
 Key_Bind_f
 ===================
 */
-void Key_Bind_f( void )
+static void Key_Bind_f( void )
 {
 	char	cmd[1024];
 	int	i, c, b;
@@ -473,7 +467,7 @@ Key_Bindlist_f
 
 ============
 */
-void Key_Bindlist_f( void )
+static void Key_Bindlist_f( void )
 {
 	int	i;
 
@@ -500,7 +494,7 @@ Key_Init
 */
 void Key_Init( void )
 {
-	keyname_t	*kn;
+	int i;
 
 	// register our functions
 	Cmd_AddRestrictedCommand( "bind", Key_Bind_f, "binds a command to the specified key in bindmap" );
@@ -511,7 +505,8 @@ void Key_Init( void )
 	Cmd_AddCommand( "makehelp", Key_EnumCmds_f, "write help.txt that contains all console cvars and cmds" );
 
 	// setup default binding. "unbindall" from config.cfg will be reset it
-	for( kn = keynames; kn->name; kn++ ) Key_SetBinding( kn->keynum, kn->binding );
+	for( i = 0; i < ARRAYSIZE( keynames ); i++ )
+		Key_SetBinding( keynames[i].keynum, keynames[i].binding );
 
 	Cvar_RegisterVariable( &osk_enable );
 	Cvar_RegisterVariable( &key_rotate );
@@ -523,7 +518,7 @@ void Key_Init( void )
 Key_AddKeyCommands
 ===================
 */
-void Key_AddKeyCommands( int key, const char *kb, qboolean down )
+static void Key_AddKeyCommands( int key, const char *kb, qboolean down )
 {
 	char	button[1024];
 	char	*buttonPtr;
@@ -553,7 +548,7 @@ void Key_AddKeyCommands( int key, const char *kb, qboolean down )
 			}
 
 			buttonPtr = button;
-			while(( kb[i] <= ' ' || kb[i] == ';' ) && kb[i] != 0 )
+			while((((byte)kb[i]) <= ' ' || kb[i] == ';' ) && kb[i] != 0 )
 				i++;
 		}
 
@@ -748,18 +743,24 @@ void GAME_EXPORT Key_Event( int key, int down )
 
 	if( cls.key_dest == key_menu )
 	{
-		// only non printable keys passed
-		if( !gameui.use_text_api )
-			Key_EnableTextInput( true, false );
-		//pass printable chars for old menus
-		if( !gameui.use_text_api && !host.textmode && down && ( key >= 32 ) && ( key <= 'z' ) )
+		// classic Xash3D menus don't have an extension that tells engine
+		// to enable text input
+		if( !gameui.use_extended_api )
 		{
-			if( Key_IsDown( K_SHIFT ) )
+			// we don't know if menu wants text input or not
+			// enable it unconditionally
+			Key_EnableTextInput( true, false );
+
+			// pass this key to the menu, if printable
+			if( !host.textmode && down && ( key >= 32 ) && ( key <= 'z' ))
 			{
-				key += 'A' - 'a';
+				if( Key_IsDown( K_SHIFT ))
+					key += 'A' - 'a';
+
+				UI_CharEvent( key );
 			}
-			UI_CharEvent( key );
 		}
+
 		UI_KeyEvent( key, down );
 		return;
 	}
@@ -840,7 +841,7 @@ void GAME_EXPORT Key_SetKeyDest( int key_dest )
 		cls.key_dest = key_message;
 		break;
 	default:
-		Host_Error( "Key_SetKeyDest: wrong destination (%i)\n", key_dest );
+		Host_Error( "%s: wrong destination (%i)\n", __func__, key_dest );
 		break;
 	}
 }
@@ -855,17 +856,21 @@ void GAME_EXPORT Key_ClearStates( void )
 	int	i;
 
 	// don't clear keys during changelevel
-	if( cls.changelevel ) return;
+	if( cls.changelevel )
+		return;
 
 	for( i = 0; i < 256; i++ )
 	{
-		if( keys[i].down )
+		if( keys[i].down && i < K_MOUSE1 && i > K_MOUSE5 )
 			Key_Event( i, false );
 
 		keys[i].down = 0;
 		keys[i].repeats = 0;
 		keys[i].gamedown = 0;
 	}
+
+	for( i = K_MOUSE1; i < K_MOUSE5; i++ ) // from K_MOUSE1 to K_MOUSE5
+		IN_MouseEvent( i - K_MOUSE1, false );
 
 	if( clgame.hInstance )
 		clgame.dllFuncs.IN_ClearStates();
@@ -909,17 +914,16 @@ A helper function if platform input doesn't support text mode properly
 */
 int Key_ToUpper( int keynum )
 {
-	keynum = Q_toupper( keynum );
 	if( keynum == '-' )
-		keynum = '_';
+		return '_';
 	if( keynum == '=' )
-		keynum = '+';
+		return '+';
 	if( keynum == ';' )
-		keynum = ':';
+		return ':';
 	if( keynum == '\'' )
-		keynum = '"';
+		return '"';
 
-	return keynum;
+	return Q_toupper( keynum );
 }
 
 /* On-screen keyboard:
@@ -1055,18 +1059,16 @@ static qboolean OSK_KeyEvent( int key, int down )
 					break;
 				}
 
-				if( !Q_stricmp( cl_charset.string, "utf-8" ) )
-					ch = (unsigned char)osk.curbutton.val;
-				else
-					ch = Con_UtfProcessCharForce( (unsigned char)osk.curbutton.val );
+				ch = (byte)osk.curbutton.val;
+
+				// do not pass UTF-8 sequence into the engine, convert it here
+				if( !cls.accept_utf8 )
+					ch = Con_UtfProcessCharForce( ch );
 
 				if( !ch )
 					break;
 
-				Con_CharEvent( ch );
-				if( cls.key_dest == key_menu )
-					UI_CharEvent ( ch );
-
+				CL_CharEvent( ch );
 				break;
 			}
 		}
@@ -1121,7 +1123,6 @@ static void OSK_EnableTextInput( qboolean enable, qboolean force )
 	{
 		osk.curlayout = 0;
 		osk.curbutton.val = osk_keylayout[osk.curlayout][osk.curbutton.y][osk.curbutton.x];
-
 	}
 }
 
@@ -1147,7 +1148,7 @@ static void OSK_DrawSymbolButton( int symb, float x, float y, float width, float
 		h = height * refState.height;
 
 	if( symb == osk.curbutton.val )
-		ref.dllFuncs.FillRGBABlend( x1, y1, w, h, 255, 160, 0, 100 );
+		ref.dllFuncs.FillRGBA( kRenderTransTexture, x1, y1, w, h, 255, 160, 0, 100 );
 
 	if( !symb || symb == ' ' || (symb >= OSK_TAB && symb < OSK_SPECKEY_LAST ) )
 		return;
@@ -1194,7 +1195,7 @@ void OSK_Draw( void )
 		return;
 
 	// draw keyboard
-	ref.dllFuncs.FillRGBABlend( X_START * refState.width, Y_START * refState.height,
+	ref.dllFuncs.FillRGBA( kRenderTransTexture, X_START * refState.width, Y_START * refState.height,
 					  X_STEP * MAX_OSK_ROWS * refState.width,
 					  Y_STEP * MAX_OSK_LINES * refState.height, 100, 100, 100, 100 );
 

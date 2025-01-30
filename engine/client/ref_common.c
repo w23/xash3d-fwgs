@@ -8,7 +8,9 @@
 struct ref_state_s ref;
 ref_globals_t refState;
 
-CVAR_DEFINE_AUTO( gl_vsync, "0", FCVAR_ARCHIVE,  "enable vertical syncronization" );
+static const char* r_skyBoxSuffix[SKYBOX_MAX_SIDES] = { "rt", "bk", "lf", "ft", "up", "dn" };
+
+CVAR_DEFINE_AUTO( gl_vsync, "1", FCVAR_ARCHIVE,  "enable vertical syncronization" );
 CVAR_DEFINE_AUTO( r_showtextures, "0", FCVAR_CHEAT, "show all uploaded textures" );
 CVAR_DEFINE_AUTO( r_adjust_fov, "1", FCVAR_ARCHIVE, "making FOV adjustment for wide-screens" );
 CVAR_DEFINE_AUTO( r_decals, "4096", FCVAR_ARCHIVE, "sets the maximum number of decals" );
@@ -18,19 +20,127 @@ CVAR_DEFINE_AUTO( r_showtree, "0", FCVAR_ARCHIVE, "build the graph of visible BS
 static CVAR_DEFINE_AUTO( r_refdll, "", FCVAR_RENDERINFO, "choose renderer implementation, if supported" );
 static CVAR_DEFINE_AUTO( r_refdll_loaded, "", FCVAR_READ_ONLY, "currently loaded renderer" );
 
-void R_GetTextureParms( int *w, int *h, int texnum )
+// there is no need to expose whole host and cl structs into the renderer
+// but we still need to update timings accurately as possible
+// this looks horrible but the only other option would be passing four
+// time pointers and then it's looks even worse with dereferences everywhere
+#define STATIC_OFFSET_CHECK( s1, s2, field, base, msg ) \
+	STATIC_ASSERT( offsetof( s1, field ) == offsetof( s2, field ) - offsetof( s2, base ), msg )
+#define REF_CLIENT_CHECK( field ) \
+	STATIC_OFFSET_CHECK( ref_client_t, client_t, field, time, "broken ref_client_t offset" ); \
+	STATIC_ASSERT_( szchk_##__LINE__, sizeof(((ref_client_t *)0)->field ) == sizeof( cl.field ), "broken ref_client_t size" )
+#define REF_HOST_CHECK( field ) \
+	STATIC_OFFSET_CHECK( ref_host_t, host_parm_t, field, realtime, "broken ref_client_t offset" ); \
+	STATIC_ASSERT_( szchk_##__LINE__, sizeof(((ref_host_t *)0)->field ) == sizeof( host.field ), "broken ref_client_t size" )
+
+REF_CLIENT_CHECK( time );
+REF_CLIENT_CHECK( oldtime );
+REF_CLIENT_CHECK( viewentity );
+REF_CLIENT_CHECK( playernum );
+REF_CLIENT_CHECK( maxclients );
+REF_CLIENT_CHECK( models );
+REF_CLIENT_CHECK( paused );
+REF_CLIENT_CHECK( simorg );
+REF_HOST_CHECK( realtime );
+REF_HOST_CHECK( frametime );
+REF_HOST_CHECK( features );
+
+static qboolean CheckSkybox( const char *name, char out[SKYBOX_MAX_SIDES][MAX_STRING] )
 {
-	if( w ) *w = REF_GET_PARM( PARM_TEX_WIDTH, texnum );
-	if( h ) *h = REF_GET_PARM( PARM_TEX_HEIGHT, texnum );
+	static const char *skybox_ext[3] = { "dds", "tga", "bmp" };
+	static const char *skybox_delim[2] = { "", "_" }; // no space for HL style, underscore for Q1 style
+	int	i;
+
+	// search for skybox images
+	for( i = 0; i <	ARRAYSIZE( skybox_ext ); i++ )
+	{
+		int j;
+
+		for( j = 0; j < ARRAYSIZE( skybox_delim ); j++ )
+		{
+			int k, num_checked_sides = 0;
+
+			for( k = 0; k < SKYBOX_MAX_SIDES; k++ )
+			{
+				char sidename[MAX_VA_STRING];
+
+				Q_snprintf( sidename, sizeof( sidename ), "%s%s%s.%s", name, skybox_delim[j], r_skyBoxSuffix[k], skybox_ext[i] );
+				if( g_fsapi.FileExists( sidename, false ))
+				{
+					Q_strncpy( out[k], sidename, sizeof( out[k] ));
+					num_checked_sides++;
+				}
+			}
+
+			if( num_checked_sides == SKYBOX_MAX_SIDES )
+				return true; // image exists
+		}
+	}
+
+	return false;
 }
 
-/*
-================
-GL_FreeImage
+void R_SetupSky( const char *name )
+{
+	string loadname;
+	char sidenames[SKYBOX_MAX_SIDES][MAX_STRING];
+	int skyboxTextures[SKYBOX_MAX_SIDES] = { 0 };
+	int i, len;
+	qboolean result;
 
-Frees image by name
-================
-*/
+	if( !COM_CheckString( name ))
+	{
+		ref.dllFuncs.R_SetupSky( NULL ); // unload skybox
+		return;
+	}
+
+	Q_snprintf( loadname, sizeof( loadname ), "gfx/env/%s", name );
+	COM_StripExtension( loadname );
+
+	// kill the underline suffix to find them manually later
+	len = Q_strlen( loadname );
+
+	if( loadname[len - 1] == '_' )
+		loadname[len - 1] = '\0';
+	result = CheckSkybox( loadname, sidenames );
+
+	// to prevent infinite recursion if default skybox was missed
+	if( !result && Q_stricmp( name, DEFAULT_SKYBOX_NAME ))
+	{
+		Con_Reportf( S_WARN "missed or incomplete skybox '%s'\n", name );
+		R_SetupSky( DEFAULT_SKYBOX_NAME ); // force to default
+		return;
+	}
+
+	ref.dllFuncs.R_SetupSky( NULL ); // unload skybox
+	Con_DPrintf( "SKY:  " );
+
+	for( i = 0; i < SKYBOX_MAX_SIDES; i++ )
+	{
+		skyboxTextures[i] = ref.dllFuncs.GL_LoadTexture( sidenames[i], NULL, 0, TF_CLAMP|TF_SKY );
+
+		if( !skyboxTextures[i] )
+			break;
+
+		Con_DPrintf( "%s%s%s", name, r_skyBoxSuffix[i], i != 5 ? ", " : ". " );
+	}
+
+	if( i == SKYBOX_MAX_SIDES )
+	{
+		SetBits( world.flags, FWORLD_CUSTOM_SKYBOX );
+		Con_DPrintf( "done\n" );
+		ref.dllFuncs.R_SetupSky( skyboxTextures );
+		return; // loaded
+	}
+
+	Con_DPrintf( "^2failed\n" );
+	for( i = 0; i < SKYBOX_MAX_SIDES; i++ )
+	{
+		if( skyboxTextures[i] )
+			ref.dllFuncs.GL_FreeTexture( skyboxTextures[i] );
+	}
+}
+
 void GAME_EXPORT GL_FreeImage( const char *name )
 {
 	int	texnum;
@@ -42,18 +152,8 @@ void GAME_EXPORT GL_FreeImage( const char *name )
 		 ref.dllFuncs.GL_FreeTexture( texnum );
 }
 
-void R_UpdateRefState( void )
-{
-	refState.time      = cl.time;
-	refState.oldtime   = cl.oldtime;
-	refState.realtime  = host.realtime;
-	refState.frametime = host.frametime;
-}
-
 void GL_RenderFrame( const ref_viewpass_t *rvp )
 {
-	R_UpdateRefState();
-
 	VectorCopy( rvp->vieworigin, refState.vieworg );
 	VectorCopy( rvp->viewangles, refState.viewangles );
 
@@ -65,9 +165,25 @@ static intptr_t pfnEngineGetParm( int parm, int arg )
 	return CL_RenderGetParm( parm, arg, false ); // prevent recursion
 }
 
-static world_static_t *pfnGetWorld( void )
+static cvar_t *pfnCvar_Get( const char *szName, const char *szValue, int flags, const char *description )
 {
-	return &world;
+	return (cvar_t *)Cvar_Get( szName, szValue, flags | FCVAR_REFDLL, description );
+}
+
+static void pfnCvar_RegisterVariable( convar_t *var )
+{
+	SetBits( var->flags, FCVAR_REFDLL );
+	Cvar_RegisterVariable( var );
+}
+
+static void pfnCvar_FullSet( const char *var_name, const char *value, int flags )
+{
+	Cvar_FullSet( var_name, value, flags | FCVAR_REFDLL );
+}
+
+static int Cmd_AddRefCommand( const char *cmd_name, xcommand_t function, const char *description )
+{
+	return Cmd_AddCommandEx( cmd_name, function, description, CMD_REFDLL, __func__ );
 }
 
 static void pfnStudioEvent( const mstudioevent_t *event, const cl_entity_t *e )
@@ -81,7 +197,7 @@ static model_t *pfnGetDefaultSprite( enum ref_defaultsprite_e spr )
 	{
 	case REF_DOT_SPRITE: return cl_sprite_dot;
 	case REF_CHROME_SPRITE: return cl_sprite_shell;
-	default: Host_Error( "GetDefaultSprite: unknown sprite %d\n", spr );
+	default: Host_Error( "%s: unknown sprite %d\n", __func__, spr );
 	}
 	return NULL;
 }
@@ -94,19 +210,15 @@ static void *pfnMod_Extradata( int type, model_t *m )
 	case mod_studio: return Mod_StudioExtradata( m );
 	case mod_sprite: // fallthrough
 	case mod_brush: return NULL;
-	default: Host_Error( "Mod_Extradata: unknown type %d\n", type );
+	default: Host_Error( "%s: unknown type %d\n", __func__, type );
 	}
 	return NULL;
 }
 
-static void pfnGetPredictedOrigin( vec3_t v )
+static void CL_ExtraUpdate( void )
 {
-	VectorCopy( cl.simorg, v );
-}
-
-static color24 *pfnCL_GetPaletteColor( int color ) // clgame.palette[color]
-{
-	return &clgame.palette[color];
+	clgame.dllFuncs.IN_Accumulate();
+	S_ExtraUpdate();
 }
 
 static void pfnCL_GetScreenInfo( int *width, int *height ) // clgame.scrInfo, ptrs may be NULL
@@ -158,11 +270,6 @@ static int pfnGetStudioModelInterface( int version, struct r_studio_interface_s 
 		0;
 }
 
-static poolhandle_t pfnImage_GetPool( void )
-{
-	return host.imagepool;
-}
-
 static const bpc_desc_t *pfnImage_GetPFDesc( int idx )
 {
 	return &PFDesc[idx];
@@ -183,25 +290,6 @@ static screenfade_t *pfnRefGetScreenFade( void )
 	return &clgame.fade;
 }
 
-/*
-===============
-R_DoResetGamma
-gamma will be reset for
-some type of screenshots
-===============
-*/
-static qboolean R_DoResetGamma( void )
-{
-	switch( cls.scrshot_action )
-	{
-	case scrshot_envshot:
-	case scrshot_skyshot:
-		return true;
-	default:
-		return false;
-	}
-}
-
 static qboolean R_Init_Video_( const int type )
 {
 	host.apply_opengl_config = true;
@@ -212,18 +300,24 @@ static qboolean R_Init_Video_( const int type )
 	return R_Init_Video( type );
 }
 
-static ref_api_t gEngfuncs =
+static mleaf_t *pfnMod_PointInLeaf( const vec3_t p, mnode_t *node )
+{
+	// FIXME: get rid of this on next RefAPI update
+	return Mod_PointInLeaf( p, node, cl.models[1] );
+}
+
+static const ref_api_t gEngfuncs =
 {
 	pfnEngineGetParm,
 
-	(void*)Cvar_Get,
+	pfnCvar_Get,
 	(void*)Cvar_FindVarExt,
 	Cvar_VariableValue,
 	Cvar_VariableString,
 	Cvar_SetValue,
 	Cvar_Set,
-	Cvar_RegisterVariable,
-	Cvar_FullSet,
+	pfnCvar_RegisterVariable,
+	pfnCvar_FullSet,
 
 	Cmd_AddRefCommand,
 	Cmd_RemoveCommand,
@@ -246,18 +340,15 @@ static ref_api_t gEngfuncs =
 	Con_DrawString,
 	CL_DrawCenterPrint,
 
-	CL_GetLocalPlayer,
-	CL_GetViewModel,
-	CL_GetEntityByIndex,
 	R_BeamGetEntity,
 	CL_GetWaterEntity,
 	CL_AddVisibleEntity,
 
 	Mod_SampleSizeForFace,
 	Mod_BoxVisible,
-	pfnGetWorld,
-	Mod_PointInLeaf,
-	Mod_CreatePolygonsForHull,
+	pfnMod_PointInLeaf,
+	R_DrawWorldHull,
+	R_DrawModelHull,
 
 	R_StudioGetAnim,
 	pfnStudioEvent,
@@ -272,12 +363,9 @@ static ref_api_t gEngfuncs =
 
 	Mod_ForName,
 	pfnMod_Extradata,
-	CL_ModelHandle,
 
+	CL_EntitySetRemapColors,
 	CL_GetRemapInfoForEntity,
-	CL_AllocRemapInfo,
-	CL_FreeRemapInfo,
-	CL_UpdateRemapInfo,
 
 	CL_ExtraUpdate,
 	Host_Error,
@@ -285,9 +373,6 @@ static ref_api_t gEngfuncs =
 	COM_RandomFloat,
 	COM_RandomLong,
 	pfnRefGetScreenFade,
-	CL_TextMessageGet,
-	pfnGetPredictedOrigin,
-	pfnCL_GetPaletteColor,
 	pfnCL_GetScreenInfo,
 	pfnSetLocalLightLevel,
 	Sys_CheckParm,
@@ -321,13 +406,6 @@ static ref_api_t gEngfuncs =
 	SW_LockBuffer,
 	SW_UnlockBuffer,
 
-	BuildGammaTable,
-	LightToTexGamma,
-	R_DoResetGamma,
-
-	CL_GetLightStyle,
-	CL_GetDynamicLight,
-	CL_GetEntityLight,
 	R_FatPVS,
 	GL_GetOverviewParms,
 	Sys_DoubleTime,
@@ -337,7 +415,6 @@ static ref_api_t gEngfuncs =
 	PM_CL_TraceLine,
 	CL_VisTraceLine,
 	CL_TraceLine,
-	pfnGetMoveVars,
 
 	Image_AddCmdFlags,
 	Image_SetForceFlags,
@@ -349,7 +426,6 @@ static ref_api_t gEngfuncs =
 	FS_CopyImage,
 	FS_FreeImage,
 	Image_SetMDLPointer,
-	pfnImage_GetPool,
 	pfnImage_GetPFDesc,
 
 	pfnDrawNormalTriangles,
@@ -372,7 +448,7 @@ static void R_UnloadProgs( void )
 
 	Cvar_FullSet( "host_refloaded", "0", FCVAR_READ_ONLY );
 
-	Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG );
+	Cvar_Unlink( FCVAR_RENDERINFO | FCVAR_GLCONFIG | FCVAR_REFDLL );
 	Cmd_Unlink( CMD_REFDLL );
 
 	COM_FreeLibrary( ref.hInstance );
@@ -408,48 +484,41 @@ static void CL_FillTriAPIFromRef( triangleapi_t *dst, const ref_interface_t *src
 
 static qboolean R_LoadProgs( const char *name )
 {
-	extern triangleapi_t gTriApi;
 	static ref_api_t gpEngfuncs;
 	REFAPI GetRefAPI; // single export
 
 	if( ref.hInstance ) R_UnloadProgs();
 
 	FS_AllowDirectPaths( true );
-	if( !(ref.hInstance = COM_LoadLibrary( name, false, true ) ))
+	if( !( ref.hInstance = COM_LoadLibrary( name, false, true )))
 	{
 		FS_AllowDirectPaths( false );
-		Con_Reportf( "R_LoadProgs: can't load renderer library %s: %s\n", name, COM_GetLibraryError() );
+		Con_Reportf( "%s: can't load renderer library %s: %s\n", __func__, name, COM_GetLibraryError() );
 		return false;
 	}
 
 	FS_AllowDirectPaths( false );
 
-	if( !( GetRefAPI = (REFAPI)COM_GetProcAddress( ref.hInstance, GET_REF_API )) )
+	if( !( GetRefAPI = (REFAPI)COM_GetProcAddress( ref.hInstance, GET_REF_API )))
 	{
-		COM_FreeLibrary( ref.hInstance );
-		Con_Reportf( "R_LoadProgs: can't find GetRefAPI entry point in %s\n", name );
-		ref.hInstance = NULL;
+		Con_Reportf( "%s: can't find GetRefAPI entry point in %s\n", __func__, name );
 		return false;
 	}
 
 	// make local copy of engfuncs to prevent overwrite it with user dll
-	memcpy( &gpEngfuncs, &gEngfuncs, sizeof( gpEngfuncs ));
+	gpEngfuncs = gEngfuncs;
 
-	if( !GetRefAPI( REF_API_VERSION, &ref.dllFuncs, &gpEngfuncs, &refState ))
+	if( GetRefAPI( REF_API_VERSION, &ref.dllFuncs, &gpEngfuncs, &refState ) != REF_API_VERSION )
 	{
-		COM_FreeLibrary( ref.hInstance );
-		Con_Reportf( "R_LoadProgs: can't init renderer API: wrong version\n" );
-		ref.hInstance = NULL;
+		Con_Reportf( "%s: can't init renderer API: wrong version\n", __func__ );
 		return false;
 	}
 
 	refState.developer = host_developer.value;
 
-	if( !ref.dllFuncs.R_Init( ) )
+	if( !ref.dllFuncs.R_Init( ))
 	{
-		COM_FreeLibrary( ref.hInstance );
-		Con_Reportf( "R_LoadProgs: can't init renderer!\n" ); //, ref.dllFuncs.R_GetInitError() );
-		ref.hInstance = NULL;
+		Con_Reportf( "%s: can't init renderer!\n", __func__ ); //, ref.dllFuncs.R_GetInitError() );
 		return false;
 	}
 
@@ -486,21 +555,19 @@ static void R_GetRendererName( char *dest, size_t size, const char *opt )
 {
 	if( !Q_strstr( opt, "." OS_LIB_EXT ))
 	{
-		const char *format;
-
 #ifdef XASH_INTERNAL_GAMELIBS
-		if( !Q_strcmp( opt, "ref_" ))
-			format = "%s";
-		else
-			format = "ref_%s";
+	#define FMT1 "%s"
+	#define FMT2 "ref_%s"
 #else
-		if( !Q_strcmp( opt, "ref_" ))
-			format = OS_LIB_PREFIX "%s." OS_LIB_EXT;
-		else
-			format = OS_LIB_PREFIX "ref_%s." OS_LIB_EXT;
+	#define FMT1 OS_LIB_PREFIX "%s." OS_LIB_EXT
+	#define FMT2 OS_LIB_PREFIX "ref_%s." OS_LIB_EXT
 #endif
-		Q_snprintf( dest, size, format, opt );
-
+		if( !Q_strncmp( opt, "ref_", 4 ))
+			Q_snprintf( dest, size, FMT1, opt );
+		else
+			Q_snprintf( dest, size, FMT2, opt );
+#undef FMT1
+#undef FMT2
 	}
 	else
 	{
@@ -573,6 +640,9 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_GL4ES_ENABLED
 		"gl4es",
 #endif
+#if XASH_REF_GLES3COMPAT_ENABLED
+		"gles3compat",
+#endif
 #if XASH_REF_SOFT_ENABLED
 		"soft",
 #endif
@@ -595,6 +665,9 @@ static void R_CollectRendererNames( void )
 #endif
 #if XASH_REF_GL4ES_ENABLED
 		"GL4ES",
+#endif
+#if XASH_REF_GLES3COMPAT_ENABLED
+		"GLES3 (gl2_shim)",
 #endif
 #if XASH_REF_SOFT_ENABLED
 		"Software",
@@ -671,7 +744,8 @@ static void R_GetRenderDevices_f( void )
 qboolean R_Init( void )
 {
 	qboolean success = false;
-	string requested;
+	string requested_cmdline;
+	string requested_cvar;
 
 	Cvar_RegisterVariable( &gl_vsync );
 	Cvar_RegisterVariable( &r_showtextures );
@@ -702,6 +776,7 @@ qboolean R_Init( void )
 
 	// cvars that are expected to exist by client.dll
 	// refdll should just get pointer to them
+	Cvar_Get( "r_lighting_modulate", "0.6", FCVAR_ARCHIVE, "compatibility cvar, does nothing" );
 	Cvar_Get( "r_drawentities", "1", FCVAR_CHEAT, "render entities" );
 	Cvar_Get( "cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer" );
 
@@ -722,15 +797,16 @@ qboolean R_Init( void )
 	// 1. Command line `-ref` argument.
 	// 2. `ref_dll` cvar.
 	// 3. Detected renderers in `DEFAULT_RENDERERS` order.
-	requested[0] = 0;
+	requested_cmdline[0] = 0;
+	requested_cvar[0] = 0;
 
-	if( !success && Sys_GetParmFromCmdLine( "-ref", requested ))
-		success = R_LoadRenderer( requested );
+	if( Sys_GetParmFromCmdLine( "-ref", requested_cmdline ))
+		success = R_LoadRenderer( requested_cmdline );
 
-	if( !success && COM_CheckString( r_refdll.string ))
+	if( !success && COM_CheckString( r_refdll.string ) && Q_stricmp( requested_cmdline, r_refdll.string ))
 	{
-		Q_strncpy( requested, r_refdll.string, sizeof( requested ));
-		success = R_LoadRenderer( requested );
+		Q_strncpy( requested_cvar, r_refdll.string, sizeof( requested_cvar ));
+		success = R_LoadRenderer( requested_cvar );
 	}
 
 	if( !success )
@@ -740,7 +816,10 @@ qboolean R_Init( void )
 		for( i = 0; i < ref.numRenderers && !success; i++ )
 		{
 			// skip renderer that was requested but failed to load
-			if( !Q_strcmp( requested, ref.shortNames[i] ))
+			if( !Q_strcmp( requested_cmdline, ref.shortNames[i] ))
+				continue;
+
+			if( !Q_strcmp( requested_cvar, ref.shortNames[i] ))
 				continue;
 
 			success = R_LoadRenderer( ref.shortNames[i] );
@@ -749,7 +828,7 @@ qboolean R_Init( void )
 
 	if( !success )
 	{
-		Host_Error( "Can't initialize any renderer. Check your video drivers!\n" );
+		Sys_Error( "Can't initialize any renderer. Check your video drivers!\n" );
 		return false;
 	}
 

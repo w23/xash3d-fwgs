@@ -82,7 +82,7 @@ typedef struct
 	float	time;
 } SAVE_LIGHTSTYLE;
 
-void (__cdecl *pfnSaveGameComment)( char *buffer, int max_length ) = NULL;
+static void (__cdecl *pfnSaveGameComment)( char *buffer, int max_length ) = NULL;
 
 static TYPEDESCRIPTION gGameHeader[] =
 {
@@ -141,7 +141,8 @@ static TYPEDESCRIPTION gSaveClient[] =
 	DEFINE_ARRAY( SAVE_CLIENT, introTrack, FIELD_CHARACTER, 64 ),
 	DEFINE_ARRAY( SAVE_CLIENT, mainTrack, FIELD_CHARACTER, 64 ),
 	DEFINE_FIELD( SAVE_CLIENT, trackPosition, FIELD_INTEGER ),
-	DEFINE_FIELD( SAVE_CLIENT, viewentity, FIELD_SHORT ),
+	// mods based on HLU SDK disallow usage of FIELD_SHORT
+	DEFINE_ARRAY( SAVE_CLIENT, viewentity, FIELD_CHARACTER, sizeof( short )),
 	DEFINE_FIELD( SAVE_CLIENT, wateralpha, FIELD_FLOAT ),
 	DEFINE_FIELD( SAVE_CLIENT, wateramp, FIELD_FLOAT ),
 };
@@ -150,7 +151,8 @@ static TYPEDESCRIPTION gDecalEntry[] =
 {
 	DEFINE_FIELD( decallist_t, position, FIELD_VECTOR ),
 	DEFINE_ARRAY( decallist_t, name, FIELD_CHARACTER, 64 ),
-	DEFINE_FIELD( decallist_t, entityIndex, FIELD_SHORT ),
+	// mods based on HLU SDK disallow usage of FIELD_SHORT
+	DEFINE_ARRAY( decallist_t, entityIndex, FIELD_CHARACTER, sizeof( short )),
 	DEFINE_FIELD( decallist_t, depth, FIELD_CHARACTER ),
 	DEFINE_FIELD( decallist_t, flags, FIELD_CHARACTER ),
 	DEFINE_FIELD( decallist_t, scale, FIELD_FLOAT ),
@@ -158,6 +160,7 @@ static TYPEDESCRIPTION gDecalEntry[] =
 	DEFINE_ARRAY( decallist_t, studio_state, FIELD_CHARACTER, sizeof( modelstate_t )),
 };
 
+// Can use any FIELD type here because only Xash3D games will spawn static entities
 static TYPEDESCRIPTION gStaticEntry[] =
 {
 	DEFINE_FIELD( entity_state_t, messagenum, FIELD_MODELNAME ), // HACKHACK: store model into messagenum
@@ -200,7 +203,8 @@ static TYPEDESCRIPTION gStaticEntry[] =
 static TYPEDESCRIPTION gSoundEntry[] =
 {
 	DEFINE_ARRAY( soundlist_t, name, FIELD_CHARACTER, 64 ),
-	DEFINE_FIELD( soundlist_t, entnum, FIELD_SHORT ),
+	// mods based on HLU SDK disallow usage of FIELD_SHORT
+	DEFINE_ARRAY( soundlist_t, entnum, FIELD_CHARACTER, sizeof( short )),
 	DEFINE_FIELD( soundlist_t, origin, FIELD_VECTOR ),
 	DEFINE_FIELD( soundlist_t, volume, FIELD_FLOAT ),
 	DEFINE_FIELD( soundlist_t, attenuation, FIELD_FLOAT ),
@@ -218,7 +222,7 @@ static TYPEDESCRIPTION gTempEntvars[] =
 	DEFINE_ENTITY_GLOBAL_FIELD( globalname, FIELD_STRING ),
 };
 
-struct
+static const struct
 {
 	const char *mapname;
 	const char *titlename;
@@ -652,7 +656,7 @@ static void DirectoryCopy( const char *pPath, file_t *pFile )
 		fileSize = FS_FileLength( pCopy );
 
 		memset( szName, 0, sizeof( szName )); // clearing the string to prevent garbage in output file
-		Q_strncpy( szName, COM_FileWithoutPath( t->filenames[i] ), MAX_OSPATH );
+		Q_strncpy( szName, COM_FileWithoutPath( t->filenames[i] ), sizeof( szName ));
 		FS_Write( pFile, szName, MAX_OSPATH );
 		FS_Write( pFile, &fileSize, sizeof( int ));
 		FS_FileCopy( pFile, pCopy, fileSize );
@@ -764,33 +768,6 @@ static void SaveFinish( SAVERESTOREDATA *pSaveData )
 
 	svgame.globals->pSaveData = NULL;
 	Mem_Free( pSaveData );
-}
-
-/*
-=============
-DumpHashStrings
-
-debug thing
-=============
-*/
-static void DumpHashStrings( SAVERESTOREDATA *pSaveData, const char *pMessage )
-{
-	int	i, count = 0;
-
-	if( pSaveData && pSaveData->pTokens )
-	{
-		Con_Printf( "%s\n", pMessage );
-
-		for( i = 0; i < pSaveData->tokenCount; i++ )
-		{
-			if( !pSaveData->pTokens[i] )
-				continue;
-
-			Con_Printf( "#%i %s\n", count, pSaveData->pTokens[i] );
-			count++;
-		}
-		Con_Printf( "total %i actual %i\n", pSaveData->tokenCount, count );
-	}
 }
 
 /*
@@ -984,7 +961,10 @@ static void ParseSaveTables( SAVERESTOREDATA *pSaveData, SAVE_HEADER *pHeader, i
 	InitEntityTable( pSaveData, pSaveData->tableCount );
 
 	for( i = 0; i < pSaveData->tableCount; i++ )
+	{
 		svgame.dllFuncs.pfnSaveReadFields( pSaveData, "ETABLE", &pSaveData->pTable[i], gEntityTable, ARRAYSIZE( gEntityTable ));
+		pSaveData->pTable[i].pent = NULL;
+	}
 
 	pSaveData->pBaseData = pSaveData->pCurrentData;
 	pSaveData->size = 0;
@@ -1194,41 +1174,36 @@ static void SaveClientState( SAVERESTOREDATA *pSaveData, const char *level, int 
 	char		name[MAX_QPATH];
 	int		i, id, version;
 	char		*pTokenData;
-	decallist_t	*decalList;
-	SAVE_CLIENT	header;
+	decallist_t	*decalList = NULL;
+	SAVE_CLIENT	header = { 0 };
 	file_t		*pFile;
 
 	// clearing the saving buffer to reuse
 	SaveClear( pSaveData );
 
-	memset( &header, 0, sizeof( header ));
-
-	// g-cont. add space for studiodecals if present
-	decalList = (decallist_t *)Z_Calloc( sizeof( decallist_t ) * MAX_RENDER_DECALS * 2 );
+	header.entityCount = sv.num_static_entities;
 
 	// initialize client header
 #if !XASH_DEDICATED
-	if( !Host_IsDedicated() )
+	if( !Host_IsDedicated( ))
 	{
-		header.decalCount = ref.dllFuncs.R_CreateDecalList( decalList );
-	}
-	else
-#endif // XASH_DEDICATED
-	{
-		// we probably running a dedicated server
-		header.decalCount = 0;
-	}
-	header.entityCount = sv.num_static_entities;
+		// g-cont. add space for studiodecals if present
+		decalList = (decallist_t *)Mem_Calloc( host.mempool, sizeof( decallist_t ) * MAX_RENDER_DECALS * 2 );
 
-	if( !changelevel )
-	{
-	 	// sounds won't going across transition
-		header.soundCount = S_GetCurrentDynamicSounds( soundInfo, MAX_CHANNELS );
-#if !XASH_DEDICATED
-		// music not reqiured to save position: it's just continue playing on a next level
-		S_StreamGetCurrentState( header.introTrack, header.mainTrack, &header.trackPosition );
-#endif
+		header.decalCount = ref.dllFuncs.R_CreateDecalList( decalList );
+
+		if( !changelevel ) // sounds won't going across transition
+		{
+			header.soundCount = S_GetCurrentDynamicSounds( soundInfo, MAX_CHANNELS );
+
+			// music not reqiured to save position: it's just continue playing on a next level
+			S_StreamGetCurrentState(
+				header.introTrack, sizeof( header.introTrack ),
+				header.mainTrack, sizeof( header.mainTrack ),
+				&header.trackPosition );
+		}
 	}
+#endif // XASH_DEDICATED
 
 	// save viewentity to allow camera works after save\restore
 	if( SV_IsValidEdict( cl->pViewEntity ) && cl->pViewEntity != cl->edict )
@@ -1241,7 +1216,7 @@ static void SaveClientState( SAVERESTOREDATA *pSaveData, const char *level, int 
 	svgame.dllFuncs.pfnSaveWriteFields( pSaveData, "ClientHeader", &header, gSaveClient, ARRAYSIZE( gSaveClient ));
 
 	// store decals
-	for( i = 0; i < header.decalCount; i++ )
+	for( i = 0; decalList != NULL && i < header.decalCount; i++ )
 	{
 		// NOTE: apply landmark offset only for brush entities without origin brushes
 		if( pSaveData->fUseLandmark && FBitSet( decalList[i].flags, FDECAL_USE_LANDMARK ))
@@ -1249,7 +1224,9 @@ static void SaveClientState( SAVERESTOREDATA *pSaveData, const char *level, int 
 
 		svgame.dllFuncs.pfnSaveWriteFields( pSaveData, "DECALLIST", &decalList[i], gDecalEntry, ARRAYSIZE( gDecalEntry ));
 	}
-	Z_Free( decalList );
+
+	if( decalList )
+		Mem_Free( decalList );
 
 	// write client entities
 	for( i = 0; i < header.entityCount; i++ )
@@ -1629,6 +1606,10 @@ static int LoadGameState( char const *level, qboolean changelevel )
 	pSaveData = LoadSaveData( level );
 	if( !pSaveData ) return 0; // couldn't load the file
 
+	// must set mapname before calling into DLL
+	Q_strncpy( sv.name, level, sizeof( sv.name ));
+	svgame.globals->mapname = MAKE_STRING( sv.name );
+
 	ParseSaveTables( pSaveData, &header, true );
 	EntityPatchRead( pSaveData, level );
 
@@ -1636,8 +1617,6 @@ static int LoadGameState( char const *level, qboolean changelevel )
 	sv.loadgame = sv.paused = true;
 
 	Cvar_SetValue( "skill", header.skillLevel );
-	Q_strncpy( sv.name, header.mapName, sizeof( sv.name ));
-	svgame.globals->mapname = MAKE_STRING( sv.name );
 	Cvar_Set( "sv_skyname", header.skyName );
 
 	// restore sky parms
@@ -2134,7 +2113,7 @@ qboolean SV_LoadGame( const char *pPath )
 		if( validload )
 		{
 			// now check for map problems
-			flags = SV_MapIsValid( gameHeader.mapName, GI->sp_entity, NULL );
+			flags = SV_MapIsValid( gameHeader.mapName, NULL );
 
 			if( FBitSet( flags, MAP_INVALID_VERSION ))
 			{
@@ -2212,6 +2191,19 @@ qboolean SV_SaveGame( const char *pName )
 	return SaveGameSlot( savename, comment );
 }
 
+static int SV_CompareFileTime( int ft1, int ft2 )
+{
+	if( ft1 < ft2 )
+	{
+		return -1;
+	}
+	else if( ft1 > ft2 )
+	{
+		return 1;
+	}
+	return 0;
+}
+
 /*
 ==================
 SV_GetLatestSave
@@ -2237,7 +2229,7 @@ const char *SV_GetLatestSave( void )
 		if( ft > 0 )
 		{
 			// should we use the matched?
-			if( !found || Host_CompareFileTime( newest, ft ) < 0 )
+			if( !found || SV_CompareFileTime( newest, ft ) < 0 )
 			{
 				Q_strncpy( savename, t->filenames[i], sizeof( savename ));
 				newest = ft;
@@ -2287,7 +2279,7 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 
 	if( tag == 0x0065 )
 	{
-		Q_strncpy( comment, "<old version Xash3D unsupported>", MAX_STRING );
+		Q_strncpy( comment, "<old version "XASH_ENGINE_NAME" unsupported>", MAX_STRING );
 		FS_Close( f );
 		return 0;
 	}
@@ -2410,7 +2402,7 @@ int GAME_EXPORT SV_GetSaveComment( const char *savename, char *comment )
 		uint		flags;
 
 		// now check for map problems
-		flags = SV_MapIsValid( mapName, GI->sp_entity, NULL );
+		flags = SV_MapIsValid( mapName, NULL );
 
 		if( FBitSet( flags, MAP_INVALID_VERSION ))
 		{

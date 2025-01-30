@@ -92,20 +92,19 @@ struct wfile_s
 
 typedef struct wadtype_s
 {
-	const char		*ext;
-	signed char		type;
+	char        ext[4];
+	signed char type;
 } wadtype_t;
 
 // associate extension with wad type
-static const wadtype_t wad_types[7] =
+static const wadtype_t wad_types[] =
 {
-{ "pal", TYP_PALETTE	}, // palette
-{ "dds", TYP_DDSTEX 	}, // DDS image
-{ "lmp", TYP_GFXPIC		}, // quake1, hl pic
-{ "fnt", TYP_QFONT		}, // hl qfonts
-{ "mip", TYP_MIPTEX		}, // hl/q1 mip
-{ "txt", TYP_SCRIPT		}, // scripts
-{ NULL,  TYP_NONE		}
+{ "pal", TYP_PALETTE }, // palette
+{ "dds", TYP_DDSTEX  }, // DDS image
+{ "lmp", TYP_GFXPIC  }, // quake1, hl pic
+{ "fnt", TYP_QFONT   }, // hl qfonts
+{ "mip", TYP_MIPTEX  }, // hl/q1 mip
+{ "txt", TYP_SCRIPT  }, // scripts
 };
 
 /*
@@ -117,18 +116,19 @@ Extracts file type from extension
 */
 static signed char W_TypeFromExt( const char *lumpname )
 {
-	const char	*ext = COM_FileExtension( lumpname );
-	const wadtype_t	*type;
+	const char *ext = COM_FileExtension( lumpname );
+	int i;
 
 	// we not known about filetype, so match only by filename
 	if( !Q_strcmp( ext, "*" ) || !COM_CheckStringEmpty( ext ))
 		return TYP_ANY;
 
-	for( type = wad_types; type->ext; type++ )
+	for( i = 0; i < sizeof( wad_types ) / sizeof( wad_types[0] ); i++ )
 	{
-		if( !Q_stricmp( ext, type->ext ))
-			return type->type;
+		if( !Q_stricmp( ext, wad_types[i].ext ))
+			return wad_types[i].type;
 	}
+
 	return TYP_NONE;
 }
 
@@ -141,17 +141,18 @@ Convert type to extension
 */
 static const char *W_ExtFromType( signed char lumptype )
 {
-	const wadtype_t	*type;
+	int i;
 
 	// we not known aboyt filetype, so match only by filename
 	if( lumptype == TYP_NONE || lumptype == TYP_ANY )
 		return "";
 
-	for( type = wad_types; type->ext; type++ )
+	for( i = 0; i < sizeof( wad_types ) / sizeof( wad_types[0] ); i++ )
 	{
-		if( lumptype == type->type )
-			return type->ext;
+		if( lumptype == wad_types[i].type )
+			return wad_types[i].ext;
 	}
+
 	return "";
 }
 
@@ -286,7 +287,7 @@ W_Open
 open the wad for reading & writing
 ===========
 */
-static wfile_t *W_Open( const char *filename, int *error )
+static wfile_t *W_Open( const char *filename, int *error, uint flags )
 {
 	wfile_t		*wad = (wfile_t *)Mem_Calloc( fs_mempool, sizeof( wfile_t ));
 	int		i, lumpcount;
@@ -294,32 +295,19 @@ static wfile_t *W_Open( const char *filename, int *error )
 	size_t		lat_size;
 	dwadinfo_t	header;
 
-	// NOTE: FS_Open is load wad file from the first pak in the list (while fs_ext_path is false)
-	if( fs_ext_path )
-	{
-		int ind;
-		searchpath_t *search = FS_FindFile( filename, &ind, NULL, 0, false );
-
-		// allow direct absolute paths
-		// TODO: catch them in FS_FindFile_DIR!
-		if( !search || ind < 0 )
-		{
-			wad->handle = FS_SysOpen( filename, "rb" );
-		}
-		else
-		{
-			wad->handle = search->pfnOpenFile( search, filename, "rb", ind );
-		}
-	}
-	else
+	if( FBitSet( flags, FS_LOAD_PACKED_WAD ))
 	{
 		const char *basename = COM_FileWithoutPath( filename );
 		wad->handle = FS_Open( basename, "rb", false );
 	}
+	else
+	{
+		wad->handle = FS_SysOpen( filename, "rb" );
+	}
 
 	if( wad->handle == NULL )
 	{
-		Con_Reportf( S_ERROR "W_Open: couldn't open %s: %s\n", filename, strerror( errno ));
+		Con_Reportf( S_ERROR "%s: couldn't open %s: %s\n", __func__, filename, strerror( errno ));
 		if( error ) *error = WAD_LOAD_COULDNT_OPEN;
 		FS_CloseWAD( wad );
 		return NULL;
@@ -331,7 +319,7 @@ static wfile_t *W_Open( const char *filename, int *error )
 
 	if( FS_Read( wad->handle, &header, sizeof( dwadinfo_t )) != sizeof( dwadinfo_t ))
 	{
-		Con_Reportf( S_ERROR "W_Open: %s can't read header\n", filename );
+		Con_Reportf( S_ERROR "%s: %s can't read header\n", __func__, filename );
 		if( error ) *error = WAD_LOAD_BAD_HEADER;
 		FS_CloseWAD( wad );
 		return NULL;
@@ -339,7 +327,7 @@ static wfile_t *W_Open( const char *filename, int *error )
 
 	if( header.ident != IDWAD2HEADER && header.ident != IDWAD3HEADER )
 	{
-		Con_Reportf( S_ERROR "W_Open: %s is not a WAD2 or WAD3 file\n", filename );
+		Con_Reportf( S_ERROR "%s: %s is not a WAD2 or WAD3 file\n", __func__, filename );
 		if( error ) *error = WAD_LOAD_BAD_HEADER;
 		FS_CloseWAD( wad );
 		return NULL;
@@ -349,12 +337,12 @@ static wfile_t *W_Open( const char *filename, int *error )
 
 	if( lumpcount >= MAX_FILES_IN_WAD )
 	{
-		Con_Reportf( S_WARN "W_Open: %s is full (%i lumps)\n", filename, lumpcount );
+		Con_Reportf( S_WARN "%s: %s is full (%i lumps)\n", __func__, filename, lumpcount );
 		if( error ) *error = WAD_LOAD_TOO_MANY_FILES;
 	}
 	else if( lumpcount <= 0 )
 	{
-		Con_Reportf( S_ERROR "W_Open: %s has no lumps\n", filename );
+		Con_Reportf( S_ERROR "%s: %s has no lumps\n", __func__, filename );
 		if( error ) *error = WAD_LOAD_NO_FILES;
 		FS_CloseWAD( wad );
 		return NULL;
@@ -365,7 +353,7 @@ static wfile_t *W_Open( const char *filename, int *error )
 
 	if( FS_Seek( wad->handle, wad->infotableofs, SEEK_SET ) == -1 )
 	{
-		Con_Reportf( S_ERROR "W_Open: %s can't find lump allocation table\n", filename );
+		Con_Reportf( S_ERROR "%s: %s can't find lump allocation table\n", __func__, filename );
 		if( error ) *error = WAD_LOAD_BAD_FOLDERS;
 		FS_CloseWAD( wad );
 		return NULL;
@@ -378,7 +366,7 @@ static wfile_t *W_Open( const char *filename, int *error )
 
 	if( FS_Read( wad->handle, srclumps, lat_size ) != lat_size )
 	{
-		Con_Reportf( S_ERROR "W_ReadLumpTable: %s has corrupted lump allocation table\n", filename );
+		Con_Reportf( S_ERROR "%s: %s has corrupted lump allocation table\n", __func__, filename );
 		if( error ) *error = WAD_LOAD_CORRUPTED;
 		Mem_Free( srclumps );
 		FS_CloseWAD( wad );
@@ -435,7 +423,9 @@ FS_PrintInfo_WAD
 */
 static void FS_PrintInfo_WAD( searchpath_t *search, char *dst, size_t size )
 {
-	Q_snprintf( dst, size, "%s (%i files)", search->filename, search->wad->numlumps );
+	if( search->wad->handle->searchpath )
+		Q_snprintf( dst, size, "%s (%i files)" S_CYAN " from %s" S_DEFAULT, search->filename, search->wad->numlumps, search->wad->handle->searchpath->filename );
+	else Q_snprintf( dst, size, "%s (%i files)", search->filename, search->wad->numlumps );
 }
 
 /*
@@ -449,7 +439,7 @@ static int FS_FindFile_WAD( searchpath_t *search, const char *path, char *fixedn
 	dlumpinfo_t	*lump;
 	signed char		type = W_TypeFromExt( path );
 	qboolean		anywadname = true;
-	string		wadname, wadfolder;
+	string		wadname;
 	string		shortname;
 
 	// quick reject by filetype
@@ -457,15 +447,12 @@ static int FS_FindFile_WAD( searchpath_t *search, const char *path, char *fixedn
 		return -1;
 
 	COM_ExtractFilePath( path, wadname );
-	wadfolder[0] = '\0';
 
 	if( COM_CheckStringEmpty( wadname ))
 	{
 		string wadbasename;
 
 		COM_FileBase( wadname, wadbasename, sizeof( wadbasename ));
-
-		Q_strncpy( wadfolder, wadbasename, sizeof( wadfolder ));
 		Q_snprintf( wadname, sizeof( wadname ), "%s.wad", wadbasename );
 		anywadname = false;
 	}
@@ -591,7 +578,7 @@ W_ReadLump
 reading lump into temp buffer
 ===========
 */
-static byte *W_ReadLump( searchpath_t *search, const char *path, int pack_ind, fs_offset_t *lumpsizeptr )
+static byte *W_ReadLump( searchpath_t *search, const char *path, int pack_ind, fs_offset_t *lumpsizeptr, void *( *pfnAlloc )( size_t ), void ( *pfnFree )( void * ))
 {
 	const wfile_t *wad = search->wad;
 	const dlumpinfo_t *lump = &wad->lumps[pack_ind];
@@ -608,24 +595,30 @@ static byte *W_ReadLump( searchpath_t *search, const char *path, int pack_ind, f
 
 	if( FS_Seek( wad->handle, lump->filepos, SEEK_SET ) == -1 )
 	{
-		Con_Reportf( S_ERROR "W_ReadLump: %s is corrupted\n", lump->name );
+		Con_Reportf( S_ERROR "%s: %s is corrupted\n", __func__, lump->name );
 		FS_Seek( wad->handle, oldpos, SEEK_SET );
 		return NULL;
 	}
 
-	buf = (byte *)Mem_Malloc( wad->mempool, lump->disksize );
+	buf = (byte *)pfnAlloc( lump->disksize );
+	if( unlikely( !buf ))
+	{
+		Con_Reportf( S_ERROR "%s: can't alloc %d bytes, no free memory\n", __func__, lump->disksize );
+		FS_Seek( wad->handle, oldpos, SEEK_SET );
+		return NULL;
+	}
+
 	size = FS_Read( wad->handle, buf, lump->disksize );
+	FS_Seek( wad->handle, oldpos, SEEK_SET );
 
 	if( size < lump->disksize )
 	{
-		Con_Reportf( S_WARN "W_ReadLump: %s is probably corrupted\n", lump->name );
-		FS_Seek( wad->handle, oldpos, SEEK_SET );
-		Mem_Free( buf );
+		Con_Reportf( S_WARN "%s: %s is probably corrupted\n", __func__, lump->name );
+		pfnFree( buf );
 		return NULL;
 	}
 
 	if( lumpsizeptr ) *lumpsizeptr = lump->disksize;
-	FS_Seek( wad->handle, oldpos, SEEK_SET );
 
 	return buf;
 }
@@ -641,12 +634,12 @@ searchpath_t *FS_AddWad_Fullpath( const char *wadfile, int flags )
 	wfile_t *wad;
 	int errorcode = WAD_LOAD_COULDNT_OPEN;
 
-	wad = W_Open( wadfile, &errorcode );
+	wad = W_Open( wadfile, &errorcode, flags );
 
 	if( !wad )
 	{
 		if( errorcode != WAD_LOAD_NO_FILES )
-			Con_Reportf( S_ERROR "FS_AddWad_Fullpath: unable to load wad \"%s\"\n", wadfile );
+			Con_Reportf( S_ERROR "%s: unable to load wad \"%s\"\n", __func__, wadfile );
 		return NULL;
 	}
 
@@ -664,6 +657,6 @@ searchpath_t *FS_AddWad_Fullpath( const char *wadfile, int flags )
 	search->pfnSearch = FS_Search_WAD;
 	search->pfnLoadFile = W_ReadLump;
 
-	Con_Reportf( "Adding wadfile: %s (%i files)\n", wadfile, wad->numlumps );
+	Con_Reportf( "Adding WAD: %s (%i files)\n", wadfile, wad->numlumps );
 	return search;
 }

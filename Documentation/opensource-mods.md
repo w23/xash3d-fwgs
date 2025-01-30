@@ -38,6 +38,9 @@ Uploaded to github by Oleg Cherkasky - https://github.com/gunrunners-paradise/Ct
 ## Deathmatch Classic
 Available in Valve's Half-Life repository - https://github.com/ValveSoftware/halflife/tree/master/dmc
 
+## Earth Special Forces
+Alpha 2.0 - https://www.gamers-desire.de/details/2830
+
 ## ESHQ
 Official github repository - https://github.com/adslbarxatov/xash3d-for-ESHQ
 
@@ -228,7 +231,7 @@ Branch **caseclosed** in hlsdk-portable - https://github.com/FWGS/hlsdk-portable
 Branch **CAd** in hlsdk-portable - https://github.com/FWGS/hlsdk-portable/tree/CAd
 
 ## Counter Strike
-Reverse-engineered code of client part by a1batross - https://github.com/FWGS/cs16-client/tree/v1.32
+Reverse-engineered code of client part by a1batross - https://github.com/Velaron/cs16-client
 
 Reverse-engineered code of server part by nagist - https://github.com/nagist/cs16nd
 
@@ -239,6 +242,8 @@ CSO-like Xash3D-based mod, CSMoE - https://github.com/MoeMod/CSMoE
 
 ## Crack-Life: Campaign Mode
 Recreation by lostgamer aka nillerusr - https://github.com/LostGamerHL/crack_life
+
+Reverse-engineered code: branch **clcampaign** in hlsdk-portable - https://github.com/FWGS/hlsdk-portable/tree/clcampaign
 
 ## Escape from the Darkness
 malortie's recreation - https://github.com/malortie/hl-eftd

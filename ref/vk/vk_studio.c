@@ -36,7 +36,7 @@
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
-#define CL_IsViewEntityLocalPlayer() ( ENGINE_GET_PARM( PARM_VIEWENT_INDEX ) == ENGINE_GET_PARM( PARM_PLAYER_INDEX ) )
+#define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == (gp_cl->playernum + 1) )
 
 // FIXME VK should not be declared here
 colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
@@ -165,14 +165,14 @@ static void R_StudioSetupTimings( void )
 	if( RI.drawWorld )
 	{
 		// synchronize with server time
-		g_studio.time = gpGlobals->time;
-		g_studio.frametime = gpGlobals->time -   gpGlobals->oldtime;
+		g_studio.time = gp_cl->time;
+		g_studio.frametime = gp_cl->time -   gp_cl->oldtime;
 	}
 	else
 	{
 		// menu stuff
-		g_studio.time = gpGlobals->realtime;
-		g_studio.frametime = gpGlobals->frametime;
+		g_studio.time = gp_host->realtime;
+		g_studio.frametime = gp_host->frametime;
 	}
 }
 
@@ -183,16 +183,18 @@ R_AllowFlipViewModel
 should a flip the viewmodel if cl_righthand is set to 1
 ================
 */
+/*
 static qboolean R_AllowFlipViewModel( cl_entity_t *e )
 {
 	if( cl_righthand && cl_righthand->value > 0 )
 	{
-		if( e == gEngine.GetViewModel() )
+		if( e == globals.viewent )
 			return true;
 	}
 
 	return false;
 }
+*/
 
 /*
 ================
@@ -254,7 +256,7 @@ static qboolean R_StudioComputeBBox( vec3_t bbox[8] )
 	return true; // visible
 }
 
-void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, matrix3x4 *worldtransform, matrix3x4 result )
+static void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, matrix3x4 *worldtransform, matrix3x4 result )
 {
 	float	flWeight0, flWeight1, flWeight2, flWeight3;
 	int	i, numbones = 0;
@@ -353,7 +355,7 @@ static model_t *R_GetChromeSprite( void )
 	return gEngine.GetDefaultSprite( REF_CHROME_SPRITE );
 }
 
-void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch )
+static void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch )
 {
 	// calc up/down pointing
 	*pBlend = (*pPitch * 3.0f);
@@ -402,7 +404,7 @@ void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t an
 	else VectorCopy( e->curstate.angles, angles );
 }
 
-void R_StudioSetUpTransform( cl_entity_t *e )
+static void R_StudioSetUpTransform( cl_entity_t *e )
 {
 	vec3_t	origin, angles;
 
@@ -463,7 +465,7 @@ float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double 
 	return f;
 }
 
-float R_StudioEstimateInterpolant( cl_entity_t *e )
+static float R_StudioEstimateInterpolant( cl_entity_t *e )
 {
 	float	dadt = 1.0f;
 
@@ -476,7 +478,7 @@ float R_StudioEstimateInterpolant( cl_entity_t *e )
 	return dadt;
 }
 
-void R_StudioFxTransform( cl_entity_t *ent, matrix3x4 transform )
+static void R_StudioFxTransform( cl_entity_t *ent, matrix3x4 transform )
 {
 	switch( ent->curstate.renderfx )
 	{
@@ -514,7 +516,7 @@ void R_StudioFxTransform( cl_entity_t *ent, matrix3x4 transform )
 	}
 }
 
-void R_StudioCalcBoneAdj( float dadt, float *adj, const byte *pcontroller1, const byte *pcontroller2, byte mouthopen )
+static void R_StudioCalcBoneAdj( float dadt, float *adj, const byte *pcontroller1, const byte *pcontroller2, byte mouthopen )
 {
 	mstudiobonecontroller_t	*pbonecontroller;
 	float			value = 0.0f;
@@ -573,7 +575,7 @@ void R_StudioCalcBoneAdj( float dadt, float *adj, const byte *pcontroller1, cons
 	}
 }
 
-void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, mstudioseqdesc_t *pseqdesc, mstudioanim_t *panim, float f )
+static void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, mstudioseqdesc_t *pseqdesc, mstudioanim_t *panim, float f )
 {
 	int		i, frame;
 	float		adj[MAXSTUDIOCONTROLLERS];
@@ -614,7 +616,7 @@ void R_StudioCalcRotations( cl_entity_t *e, float pos[][3], vec4_t *q, mstudiose
 	if( pseqdesc->motiontype & STUDIO_Z ) pos[pseqdesc->motionbone][2] = 0.0f;
 }
 
-void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
+static void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 {
 	int		i, j;
 	mstudiobone_t	*pbones;
@@ -668,7 +670,7 @@ void R_StudioMergeBones( cl_entity_t *e, model_t *m_pSubModel )
 	}
 }
 
-void R_StudioSetupBones( cl_entity_t *e )
+static void R_StudioSetupBones( cl_entity_t *e )
 {
 	float		f;
 	mstudiobone_t	*pbones;
@@ -842,7 +844,7 @@ StudioBuildNormalTable
 NOTE: m_pSubModel must be set
 ====================
 */
-void R_StudioBuildNormalTable( void )
+static void R_StudioBuildNormalTable( void )
 {
 	cl_entity_t	*e = RI.currententity;
 	mstudiomesh_t	*pmesh;
@@ -894,7 +896,7 @@ NOTE: m_pSubModel must be set
 g_studio.verts must be computed
 ====================
 */
-void R_StudioGenerateNormals( void )
+static void R_StudioGenerateNormals( void )
 {
 	int		v0, v1, v2;
 	vec3_t		e0, e1, norm, tangent;
@@ -1015,7 +1017,7 @@ void R_StudioGenerateNormals( void )
 	}
 }
 
-void R_StudioSetupChrome( float *pchrome, int bone, vec3_t normal )
+static void R_StudioSetupChrome( float *pchrome, int bone, vec3_t normal )
 {
 	float	n;
 
@@ -1094,9 +1096,9 @@ static int R_StudioCheckBBox( void )
 	return R_StudioComputeBBox( NULL );
 }
 
-void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
+static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
-	movevars_t	*mv = gEngine.pfnGetMoveVars();
+	movevars_t	*mv = MOVEVARS;
 	vec3_t		lightDir, vecSrc, vecEnd;
 	vec3_t		origin, dist, finalLight;
 	float		add, radius, total;
@@ -1153,9 +1155,9 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
 
-			light.r = gEngine.LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
-			light.g = gEngine.LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
-			light.b = gEngine.LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
+			light.r = LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
+			light.g = LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
+			light.b = LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
 		}
 	}
 
@@ -1218,7 +1220,7 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 	for( lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
 	{
-		dl = gEngine.GetDynamicLight( lnum );
+		dl = globals.dlights + lnum;
 
 		if( dl->die < g_studio.time) // VK FIXME || !r_dynamic->value )
 			continue;
@@ -1238,9 +1240,9 @@ void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 			VectorAdd( lightDir, dist, lightDir );
 
-			finalLight[0] += gEngine.LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
-			finalLight[1] += gEngine.LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
-			finalLight[2] += gEngine.LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
+			finalLight[0] += LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
+			finalLight[1] += LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
+			finalLight[2] += LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
 		}
 	}
 
@@ -1278,13 +1280,14 @@ pfnStudioEntityLight
 
 ===============
 */
-void R_StudioEntityLight( alight_t *lightinfo )
+static void R_StudioEntityLight( alight_t *lightinfo )
 {
 	int		lnum, i, j, k;
 	float		minstrength, dist2, f, r2;
 	float		lstrength[MAX_LOCALLIGHTS];
 	cl_entity_t	*ent = RI.currententity;
-	vec3_t		mid, origin, pos;
+	vec3_t		mid, origin;
+	//vec3_t		pos;
 	dlight_t		*el;
 
 	g_studio.numlocallights = 0;
@@ -1301,7 +1304,7 @@ void R_StudioEntityLight( alight_t *lightinfo )
 
 	for( lnum = 0; lnum < MAX_ELIGHTS; lnum++ )
 	{
-		el = gEngine.GetEntityLight( lnum );
+		el = globals.elights + lnum;
 
 		if( el->die < g_studio.time || el->radius <= 0.0f )
 			continue;
@@ -1314,7 +1317,7 @@ void R_StudioEntityLight( alight_t *lightinfo )
 			else VectorCopy( ent->origin, el->origin );
 		}
 
-		VectorCopy( el->origin, pos );
+		//VectorCopy( el->origin, pos );
 		VectorSubtract( origin, el->origin, mid );
 
 		f = DotProduct( mid, mid );
@@ -1340,9 +1343,9 @@ void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k].r = gEngine.LightToTexGamma( el->color.r );
-				g_studio.locallightcolor[k].g = gEngine.LightToTexGamma( el->color.g );
-				g_studio.locallightcolor[k].b = gEngine.LightToTexGamma( el->color.b );
+				g_studio.locallightcolor[k].r = LightToTexGamma( el->color.r );
+				g_studio.locallightcolor[k].g = LightToTexGamma( el->color.g );
+				g_studio.locallightcolor[k].b = LightToTexGamma( el->color.b );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;
@@ -1360,7 +1363,7 @@ R_StudioSetupLighting
 
 ===============
 */
-void R_StudioSetupLighting( alight_t *plight )
+static void R_StudioSetupLighting( alight_t *plight )
 {
 	float	scale = 1.0f;
 	int	i;
@@ -1390,7 +1393,7 @@ R_StudioLighting
 
 ===============
 */
-void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
+static void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
 {
 	float 	illum;
 
@@ -1509,7 +1512,7 @@ static void R_StudioSetColorBegin(const short *ptricmds, const vec3_t *pstudiono
 	R_StudioSetColorArray( ptricmds, pstudionorms, out_color );
 }
 
-void R_LightStrength( int bone, const vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] )
+static void R_LightStrength( int bone, const vec3_t localpos, vec4_t light[MAX_LOCALLIGHTS] )
 {
 	int	i;
 
@@ -1560,7 +1563,8 @@ R_StudioGetTexture
 Doesn't changes studio global state at all
 ===============
 */
-mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
+/*
+static mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 {
 	mstudiotexture_t	*ptexture;
 	studiohdr_t	*phdr, *thdr;
@@ -1576,11 +1580,12 @@ mstudiotexture_t *R_StudioGetTexture( cl_entity_t *e )
 
 	return ptexture;
 }
+*/
 
 // TODO where does this need to be declared and defined? currently it's in vk_scene.c
 extern int CL_FxBlend( cl_entity_t *e );
 
-void R_StudioSetRenderamt( int iRenderamt )
+static void R_StudioSetRenderamt( int iRenderamt )
 {
 	if( !RI.currententity ) return;
 
@@ -1595,7 +1600,7 @@ R_StudioSetCullState
 sets true for enable backculling (for left-hand viewmodel)
 ===============
 */
-void R_StudioSetCullState( int iCull )
+static void R_StudioSetCullState( int iCull )
 {
 	g_iBackFaceCull = iCull;
 }
@@ -1607,7 +1612,7 @@ R_StudioRenderShadow
 just a prefab for render shadow
 ===============
 */
-void R_StudioRenderShadow( int iSprite, float *p1, float *p2, float *p3, float *p4 )
+static void R_StudioRenderShadow( int iSprite, float *p1, float *p2, float *p3, float *p4 )
 {
 	PRINT_NOT_IMPLEMENTED();
 
@@ -1643,6 +1648,7 @@ R_StudioMeshCompare
 Sorting opaque entities by model type
 ===============
 */
+/*
 static int R_StudioMeshCompare( const void *a, const void *b )
 {
 	if( FBitSet( ((const sortedmesh_t*)a)->flags, STUDIO_NF_ADDITIVE ))
@@ -1653,6 +1659,7 @@ static int R_StudioMeshCompare( const void *a, const void *b )
 
 	return 0;
 }
+*/
 
 static void addVerticesIndicesCounts( const short *ptricmds, int *num_vertices, int *num_indices ) {
 	int i;
@@ -1963,11 +1970,11 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 	}
 
 	// generate shared normals for properly scaling glowing shell
-	float shellscale = 0.0f;
+	//float shellscale = 0.0f;
 	if( RI.currententity->curstate.renderfx == kRenderFxGlowShell )
 	{
-		float factor = (1.0f / 128.0f);
-		shellscale = Q_max( factor, RI.currententity->curstate.renderamt * factor );
+		//float factor = (1.0f / 128.0f);
+		//shellscale = Q_max( factor, RI.currententity->curstate.renderamt * factor );
 		R_StudioBuildNormalTable();
 	}
 
@@ -1975,7 +1982,7 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 
 	const mstudiomesh_t *const pmesh = PTR_CAST(const mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex);
 
-	qboolean need_sort = false;
+	//qboolean need_sort = false;
 	for( int j = 0, k = 0; j < m_pSubModel->nummesh; j++ )
 	{
 		const int face_flags = ptexture[pskinref[pmesh[j].skinref]].flags | g_nForceFaceFlags;
@@ -1985,15 +1992,15 @@ static void buildStudioSubmodelGeometry(build_submodel_geometry_t args) {
 		g_studio.meshes[j].mesh = &pmesh[j];
 
 		// FIXME VK cannot into "dynamic" blending/alpha-test
-		if( FBitSet( face_flags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))
-			need_sort = true;
+		/*if( FBitSet( face_flags, STUDIO_NF_MASKED|STUDIO_NF_ADDITIVE ))*/
+		/*	need_sort = true;*/
 
 		if( RI.currententity->curstate.rendermode == kRenderTransAdd )
 		{
 			for( int i = 0; i < pmesh[j].numnorms; i++, k++, pstudionorms++, pnormbone++ )
 			{
 				// FIXME VK
-				const struct { float blend; } tr = {1.f};
+				//const struct { float blend; } tr = {1.f};
 				if( FBitSet( face_flags, STUDIO_NF_CHROME ))
 					R_StudioSetupChrome( g_studio.chrome[k], *pnormbone, (float *)pstudionorms );
 				VectorSet( g_studio.lightvalues[k], g_studio.blend, g_studio.blend, g_studio.blend );
@@ -2364,11 +2371,8 @@ static void R_StudioDrawPoints( void ) {
 
 static void R_StudioSetRemapColors( int newTop, int newBottom )
 {
-	gEngine.CL_AllocRemapInfo( RI.currententity, RI.currentmodel, newTop, newBottom );
-
-	if( gEngine.CL_GetRemapInfoForEntity( RI.currententity ))
+	if( gEngine.CL_EntitySetRemapColors( RI.currententity, RI.currentmodel, newTop, newBottom ))
 	{
-		gEngine.CL_UpdateRemapInfo( RI.currententity, newTop, newBottom );
 		m_fDoRemap = true;
 	}
 }
@@ -2422,7 +2426,8 @@ R_GetEntityRenderMode
 check for texture flags
 ================
 */
-int R_GetEntityRenderMode( cl_entity_t *ent )
+/*
+static int R_GetEntityRenderMode( cl_entity_t *ent )
 {
 	int		i, opaque, trans;
 	mstudiotexture_t	*ptexture;
@@ -2464,6 +2469,7 @@ int R_GetEntityRenderMode( cl_entity_t *ent )
 		return kRenderTransAdd;
 	return ent->curstate.rendermode;
 }
+*/
 
 /*
 ===============
@@ -2497,7 +2503,7 @@ static void R_StudioClientEvents( void )
 
 		ClearBits( e->curstate.effects, EF_MUZZLEFLASH );
 		VectorCopy( e->attachment[0], el->origin );
-		el->die = gpGlobals->time + 0.05f;
+		el->die = gp_cl->time + 0.05f;
 		el->color.r = 255;
 		el->color.g = 192;
 		el->color.b = 64;
@@ -2513,7 +2519,7 @@ static void R_StudioClientEvents( void )
 		return;
 
 	end = R_StudioEstimateFrame( e, pseqdesc, g_studio.time );
-	start = end - e->curstate.framerate * gpGlobals->frametime * pseqdesc->fps;
+	start = end - e->curstate.framerate * gp_host->frametime * pseqdesc->fps;
 	pevent = PTR_CAST(mstudioevent_t, (byte *)m_pStudioHeader + pseqdesc->eventindex);
 
 	if( e->latched.sequencetime == e->curstate.animtime )
@@ -2533,23 +2539,23 @@ static void R_StudioClientEvents( void )
 	}
 }
 
-int R_StudioGetForceFaceFlags( void )
+static int R_StudioGetForceFaceFlags( void )
 {
 	return g_nForceFaceFlags;
 }
 
-void R_StudioSetForceFaceFlags( int flags )
+static void R_StudioSetForceFaceFlags( int flags )
 {
 	g_nForceFaceFlags = flags;
 }
 
-void R_StudioSetHeader( studiohdr_t *pheader )
+static void R_StudioSetHeader( studiohdr_t *pheader )
 {
 	m_pStudioHeader = pheader;
 	m_fDoRemap = false;
 }
 
-void R_StudioSetRenderModel( model_t *model )
+static void R_StudioSetRenderModel( model_t *model )
 {
 	RI.currentmodel = model;
 }
@@ -2591,7 +2597,7 @@ static void R_StudioRestoreRenderer( void )
 	m_fDoRemap = false;
 }
 
-void R_StudioSetChromeOrigin( void )
+static void R_StudioSetChromeOrigin( void )
 {
 	VectorCopy( g_camera.vieworg, g_studio.chrome_origin );
 }
@@ -2603,11 +2609,11 @@ static int pfnIsHardware( void )
 
 static void R_StudioDrawPointsShadow( void )
 {
-	float		*av, height;
-	float		vec_x, vec_y;
-	mstudiomesh_t	*pmesh;
-	vec3_t		point;
-	int		i, k;
+	/*float		*av, height;*/
+	/*float		vec_x, vec_y;*/
+	//mstudiomesh_t	*pmesh;
+	//vec3_t		point;
+	int		/*i,*/ k;
 
 	if( FBitSet( RI.currententity->curstate.effects, EF_NOSHADOW ))
 		return;
@@ -2617,16 +2623,16 @@ static void R_StudioDrawPointsShadow( void )
 		pglEnable( GL_STENCIL_TEST );
 	*/
 
-	height = g_studio.lightspot[2] + 1.0f;
-	vec_x = -g_studio.lightvec[0] * 8.0f;
-	vec_y = -g_studio.lightvec[1] * 8.0f;
+	/*height = g_studio.lightspot[2] + 1.0f;*/
+	/*vec_x = -g_studio.lightvec[0] * 8.0f;*/
+	/*vec_y = -g_studio.lightvec[1] * 8.0f;*/
 
 	for( k = 0; k < m_pSubModel->nummesh; k++ )
 	{
-		short	*ptricmds;
+		//short	*ptricmds;
 
-		pmesh = PTR_CAST(mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex) + k;
-		ptricmds = PTR_CAST(short, (byte *)m_pStudioHeader + pmesh->triindex);
+		//pmesh = PTR_CAST(mstudiomesh_t, (byte *)m_pStudioHeader + m_pSubModel->meshindex) + k;
+		//ptricmds = PTR_CAST(short, (byte *)m_pStudioHeader + pmesh->triindex);
 
 		/* FIXME VK
 		r_stats.c_studio_polys += pmesh->numtris;
@@ -2665,7 +2671,7 @@ static void R_StudioDrawPointsShadow( void )
 	*/
 }
 
-void GL_StudioSetRenderMode( int rendermode )
+static void GL_StudioSetRenderMode( int rendermode )
 {
 	g_studio.rendermode2 = rendermode;
 }
@@ -2687,7 +2693,7 @@ static void GL_StudioDrawShadow( void )
 
 	if( r_shadows.value && g_studio.rendermode != kRenderTransAdd && !FBitSet( RI.currentmodel->flags, STUDIO_AMBIENT_LIGHT ))
 	{
-		float	color = 1.0f - (g_studio.blend * 0.5f);
+		//float	color = 1.0f - (g_studio.blend * 0.5f);
 
 	/* FIXME VK
 		pglDisable( GL_TEXTURE_2D );
@@ -2730,7 +2736,7 @@ static void R_StudioRenderFinal( void )
 	R_StudioRestoreRenderer();
 }
 
-void R_StudioRenderModel( void )
+static void R_StudioRenderModel( void )
 {
 	R_StudioSetChromeOrigin();
 	R_StudioSetForceFaceFlags( 0 );
@@ -2754,7 +2760,7 @@ void R_StudioRenderModel( void )
 	}
 }
 
-void R_StudioEstimateGait( entity_state_t *pplayer )
+static void R_StudioEstimateGait( entity_state_t *pplayer )
 {
 	vec3_t	est_velocity;
 	float	dt;
@@ -2804,7 +2810,7 @@ void R_StudioEstimateGait( entity_state_t *pplayer )
 
 }
 
-void R_StudioProcessGait( entity_state_t *pplayer )
+static void R_StudioProcessGait( entity_state_t *pplayer )
 {
 	mstudioseqdesc_t	*pseqdesc;
 	int		iBlend;
@@ -2881,7 +2887,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 
 	m_nPlayerIndex = pplayer->number - 1;
 
-	if( m_nPlayerIndex < 0 || m_nPlayerIndex >= ENGINE_GET_PARM( PARM_MAX_CLIENTS ) )
+	if( m_nPlayerIndex < 0 || m_nPlayerIndex >= gp_cl->maxclients )
 		return 0;
 
 	RI.currentmodel = R_StudioSetupPlayerModel( m_nPlayerIndex );
@@ -2950,7 +2956,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		// copy attachments into global entity array
 		if( RI.currententity->index > 0 )
 		{
-			cl_entity_t *ent = gEngine.GetEntityByIndex( RI.currententity->index );
+			cl_entity_t *ent = globals.entities + ( RI.currententity->index );
 			memcpy( ent->attachment, RI.currententity->attachment, sizeof( vec3_t ) * 4 );
 		}
 	}
@@ -2963,7 +2969,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 			RI.currententity->curstate.body = 255;
 		}
 
-		if( !( !gpGlobals->developer && ENGINE_GET_PARM( PARM_MAX_CLIENTS ) == 1 ) && ( RI.currentmodel == RI.currententity->model ))
+		if( !( !gpGlobals->developer && gp_cl->maxclients == 1 ) && ( RI.currentmodel == RI.currententity->model ))
 			RI.currententity->curstate.body = 1; // force helmet
 
 		lighting.plightvec = dir;
@@ -2993,7 +2999,7 @@ static int R_StudioDrawPlayer( int flags, entity_state_t *pplayer )
 		if( pplayer->weaponmodel )
 		{
 			cl_entity_t	saveent = *RI.currententity;
-			model_t		*pweaponmodel = gEngine.pfnGetModelByIndex( pplayer->weaponmodel );
+			model_t		*pweaponmodel = gp_cl->models[pplayer->weaponmodel];
 
 			m_pStudioHeader = (studiohdr_t *)gEngine.Mod_Extradata( mod_studio, pweaponmodel );
 
@@ -3022,7 +3028,7 @@ static int R_StudioDrawModel( int flags )
 		int		result;
 
 		if( RI.currententity->curstate.renderamt <= 0 ||
-			RI.currententity->curstate.renderamt > ENGINE_GET_PARM( PARM_MAX_CLIENTS ) )
+			RI.currententity->curstate.renderamt > gp_cl->maxclients )
 			return 0;
 
 		// get copy of player
@@ -3074,7 +3080,7 @@ static int R_StudioDrawModel( int flags )
 		// copy attachments into global entity array
 		if( RI.currententity->index > 0 )
 		{
-			cl_entity_t *ent = gEngine.GetEntityByIndex( RI.currententity->index );
+			cl_entity_t *ent = globals.entities + RI.currententity->index;
 			memcpy( ent->attachment, RI.currententity->attachment, sizeof( vec3_t ) * 4 );
 		}
 	}
@@ -3156,7 +3162,7 @@ static void R_DrawStudioModel( cl_entity_t *e )
 	{
 		if( e->curstate.movetype == MOVETYPE_FOLLOW && e->curstate.aiment > 0 )
 		{
-			cl_entity_t *parent = gEngine.GetEntityByIndex( e->curstate.aiment );
+			cl_entity_t *parent = globals.entities + e->curstate.aiment;
 
 			if( parent && parent->model && parent->model->type == mod_studio )
 			{
@@ -3175,7 +3181,6 @@ static void R_DrawStudioModel( cl_entity_t *e )
 void R_RunViewmodelEvents( void )
 {
 	int	i;
-	vec3_t simorg;
 
 	if( r_drawviewmodel->value == 0 )
 		return;
@@ -3193,25 +3198,24 @@ void R_RunViewmodelEvents( void )
 	if( ENGINE_GET_PARM( PARM_LOCAL_HEALTH ) <= 0 || !CL_IsViewEntityLocalPlayer())
 		return;
 
-	RI.currententity = gEngine.GetViewModel();
+	RI.currententity = globals.viewent;
 
 	if( !RI.currententity->model || RI.currententity->model->type != mod_studio )
 		return;
 
 	R_StudioSetupTimings();
 
-	gEngine.GetPredictedOrigin( simorg );
 	for( i = 0; i < 4; i++ )
-		VectorCopy( simorg, RI.currententity->attachment[i] );
+		VectorCopy( gp_cl->simorg, RI.currententity->attachment[i] );
 	RI.currentmodel = RI.currententity->model;
 
 	R_StudioDrawModelInternal( RI.currententity, STUDIO_EVENTS );
 }
 
-void R_GatherPlayerLight( void )
+static void R_GatherPlayerLight( void )
 {
-	cl_entity_t	*view = gEngine.GetViewModel();
-	colorVec		c;
+	//cl_entity_t	*view = globals.viewent;
+	//colorVec		c;
 
 	/* FIXME VK
 	tr.ignore_lightgamma = true;
@@ -3223,7 +3227,7 @@ void R_GatherPlayerLight( void )
 
 void R_DrawViewModel( void )
 {
-	cl_entity_t	*view = gEngine.GetViewModel();
+	cl_entity_t	*view = globals.viewent;
 
 	R_GatherPlayerLight();
 
@@ -3459,7 +3463,7 @@ static entity_state_t *R_StudioGetPlayerState( int index )
 
 static cl_entity_t *pfnGetViewEntity( void )
 {
-	return gEngine.GetViewModel();
+	return globals.viewent;
 }
 
 static void pfnGetEngineTimes( int *framecount, double *current, double *old )
@@ -3467,8 +3471,8 @@ static void pfnGetEngineTimes( int *framecount, double *current, double *old )
 	// TODO is framecount enough? Should it be "REAL" framecount?
 	/* if( framecount ) *framecount = tr.realframecount; */
 	if( framecount ) *framecount = g_studio.framecount;
-	if( current ) *current = gpGlobals->time;
-	if( old ) *old =   gpGlobals->oldtime;
+	if( current ) *current = gp_cl->time;
+	if( old ) *old =   gp_cl->oldtime;
 }
 
 static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *forwardv )
@@ -3481,7 +3485,7 @@ static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *for
 
 static model_t *pfnModelHandle( int modelindex )
 {
-	return gEngine.pfnGetModelByIndex( modelindex );
+	return gp_cl->models[modelindex];
 }
 
 static void *pfnMod_CacheCheck( struct cache_user_s *c )

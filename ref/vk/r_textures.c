@@ -235,7 +235,6 @@ static void createDefaultTextures( void )
 		pic = Common_FakeImage( 4, 4, 1, IMAGE_HAS_COLOR | IMAGE_CUBEMAP );
 		memset(pic->buffer, 0, pic->size);
 
-		const qboolean is_placeholder = true;
 		R_VkTexturesSkyboxUpload( "skybox_placeholder", pic, kColorspaceGamma, kSkyboxPlaceholder );
 	}
 }
@@ -471,8 +470,6 @@ void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags
 ///////////// Render API funcs /////////////
 int R_TextureFindByName( const char *name )
 {
-	vk_texture_t *tex;
-
 	if( !checkTextureName( name ))
 		return 0;
 
@@ -605,8 +602,6 @@ static void destroyTexture( uint texnum ) {
 // Decrement refcount and destroy the texture if refcount has reached zero
 static void releaseTexture( unsigned int texnum, qboolean ref_interface ) {
 	vk_texture_t *tex;
-	vk_texture_t **prev;
-	vk_texture_t *cur;
 
 	APROF_SCOPE_DECLARE_BEGIN(free, __FUNCTION__);
 
@@ -656,6 +651,10 @@ void R_TextureFree( unsigned int texnum ) {
 
 
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
+	// This functions is effectively is called either from texture module init sequence,
+	// or from the engine using ref_api_t. So it has ref_api_t refcount semantics.
+	const qboolean ref_interface = true;
+
 	// couldn't loading image
 	if( !pic )
 		return 0;
@@ -687,8 +686,13 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 
 	vk_texture_t *const tex = g_textures.all + insert.index;
 	// see if already loaded
-	if (!insert.created && !update_only)
+	if (!insert.created && !update_only) {
+		if (ref_interface && !tex->ref_interface_visible) {
+			tex->refcount++;
+			tex->ref_interface_visible = true;
+		}
 		return insert.index;
+	}
 
 	if( update_only )
 		SetBits( tex->flags, flags );
@@ -704,10 +708,13 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 		return 0;
 	}
 
+	// This functions is effectively is called either from texture module init sequence,
+	// or from the engine using ref_api_t. So it has ref_api_t refcount semantics.
 	if (insert.created) {
 		tex->refcount = 1;
-
-		// Loading from buffer is ref_interface only
+		tex->ref_interface_visible = ref_interface;
+	} else if (ref_interface && !tex->ref_interface_visible) {
+		tex->refcount++;
 		tex->ref_interface_visible = true;
 	}
 
@@ -725,7 +732,6 @@ static void skyboxParseInfo( const char *name ) {
 	Q_snprintf(filename, sizeof(filename), "%s.mat", name);
 	byte *data = gEngine.fsapi->LoadFile( filename, 0, false );
 
-	qboolean success = false;
 	if (!data) {
 		INFO("Couldn't read skybox info '%s'", filename);
 		goto cleanup;
@@ -765,8 +771,6 @@ static void skyboxParseInfo( const char *name ) {
 			WARN("Unexpected key '%s' in skybox info '%s'", key, filename);
 			break;
 		}
-
-		success = true;
 	}
 
 cleanup:
@@ -801,7 +805,6 @@ static qboolean skyboxLoadF(skybox_slot_e slot, const char *fmt, ...) {
 	}
 
 	{
-		const qboolean is_placeholder = false;
 		success = R_VkTexturesSkyboxUpload( buffer, pic, kColorspaceGamma, slot );
 	}
 
@@ -887,10 +890,12 @@ static void skyboxSetup( const char *skyboxname, qboolean is_custom, qboolean fo
 	tglob.fCustomSkybox = is_custom;
 }
 
-void R_TextureSetupCustomSky( const char *skyboxname ) {
-	const qboolean is_custom = true;
-	const qboolean force_reload = false;
-	skyboxSetup(skyboxname, is_custom, force_reload);
+void R_TextureSetupCustomSky( int *skyboxTextures ) {
+	PRINT_NOT_IMPLEMENTED();
+//void R_TextureSetupCustomSky( const char *skyboxname ) {
+	//const qboolean is_custom = true;
+	//const qboolean force_reload = false;
+	//skyboxSetup(skyboxname, is_custom, force_reload);
 }
 
 void R_TextureSetupSky( const char *skyboxname, qboolean force_reload ) {
@@ -913,13 +918,12 @@ int R_TextureFindByNameF( const char *fmt, ...) {
 	va_end( argptr );
 
 	tex_id = R_TextureFindByName(buffer);
-	DEBUG("Looked up texture %s -> %d", buffer, tex_id);
+	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
 
 int R_TextureFindByNameLike( const char *texture_name ) {
-	const model_t *map = gEngine.pfnGetModelByIndex( 1 );
-	string texname;
+	const model_t *map = WORLDMODEL;
 
 	// Try texture name as-is first
 	int tex_id = R_TextureFindByNameF("%s", texture_name);
@@ -966,6 +970,8 @@ int R_TexturesGetParm( int parm, int arg ) {
 		return tex->height;
 	case PARM_TEX_FLAGS:
 		return tex->flags;
+	case PARM_TEX_FILTERING:
+		return !FBitSet( tex->flags, TF_NEAREST );
 	// TODO
 	case PARM_TEX_SKYBOX:
 	case PARM_TEX_SKYTEXNUM:

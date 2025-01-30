@@ -103,9 +103,11 @@ static unsigned parseEntPropVec3(const char* value, vec3_t *out, unsigned bit) {
 	return (3 == sscanf(value, "%f %f %f", &(*out)[0], &(*out)[1], &(*out)[2])) ? bit : 0;
 }
 
+/*
 static unsigned parseEntPropVec4(const char* value, vec4_t *out, unsigned bit) {
 	return (4 == sscanf(value, "%f %f %f %f", &(*out)[0], &(*out)[1], &(*out)[2], &(*out)[3])) ? bit : 0;
 }
+*/
 
 static unsigned parseEntPropRgbav(const char* value, vec3_t *out, unsigned bit) {
 	float scale = 1.f;
@@ -399,7 +401,7 @@ static void readFuncAny( const entity_props_t *const props, uint32_t have_fields
 }
 
 static void addPatchSurface( const entity_props_t *props, uint32_t have_fields ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 	const int num_surfaces = map->numsurfaces;
 	const qboolean should_remove = (have_fields == Field__xvk_surface_id) || (have_fields & Field__xvk_material && props->_xvk_material[0] == '\0');
 
@@ -780,7 +782,7 @@ static void parseEntities( char *string, qboolean is_patch ) {
 	}
 }
 
-const xvk_mapent_target_t *findTargetByName(const char *name) {
+static const xvk_mapent_target_t *findTargetByName(const char *name) {
 	for (int i = 0; i < g_map_entities.num_targets; ++i) {
 		const xvk_mapent_target_t *target = g_map_entities.targets + i;
 		if (Q_strcmp(name, target->targetname) == 0)
@@ -854,7 +856,7 @@ static void parsePatches( const model_t *const map ) {
 }
 
 void XVK_ParseMapEntities( void ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 
 	ASSERT(map);
 
@@ -876,7 +878,7 @@ void XVK_ParseMapEntities( void ) {
 }
 
 void XVK_ParseMapPatches( void ) {
-	const model_t* const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const map = WORLDMODEL;
 
 	parsePatches( map );
 

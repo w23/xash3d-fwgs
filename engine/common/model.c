@@ -111,8 +111,14 @@ void Mod_FreeModel( model_t *mod )
 
 	if( mod->type == mod_brush && FBitSet( mod->flags, MODEL_WORLD ) )
 	{
+		world.version = 0;
 		world.shadowdata = NULL;
 		world.deluxedata = NULL;
+
+		// data already freed by Mem_FreePool above
+		world.hull_models = NULL;
+		world.compressed_phs = NULL;
+		world.phsofs = NULL;
 	}
 
 	memset( mod, 0, sizeof( *mod ));
@@ -252,7 +258,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 {
 	char		tempname[MAX_QPATH];
 	fs_offset_t		length = 0;
-	qboolean		loaded;
+	qboolean		loaded, loaded2 = false;
 	byte		*buf;
 	model_info_t	*p;
 
@@ -273,7 +279,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 
 	buf = FS_LoadFile( tempname, &length, false );
 
-	if( !buf )
+	if( !buf || length < sizeof( uint ))
 	{
 		memset( mod, 0, sizeof( model_t ));
 
@@ -294,17 +300,15 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 		Mod_LoadStudioModel( mod, buf, &loaded );
 		break;
 	case IDSPRITEHEADER:
-		Mod_LoadSpriteModel( mod, buf, &loaded, 0 );
+		Mod_LoadSpriteModel( mod, buf, &loaded );
 		break;
 	case IDALIASHEADER:
-		// REFTODO: move server-related code here
-		loaded = true;
+		Mod_LoadAliasModel( mod, buf, &loaded );
 		break;
 	case Q1BSP_VERSION:
 	case HLBSP_VERSION:
 	case QBSP2_VERSION:
 		Mod_LoadBrushModel( mod, buf, &loaded );
-		// ref.dllFuncs.Mod_LoadModel( mod_brush, mod, buf, &loaded, 0 );
 		break;
 	default:
 		Mem_Free( buf );
@@ -312,6 +316,7 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 		else Con_Printf( S_ERROR "%s has unknown format\n", tempname );
 		return NULL;
 	}
+
 	if( loaded )
 	{
 		if( world.loading )
@@ -323,17 +328,25 @@ model_t *Mod_LoadModel( model_t *mod, qboolean crash )
 			{
 				// let the server.dll load custom data
 				svgame.physFuncs.Mod_ProcessUserData( mod, true, buf );
+				loaded2 = true;
 			}
 		}
 #if !XASH_DEDICATED
 		else
 		{
-			loaded = ref.dllFuncs.Mod_ProcessRenderData( mod, true, buf );
+			loaded2 = ref.dllFuncs.Mod_ProcessRenderData( mod, true, buf );
 		}
 #endif
 	}
 
-	if( !loaded )
+	if( mod->type == mod_alias )
+	{
+		aliashdr_t *hdr = mod->cache.data;
+		if( hdr ) // clean up temporary pointer after passing the alias model to the renderer
+			hdr->pposeverts = NULL;
+	}
+
+	if( !loaded || !loaded2 )
 	{
 		Mod_FreeModel( mod );
 		Mem_Free( buf );
@@ -598,3 +611,41 @@ void Mod_NeedCRC( const char *name, qboolean needCRC )
 	if( needCRC ) SetBits( p->flags, FCRC_SHOULD_CHECKSUM );
 	else ClearBits( p->flags, FCRC_SHOULD_CHECKSUM );
 }
+
+#if XASH_ENGINE_TESTS
+
+static const uint8_t *fuzz_data;
+static size_t fuzz_size;
+
+static byte *Fuzz_LoadFile( const char *path, fs_offset_t *filesizeptr, qboolean gamedironly )
+{
+	byte *buf = Mem_Malloc( host.mempool, fuzz_size );
+	memcpy( buf, fuzz_data, fuzz_size );
+	*filesizeptr = fuzz_size;
+	return buf;
+}
+
+int EXPORT Fuzz_Mod_LoadModel( const uint8_t *Data, size_t Size );
+int EXPORT Fuzz_Mod_LoadModel( const uint8_t *Data, size_t Size )
+{
+	model_t mod = { .name = "test", .needload = NL_NEEDS_LOADED };
+
+	Memory_Init();
+
+	host.type = HOST_DEDICATED;
+	host.mempool = Mem_AllocPool( "fuzzing pool" );
+	fuzz_data = Data;
+	fuzz_size = Size;
+	refState.draw_surfaces = NULL;
+
+	g_fsapi.LoadFile = Fuzz_LoadFile;
+
+	if( Mod_LoadModel( &mod, false ) && mod.mempool )
+		Mem_FreePool( &mod.mempool );
+
+	Mem_FreePool( &host.mempool );
+
+	return 0;
+}
+
+#endif // XASH_ENGINE_TESTS

@@ -2,8 +2,8 @@
 # encoding: utf-8
 # a1batross, mittorn, 2018
 
-from waflib import Build, Context, Logs
-from waflib.Tools import waf_unit_test
+from waflib import Build, Context, Logs, TaskGen
+from waflib.Tools import waf_unit_test, c_tests
 import sys
 import os
 
@@ -13,6 +13,24 @@ top = '.'
 default_prefix = '/' # Waf uses it to set default prefix
 
 Context.Context.line_just = 55 # should fit for everything on 80x26
+
+c_tests.LARGE_FRAGMENT='''#include <unistd.h>
+int check[sizeof(off_t) >= 8 ? 1 : -1]; int main(void) { return 0; }'''
+
+@TaskGen.feature('cshlib', 'cxxshlib', 'fcshlib')
+@TaskGen.before_method('apply_implib')
+def remove_implib_install(self):
+	if not getattr(self, 'install_path_implib', None):
+		self.install_path_implib = None
+
+@TaskGen.feature('cprogram', 'cxxprogram')
+@TaskGen.before_method('apply_flags_msvc')
+def apply_subsystem_msvc(self):
+	if getattr(self, 'subsystem', None):
+		return # have custom subsystem
+
+	if 'test' in self.features:
+		self.subsystem = self.env.CONSOLE_SUBSYSTEM
 
 class Subproject:
 	def __init__(self, name, fnFilter = None):
@@ -50,7 +68,7 @@ class RefDll:
 
 		kw['dest'] = self.dest
 		kw['default'] = self.default
-		kw['help'] = '%s %s renderer [default: %%default]' % (act, self.name)
+		kw['help'] = '%s %s renderer [default: %%(default)s]' % (act, self.name)
 
 		opt.add_option(key, **kw)
 
@@ -64,7 +82,6 @@ SUBDIRS = [
 	# always configured and built
 	Subproject('public'),
 	Subproject('filesystem'),
-	Subproject('engine'),
 	Subproject('stub/server'),
 	Subproject('dllemu'),
 
@@ -76,76 +93,83 @@ SUBDIRS = [
 	Subproject('ref/gl',                lambda x: not x.env.DEDICATED and (x.env.GL or x.env.NANOGL or x.env.GLWES or x.env.GL4ES)),
 	Subproject('ref/soft',              lambda x: not x.env.DEDICATED and x.env.SOFT),
 	Subproject('ref/vk',                lambda x: not x.env.DEDICATED and x.env.VULKAN),
+	Subproject('ref/null',              lambda x: not x.env.DEDICATED and x.env.NULL),
+	Subproject('3rdparty/bzip2',        lambda x: not x.env.DEDICATED and not x.env.HAVE_SYSTEM_BZ2),
+	Subproject('3rdparty/opus',         lambda x: not x.env.DEDICATED and not x.env.HAVE_SYSTEM_OPUS),
+	Subproject('3rdparty/libogg',       lambda x: not x.env.DEDICATED and not x.env.HAVE_SYSTEM_OGG),
+	Subproject('3rdparty/vorbis',       lambda x: not x.env.DEDICATED and (not x.env.HAVE_SYSTEM_VORBIS or not x.env.HAVE_SYSTEM_VORBISFILE)),
+	Subproject('3rdparty/opusfile',     lambda x: not x.env.DEDICATED and not x.env.HAVE_SYSTEM_OPUSFILE),
 	Subproject('3rdparty/mainui',       lambda x: not x.env.DEDICATED),
 	Subproject('3rdparty/vgui_support', lambda x: not x.env.DEDICATED),
+	Subproject('3rdparty/MultiEmulator',lambda x: not x.env.DEDICATED),
+#	Subproject('3rdparty/freevgui',     lambda x: not x.env.DEDICATED),
 	Subproject('stub/client',           lambda x: not x.env.DEDICATED),
-	Subproject('game_launch',           lambda x: not x.env.SINGLE_BINARY and x.env.DEST_OS != 'android'),
-
-	# disable only by external dependency presense
-	Subproject('3rdparty/opus', lambda x: not x.env.HAVE_SYSTEM_OPUS and not x.env.DEDICATED),
+	Subproject('game_launch',           lambda x: not x.env.DISABLE_LAUNCHER),
+	Subproject('engine'), # keep latest for static linking
 
 	# enabled optionally
 	Subproject('utils/mdldec',     lambda x: x.env.ENABLE_UTILS),
-#	Subproject('utils/xar',        lambda x: x.env.ENABLE_UTILS),
+	Subproject('utils/xar',        lambda x: x.env.ENABLE_UTILS and x.env.ENABLE_XAR),
 	Subproject('utils/run-fuzzer', lambda x: x.env.ENABLE_FUZZER),
 
 	# enabled on PSVita only
 	Subproject('ref/gl/vgl_shim',   lambda x: x.env.DEST_OS == 'psvita'),
-
 ]
 
 REFDLLS = [
 	RefDll('soft', True),
 	RefDll('gl', True),
-	RefDll('vulkan', True),
+	RefDll('vk', True, 'VULKAN'),
 	RefDll('gles1', False, 'NANOGL'),
 	RefDll('gles2', False, 'GLWES'),
 	RefDll('gl4es', False),
 	RefDll('gles3compat', False),
+	RefDll('null', False),
 ]
 
 def options(opt):
-	opt.load('reconfigure compiler_optimizations xshlib xcompile compiler_cxx compiler_c sdl2 clang_compilation_database strip_on_install waf_unit_test msdev msvs msvc subproject cmake')
+	opt.load('reconfigure compiler_optimizations xshlib xcompile compiler_cxx compiler_c sdl2 clang_compilation_database strip_on_install waf_unit_test msdev msvs subproject cmake')
 
 	grp = opt.add_option_group('Common options')
 
 	grp.add_option('-d', '--dedicated', action = 'store_true', dest = 'DEDICATED', default = False,
-		help = 'build Xash Dedicated Server [default: %default]')
+		help = 'build Xash Dedicated Server [default: %(default)s]')
 
 	grp.add_option('--gamedir', action = 'store', dest = 'GAMEDIR', default = 'valve',
-		help = 'engine default game directory [default: %default]')
-
-	grp.add_option('--single-binary', action = 'store_true', dest = 'SINGLE_BINARY', default = False,
-		help = 'build single "xash" binary (always enabled for dedicated) [default: %default]')
+		help = 'engine default (base) game directory [default: %(default)s]')
 
 	grp.add_option('-8', '--64bits', action = 'store_true', dest = 'ALLOW64', default = False,
-		help = 'allow targetting 64-bit engine(Linux/Windows/OSX x86 only) [default: %default]')
+		help = 'allow targetting 64-bit engine(Linux/Windows only) [default: %(default)s]')
+
+	grp.add_option('-4', '--32bits', action = 'store_true', dest = 'FORCE32', default = False,
+		help = 'force targetting 32-bit engine, usually unneeded [default: %(default)s]')
 
 	grp.add_option('-P', '--enable-packaging', action = 'store_true', dest = 'PACKAGING', default = False,
-		help = 'respect prefix option, useful for packaging for various operating systems [default: %default]')
+		help = 'respect prefix option, useful for packaging for various operating systems [default: %(default)s]')
 
 	grp.add_option('--enable-bundled-deps', action = 'store_true', dest = 'BUILD_BUNDLED_DEPS', default = False,
 		help = 'prefer to build bundled dependencies (like opus) instead of relying on system provided')
 
-	grp.add_option('--enable-bsp2', action = 'store_true', dest = 'SUPPORT_BSP2_FORMAT', default = False,
-		help = 'build engine and renderers with BSP2 map support(recommended for Quake, breaks compatibility!) [default: %default]')
+	grp.add_option('--enable-hl25-extended-structs', action = 'store_true', dest = 'SUPPORT_HL25_EXTENDED_STRUCTS', default = False,
+		help = 'build engine and renderers with HL25 extended structs compatibility (might be required for some mods) [default: %(default)s]')
 
-	grp.add_option('--low-memory-mode', action = 'store', dest = 'LOW_MEMORY', default = 0, type = 'int',
+	grp.add_option('--low-memory-mode', action = 'store', dest = 'LOW_MEMORY', default = 0, type = int,
 		help = 'enable low memory mode (only for devices have <128 ram)')
 
 	grp.add_option('--disable-werror', action = 'store_true', dest = 'DISABLE_WERROR', default = False,
 		help = 'disable compilation abort on warning')
 
 	grp.add_option('--enable-tests', action = 'store_true', dest = 'TESTS', default = False,
-		help = 'enable building standalone tests (does not enable engine tests!) [default: %default]')
+		help = 'enable building standalone tests (does not enable engine tests!) [default: %(default)s]')
 
 	# a1ba: special option for me
 	grp.add_option('--debug-all-servers', action='store_true', dest='ALL_SERVERS', default=False, help='')
+	grp.add_option('--enable-msvcdeps', action='store_true', dest='MSVCDEPS', default=False, help='')
 
 	grp = opt.add_option_group('Renderers options')
 
 	grp.add_option('--enable-all-renderers', action='store_true', dest='ALL_RENDERERS', default=False,
-		help = 'enable all renderers supported by Xash3D FWGS [default: %default]')
+		help = 'enable all renderers supported by Xash3D FWGS [default: %(default)s]')
 
 	for dll in REFDLLS:
 		dll.register_option(grp)
@@ -153,10 +177,13 @@ def options(opt):
 	grp = opt.add_option_group('Utilities options')
 
 	grp.add_option('--enable-utils', action = 'store_true', dest = 'ENABLE_UTILS', default = False,
-		help = 'enable building various development utilities [default: %default]')
+		help = 'enable building various development utilities [default: %(default)s]')
+
+	grp.add_option('--enable-xar', action = 'store_true', dest = 'ENABLE_XAR', default = False,
+		help = 'enable building Xash ARchiver (experimental) [default: %(default)s]')
 
 	grp.add_option('--enable-fuzzer', action = 'store_true', dest = 'ENABLE_FUZZER', default = False,
-		help = 'enable building libFuzzer runner [default: %default]' )
+		help = 'enable building libFuzzer runner [default: %(default)s]' )
 
 	for i in SUBDIRS:
 		if not i.is_exists(opt):
@@ -166,10 +193,18 @@ def options(opt):
 
 def configure(conf):
 	conf.load('fwgslib reconfigure compiler_optimizations')
-	conf.env.MSVC_TARGETS = ['x86' if not conf.options.ALLOW64 else 'x64']
+	if conf.options.ALLOW64:
+		conf.env.MSVC_TARGETS = ['x64']
+	elif sys.maxsize > 2 ** 32 and not conf.options.MSVC_WINE:
+		conf.env.MSVC_TARGETS = ['amd64_x86', 'x86']
+	else:
+		conf.env.MSVC_TARGETS = ['x86']
 
 	# Load compilers early
-	conf.load('xshlib xcompile compiler_c compiler_cxx cmake gccdeps msvcdeps')
+	conf.load('xshlib xcompile compiler_c compiler_cxx gccdeps')
+
+	if conf.options.MSVCDEPS:
+		conf.load('msvcdeps')
 
 	if conf.options.NSWITCH:
 		conf.load('nswitch')
@@ -184,10 +219,9 @@ def configure(conf):
 	if conf.env.COMPILER_CC == 'msvc':
 		conf.load('msvc_pdb')
 
-	conf.load('msvs msdev subproject gitversion clang_compilation_database strip_on_install waf_unit_test enforce_pic cmake')
+	conf.load('msvs msdev subproject clang_compilation_database strip_on_install waf_unit_test enforce_pic cmake force_32bit')
 
-	# Force XP compatibility, all build targets should add subsystem=bld.env.MSVC_SUBSYSTEM
-	if conf.env.MSVC_TARGETS[0] == 'x86':
+	if conf.env.MSVC_TARGETS[0] == 'amd64_x86' or conf.env.MSVC_TARGETS[0] == 'x86':
 		conf.env.MSVC_SUBSYSTEM = 'WINDOWS,5.01'
 		conf.env.CONSOLE_SUBSYSTEM = 'CONSOLE,5.01'
 	else:
@@ -198,55 +232,56 @@ def configure(conf):
 
 	# modify options dictionary early
 	if conf.env.DEST_OS == 'android':
-		conf.options.NO_VGUI= True # skip vgui
-		conf.options.NANOGL = True
-		conf.options.GLWES  = True
-		conf.options.GL4ES  = True
-		conf.options.GL     = False
+		conf.options.NO_VGUI          = True # skip vgui
+		conf.options.NANOGL           = True
+		conf.options.GLWES            = False # deprecated
+		conf.options.GL4ES            = True
+		conf.options.GLES3COMPAT      = True
+		conf.options.GL               = False
+		conf.define('XASH_SDLMAIN', 1)
 	elif conf.env.MAGX:
 		conf.options.SDL12            = True
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = False
 		conf.options.VK               = False
 		conf.options.LOW_MEMORY       = 1
-		conf.options.SINGLE_BINARY    = True
 		conf.options.NO_ASYNC_RESOLVE = True
 		conf.define('XASH_SDLMAIN', 1)
 		enforce_pic = False
-	elif conf.env.DEST_OS == 'dos':
-		conf.options.SINGLE_BINARY = True
 	elif conf.env.DEST_OS == 'nswitch':
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = True
-		conf.options.SINGLE_BINARY    = True
-		conf.options.NO_ASYNC_RESOLVE = True
 		conf.options.USE_STBTT        = True
 		conf.options.VULKAN           = False # https://github.com/w23/xash3d-fwgs/issues/429
 	elif conf.env.DEST_OS == 'psvita':
 		conf.options.NO_VGUI          = True
 		conf.options.GL               = True
-		conf.options.SINGLE_BINARY    = True
-		conf.options.NO_ASYNC_RESOLVE = True
 		conf.options.USE_STBTT        = True
 		conf.options.VULKAN           = False
 		# we'll specify -fPIC by hand for shared libraries only
 		enforce_pic                   = False
+	elif conf.env.DEST_OS == 'darwin':
+		conf.options.VULKAN           = False
 
 	if conf.env.STATIC_LINKING:
 		enforce_pic = False # PIC may break full static builds
 
 	conf.check_pic(enforce_pic)
 
-	# We restrict 64-bit builds ONLY for Win/Linux/OSX running on Intel architecture
+	# NOTE: We restrict 64-bit builds ONLY for Win/Linux running on Intel architecture
 	# Because compatibility with original GoldSrc
-	if conf.env.DEST_OS in ['win32', 'linux', 'darwin'] and conf.env.DEST_CPU == 'x86_64':
-		conf.env.BIT32_MANDATORY = not conf.options.ALLOW64
-		if conf.env.BIT32_MANDATORY:
-			Logs.info('WARNING: will build engine for 32-bit target')
+	# NOTE: Since modern OSX (since Catalina) don't support 32-bit applications, there is no point
+	# to restrict them to 32-bit engine, despite GoldSrc is still officially supported.
+	# There is now `-4` (or `--32bits`) configure flag for those
+	# who want to specifically build engine for 32-bit
+	if conf.env.DEST_OS in ['win32', 'linux'] and conf.env.DEST_CPU == 'x86_64':
+		force_32bit = not conf.options.ALLOW64
 	else:
-		conf.env.BIT32_MANDATORY = False
+		force_32bit = conf.options.FORCE32
 
-	conf.load('force_32bit')
+	if force_32bit:
+		Logs.info('WARNING: will build engine for 32-bit target')
+		conf.force_32bit(True)
 
 	cflags, linkflags = conf.get_optimization_flags()
 	cxxflags = list(cflags) # optimization flags are common between C and C++ but we need a copy
@@ -288,17 +323,19 @@ def configure(conf):
 	conf.env.append_unique('CXXFLAGS', cxxflags)
 	conf.env.append_unique('LINKFLAGS', linkflags)
 
-	if conf.env.COMPILER_CC != 'msvc' and not conf.options.DISABLE_WERROR:
+	if conf.env.COMPILER_CC != 'msvc':
 		opt_flags = [
 			# '-Wall', '-Wextra', '-Wpedantic',
 			'-fdiagnostics-color=always',
 
 			# stable diagnostics, forced to error, sorted
+			'-Werror=alloc-size',
 			'-Werror=bool-compare',
 			'-Werror=bool-operation',
-			'-Werror=cast-align=strict',
+			# '-Werror=cast-align=strict',
 			'-Werror=duplicated-cond',
-			# '-Werror=format=2',
+			'-Werror=format-extra-args',
+			'-Werror=free-nonheap-object',
 			'-Werror=implicit-fallthrough=2',
 			'-Werror=logical-op',
 			'-Werror=nonnull',
@@ -319,18 +356,25 @@ def configure(conf):
 			'-Werror=write-strings',
 
 			# unstable diagnostics, may cause false positives
+			'-Walloc-zero',
+			'-Wformat=2',
 			'-Winit-self',
 			'-Wmisleading-indentation',
+			'-Wmismatched-dealloc',
 			'-Wstringop-overflow',
 			'-Wunintialized',
 
 			# disabled, flood
 			# '-Wdouble-promotion',
+
+			'-Wunused-function',
+			'-Wunused-variable',
+			'-Wunused-but-set-variable',
 		]
 
 		opt_cflags = [
-			'-Werror=declaration-after-statement',
 			'-Werror=enum-conversion',
+			'-Wno-error=enum-float-conversion', # need this for cvars
 			'-Werror=implicit-int',
 			'-Werror=implicit-function-declaration',
 			'-Werror=incompatible-pointer-types',
@@ -339,27 +383,39 @@ def configure(conf):
 			'-Werror=old-style-declaration',
 			'-Werror=old-style-definition',
 			'-Werror=strict-prototypes',
-			'-fnonconst-initializers' # owcc
+			'-fnonconst-initializers', # owcc
+			'-Wmissing-prototypes', # not an error yet
 		]
 
 		opt_cxxflags = [] # TODO:
 
-		cflags = conf.filter_cflags(opt_flags + opt_cflags, cflags)
-		cxxflags = conf.filter_cxxflags(opt_flags + opt_cxxflags, cxxflags)
+		if conf.options.DISABLE_WERROR:
+			opt_flags = []
+			opt_cflags = ['-Werror=implicit-function-declaration']
+			opt_cxxflags = []
 
-		conf.env.append_unique('CFLAGS', cflags)
-		conf.env.append_unique('CXXFLAGS', cxxflags)
+		conf.env.CFLAGS_werror = conf.filter_cflags(opt_flags + opt_cflags, cflags)
+		conf.env.CXXFLAGS_werror = conf.filter_cxxflags(opt_flags + opt_cxxflags, cxxflags)
 
 	conf.env.TESTS         = conf.options.TESTS
 	conf.env.ENABLE_UTILS  = conf.options.ENABLE_UTILS
+	conf.env.ENABLE_XAR    = conf.options.ENABLE_XAR
 	conf.env.ENABLE_FUZZER = conf.options.ENABLE_FUZZER
 	conf.env.DEDICATED     = conf.options.DEDICATED
-	conf.env.SINGLE_BINARY = conf.options.SINGLE_BINARY or conf.env.DEDICATED
+
+	conf.define_cond('SUPPORT_HL25_EXTENDED_STRUCTS', conf.options.SUPPORT_HL25_EXTENDED_STRUCTS)
+
+	# disable game_launch compiling on platform where it's not needed
+	conf.env.DISABLE_LAUNCHER = conf.env.DEST_OS in ['android', 'nswitch', 'psvita', 'dos'] or conf.env.MAGX or conf.env.DEDICATED or conf.env.STATIC_LINKING
 
 	if conf.env.SAILFISH == 'aurora':
 		conf.env.DEFAULT_RPATH = '/usr/share/su.xash.Engine/lib'
 	elif conf.env.DEST_OS == 'darwin':
 		conf.env.DEFAULT_RPATH = '@loader_path'
+	elif conf.env.DEST_OS == 'openbsd':
+		# OpenBSD requires -z origin to enable $ORIGIN expansion in RPATH
+		conf.env.RPATH_ST = '-Wl,-z,origin,-rpath,%s'
+		conf.env.DEFAULT_RPATH = '$ORIGIN'
 	else:
 		conf.env.DEFAULT_RPATH = '$ORIGIN'
 
@@ -371,15 +427,6 @@ def configure(conf):
 	conf.env.GAMEDIR = conf.options.GAMEDIR
 	conf.define('XASH_GAMEDIR', conf.options.GAMEDIR)
 	conf.define_cond('XASH_ALL_SERVERS', conf.options.ALL_SERVERS)
-
-	# check if we can use C99 stdint
-	conf.define('STDINT_H', 'stdint.h' if conf.check_cc(header_name='stdint.h', mandatory=False) else 'pstdint.h')
-
-	# check if we can use alloca.h or malloc.h
-	if conf.check_cc(header_name='alloca.h', mandatory=False):
-		conf.define('ALLOCA_H', 'alloca.h')
-	elif conf.check_cc(header_name='malloc.h', mandatory=False):
-		conf.define('ALLOCA_H', 'malloc.h')
 
 	if conf.env.DEST_OS == 'nswitch':
 		conf.check_cfg(package='solder', args='--cflags --libs', uselib_store='SOLDER')
@@ -408,57 +455,16 @@ def configure(conf):
 			for i in a:
 				conf.check_cc(lib = i)
 	else:
-		conf.check_cc(lib='dl')
+		conf.check_cc(lib='dl', mandatory = False)
 		conf.check_cc(lib='m')
 
 
-	# check if we can use C99 tgmath
-	if conf.check_cc(header_name='tgmath.h', mandatory=False):
-		if conf.env.COMPILER_CC == 'msvc':
-			conf.define('_CRT_SILENCE_NONCONFORMING_TGMATH_H', 1)
-		tgmath_usable = conf.check_cc(fragment='''#include<tgmath.h>
-			const float val = 2, val2 = 3;
-			int main(void){ return (int)(-asin(val) + cos(val2)); }''',
-			msg='Checking if tgmath.h is usable', mandatory=False, use='M')
-		conf.define_cond('HAVE_TGMATH_H', tgmath_usable)
-	else:
-		conf.undefine('HAVE_TGMATH_H')
-
 	# set _FILE_OFFSET_BITS=64 for filesystems with 64-bit inodes
-	if conf.env.DEST_OS != 'win32' and conf.env.DEST_SIZEOF_VOID_P == 4:
-		# check was borrowed from libarchive source code
-		file_offset_bits_usable = conf.check_cc(fragment='''
-#define _FILE_OFFSET_BITS 64
-#include <sys/types.h>
-#define KB ((off_t)1024)
-#define MB ((off_t)1024 * KB)
-#define GB ((off_t)1024 * MB)
-#define TB ((off_t)1024 * GB)
-int t2[(((64 * GB -1) % 671088649) == 268434537)
-       && (((TB - (64 * GB -1) + 255) % 1792151290) == 305159546)? 1: -1];
-int main(void) { return 0; }''',
-		msg='Checking if _FILE_OFFSET_BITS can be defined to 64', mandatory=False)
-		if file_offset_bits_usable:
-			conf.define('_FILE_OFFSET_BITS', 64)
-		else: conf.undefine('_FILE_OFFSET_BITS')
-
-	if conf.env.DEST_OS != 'win32':
-		strcasestr_frag = '''#include <string.h>
-int main(int argc, char **argv) { strcasestr(argv[1], argv[2]); return 0; }'''
-		strchrnul_frag  = '''#include <string.h>
-int main(int argc, char **argv) { strchrnul(argv[1], 'x'); return 0; }'''
-
-		def check_gnu_function(frag, msg, define):
-			if conf.check_cc(msg=msg, mandatory=False, fragment=frag):
-				conf.define(define, 1)
-			elif conf.check_cc(msg='... with _GNU_SOURCE?', mandatory=False, fragment=frag, defines='_GNU_SOURCE=1'):
-				conf.define(define, 1)
-				conf.define('_GNU_SOURCE', 1)
-		check_gnu_function(strcasestr_frag, 'Checking for strcasestr', 'HAVE_STRCASESTR')
-		check_gnu_function(strchrnul_frag, 'Checking for strchrnul', 'HAVE_STRCHRNUL')
+	# must be set globally as it changes ABI
+	if conf.env.DEST_OS not in ['psvita']:
+		conf.check_large_file(compiler = 'c', execute = False)
 
 	# indicate if we are packaging for Linux/BSD
-	conf.env.PACKAGING = conf.options.PACKAGING
 	if conf.options.PACKAGING:
 		conf.env.PREFIX = conf.options.prefix
 		if conf.env.SAILFISH == "aurora":
@@ -471,15 +477,28 @@ int main(int argc, char **argv) { strchrnul(argv[1], 'x'); return 0; }'''
 	else:
 		conf.env.SHAREDIR = conf.env.LIBDIR = conf.env.BINDIR = conf.env.PREFIX
 
-	if not conf.options.BUILD_BUNDLED_DEPS:
-		# search for opus 1.4 or higher, it has fixes for custom modes
-		if conf.check_cfg(package='opus', uselib_store='opus', args='opus >= 1.4 --cflags --libs', mandatory=False):
+	# dedicated server don't have external dependencies
+	if not conf.options.BUILD_BUNDLED_DEPS and not conf.options.DEDICATED:
+		for i in ('ogg','opusfile','vorbis','vorbisfile'):
+			if conf.check_cfg(package=i, uselib_store=i, args='--cflags --libs', mandatory=False):
+				conf.env['HAVE_SYSTEM_%s' % i.upper()] = True
+
+		# search for opus 1.4 only, it has fixes for custom modes
+		# 1.5 breaks custom modes: https://github.com/xiph/opus/issues/374
+		if conf.check_cfg(package='opus', uselib_store='opus', args='opus = 1.4 --cflags --libs', mandatory=False):
 			# now try to link with export that only exists with CUSTOM_MODES defined
 			frag='''#include <opus_custom.h>
 int main(void) { return !opus_custom_encoder_init((OpusCustomEncoder *)1, (const OpusCustomMode *)1, 1); }'''
 
-			if conf.check_cc(msg='Checking if opus supports custom modes', defines='CUSTOM_MODES=1', use='opus', fragment=frag, mandatory=False):
+			if conf.check_cc(msg='Checking if opus supports custom modes', defines='CUSTOM_MODES=1', use='opus werror', fragment=frag, mandatory=False):
 				conf.env.HAVE_SYSTEM_OPUS = True
+
+		# search for bzip2
+		BZIP2_CHECK='''#include <bzlib.h>
+int main(void) { return (int)BZ2_bzlibVersion(); }'''
+
+		if conf.check_cc(lib='bz2', fragment=BZIP2_CHECK, uselib_store='bzip2', mandatory=False):
+			conf.env.HAVE_SYSTEM_BZ2 = True
 
 	conf.define('XASH_LOW_MEMORY', conf.options.LOW_MEMORY)
 

@@ -103,7 +103,7 @@ static void speedsStrcat( const char *msg ) {
 	Q_strncat( g_speeds.frame.message, msg, sizeof( g_speeds.frame.message ));
 }
 
-static void speedsPrintf( const char *msg, ... ) _format(1);
+static void speedsPrintf( const char *msg, ... ) FORMAT_CHECK(1);
 static void speedsPrintf( const char *msg, ... ) {
 	va_list argptr;
 	char text[MAX_SPEEDS_MESSAGE];
@@ -160,7 +160,7 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	const int x = (begin_ns - begin_time_ns) * 1e-6 * time_scale_ms;
 
 	rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
-	CL_FillRGBA(x, y, width, height, color[0], color[1], color[2], color[3]);
+	CL_FillRGBA(kRenderTransAdd, x, y, width, height, color[0], color[1], color[2], color[3]);
 
 	// Tweak this if scope names escape the block boundaries
 	char tmp[64];
@@ -361,7 +361,7 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	frame_bar_y += g_speeds.font_metrics.glyph_height;
 
 	// Draw background that podcherkivaet graph area
-	CL_FillRGBABlend(0, frame_bar_y, graph_width, graph_height, graph->color[0], graph->color[1], graph->color[2], 32);
+	CL_FillRGBA(kRenderTransColor, 0, frame_bar_y, graph_width, graph_height, graph->color[0], graph->color[1], graph->color[2], 32);
 
 	// Draw max value
 	{
@@ -376,12 +376,12 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 
 	if (metric->low_watermark && metric->low_watermark < graph_max_value) {
 		const int y = frame_bar_y - metric->low_watermark * height_scale;
-		CL_FillRGBA(0, y, graph_width, 1, 0, 255, 0, 50);
+		CL_FillRGBA(kRenderTransAdd, 0, y, graph_width, 1, 0, 255, 0, 50);
 	}
 
 	if (metric->high_watermark && metric->high_watermark < graph_max_value) {
 		const int y = frame_bar_y - metric->high_watermark * height_scale;
-		CL_FillRGBA(0, y, graph_width, 1, 255, 0, 0, 50);
+		CL_FillRGBA(kRenderTransAdd, 0, y, graph_width, 1, 255, 0, 0, 50);
 	}
 
 	// Invert graph origin for better math below
@@ -407,7 +407,7 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 		const int y = frame_bar_y - y_pos;
 
 		// TODO lines
-		CL_FillRGBA(x0, y, x1-x0, height, red, green, blue, 127);
+		CL_FillRGBA(kRenderTransAdd, x0, y, x1-x0, height, red, green, blue, 127);
 
 		if (i == graph->data_count - 1) {
 			char buf[16];
@@ -469,7 +469,7 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 				bar_y = bar_y * bar_height + y;
 
 				rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
-				CL_FillRGBA(x0, bar_y, width, height, color[0], color[1], color[2], color[3]);
+				CL_FillRGBA(kRenderTransAdd, x0, bar_y, width, height, color[0], color[1], color[2], color[3]);
 
 				// Tweak this if scope names escape the block boundaries
 				char tmp[64];
@@ -707,6 +707,7 @@ static void processGraphCvar( void ) {
 	g_speeds.r_speeds_graphs->flags &= ~FCVAR_CHANGED;
 }
 
+/*
 static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 	switch (type) {
 		case kSpeedsMetricCount: return "count";
@@ -716,6 +717,7 @@ static const char *getMetricTypeName(r_speeds_metric_type_t type) {
 
 	return "UNKNOWN";
 }
+*/
 
 // Actually does the job of `r_speeds_mlist` and `r_speeds_mtable` commands.
 // We can't just directly call this function from little command handler ones, because

@@ -32,8 +32,9 @@ vk_framectl_t vk_frame = {0};
 // Phase tracking is needed for getting screenshots. Basically, getting a screenshot does the same things as R_EndFrame, and they need to be congruent.
 typedef enum {
 	Phase_Idle,
-	Phase_FrameBegan,
-	Phase_RenderingEnqueued,
+	Phase_FrameBegan, // Called R_BeginFrame()
+	Phase_FrameRendered, // Called VK_RenderFrame()
+	Phase_RenderingEnqueued, //
 	Phase_Submitted,
 } frame_phase_t;
 
@@ -199,6 +200,12 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 }
 
 static void waitForFrameFence( void ) {
+
+	// TODO: wait for small amount of time (~1-10ms?), calling gEngine.CL_ExtraUpdate() each time we wake up
+	// Why: CL_ExtraUpdate() is needed when the renderer is stuck doing something for a long time
+	// It allows the engine to make progress on other things. Think cooperative multitasking.
+	// Alt: Make dedicated render thread and wait there. But that'd be a huge and messy project.
+
 	APROF_SCOPE_BEGIN(wait_for_frame_fence);
 	const VkFence fence_done[1] = {g_frame.frames[g_frame.current.index].fence_done};
 	for(qboolean loop = true; loop; ) {
@@ -221,6 +228,7 @@ static void waitForFrameFence( void ) {
 	APROF_SCOPE_END(wait_for_frame_fence);
 }
 
+/*
 static void updateGamma( void ) {
 	// FIXME when
 	{
@@ -242,8 +250,15 @@ static void updateGamma( void ) {
 		}
 	}
 }
+*/
 
 void R_BeginFrame( qboolean clearScene ) {
+	if (g_frame.current.phase == Phase_FrameBegan) {
+		WARN("R_BeginFrame() called without finishing the previous frame");
+		return;
+	}
+
+
 	APROF_SCOPE_DECLARE_BEGIN(begin_frame_tail, "R_BeginFrame_tail");
 	ASSERT(g_frame.current.phase == Phase_Submitted || g_frame.current.phase == Phase_Idle);
 	g_frame.current.index = (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES;
@@ -273,7 +288,7 @@ void R_BeginFrame( qboolean clearScene ) {
 	}
 	ClearBits( rt_enable->flags, FCVAR_CHANGED );
 
-	updateGamma();
+	//updateGamma();
 
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 
@@ -294,8 +309,10 @@ void R_BeginFrame( qboolean clearScene ) {
 
 void VK_RenderFrame( const struct ref_viewpass_s *rvp )
 {
+	ASSERT(g_frame.current.phase == Phase_FrameBegan || g_frame.current.phase == Phase_FrameRendered);
 	APROF_SCOPE_BEGIN(render_frame);
 	VK_SceneRender( rvp );
+	g_frame.current.phase = Phase_FrameRendered;
 	APROF_SCOPE_END(render_frame);
 }
 
@@ -304,7 +321,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	const uint32_t frame_width = g_frame.current.framebuffer.image.width;
 	const uint32_t frame_height = g_frame.current.framebuffer.image.height;
 
-	ASSERT(g_frame.current.phase == Phase_FrameBegan);
+	ASSERT(g_frame.current.phase == Phase_FrameBegan || g_frame.current.phase == Phase_FrameRendered);
 
 	// TODO: should be done by rendering when it requests textures
 	R_VkImageUploadCommit(combuf,
@@ -490,7 +507,7 @@ void R_EndFrame( void )
 {
 	APROF_SCOPE_BEGIN_EARLY(end_frame);
 
-	if (g_frame.current.phase == Phase_FrameBegan) {
+	if (g_frame.current.phase == Phase_FrameBegan || g_frame.current.phase == Phase_FrameRendered) {
 		vk_combuf_t *const combuf = g_frame.frames[g_frame.current.index].combuf;
 		const qboolean draw = g_frame.current.framebuffer.framebuffer != VK_NULL_HANDLE;
 		enqueueRendering( combuf, draw );

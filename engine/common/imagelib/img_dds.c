@@ -17,7 +17,7 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "img_dds.h"
 
-qboolean Image_CheckDXT3Alpha( dds_t *hdr, byte *fin )
+static qboolean Image_CheckDXT3Alpha( dds_t *hdr, byte *fin )
 {
 	word	sAlpha;
 	byte	*alpha;
@@ -50,7 +50,7 @@ qboolean Image_CheckDXT3Alpha( dds_t *hdr, byte *fin )
 	return false;
 }
 
-qboolean Image_CheckDXT5Alpha( dds_t *hdr, byte *fin )
+static qboolean Image_CheckDXT5Alpha( dds_t *hdr, byte *fin )
 {
 	uint	bits, bitmask;
 	byte	*alphamask;
@@ -91,7 +91,7 @@ qboolean Image_CheckDXT5Alpha( dds_t *hdr, byte *fin )
 	return false;
 }
 
-void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
+static void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 {
 	uint bits = hdr->dsPixelFormat.dwRGBBitCount;
 
@@ -215,7 +215,7 @@ void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 		image.num_mips = hdr->dwMipMapCount; // get actual mip count
 }
 
-size_t Image_DXTCalcMipmapSize( dds_t *hdr )
+static size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 {
 	size_t	buffsize = 0;
 	int	i, width, height;
@@ -231,7 +231,7 @@ size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 	return buffsize;
 }
 
-uint Image_DXTCalcSize( const char *name, dds_t *hdr, size_t filesize )
+static uint Image_DXTCalcSize( const char *name, dds_t *hdr, size_t filesize )
 {
 	size_t buffsize = 0;
 	int w = image.width;
@@ -261,7 +261,7 @@ uint Image_DXTCalcSize( const char *name, dds_t *hdr, size_t filesize )
 
 	if( filesize != buffsize ) // main check
 	{
-		Con_DPrintf( S_WARN "Image_LoadDDS: (%s) probably corrupted (%zu should be %lu)\n", name, buffsize, filesize );
+		Con_DPrintf( S_WARN "%s: (%s) probably corrupted (%zu should be %zu)\n", __func__, name, buffsize, filesize );
 		if( buffsize > filesize )
 			return false;
 	}
@@ -269,7 +269,7 @@ uint Image_DXTCalcSize( const char *name, dds_t *hdr, size_t filesize )
 	return buffsize;
 }
 
-void Image_DXTAdjustVolume( dds_t *hdr )
+static void Image_DXTAdjustVolume( dds_t *hdr )
 {
 	if( hdr->dwDepth <= 1 )
 		return;
@@ -300,13 +300,13 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 
 	if( header.dwSize != sizeof( header ) - sizeof( uint )) // size of the structure (minus MagicNum)
 	{
-		Con_DPrintf( S_ERROR "Image_LoadDDS: (%s) have corrupted header\n", name );
+		Con_DPrintf( S_ERROR "%s: (%s) have corrupted header\n", __func__, name );
 		return false;
 	}
 
 	if( header.dsPixelFormat.dwSize != sizeof( dds_pixf_t )) // size of the structure
 	{
-		Con_DPrintf( S_ERROR "Image_LoadDDS: (%s) have corrupt pixelformat header\n", name );
+		Con_DPrintf( S_ERROR "%s: (%s) have corrupt pixelformat header\n", __func__, name );
 		return false;
 	}
 
@@ -334,7 +334,7 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 
 	if( image.type == PF_UNKNOWN )
 	{
-		Con_DPrintf( S_ERROR "Image_LoadDDS: (%s) has unrecognized type\n", name );
+		Con_DPrintf( S_ERROR "%s: (%s) has unrecognized type\n", __func__, name );
 		return false;
 	}
 

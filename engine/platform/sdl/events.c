@@ -148,7 +148,6 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 #else
 	int keynum = key.keysym.sym;
 #endif
-	qboolean numLock = FBitSet( SDL_GetModState(), KMOD_NUM );
 
 #if XASH_ANDROID
 	if( keynum == SDL_SCANCODE_VOLUMEUP || keynum == SDL_SCANCODE_VOLUMEDOWN )
@@ -157,9 +156,10 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 	}
 #endif
 
-	if( SDL_IsTextInputActive() && down && cls.key_dest != key_game )
+	if( SDL_IsTextInputActive( ) && down )
 	{
-		if( FBitSet( SDL_GetModState(), KMOD_CTRL ))
+		// this is how engine understands ctrl+c, ctrl+v and other hotkeys
+		if( cls.key_dest != key_game && FBitSet( SDL_GetModState(), KMOD_CTRL ))
 		{
 			if( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
 			{
@@ -170,19 +170,22 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 			return;
 		}
 
-#if !SDL_VERSION_ATLEAST( 2, 0, 0 )
+#if SDL_VERSION_ATLEAST( 2, 0, 0 )
+		// ignore printable keys, they are coming through SDL_TEXTINPUT
+		if(( keynum >= SDL_SCANCODE_A && keynum <= SDL_SCANCODE_Z )
+			|| ( keynum >= SDL_SCANCODE_1 && keynum <= SDL_SCANCODE_0 )
+			|| ( keynum >= SDL_SCANCODE_KP_1 && keynum <= SDL_SCANCODE_KP_0 ))
+			return;
+#else
 		if( keynum >= SDLK_KP0 && keynum <= SDLK_KP9 )
 			keynum -= SDLK_KP0 + '0';
 
-		if( isprint( keynum ) )
+		if( isprint( keynum ))
 		{
 			if( FBitSet( SDL_GetModState(), KMOD_SHIFT ))
-			{
 				keynum = Key_ToUpper( keynum );
-			}
 
 			CL_CharEvent( keynum );
-			return;
 		}
 #endif
 	}
@@ -198,6 +201,8 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 	else DECLARE_KEY_RANGE( SDL_SCANCODE_F1, SDL_SCANCODE_F12, K_F1 )
 	else
 	{
+		qboolean numLock = FBitSet( SDL_GetModState(), KMOD_NUM );
+
 		switch( keynum )
 		{
 		case SDL_SCANCODE_GRAVE: keynum = '`'; break;
@@ -260,7 +265,7 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 			break;
 		}
 		case SDL_SCANCODE_PAUSE: keynum = K_PAUSE; break;
-		case SDL_SCANCODE_SCROLLLOCK: keynum = K_SCROLLOCK; break;
+		case SDL_SCANCODE_SCROLLLOCK: keynum = K_SCROLLLOCK; break;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 		case SDL_SCANCODE_APPLICATION: keynum = K_WIN; break; // (compose key) ???
 		// don't console spam on known functional buttons, not used in engine
@@ -274,11 +279,11 @@ static void SDLash_KeyEvent( SDL_KeyboardEvent key )
 #endif // SDL_VERSION_ATLEAST( 2, 0, 0 )
 		case SDL_SCANCODE_UNKNOWN:
 		{
-			if( down ) Con_Reportf( "SDLash_KeyEvent: Unknown scancode\n" );
+			if( down ) Con_Reportf( "%s: Unknown scancode\n", __func__ );
 			return;
 		}
 		default:
-			if( down ) Con_Reportf( "SDLash_KeyEvent: Unknown key: %s = %i\n", SDL_GetScancodeName( keynum ), keynum );
+			if( down ) Con_Reportf( "%s: Unknown key: %s = %i\n", __func__, SDL_GetScancodeName( keynum ), keynum );
 			return;
 		}
 	}
@@ -349,16 +354,17 @@ SDLash_InputEvent
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 static void SDLash_InputEvent( SDL_TextInputEvent input )
 {
-	char *text;
+	const char *text;
+
 	VGui_ReportTextInput( input.text );
+
 	for( text = input.text; *text; text++ )
 	{
-		int ch;
+		int ch = (byte)*text;
 
-		if( !Q_stricmp( cl_charset.string, "utf-8" ) )
-			ch = (unsigned char)*text;
-		else
-			ch = Con_UtfProcessCharForce( (unsigned char)*text );
+		// do not pass UTF-8 sequence into the engine, convert it here
+		if( !cls.accept_utf8 )
+			ch = Con_UtfProcessCharForce( ch );
 
 		if( !ch )
 			continue;
@@ -374,14 +380,8 @@ static void SDLash_ActiveEvent( int gain )
 	{
 		host.status = HOST_FRAME;
 		if( cls.key_dest == key_game )
-		{
 			IN_ActivateMouse( );
-		}
 
-		if( dma.initialized && snd_mute_losefocus.value )
-		{
-			SNDDMA_Activate( true );
-		}
 		host.force_draw_version_time = host.realtime + FORCE_DRAW_VERSION_TIME;
 		if( vid_fullscreen.value == WINDOW_MODE_FULLSCREEN )
 			VID_SetMode();
@@ -396,15 +396,13 @@ static void SDLash_ActiveEvent( int gain )
 		}
 #endif
 		host.status = HOST_NOFOCUS;
+
 		if( cls.key_dest == key_game )
 		{
+			Key_ClearStates();
 			IN_DeactivateMouse();
 		}
 
-		if( dma.initialized && snd_mute_losefocus.value )
-		{
-			SNDDMA_Activate( false );
-		}
 		host.force_draw_version_time = host.realtime + 2.0;
 		VID_RestoreScreenResolution();
 	}
@@ -460,7 +458,7 @@ SDLash_EventFilter
 
 =============
 */
-static void SDLash_EventFilter( SDL_Event *event )
+static void SDLash_EventHandler( SDL_Event *event )
 {
 	switch ( event->type )
 	{
@@ -504,7 +502,7 @@ static void SDLash_EventFilter( SDL_Event *event )
 		break;
 
 	case SDL_QUIT:
-		Sys_Quit();
+		Sys_Quit( "caught SDL_QUIT" );
 		break;
 #if SDL_VERSION_ATLEAST( 2, 0, 0 )
 	case SDL_MOUSEWHEEL:
@@ -654,7 +652,9 @@ static void SDLash_EventFilter( SDL_Event *event )
 			SDLash_ActiveEvent( false );
 			break;
 		case SDL_WINDOWEVENT_RESIZED:
+#if !XASH_MOBILE_PLATFORM
 			if( vid_fullscreen.value == WINDOW_MODE_WINDOWED )
+#endif
 			{
 				SDL_Window *wnd = SDL_GetWindowFromID( event->window.windowID );
 				VID_SaveWindowSize( event->window.data1, event->window.data2,
@@ -689,7 +689,7 @@ void Platform_RunEvents( void )
 	SDL_Event event;
 
 	while( !host.crashed && !host.shutdown_issued && SDL_PollEvent( &event ) )
-		SDLash_EventFilter( &event );
+		SDLash_EventHandler( &event );
 
 #if XASH_PSVITA
 	PSVita_InputUpdate();

@@ -94,15 +94,16 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 			VectorScale( cull_vup, size, up );
 
 			p->color = bound( 0, p->color, 255 );
-			pColor = gEngine.CL_GetPaletteColor( p->color );
+			pColor = &globals.palette[ p->color ];
 
-			alpha = 255 * (p->die - gpGlobals->time) * 16.0f;
+			alpha = 255 * (p->die - gp_cl->time) * 16.0f;
 			if( alpha > 255 || p->type == pt_static )
 				alpha = 255;
 
-			TriColor4ub_( gEngine.LightToTexGamma( pColor->r ),
-				gEngine.LightToTexGamma( pColor->g ),
-				gEngine.LightToTexGamma( pColor->b ), alpha );
+			TriColor4ub_(
+				LightToTexGamma( pColor->r ),
+				LightToTexGamma( pColor->g ),
+				LightToTexGamma( pColor->b ), alpha );
 
 			TriTexCoord2f( 0.0f, 1.0f );
 			TriVertex3f( p->org[0] - right[0] + up[0], p->org[1] - right[1] + up[1], p->org[2] - right[2] + up[2] );
@@ -195,14 +196,13 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 
 	TriRenderMode( kRenderTransAdd );
 
-#define MOVEVARS (gEngine.pfnGetMoveVars())
-	gravity = frametime * MOVEVARS->gravity;
+	gravity = frametime * globals.movevars->gravity;
 	scale = 1.0 - (frametime * 0.9);
 	if( scale < 0.0f ) scale = 0.0f;
 
 	for( p = cl_active_tracers; p; p = p->next )
 	{
-		atten = (p->die - gpGlobals->time);
+		atten = (p->die - gp_cl->time);
 		if( atten > 0.1f ) atten = 0.1f;
 
 		VectorScale( p->vel, ( p->ramp * atten ), delta );
@@ -226,8 +226,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			tmp[2] = 0;
 			VectorNormalize( tmp );
 
-			vec3_t cull_vforward, cull_vup, cull_vright;
-			VectorCopy(g_camera.vforward, cull_vforward);
+			vec3_t /*cull_vforward,*/ cull_vup, cull_vright;
+			//VectorCopy(g_camera.vforward, cull_vforward);
 			VectorCopy(g_camera.vup, cull_vup);
 			VectorCopy(g_camera.vright, cull_vright);
 
@@ -273,7 +273,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			p->vel[1] *= scale;
 			p->vel[2] -= gravity;
 
-			p->packedColor = 255 * (p->die - gpGlobals->time) * 2;
+			p->packedColor = 255 * (p->die - gp_cl->time) * 2;
 			if( p->packedColor > 255 ) p->packedColor = 255;
 		}
 		else if( p->type == pt_slowgrav )

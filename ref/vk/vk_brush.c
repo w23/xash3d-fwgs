@@ -123,7 +123,7 @@ static struct {
 	} conn;
 } g_brush;
 
-void VK_InitRandomTable( void )
+static void VK_InitRandomTable( void )
 {
 	int	tu, tv;
 
@@ -167,7 +167,7 @@ static const float r_turbsin[] =
 #define TURBSCALE		( 256.0f / ( M_PI2 ))
 
 static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int *num_indices) {
-	for( const glpoly_t *p = warp->polys; p; p = p->next ) {
+	for( const glpoly2_t *p = warp->polys; p; p = p->next ) {
 		const int triangles = p->numverts - 2;
 		*num_vertices += p->numverts;
 		*num_indices += triangles * 3;
@@ -224,7 +224,7 @@ static qboolean tesselationHasSameOrientation( const msurface_t *surf, qboolean 
 #endif
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
-	const float time = gpGlobals->time;
+	const float time = gp_cl->time;
 	const qboolean reverse = false;//!tesselationHasSameOrientation( args.warp, args.debug );
 
 #define MAX_WATER_VERTICES 16
@@ -264,7 +264,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	);
 
 
-	for( const glpoly_t *p = args.warp->polys; p; p = p->next ) {
+	for( const glpoly2_t *p = args.warp->polys; p; p = p->next ) {
 		ASSERT(p->numverts <= MAX_WATER_VERTICES);
 
 		const float *v;
@@ -292,10 +292,10 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 			const float os = v[3];
 			const float ot = v[4];
 
-			float s = os + r_turbsin[(int)((ot * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float s = os + r_turbsin[(int)((ot * 0.125f + gp_cl->time) * TURBSCALE) & 255];
 			s *= ( 1.0f / SUBDIVIDE_SIZE );
 
-			float t = ot + r_turbsin[(int)((os * 0.125f + gpGlobals->time) * TURBSCALE) & 255];
+			float t = ot + r_turbsin[(int)((os * 0.125f + gp_cl->time) * TURBSCALE) & 255];
 			t *= ( 1.0f / SUBDIVIDE_SIZE );
 
 			poly_vertices[i].pos[0] = v[0];
@@ -410,6 +410,7 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	g_brush.stat.water_polys_drawn += indices / 3;
 }
 
+/*
 static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 	switch (render_mode) {
 		case kRenderNormal:       return kVkRenderTypeSolid;
@@ -423,6 +424,7 @@ static vk_render_type_e brushRenderModeToRenderType( int render_mode ) {
 
 	return kVkRenderTypeSolid;
 }
+*/
 
 typedef enum {
 	BrushSurface_Hidden = 0,
@@ -843,7 +845,7 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 			speed = 10;
 		else */ speed = 20;
 
-		reletive = (int)(gpGlobals->time * speed) % base->anim_total;
+		reletive = (int)(gp_cl->time * speed) % base->anim_total;
 	}
 
 	count = 0;
@@ -990,11 +992,10 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	for (int i = 0; i < bmodel->conveyors_count; ++i) {
 		const r_conveyor_t *const conv = bmodel->conveyors + i;
 		vec2_t offset = {0, 0};
-		computeConveyorOffset(ent->curstate.rendercolor, conv->texture_width, gpGlobals->time, offset);
+		computeConveyorOffset(ent->curstate.rendercolor, conv->texture_width, gp_cl->time, offset);
 
 		ASSERT(conv->geometry_index >= 0);
 		ASSERT(conv->geometry_index < bmodel->render_model.num_geometries);
-		const vk_render_geometry_t *const geom = bmodel->render_model.geometries + conv->geometry_index;
 		const r_geometry_range_lock_t lock = R_GeometryRangeLockSubrange(&bmodel->geometry, conv->vertices_dst_offset, conv->vertices_count);
 
 		for (int j = 0; j < conv->vertices_count; ++j) {
@@ -1023,7 +1024,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 	});
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
-	bmodel->prev_time = gpGlobals->time;
+	bmodel->prev_time = gp_cl->time;
 }
 
 static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) {
@@ -1264,7 +1265,7 @@ static void connectVertices( const model_t *mod, qboolean smooth_entire_model ) 
 			if (cedge->count == 0) {
 				cedge->first_surface = surface_index;
 			} else {
-				const medge_t *edge = mod->edges + iedge;
+				const medge16_t *edge = mod->edges16 + iedge;
 				if (shouldSmoothLinkSurfaces(mod, smooth_entire_model, cedge->first_surface, surface_index)) {
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[0]);
 					linkSmoothSurfaces(mod, cedge->first_surface, surface_index, edge->v[1]);
@@ -1577,13 +1578,12 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			vec3_t surf_normal;
 			getSurfaceNormal(surf, surf_normal);
 
-			vk_vertex_t *const pvert_begin = p_vert;
 			vec3_t p[3];
 			for( int k = 0; k < surf->numedges; k++ )
 			{
 				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
 				const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
-				const medge_t *edge = args.mod->edges + iedge;
+				const medge16_t *edge = args.mod->edges16 + iedge;
 				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
 				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
 
@@ -1833,7 +1833,7 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	mod->cache.data = bmodel;
 
 	Matrix4x4_LoadIdentity(bmodel->prev_transform);
-	bmodel->prev_time = gpGlobals->time;
+	bmodel->prev_time = gp_cl->time;
 
 	arrayDynamicInitT(&bmodel->dynamic_polylights);
 
@@ -1980,7 +1980,7 @@ static qboolean loadPolyLight(rt_light_add_polygon_t *out_polygon, const model_t
 
 	for (int i = 0; i < out_polygon->num_vertices; ++i) {
 		const int iedge = mod->surfedges[surf->firstedge + i];
-		const medge_t *edge = mod->edges + (iedge >= 0 ? iedge : -iedge);
+		const medge16_t *edge = mod->edges16 + (iedge >= 0 ? iedge : -iedge);
 		const mvertex_t *vertex = mod->vertexes + (iedge >= 0 ? edge->v[0] : edge->v[1]);
 		VectorCopy(vertex->position, out_polygon->vertices[i]);
 	}

@@ -5,7 +5,7 @@
 #include "vk_const.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
-#include "vk_math.h"
+#include "vk_studio.h"
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_sprite.h"
@@ -21,10 +21,10 @@
 #include "vk_entity_data.h"
 #include "vk_logs.h"
 
-#include "com_strings.h"
 #include "ref_params.h"
 #include "eiface.h"
 #include "pm_movevars.h"
+#include "xash3d_mathlib.h"
 
 #include <stdlib.h> // qsort
 #include <memory.h>
@@ -65,14 +65,14 @@ static struct {
 } g_lists;
 
 static void preloadModels( void ) {
-	const int num_models = gEngine.EngineGetParm( PARM_NUMMODELS, 0 );
+	const int num_models = gp_cl->nummodels;
 
 	// Load all models at once
 	DEBUG( "Num models: %d:", num_models );
 	for( int i = 0; i < num_models; i++ )
 	{
 		model_t	*m;
-		if(( m = gEngine.pfnGetModelByIndex( i + 1 )) == NULL )
+		if(( m = gp_cl->models[i + 1]) == NULL )
 			continue;
 
 		const qboolean is_worldmodel = i == 0;
@@ -108,7 +108,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 	VK_ClearLightmap();
 
 	// This is to ensure that we have computed lightstyles properly
-	VK_RunLightStyles();
+	VK_RunLightStyles((lightstyle_t *)ENGINE_GET_PARM( PARM_GET_LIGHTSTYLES_PTR ));
 
 	if (vk_core.rtx)
 		VK_RayNewMapBegin();
@@ -134,7 +134,7 @@ static void loadMap(const model_t* const map, qboolean force_reload) {
 	RT_LightsLoadEnd();
 
 	// Can only do after preloadModels(), as we need to know whether there are SURF_DRAWSKY
-	R_TextureSetupSky( gEngine.pfnGetMoveVars()->skyName, force_reload );
+	R_TextureSetupSky( MOVEVARS->skyName, force_reload );
 
 	// TODO should we do something like R_BrushEndLoad?
 	VK_UploadLightmap();
@@ -149,7 +149,7 @@ static void reloadPatches( void ) {
 
 	R_BrushModelDestroyAll();
 
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t *const map = WORLDMODEL;
 	const qboolean force_reload = true;
 	loadMap(map, force_reload);
 }
@@ -167,7 +167,7 @@ void VK_SceneInit( void )
 }
 
 #define R_ModelOpaque( rm )	( rm == kRenderNormal )
-int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
+static int R_FIXME_GetEntityRenderMode( cl_entity_t *ent )
 {
 	//int		i, opaque, trans;
 	//mstudiotexture_t	*ptexture;
@@ -212,11 +212,11 @@ void R_SceneMapDestroy( void ) {
 
 // tell the renderer what new map is started
 void R_NewMap( void ) {
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+	const model_t *const map = WORLDMODEL;
 
 	// Existence of cache.data for the world means that we've already have loaded this map
 	// and this R_NewMap call is from within loading of a saved game.
-	const qboolean is_save_load = !!gEngine.pfnGetModelByIndex( 1 )->cache.data;
+	const qboolean is_save_load = !!map->cache.data;
 
 	INFO( "R_NewMap(%s) is_save_load=%d", map->name, is_save_load );
 
@@ -289,13 +289,18 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	return true;
 }
 
-void R_ProcessEntData( qboolean allocate )
+void R_ProcessEntData( qboolean allocate, cl_entity_t *entities, unsigned int max_entities )
 {
 	if( !allocate )
 	{
 		g_lists.draw_list->num_solid_entities = 0;
 		g_lists.draw_list->num_trans_entities = 0;
 		g_lists.draw_list->num_beam_entities = 0;
+	}
+
+	{
+		globals.max_entities = max_entities;
+		globals.entities = entities;
 	}
 
 	if( gEngine.drawFuncs->R_ProcessEntData )
@@ -347,7 +352,7 @@ static void R_RotateForEntity( matrix4x4 out, const cl_entity_t *e )
 	float	scale = 1.0f;
 
 	// TODO we should be able to remove this, as worldmodel is draw in a separate code path
-	if( e == gEngine.GetEntityByIndex( 0 ) )
+	if( e == globals.entities )
 	{
 		Matrix4x4_LoadIdentity(out);
 		return;
@@ -447,16 +452,16 @@ int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
 	switch( e->curstate.renderfx )
 	{
 	case kRenderFxPulseSlowWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 2 + offset );
+		blend = e->curstate.renderamt + 0x40 * sin( gp_cl->time * 2 + offset );
 		break;
 	case kRenderFxPulseFastWide:
-		blend = e->curstate.renderamt + 0x40 * sin( gpGlobals->time * 8 + offset );
+		blend = e->curstate.renderamt + 0x40 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxPulseSlow:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 2 + offset );
+		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 2 + offset );
 		break;
 	case kRenderFxPulseFast:
-		blend = e->curstate.renderamt + 0x10 * sin( gpGlobals->time * 8 + offset );
+		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
 		if( RP_NORMALPASS( ))
@@ -495,27 +500,27 @@ int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxStrobeSlow:
-		blend = 20 * sin( gpGlobals->time * 4 + offset );
+		blend = 20 * sin( gp_cl->time * 4 + offset );
 		if( blend < 0 ) blend = 0;
 		else blend = e->curstate.renderamt;
 		break;
 	case kRenderFxStrobeFast:
-		blend = 20 * sin( gpGlobals->time * 16 + offset );
+		blend = 20 * sin( gp_cl->time * 16 + offset );
 		if( blend < 0 ) blend = 0;
 		else blend = e->curstate.renderamt;
 		break;
 	case kRenderFxStrobeFaster:
-		blend = 20 * sin( gpGlobals->time * 36 + offset );
+		blend = 20 * sin( gp_cl->time * 36 + offset );
 		if( blend < 0 ) blend = 0;
 		else blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFlickerSlow:
-		blend = 20 * (sin( gpGlobals->time * 2 ) + sin( gpGlobals->time * 17 + offset ));
+		blend = 20 * (sin( gp_cl->time * 2 ) + sin( gp_cl->time * 17 + offset ));
 		if( blend < 0 ) blend = 0;
 		else blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFlickerFast:
-		blend = 20 * (sin( gpGlobals->time * 16 ) + sin( gpGlobals->time * 23 + offset ));
+		blend = 20 * (sin( gp_cl->time * 16 ) + sin( gp_cl->time * 23 + offset ));
 		if( blend < 0 ) blend = 0;
 		else blend = e->curstate.renderamt;
 		break;
@@ -549,6 +554,13 @@ int CL_FxBlend( cl_entity_t *e ) // FIXME do R_SetupFrustum: , vec3_t vforward )
 	blend = bound( 0, blend, 255 );
 
 	return blend;
+}
+
+static void Matrix4x4_SetOrigin( matrix4x4 out, float x, float y, float z )
+{
+	out[0][3] = x;
+	out[1][3] = y;
+	out[2][3] = z;
 }
 
 static void drawEntity( cl_entity_t *ent, int render_mode )
@@ -609,10 +621,10 @@ static float g_frametime = 0;
 
 void VK_SceneRender( const ref_viewpass_t *rvp ) {
 	APROF_SCOPE_BEGIN_EARLY(scene_render);
-	const cl_entity_t* const local_player = gEngine.GetLocalPlayer();
+	const cl_entity_t* const local_player = globals.entities + gp_cl->playernum + 1;
 
 	g_frametime = /*FIXME VK RP_NORMALPASS( )) ? */
-	gpGlobals->time - gpGlobals->oldtime
+	gp_cl->time - gp_cl->oldtime
 	/* FIXME VK : 0.f */;
 
 	VK_RenderSetupCamera( rvp );
@@ -630,7 +642,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 	// Draw world brush
 	{
 		APROF_SCOPE_BEGIN(draw_worldbrush);
-		cl_entity_t *world = gEngine.GetEntityByIndex( 0 );
+		cl_entity_t *world = globals.entities + 0;
 		if( world && world->model )
 		{
 			const float blend = 1.f;

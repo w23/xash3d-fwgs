@@ -30,6 +30,11 @@ typedef struct vk_textures_global_s
 // TODO rename this consistently
 extern vk_textures_global_t tglob;
 
+// Exported from r_textures.h
+size_t CalcImageSize( pixformat_t format, int width, int height, int depth );
+int CalcMipmapCount( int width, int height, int depth, uint32_t flags, qboolean haveBuffer );
+void BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth, int flags );
+
 qboolean R_TexturesInit( void );
 void R_TexturesShutdown( void );
 
@@ -39,7 +44,7 @@ void R_TexturesShutdown( void );
 int R_TextureFindByName( const char *name );
 const char* R_TextureGetNameByIndex( unsigned int texnum );
 
-void R_TextureSetupCustomSky( const char *skyboxname );
+void R_TextureSetupCustomSky( int *skyboxTextures );
 
 int R_TextureUploadFromFile( const char *name, const byte *buf, size_t size, int flags );
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only );

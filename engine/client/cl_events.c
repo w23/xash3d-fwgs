@@ -40,7 +40,7 @@ CL_CalcPlayerVelocity
 compute velocity for a given client
 =============
 */
-void CL_CalcPlayerVelocity( int idx, vec3_t velocity )
+static void CL_CalcPlayerVelocity( int idx, vec3_t velocity )
 {
 	clientdata_t	*pcd;
 	vec3_t		delta;
@@ -78,7 +78,7 @@ CL_DescribeEvent
 
 =============
 */
-void CL_DescribeEvent( event_info_t *ei, int slot )
+static void CL_DescribeEvent( event_info_t *ei, int slot )
 {
 	int		idx = (slot & 63) * 2;
 	con_nprint_t	info;
@@ -192,7 +192,7 @@ void CL_RegisterEvent( int lastnum, const char *szEvName, pfnEventHook func )
 	ev = clgame.events[lastnum];
 
 	// NOTE: ev->index will be set later
-	Q_strncpy( ev->name, szEvName, MAX_QPATH );
+	Q_strncpy( ev->name, szEvName, sizeof( ev->name ));
 	ev->func = func;
 }
 
@@ -202,7 +202,7 @@ CL_FireEvent
 
 =============
 */
-qboolean CL_FireEvent( event_info_t *ei, int slot )
+static qboolean CL_FireEvent( event_info_t *ei, int slot )
 {
 	cl_user_event_t	*ev;
 	const char	*name;
@@ -219,7 +219,7 @@ qboolean CL_FireEvent( event_info_t *ei, int slot )
 		if( !ev )
 		{
 			idx = bound( 1, ei->index, ( MAX_EVENTS - 1 ));
-			Con_Reportf( S_ERROR "CL_FireEvent: %s not precached\n", cl.event_precache[idx] );
+			Con_Reportf( S_ERROR "%s: %s not precached\n", __func__, cl.event_precache[idx] );
 			break;
 		}
 
@@ -244,7 +244,7 @@ qboolean CL_FireEvent( event_info_t *ei, int slot )
 				return true;
 			}
 
-			Con_Reportf( S_ERROR "CL_FireEvent: %s not hooked\n", name );
+			Con_Reportf( S_ERROR "%s: %s not hooked\n", __func__, name );
 			break;
 		}
 	}
@@ -292,7 +292,7 @@ CL_FindEvent
 find first empty event
 =============
 */
-event_info_t *CL_FindEmptyEvent( void )
+static event_info_t *CL_FindEmptyEvent( void )
 {
 	int		i;
 	event_state_t	*es;
@@ -320,7 +320,7 @@ CL_FindEvent
 replace only unreliable events
 =============
 */
-event_info_t *CL_FindUnreliableEvent( void )
+static event_info_t *CL_FindUnreliableEvent( void )
 {
 	event_state_t	*es;
 	event_info_t	*ei;
@@ -350,7 +350,7 @@ CL_QueueEvent
 
 =============
 */
-void CL_QueueEvent( int flags, int index, float delay, event_args_t *args )
+static void CL_QueueEvent( int flags, int index, float delay, event_args_t *args )
 {
 	event_info_t	*ei;
 
@@ -380,7 +380,7 @@ CL_ParseReliableEvent
 
 =============
 */
-void CL_ParseReliableEvent( sizebuf_t *msg )
+void CL_ParseReliableEvent( sizebuf_t *msg, connprotocol_t proto )
 {
 	int		event_index;
 	event_args_t	nullargs, args;
@@ -390,11 +390,19 @@ void CL_ParseReliableEvent( sizebuf_t *msg )
 
 	event_index = MSG_ReadUBitLong( msg, MAX_EVENT_BITS );
 
-	if( MSG_ReadOneBit( msg ))
-		delay = (float)MSG_ReadWord( msg ) * (1.0f / 100.0f);
-
 	// reliable events not use delta-compression just null-compression
-	MSG_ReadDeltaEvent( msg, &nullargs, &args );
+	if( proto == PROTO_GOLDSRC )
+	{
+		Delta_ReadGSFields( msg, DT_EVENT_T, &nullargs, &args, 0.0f );
+		if( MSG_ReadOneBit( msg ))
+			delay = (float)MSG_ReadWord( msg ) * (1.0f / 100.0f);
+	}
+	else
+	{
+		if( MSG_ReadOneBit( msg ))
+			delay = (float)MSG_ReadWord( msg ) * (1.0f / 100.0f);
+		MSG_ReadDeltaEvent( msg, &nullargs, &args );
+	}
 
 	if( args.entindex > 0 && args.entindex <= cl.maxclients )
 		args.angles[PITCH] *= -3.0f;
@@ -409,19 +417,24 @@ CL_ParseEvent
 
 =============
 */
-void CL_ParseEvent( sizebuf_t *msg )
+void CL_ParseEvent( sizebuf_t *msg, connprotocol_t proto )
 {
 	int		event_index;
 	int		i, num_events;
 	int		packet_index;
-	event_args_t	nullargs, args;
+	const event_args_t nullargs = { 0 };
+	event_args_t args = { 0 };
 	entity_state_t	*state;
 	float		delay;
-
-	memset( &nullargs, 0, sizeof( nullargs ));
-	memset( &args, 0, sizeof( args ));
+	int		entity_bits;
 
 	num_events = MSG_ReadUBitLong( msg, 5 );
+
+	if( proto == PROTO_GOLDSRC )
+		entity_bits = MAX_GOLDSRC_ENTITY_BITS;
+	else if( proto == PROTO_LEGACY )
+		entity_bits = MAX_LEGACY_ENTITY_BITS;
+	else entity_bits = MAX_ENTITY_BITS;
 
 	// parse events queue
 	for( i = 0 ; i < num_events; i++ )
@@ -429,13 +442,17 @@ void CL_ParseEvent( sizebuf_t *msg )
 		event_index = MSG_ReadUBitLong( msg, MAX_EVENT_BITS );
 
 		if( MSG_ReadOneBit( msg ))
-			packet_index = MSG_ReadUBitLong( msg, cls.legacymode ? MAX_LEGACY_ENTITY_BITS : MAX_ENTITY_BITS );
-		else packet_index = -1;
-
-		if( MSG_ReadOneBit( msg ))
 		{
-			MSG_ReadDeltaEvent( msg, &nullargs, &args );
+			packet_index = MSG_ReadUBitLong( msg, entity_bits );
+
+			if( MSG_ReadOneBit( msg ))
+			{
+				if( proto == PROTO_GOLDSRC )
+					Delta_ReadGSFields( msg, DT_EVENT_T, &nullargs, &args, 0.0f );
+				else MSG_ReadDeltaEvent( msg, &nullargs, &args );
+			}
 		}
+		else packet_index = -1;
 
 		if( MSG_ReadOneBit( msg ))
 			delay = (float)MSG_ReadWord( msg ) * (1.0f / 100.0f);
@@ -497,14 +514,14 @@ void GAME_EXPORT CL_PlaybackEvent( int flags, const edict_t *pInvoker, word even
 	// first check event for out of bounds
 	if( eventindex < 1 || eventindex >= MAX_EVENTS )
 	{
-		Con_DPrintf( S_ERROR "CL_PlaybackEvent: invalid eventindex %i\n", eventindex );
+		Con_DPrintf( S_ERROR "%s: invalid eventindex %i\n", __func__, eventindex );
 		return;
 	}
 
 	// check event for precached
 	if( !CL_EventIndex( cl.event_precache[eventindex] ))
 	{
-		Con_DPrintf( S_ERROR "CL_PlaybackEvent: event %i was not precached\n", eventindex );
+		Con_DPrintf( S_ERROR "%s: event %i was not precached\n", __func__, eventindex );
 		return;
 	}
 

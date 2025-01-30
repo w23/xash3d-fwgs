@@ -29,7 +29,7 @@ static DWORD GetOffsetByRVA( DWORD rva, PIMAGE_NT_HEADERS nt_header )
 	for( i = 0; i < nt_header->FileHeader.NumberOfSections; i++, sect_header++)
 	{
 		if( rva >= sect_header->VirtualAddress && rva < sect_header->VirtualAddress + sect_header->Misc.VirtualSize )
-			break;	
+			break;
 	}
 	return (rva - sect_header->VirtualAddress + sect_header->PointerToRawData);
 }
@@ -289,23 +289,25 @@ table_error:
 	if( f ) FS_Close( f );
 	if( p_Names ) Mem_Free( p_Names );
 	FreeNameFuncGlobals( hInst );
-	Con_Printf( S_ERROR "LoadLibrary: %s\n", errorstring );
+	Con_Printf( S_ERROR "%s: %s\n", __func__, errorstring );
 
 	return false;
 }
 
 static const char *GetLastErrorAsString( void )
 {
+	const DWORD fm_flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK;
 	DWORD errorcode;
+	wchar_t wide_errormessage[256];
 	static string errormessage;
 
 	errorcode = GetLastError();
-	if ( !errorcode ) return "";
-	
-	FormatMessageA( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-					NULL, errorcode, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),
-					(LPSTR)&errormessage, sizeof( errormessage ), NULL );
-	
+	if ( !errorcode )
+		return "";
+
+	FormatMessageW( fm_flags, NULL, errorcode, 0, wide_errormessage, ARRAYSIZE( wide_errormessage ), NULL );
+	Q_UTF16ToUTF8( errormessage, sizeof( errormessage ), wide_errormessage, ARRAYSIZE( wide_errormessage ));
+
 	return errormessage;
 }
 
@@ -318,35 +320,35 @@ static PIMAGE_IMPORT_DESCRIPTOR GetImportDescriptor( const char *name, byte *dat
 
 	if ( !data )
 	{
-		Con_Printf( S_ERROR "%s: couldn't load %s\n", __FUNCTION__, name );
+		Con_Printf( S_ERROR "%s: couldn't load %s\n", __func__, name );
 		return NULL;
 	}
 
 	dosHeader = (PIMAGE_DOS_HEADER)data;
 	if ( dosHeader->e_magic != IMAGE_DOS_SIGNATURE )
 	{
-		Con_Printf( S_ERROR "%s: %s is not a valid executable file\n", __FUNCTION__, name );
+		Con_Printf( S_ERROR "%s: %s is not a valid executable file\n", __func__, name );
 		return NULL;
 	}
 
 	peHeader = (PIMAGE_NT_HEADERS)( data + dosHeader->e_lfanew );
 	if ( peHeader->Signature != IMAGE_NT_SIGNATURE )
 	{
-		Con_Printf( S_ERROR "%s: %s is missing a PE header\n", __FUNCTION__, name );
+		Con_Printf( S_ERROR "%s: %s is missing a PE header\n", __func__, name );
 		return NULL;
 	}
 
 	importDir = &peHeader->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 	if( importDir->Size <= 0 )
 	{
-		Con_Printf( S_ERROR "%s: %s has no dependencies\n", __FUNCTION__, name );
+		Con_Printf( S_ERROR "%s: %s has no dependencies\n", __func__, name );
 		return NULL;
 	}
 
 	*peheader = peHeader;
 	importDesc = (PIMAGE_IMPORT_DESCRIPTOR)CALCULATE_ADDRESS( data, GetOffsetByRVA( importDir->VirtualAddress, peHeader ) );
 
-	return importDesc;	
+	return importDesc;
 }
 
 static void ListMissingModules( dll_user_t *hInst )
@@ -356,13 +358,13 @@ static void ListMissingModules( dll_user_t *hInst )
 	byte *data;
 	char	buf[MAX_VA_STRING];
 
-	if ( !hInst ) return;
-	
-	data = FS_LoadFile( hInst->dllName, NULL, false );
-	if ( !data ) return;
+	if( !hInst || !g_fsapi.LoadFile ) return;
+
+	data = g_fsapi.LoadFile( hInst->dllName, NULL, false );
+	if( !data ) return;
 
 	importDesc = GetImportDescriptor( hInst->dllName, data, &peHeader );
-	if ( !importDesc )
+	if( !importDesc )
 	{
 		Mem_Free( data );
 		return;
@@ -410,9 +412,9 @@ qboolean COM_CheckLibraryDirectDependency( const char *name, const char *depname
 	{
 		COM_FreeLibrary( hInst );
 		Mem_Free( data );
-		return FALSE;	
+		return FALSE;
 	}
-	
+
 	for( ; !IsBadReadPtr( importDesc, sizeof( IMAGE_IMPORT_DESCRIPTOR ) ) && importDesc->Name; importDesc++ )
 	{
 		const char *importName = (const char *)CALCULATE_ADDRESS( data, GetOffsetByRVA( importDesc->Name, peHeader ) );
@@ -521,10 +523,10 @@ void COM_FreeLibrary( void *hInstance )
 	if( host.status == HOST_CRASHED )
 	{
 		// we need to hold down all modules, while MSVC can find error
-		Con_Reportf( "Sys_FreeLibrary: hold %s for debugging\n", hInst->dllName );
+		Con_Reportf( "%s: hold %s for debugging\n", __func__, hInst->dllName );
 		return;
 	}
-	else Con_Reportf( "Sys_FreeLibrary: Unloading %s\n", hInst->dllName );
+	else Con_Reportf( "%s: Unloading %s\n", __func__, hInst->dllName );
 
 #if XASH_X86
 	if( hInst->custom_loader )

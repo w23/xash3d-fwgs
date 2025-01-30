@@ -70,17 +70,23 @@ These strings are specific to Xash3D FWGS.
 
 | Key                     | Type       | Default value            | Description |
 | ----------------------- | ---------- | ------------------------ | ----------- |
+| `animated_title`        | boolean    | 0                        | Use animated title in main menu (WON Half-Life logo.avi imitation from Half-Life 25-th anniversary update)
 | `autosave_aged_count`   | integer    | 2                        | Auto saves limit used in saves rotation |
 | `gamedll_linux`         | string     | Generated from `gamedll` | Game server DLL for 32-bit x86 Linux (see LibraryNaming.md for details) |
 | `gamedll_osx`           | string     | Generated from `gamedll` | Game server DLL for 32-bit x86 macOS (see LibraryNaming.md for details) |
+| `hd_background`         | boolean    | 0                        | Use HD background for main menu (Half-Life 25-th anniversary update) |
 | `internal_vgui_support` | boolean    | 0                        | Only for programmers! Required to be set as 1 for PrimeXT!<br>When set to 1, the engine will not load vgui_support DLL, as VGUI support is done (or intentionally ignored) on the game side. |
 | `render_picbutton_text` | boolean    | 0                        | When set to 1, the UI will not use prerendered `btns_main.bmp` and dynamically render them instead |
 | `quicksave_aged_count`  | integer    | 2                        | Quick saves limit used in saves rotation |
+| `demomap`               | string     | Empty string             | The name of the demo chapter map (Half-Life Uplink) |
 
 ## Note on GoldSrc liblist.gam support
 
 As Xash3D accidentally supports GoldSrc games, it also supports parsing liblist.gam.\
 Xash3D will use this file if gameinfo.txt is absent, or if its modification timestamp is older than liblist.gam.
+
+> [!NOTE]
+> Starting from January 2025, Xash3D FWGS doesn't automatically generate gameinfo.txt from liblist.gam. The key conversion table still remains but if you wish to use gameinfo.txt instead of liblist.gam, you can execute `fs_make_gameinfo` in console.
 
 For game creators who plan supporting only Xash3D, using this file is not recommended.
 
@@ -88,6 +94,7 @@ The table below defines conversion rules from liblist.gam to gameinfo.txt. Some 
 
 | `liblist.gam` key | `gameinfo.txt` key | Note |
 | ----------------- | ------------------ | ---- |
+| `animated_title`  | `animated_title`   |      |
 | `edicts`          | `max_edicts`       |      |
 | `fallback_dir`    | `fallback_dir`     |      |
 | `game`            | `title`            |      |
@@ -95,6 +102,7 @@ The table below defines conversion rules from liblist.gam to gameinfo.txt. Some 
 | `gamedll`         | `gamedll`          |      |
 | `gamedll_linux`   | `gamedll_linux`    |      |
 | `gamedll_osx`     | `gamedll_osx`      |      |
+| `hd_background`   | `hd_background`    |      |
 | `icon`            | `icon`             |      |
 | `mpentity`        | `mp_entity`        |      |
 | `mpfilter`        | `mp_filter`        |      |

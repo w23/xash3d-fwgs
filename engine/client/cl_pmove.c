@@ -55,36 +55,11 @@ void GAME_EXPORT CL_PopPMStates( void )
 }
 
 /*
-=============
-CL_PushTraceBounds
-
-=============
-*/
-void GAME_EXPORT CL_PushTraceBounds( int hullnum, const float *mins, const float *maxs )
-{
-	hullnum = bound( 0, hullnum, 3 );
-	VectorCopy( mins, clgame.pmove->player_mins[hullnum] );
-	VectorCopy( maxs, clgame.pmove->player_maxs[hullnum] );
-}
-
-/*
-=============
-CL_PopTraceBounds
-
-=============
-*/
-void GAME_EXPORT CL_PopTraceBounds( void )
-{
-	memcpy( clgame.pmove->player_mins, host.player_mins, sizeof( host.player_mins ));
-	memcpy( clgame.pmove->player_maxs, host.player_maxs, sizeof( host.player_maxs ));
-}
-
-/*
 ===============
 CL_IsPredicted
 ===============
 */
-qboolean CL_IsPredicted( void )
+static qboolean CL_IsPredicted( void )
 {
 	if( cl_nopred.value || cl.intermission )
 		return false;
@@ -345,10 +320,14 @@ static void CL_CopyEntityToPhysEnt( physent_t *pe, entity_state_t *state, qboole
 		// client or bot
 		Q_snprintf( pe->name, sizeof( pe->name ), "player %i", pe->player - 1 );
 	}
-	else
+	else if( mod != NULL )
 	{
 		// otherwise copy the modelname
 		Q_strncpy( pe->name, mod->name, sizeof( pe->name ));
+	}
+	else
+	{
+		Q_strncpy( pe->name, "entity %i", state->number );
 	}
 
 	pe->model = pe->studiomodel = NULL;
@@ -369,7 +348,7 @@ static void CL_CopyEntityToPhysEnt( physent_t *pe, entity_state_t *state, qboole
 	}
 
 	// rare case: not solid entities in vistrace
-	if( visent && VectorIsNull( pe->mins ))
+	if( visent && VectorIsNull( pe->mins ) && mod != NULL )
 	{
 		VectorCopy( mod->mins, pe->mins );
 		VectorCopy( mod->maxs, pe->maxs );
@@ -417,7 +396,7 @@ CL_AddLinksToPmove
 collect solid entities
 ====================
 */
-void CL_AddLinksToPmove( frame_t *frame )
+static void CL_AddLinksToPmove( frame_t *frame )
 {
 	entity_state_t	*state;
 	model_t		*model;
@@ -569,8 +548,8 @@ void GAME_EXPORT CL_SetSolidPlayers( int playernum )
 		// some fields needs to be override from cls.predicted_players
 		VectorCopy( player->origin, pe->origin );
 		VectorCopy( player->angles, pe->angles );
-		VectorCopy( clgame.pmove->player_mins[player->usehull], pe->mins );
-		VectorCopy( clgame.pmove->player_maxs[player->usehull], pe->maxs );
+		VectorCopy( host.player_mins[player->usehull], pe->mins );
+		VectorCopy( host.player_maxs[player->usehull], pe->maxs );
 		pe->movetype = player->movetype;
 		pe->solid = player->solid;
 	}
@@ -685,11 +664,6 @@ cl_entity_t *CL_GetWaterEntity( const float *rgflPos )
 	if( entnum <= 0 ) return NULL; // world or not water
 
 	return CL_GetEntityByIndex( entnum );
-}
-
-int GAME_EXPORT CL_TestLine( const vec3_t start, const vec3_t end, int flags )
-{
-	return PM_TestLineExt( clgame.pmove, clgame.pmove->physents, clgame.pmove->numphysent, start, end, flags );
 }
 
 static int GAME_EXPORT pfnTestPlayerPosition( float *pos, pmtrace_t *ptrace )
@@ -824,6 +798,16 @@ static void CL_SetupPMove( playermove_t *pmove, const local_state_t *from, const
 	cd = &from->client;
 
 	pmove->player_index = ps->number - 1;
+
+	// a1ba: workaround bug where the server refuse to send our local player in delta
+	// cl.playernum, in theory, must be equal to our local player index anyway
+	//
+	// this might not be a real solution, since everything else will be bogus
+	// but we need to properly run prediction and avoid potential memory
+	// corruption
+	if( pmove->player_index < 0 )
+		pmove->player_index = bound( 0, cl.playernum, cl.maxclients - 1 );
+
 	pmove->multiplayer = (cl.maxclients > 1);
 	pmove->runfuncs = runfuncs;
 	pmove->time = time * 1000.0f;
@@ -873,10 +857,10 @@ static void CL_SetupPMove( playermove_t *pmove, const local_state_t *from, const
 	VectorCopy( cd->vuser4, pmove->vuser4 );
 	pmove->cmd = *ucmd;	// copy current cmds
 
-	Q_strncpy( pmove->physinfo, cls.physinfo, MAX_INFO_STRING );
+	Q_strncpy( pmove->physinfo, cls.physinfo, sizeof( pmove->physinfo ));
 }
 
-const void CL_FinishPMove( const playermove_t *pmove, local_state_t *to )
+static const void CL_FinishPMove( const playermove_t *pmove, local_state_t *to )
 {
 	entity_state_t	*ps;
 	clientdata_t	*cd;
@@ -929,7 +913,7 @@ CL_RunUsercmd
 Runs prediction code for user cmd
 =================
 */
-void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u, qboolean runfuncs, double *time, unsigned int random_seed )
+static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u, qboolean runfuncs, double *time, unsigned int random_seed )
 {
 	usercmd_t		cmd;
 

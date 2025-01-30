@@ -266,7 +266,7 @@ void aloRingFree(alo_ring_t* ring, uint32_t up_to_pos) {
 
 // Allocates a new aligned region and returns offset to it (AllocFailed if allocation failed)
 uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment) {
-	const uint32_t align = (alignment > 0) ? alignment : 1;
+	// FIXME const uint32_t align = (alignment > 0) ? alignment : 1;
 	const uint32_t pos = ALIGN_UP(ring->head, alignment);
 
 	ASSERT(size != 0);

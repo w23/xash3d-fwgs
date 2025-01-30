@@ -217,7 +217,6 @@ static qboolean loadRadData( const model_t *map, const char *fmt, ... ) {
 			{
 				const char *wad_name = NULL;
 				char *texture_name = Q_strchr(name, '/');
-				string texname;
 				int tex_id;
 				const qboolean enabled = (r != 0 || g != 0 || b != 0);
 
@@ -336,8 +335,8 @@ static int leafAccumAddPotentiallyVisibleFromLeaf(const model_t *const map, cons
 	return leafs_added;
 }
 
-vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+static vk_light_leaf_set_t *getMapLeafsAffectedByMapSurface( const msurface_t *surf ) {
+	const model_t *const map = WORLDMODEL;
 	const int surf_index = surf - map->surfaces;
 	vk_surface_metadata_t * const smeta = g_lights_bsp.surfaces + surf_index;
 	const qboolean verbose_debug = false;
@@ -413,8 +412,8 @@ int RT_LightCellIndex( const int light_cell[3] ) {
 	return light_cell[0] + light_cell[1] * g_lights.map.grid_size[0] + light_cell[2] * g_lights.map.grid_size[0] * g_lights.map.grid_size[1];
 }
 
-vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf, const matrix3x4 *transform_row ) {
-	const model_t *const map = gEngine.pfnGetModelByIndex( 1 );
+static vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf, const matrix3x4 *transform_row ) {
+	const model_t *const map = WORLDMODEL;
 	const mextrasurf_t *const extra = surf->info;
 
 	// This is a very conservative way to construct a bounding sphere. It's not great.
@@ -453,7 +452,6 @@ vk_light_leaf_set_t *getMapLeafsAffectedByMovingSurface( const msurface_t *surf,
 			origin[0], origin[1], origin[2], radius);
 
 	for (int i = 0; i <= map->numleafs; ++i) {
-		const mleaf_t *leaf = map->leafs + i;
 		if( !CHECKVISBIT( g_lights_bsp.accum.visbytes, i ))
 			continue;
 
@@ -571,6 +569,7 @@ static qboolean addLightToCell( int cell_index, int light_index ) {
 	return true;
 }
 
+/*
 static qboolean canSurfaceLightAffectAABB(const model_t *mod, const msurface_t *surf, const vec3_t emissive, const float minmax[6]) {
 	//APROF_SCOPE_BEGIN_EARLY(canSurfaceLightAffectAABB); // DO NOT DO THIS. We have like 600k of these calls per frame :feelsbadman:
 	qboolean retval = true;
@@ -605,6 +604,7 @@ static qboolean canSurfaceLightAffectAABB(const model_t *mod, const msurface_t *
 
 	return retval;
 }
+*/
 
 static void addLightIndexToLeaf( const mleaf_t *leaf, int index ) {
 	const int min_x = floorf(leaf->minmaxs[0] / LIGHT_GRID_CELL_SIZE);
@@ -647,7 +647,7 @@ static void addLightIndexToLeaf( const mleaf_t *leaf, int index ) {
 }
 
 static void addPointLightToAllClusters( int index ) {
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const world = WORLDMODEL;
 
 	// FIXME there's certainly a better way to do this: just enumerate
 	// all clusters, not all leafs
@@ -660,7 +660,7 @@ static void addPointLightToAllClusters( int index ) {
 }
 
 static void addPointLightToClusters( int index ) {
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const world = WORLDMODEL;
 
 	if (!world->visdata) {
 		addPointLightToAllClusters( index );
@@ -898,7 +898,7 @@ static qboolean addDlight( const dlight_t *dlight ) {
 
 static void processStaticPointLights( void ) {
 	APROF_SCOPE_BEGIN_EARLY(static_lights);
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const world = WORLDMODEL;
 	ASSERT(world);
 
 	g_lights_.num_point_lights = 0;
@@ -1040,6 +1040,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 			continue;
 
 		if (bitArrayCheckOrSet(&g_lights_.visited_cells, cell_index)) {
+			/*
 			const float minmaxs[6] = {
 				x * LIGHT_GRID_CELL_SIZE,
 				y * LIGHT_GRID_CELL_SIZE,
@@ -1049,7 +1050,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 				(z+1) * LIGHT_GRID_CELL_SIZE,
 			};
 
-			/* TODO if (static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, minmaxs)) */
+			TODO if (static_map && !canSurfaceLightAffectAABB(world, geom->surf, esurf->emissive, minmaxs)) */
 			/* 	continue; */
 
 			if (!addSurfaceLightToCell(cell_index, poly_index)) {
@@ -1061,7 +1062,7 @@ static void addPolygonLightIndexToLeaf(const mleaf_t* leaf, int poly_index) {
 }
 
 static void addPolygonLightToAllClusters( int poly_index ) {
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const world = WORLDMODEL;
 
 	// FIXME there's certainly a better way to do this: just enumerate
 	// all clusters, not all leafs
@@ -1074,7 +1075,7 @@ static void addPolygonLightToAllClusters( int poly_index ) {
 }
 
 static void addPolygonLeafSetToClusters(const vk_light_leaf_set_t *leafs, int poly_index) {
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* const world = WORLDMODEL;
 
 	// FIXME this shouldn't happen in prod
 	if (!leafs)
@@ -1167,7 +1168,7 @@ int RT_LightAddPolygon(const rt_light_add_polygon_t *addpoly) {
 			);
 		}
 
-		const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
+		const model_t* const world = WORLDMODEL;
 		if (world->visdata) {
 			const vk_light_leaf_set_t *const leafs = addpoly->dynamic
 				? getMapLeafsAffectedByMovingSurface( addpoly->surface, addpoly->transform_row )
@@ -1339,15 +1340,13 @@ vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s *combuf ) {
 
 void RT_LightsFrameEnd( void ) {
 	APROF_SCOPE_BEGIN_EARLY(finalize);
-	const model_t* const world = gEngine.pfnGetModelByIndex( 1 );
-
 	if (g_lights_.num_polygons > UINT8_MAX) {
 		ERROR_THROTTLED(10, "Too many emissive surfaces found: %d; some areas will be dark", g_lights_.num_polygons);
 		g_lights_.num_polygons = UINT8_MAX;
 	}
 
 	for (int i = 0; i < MAX_ELIGHTS; ++i) {
-		const dlight_t *dlight = gEngine.GetEntityLight(i);
+		const dlight_t *dlight = globals.elights + i;
 		if (!dlight)
 			continue;
 
@@ -1368,8 +1367,8 @@ void RT_LightsFrameEnd( void ) {
 
 	APROF_SCOPE_BEGIN(dlights);
 	for (int i = 0; i < MAX_DLIGHTS; ++i) {
-		const dlight_t *dlight = gEngine.GetDynamicLight(i);
-		if( !dlight || dlight->die < gpGlobals->time || !dlight->radius )
+		const dlight_t *dlight = globals.dlights + i;
+		if( !dlight || dlight->die < gp_cl->time || !dlight->radius )
 			continue;
 
 		if (addDlight(dlight))

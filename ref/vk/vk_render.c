@@ -608,8 +608,8 @@ static uint32_t writeDlightsToUBO( void )
 
 	// TODO this should not be here (where? vk_scene?)
 	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
-		const dlight_t *l = gEngine.GetDynamicLight(i);
-		if( !l || l->die < gpGlobals->time || !l->radius )
+		const dlight_t *l = globals.dlights + i;
+		if( !l || l->die < gp_cl->time || !l->radius )
 			continue;
 		Vector4Set(
 			ubo_lights->light[num_lights].color,
@@ -1037,12 +1037,14 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 			.render_type = args.render_type,
 		});
 	} else {
+		matrix4x4 identity;
+		Matrix4x4_LoadIdentity(identity);
 		submitToTraditionalRender((trad_submit_t){
 			.debug_name = args.name,
 			.lightmap = 0,
 			.geometries = &geometry,
 			.geometries_count = 1,
-			.transform = &m_matrix4x4_identity,
+			.transform = &identity,
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = -1,
