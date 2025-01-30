@@ -18,7 +18,7 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
-#define MAX_SCRATCH_BUFFER (32*1024*1024)
+#define MAX_SCRATCH_BUFFER (64*1024*1024)
 // FIXME compute this by lazily allocating #define MAX_ACCELS_BUFFER (128*1024*1024)
 #define MAX_ACCELS_BUFFER (256*1024*1024)
 
