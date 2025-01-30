@@ -13,6 +13,11 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2025-01-30 E389
+- [ ] run render tests
+- [ ] check diff wrt non-ref-vk changes
+- [x] `PARM_TEX_FILTERING`
+
 ## 2025-01-23 E387
 - [x] (local) waf prefix shenanigans
 - [x] merge resources branch into vulkan

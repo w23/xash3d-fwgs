@@ -958,6 +958,8 @@ int R_TexturesGetParm( int parm, int arg ) {
 		return tex->height;
 	case PARM_TEX_FLAGS:
 		return tex->flags;
+	case PARM_TEX_FILTERING:
+		return !FBitSet( tex->flags, TF_NEAREST );
 	// TODO
 	case PARM_TEX_SKYBOX:
 	case PARM_TEX_SKYTEXNUM:

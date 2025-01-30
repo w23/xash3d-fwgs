@@ -239,6 +239,7 @@ static const char *getParmName(int parm)
 	case PARM_DELUXEDATA: return "PARM_DELUXEDATA";
 	case PARM_SHADOWDATA: return "PARM_SHADOWDATA";
 	case PARM_MODERNFLASHLIGHT: return "PARM_MODERNFLASHLIGHT";
+	case PARM_TEX_FILTERING: return "PARM_TEX_FILTERING";
 	default: return "UNKNOWN";
 	}
 }
@@ -252,6 +253,7 @@ static int VK_RefGetParm( int parm, int arg )
 	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
 	case PARM_TEX_SRC_HEIGHT:
 	case PARM_TEX_FLAGS:
+	case PARM_TEX_FILTERING:
 	/* TODO
 	case PARM_TEX_SKYBOX:
 	case PARM_TEX_SKYTEXNUM:
