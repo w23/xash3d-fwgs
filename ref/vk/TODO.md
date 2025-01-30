@@ -17,6 +17,7 @@
 - [ ] run render tests
 - [ ] check diff wrt non-ref-vk changes
 - [x] `PARM_TEX_FILTERING`
+- [x] Fix some missing textures
 
 ## 2025-01-23 E387
 - [x] (local) waf prefix shenanigans

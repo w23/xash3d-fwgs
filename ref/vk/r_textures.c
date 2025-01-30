@@ -651,6 +651,10 @@ void R_TextureFree( unsigned int texnum ) {
 
 
 int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update_only ) {
+	// This functions is effectively is called either from texture module init sequence,
+	// or from the engine using ref_api_t. So it has ref_api_t refcount semantics.
+	const qboolean ref_interface = true;
+
 	// couldn't loading image
 	if( !pic )
 		return 0;
@@ -682,8 +686,13 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 
 	vk_texture_t *const tex = g_textures.all + insert.index;
 	// see if already loaded
-	if (!insert.created && !update_only)
+	if (!insert.created && !update_only) {
+		if (ref_interface && !tex->ref_interface_visible) {
+			tex->refcount++;
+			tex->ref_interface_visible = true;
+		}
 		return insert.index;
+	}
 
 	if( update_only )
 		SetBits( tex->flags, flags );
@@ -699,10 +708,13 @@ int R_TextureUploadFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flag
 		return 0;
 	}
 
+	// This functions is effectively is called either from texture module init sequence,
+	// or from the engine using ref_api_t. So it has ref_api_t refcount semantics.
 	if (insert.created) {
 		tex->refcount = 1;
-
-		// Loading from buffer is ref_interface only
+		tex->ref_interface_visible = ref_interface;
+	} else if (ref_interface && !tex->ref_interface_visible) {
+		tex->refcount++;
 		tex->ref_interface_visible = true;
 	}
 
@@ -906,7 +918,7 @@ int R_TextureFindByNameF( const char *fmt, ...) {
 	va_end( argptr );
 
 	tex_id = R_TextureFindByName(buffer);
-	DEBUG("Looked up texture %s -> %d", buffer, tex_id);
+	//DEBUG("Looked up texture %s -> %d", buffer, tex_id);
 	return tex_id;
 }
 
