@@ -1,7 +1,7 @@
 ## Next
 
 ## Upcoming
-- [ ] rendertests TODO
+- [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
     - [ ] takes vanilla valve steam HL data into installdir
@@ -29,6 +29,14 @@
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2025-02-13 E393
+- [ ] register all resources in their modules
+    - [ ] resource management refactoring:
+        - [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
+        - [ ] resource automatic resolution: prducing, barriers, etc
+        - [ ] resource destruction
+    - [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
 
 ## 2025-02-10 E392
 - [x] fix vk_studio ASAN fail
