@@ -11,7 +11,6 @@
 #include "vk_light.h"
 #include "vk_math.h"
 #include "vk_meatpipe.h"
-#include "vk_pipeline.h"
 #include "vk_ray_internal.h"
 #include "r_textures.h"
 #include "vk_combuf.h"
@@ -355,7 +354,6 @@ static void reloadMainpipe(void) {
 					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
-				Q_strncpy(res->name, mr->name, sizeof(res->name));
 			}
 		}
 

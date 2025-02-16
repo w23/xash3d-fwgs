@@ -43,5 +43,3 @@ void R_VkTextureDestroy(int index, vk_texture_t *tex);
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot );
 const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void );
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index );
-
-VkDescriptorImageInfo R_VkTexturesGetBlueNoiseImageInfo( void );

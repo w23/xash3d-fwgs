@@ -66,8 +66,12 @@ rt_resource_t *R_VkResourceFindOrAlloc(const char *name) {
 
 	// Find first free slot
 	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
-		if (!g_res.res[i].name[0])
-			return g_res.res + i;
+		rt_resource_t *const res = g_res.res + i;
+		if (res->name[0] != '\0')
+			continue;
+
+		Q_strncpy(res->name, name, sizeof(res->name));
+		return res;
 	}
 
 	return NULL;
@@ -89,13 +93,6 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
 			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
-		},
-	};
-
-	g_res.res[ExternalResource_blue_noise_texture].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetBlueNoiseImageInfo(),
 		},
 	};
 

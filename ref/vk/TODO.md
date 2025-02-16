@@ -33,10 +33,13 @@
 ## 2025-02-13 E393
 - [ ] register all resources in their modules
     - [ ] resource management refactoring:
-        - [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
         - [ ] resource automatic resolution: prducing, barriers, etc
         - [ ] resource destruction
     - [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
+### after stream
+- [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
+	- [x] blue_noise_texture as a quick test
+	- [ ] all textures
 
 ## 2025-02-10 E392
 - [x] fix vk_studio ASAN fail
