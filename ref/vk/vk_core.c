@@ -841,11 +841,12 @@ qboolean R_VkInit( void )
 
 	if (vk_core.rtx)
 	{
-		if (!VK_RayInit())
+		// FIXME move all this to rt-specific modules
+		if (!VK_LightsInit())
 			return false;
 
-		// FIXME move all this to rt-specific modules
-		VK_LightsInit();
+		if (!VK_RayInit())
+			return false;
 	}
 
 	R_SpriteInit();

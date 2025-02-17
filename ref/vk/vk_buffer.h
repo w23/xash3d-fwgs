@@ -57,6 +57,14 @@ vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock);
 
 void R_VkBufferUnlock(vk_buffer_locked_t lock);
 
+typedef struct {
+	const char *name;
+	vk_buffer_t *buffer;
+	size_t offset;
+	size_t size;
+} r_vkbuffer_register_as_resource_t;
+void R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args);
+
 // Commits any staged regions for the specified buffer
 struct vk_combuf_s;
 void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf);

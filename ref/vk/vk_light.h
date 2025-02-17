@@ -81,14 +81,8 @@ void RT_LightsLoadEnd( void );
 void RT_LightsFrameBegin( void );
 void RT_LightsFrameEnd( void );
 
-typedef struct {
-	vk_buffer_t *buffer;
-	struct {
-		uint32_t offset, size;
-	} metadata, grid;
-} vk_lights_bindings_t;
 struct vk_combuf_s;
-vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s* );
+void VK_LightsUpload( struct vk_combuf_s* );
 
 qboolean RT_GetEmissiveForTexture( vec3_t out, int texture_id );
 

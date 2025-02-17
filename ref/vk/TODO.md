@@ -36,11 +36,11 @@
     - [x] model_headers
     - [x] indices
     - [x] vertices
+    - [x] lights
+    - [x] light_grid
     - [ ] textures
     - [ ] tlas
     - [ ] ubo
-    - [ ] lights
-    - [ ] light_grid
     - [ ] skybox
 
 ## 2025-02-13 E393

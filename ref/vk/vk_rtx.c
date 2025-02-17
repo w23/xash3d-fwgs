@@ -215,7 +215,6 @@ typedef struct {
 	int frame_index;
 	uint32_t frame_counter;
 	float fov_angle_y;
-	const vk_lights_bindings_t *light_bindings;
 	int frame_width, frame_height;
 } perform_tracing_args_t;
 
@@ -227,7 +226,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.frame_index = args->frame_index,
 		.uniform_buffer = &g_rtx.uniform_buffer,
 		.uniform_unit_size = g_rtx.uniform_unit_size,
-		.light_bindings = args->light_bindings,
 	});
 
 	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
@@ -435,8 +433,11 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// ubo should contain two matrices
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
 
-	RT_LightsFrameEnd();
-	const vk_lights_bindings_t light_bindings = VK_LightsUpload(args->combuf);
+	{
+		// TODO should be done by "producing" lights and lights_grid resources
+		RT_LightsFrameEnd();
+		VK_LightsUpload(args->combuf);
+	}
 
 	g_rtx.frame_number++;
 
@@ -503,7 +504,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_index = (g_rtx.frame_number % 2),
 			.frame_counter = g_rtx.frame_number,
 			.fov_angle_y = args->fov_angle_y,
-			.light_bindings = &light_bindings,
 			.frame_width = frame_width,
 			.frame_height = frame_height,
 		};
@@ -542,22 +542,12 @@ static qboolean kusochkiCreate(void) {
 		return false;
 	}
 
-	{
-		rt_resource_t *const res_kusochki = R_VkResourceFindOrAlloc("kusochki");
-		ASSERT(res_kusochki);
-
-		res_kusochki->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.ref.buffer = &g_ray_model_state.kusochki_buffer,
-			.value = (vk_descriptor_value_t) {
-				.buffer = (VkDescriptorBufferInfo) {
-					.buffer = g_ray_model_state.kusochki_buffer.buffer,
-					.offset = 0,
-					.range = g_ray_model_state.kusochki_buffer.size,
-				}
-			}
-		};
-	}
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "kusochki",
+		.buffer = &g_ray_model_state.kusochki_buffer,
+		.offset = 0,
+		.size = g_ray_model_state.kusochki_buffer.size,
+	});
 
 	return true;
 }
@@ -571,22 +561,12 @@ static qboolean modelHeadersCreate(void) {
 		return false;
 	}
 
-	{
-		rt_resource_t *const res_model_headers = R_VkResourceFindOrAlloc("model_headers");
-		ASSERT(res_model_headers);
-
-		res_model_headers->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.ref.buffer = &g_ray_model_state.model_headers_buffer,
-			.value = (vk_descriptor_value_t) {
-				.buffer = (VkDescriptorBufferInfo) {
-					.buffer = g_ray_model_state.model_headers_buffer.buffer,
-					.offset = 0,
-					.range = g_ray_model_state.model_headers_buffer.size,
-				}
-			}
-		};
-	}
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "model_headers",
+		.buffer = &g_ray_model_state.model_headers_buffer,
+		.offset = 0,
+		.size = g_ray_model_state.model_headers_buffer.size,
+	});
 
 	return true;
 }

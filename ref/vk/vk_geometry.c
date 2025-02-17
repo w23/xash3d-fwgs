@@ -170,20 +170,12 @@ void R_GeometryBuffer_MapClear( void ) {
 }
 
 static void registerGeometryBufferAs(const char *name) {
-	rt_resource_t *const res_kusochki = R_VkResourceFindOrAlloc(name);
-	ASSERT(res_kusochki);
-
-	res_kusochki->resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.ref.buffer = &g_geom.buffer,
-		.value = (vk_descriptor_value_t) {
-			.buffer = (VkDescriptorBufferInfo) {
-				.buffer = g_geom.buffer.buffer,
-				.offset = 0,
-				.range = g_geom.buffer.size,
-			}
-		}
-	};
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = name,
+		.buffer = &g_geom.buffer,
+		.offset = 0,
+		.size = g_geom.buffer.size,
+	});
 }
 
 qboolean R_GeometryBuffer_Init(void) {

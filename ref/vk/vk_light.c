@@ -108,6 +108,20 @@ qboolean VK_LightsInit( void ) {
 		return false;
 	}
 
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "lights",
+		.buffer = &g_lights_.buffer,
+		.offset = 0,
+		.size = sizeof(struct LightsMetadata),
+	});
+
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "light_grid",
+		.buffer = &g_lights_.buffer,
+		.offset = sizeof(struct LightsMetadata),
+		.size = sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS,
+	});
+
 	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells_size, "dirty_cells_size", kSpeedsMetricBytes);
 	R_SPEEDS_COUNTER(g_lights_.stats.ranges_uploaded, "ranges_uploaded", kSpeedsMetricCount);
@@ -1296,7 +1310,7 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 	}
 }
 
-vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s *combuf ) {
+void VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
 	const vk_buffer_locked_t locked = R_VkBufferLock(&g_lights_.buffer,
 		(vk_buffer_lock_t) {
@@ -1324,18 +1338,6 @@ vk_lights_bindings_t VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	APROF_SCOPE_END(upload);
 
 	R_VkBufferStagingCommit(&g_lights_.buffer, combuf);
-
-	return (vk_lights_bindings_t){
-		.buffer = &g_lights_.buffer,
-		.metadata = {
-			.offset = 0,
-			.size = sizeof(struct LightsMetadata),
-		},
-		.grid = {
-			.offset = sizeof(struct LightsMetadata),
-			.size = sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS,
-		},
-	};
 }
 
 void RT_LightsFrameEnd( void ) {
