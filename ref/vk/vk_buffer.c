@@ -219,6 +219,7 @@ void R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
 	rt_resource_t *const res = R_VkResourceFindOrAlloc(args.name);
 	ASSERT(res);
 
+	res->refcount = 1;
 	res->resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.ref.buffer = args.buffer,

@@ -38,10 +38,10 @@
     - [x] vertices
     - [x] lights
     - [x] light_grid
-    - [ ] textures
+    - [x] textures
     - [ ] tlas
-    - [ ] ubo
     - [ ] skybox
+    - [ ] ubo
 
 ## 2025-02-13 E393
 - [ ] register all resources in their modules

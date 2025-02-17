@@ -26,14 +26,6 @@ void R_VkResourcesInit(void) {
 	g_res.res[ExternalResource_##name_].refcount = 1;
 	EXTERNAL_RESOUCES(REGISTER_EXTERNAL)
 #undef REGISTER_EXTERNAL
-
-	g_res.res[ExternalResource_textures].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image_array = R_VkTexturesGetAllDescriptorsArray(),
-		}
-	};
-	g_res.res[ExternalResource_textures].refcount = 1;
 }
 
 rt_resource_t *R_VkResourceGetByIndex(int index) {

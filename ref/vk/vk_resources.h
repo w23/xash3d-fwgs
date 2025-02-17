@@ -13,7 +13,6 @@
 #define EXTERNAL_RESOUCES(X) \
 	X(TLAS, tlas) /* Has producing logic */ \
 	X(Buffer, ubo) /* Has logic based on frame_index */ \
-	X(Texture, textures) \
 	X(Texture, skybox) /* Has picking logic */ \
 
 enum {

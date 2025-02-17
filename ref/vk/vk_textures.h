@@ -41,5 +41,4 @@ qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, c
 void R_VkTextureDestroy(int index, vk_texture_t *tex);
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot );
-const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void );
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index );

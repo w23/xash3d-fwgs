@@ -130,6 +130,7 @@ static void loadBlueNoiseTextures(void) {
 	{
 		rt_resource_t *const blue_noise_resource = R_VkResourceFindOrAlloc("blue_noise_texture");
 		ASSERT(blue_noise_resource);
+		blue_noise_resource->refcount = 1;
 		blue_noise_resource->resource = (vk_resource_t){
 			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.value = (vk_descriptor_value_t){
@@ -177,6 +178,18 @@ qboolean R_VkTexturesInit( void ) {
 				.sampler = g_vktextures.default_sampler,
 			};
 		}
+	}
+
+	{
+		rt_resource_t *const res_textures = R_VkResourceFindOrAlloc("textures");
+		ASSERT(res_textures);
+		res_textures->refcount = 1;
+		res_textures->resource = (vk_resource_t){
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.value = (vk_descriptor_value_t){
+				.image_array = g_vktextures.dii_all_textures,
+			}
+		};
 	}
 
 	if (vk_core.rtx)
@@ -685,8 +698,4 @@ VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {
 	const vk_texture_t *const tex = R_TextureGetByIndex(index);
 	ASSERT(tex->vk.descriptor_unorm != VK_NULL_HANDLE);
 	return tex->vk.descriptor_unorm;
-}
-
-const VkDescriptorImageInfo* R_VkTexturesGetAllDescriptorsArray( void ) {
-	return g_vktextures.dii_all_textures;
 }

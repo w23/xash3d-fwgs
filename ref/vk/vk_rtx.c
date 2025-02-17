@@ -427,8 +427,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
 	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
 
-	// const xvk_ray_frame_images_t* current_frame = g_rtx.frames + (g_rtx.frame_number % 2);
-
 	ASSERT(vk_core.rtx);
 	// ubo should contain two matrices
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
@@ -440,9 +438,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	}
 
 	g_rtx.frame_number++;
-
-	// if (vk_core.debug)
-	// 	XVK_RayModel_Validate();
 
 	qboolean need_reload = g_rtx.reload_pipeline;
 
