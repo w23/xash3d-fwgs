@@ -33,9 +33,9 @@
 ## 2025-02-17 E394
 - [ ] register resources
     - [x] kusochki
-    - [ ] model_headers
-    - [ ] indices
-    - [ ] vertices
+    - [x] model_headers
+    - [x] indices
+    - [x] vertices
     - [ ] textures
     - [ ] tlas
     - [ ] ubo

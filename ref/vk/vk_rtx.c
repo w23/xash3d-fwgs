@@ -227,8 +227,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 		.frame_index = args->frame_index,
 		.uniform_buffer = &g_rtx.uniform_buffer,
 		.uniform_unit_size = g_rtx.uniform_unit_size,
-		.geometry_data.buffer = args->render_args->geometry_data.buffer,
-		.geometry_data.size = args->render_args->geometry_data.size,
 		.light_bindings = args->light_bindings,
 	});
 
@@ -535,6 +533,7 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
+// TODO move to rt_kusochki.c
 static qboolean kusochkiCreate(void) {
 	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -563,6 +562,7 @@ static qboolean kusochkiCreate(void) {
 	return true;
 }
 
+// TODO move to rt_model.c (s/vk_ray_model/rt_model)
 static qboolean modelHeadersCreate(void) {
 	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,

@@ -13,8 +13,6 @@
 #define EXTERNAL_RESOUCES(X) \
 	X(TLAS, tlas) /* Has producing logic */ \
 	X(Buffer, ubo) /* Has logic based on frame_index */ \
-	X(Buffer, indices) \
-	X(Buffer, vertices) \
 	X(Buffer, lights) \
 	X(Buffer, light_grid) \
 	X(Texture, textures) \
@@ -65,10 +63,6 @@ typedef struct {
 	vk_buffer_t *uniform_buffer;
 	uint32_t uniform_unit_size;
 
-	struct {
-		vk_buffer_t *buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
-		uint64_t size;
-	} geometry_data;
 	const vk_lights_bindings_t *light_bindings;
 } r_vk_resources_builtin_fixme_t;
 void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t builtin);

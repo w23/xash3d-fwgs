@@ -14,13 +14,6 @@ typedef struct {
 
 	const matrix4x4 *projection, *view;
 
-	// Buffer holding vertex and index data
-	// TODO remove
-	struct {
-		vk_buffer_t* buffer; // must be the same as in vk_ray_model_create_t TODO: validate or make impossible to specify incorrectly
-		uint64_t size;
-	} geometry_data;
-
 	float fov_angle_y;
 } vk_ray_frame_render_args_t;
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args);

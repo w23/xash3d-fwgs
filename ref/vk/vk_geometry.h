@@ -95,3 +95,6 @@ void R_GeometryBuffer_Shutdown(void);
 void R_GeometryBuffer_Flip(void);
 
 vk_buffer_t* R_GeometryBuffer_Get(void);
+
+// TODO move inside vertices/indices resource production
+void R_GeometryBufferProduce(struct vk_combuf_s *combuf);
