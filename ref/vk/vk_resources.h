@@ -11,7 +11,6 @@
 
 // TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
-	X(TLAS, tlas) /* Has producing logic */ \
 	X(Buffer, ubo) /* Has logic based on frame_index */ \
 	X(Texture, skybox) /* Has picking logic */ \
 
@@ -45,7 +44,6 @@ typedef struct {
 
 void R_VkResourcesInit(void);
 
-rt_resource_t *R_VkResourceGetByIndex(int index);
 rt_resource_t *R_VkResourceFindByName(const char *name);
 rt_resource_t *R_VkResourceFindOrAlloc(const char *name);
 int R_VkResourceFindIndexByName(const char *name);

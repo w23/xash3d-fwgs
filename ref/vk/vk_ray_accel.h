@@ -8,7 +8,8 @@ void RT_VkAccelShutdown(void);
 void RT_VkAccelNewMap(void);
 
 struct vk_combuf_s;
-vk_resource_t RT_VkAccelPrepareTlas(struct vk_combuf_s *combuf);
+// TODO should be hidden behind producer eventually
+void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf);
 
 typedef struct rt_draw_instance_t {
 	struct rt_blas_s *blas;

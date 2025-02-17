@@ -39,7 +39,7 @@
     - [x] lights
     - [x] light_grid
     - [x] textures
-    - [ ] tlas
+    - [x] tlas
     - [ ] skybox
     - [ ] ubo
 

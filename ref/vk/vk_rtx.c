@@ -483,14 +483,15 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	const int frame_width = args->dst->width;
 	const int frame_height = args->dst->height;
 
-	rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
+	rt_resource_t *const tlas = R_VkResourceFindByName("tlas");
+	ASSERT(tlas);
 
 	// Do not draw when we have no swapchain
 	if (!args->dst->image)
 		goto tail;
 
 	// TODO move this to "TLAS producer"
-	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
+	RT_VkAccelBuildTlas_FIXME(args->combuf);
 	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
 		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf, NULL );
 	} else {

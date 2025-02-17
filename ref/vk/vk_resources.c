@@ -28,12 +28,6 @@ void R_VkResourcesInit(void) {
 #undef REGISTER_EXTERNAL
 }
 
-rt_resource_t *R_VkResourceGetByIndex(int index) {
-	ASSERT(index >= 0);
-	ASSERT(index < MAX_VK_RESOURCES);
-	return g_res.res + index;
-}
-
 int R_VkResourceFindIndexByName(const char *name) {
 	// TODO hash table
 	// Find the exact match if exists
