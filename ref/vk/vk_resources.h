@@ -13,7 +13,6 @@
 #define EXTERNAL_RESOUCES(X) \
 	X(TLAS, tlas) /* Has producing logic */ \
 	X(Buffer, ubo) /* Has logic based on frame_index */ \
-	X(Buffer, model_headers) \
 	X(Buffer, indices) \
 	X(Buffer, vertices) \
 	X(Buffer, lights) \

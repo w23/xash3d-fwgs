@@ -563,6 +563,34 @@ static qboolean kusochkiCreate(void) {
 	return true;
 }
 
+static qboolean modelHeadersCreate(void) {
+	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	{
+		rt_resource_t *const res_model_headers = R_VkResourceFindOrAlloc("model_headers");
+		ASSERT(res_model_headers);
+
+		res_model_headers->resource = (vk_resource_t){
+			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.ref.buffer = &g_ray_model_state.model_headers_buffer,
+			.value = (vk_descriptor_value_t) {
+				.buffer = (VkDescriptorBufferInfo) {
+					.buffer = g_ray_model_state.model_headers_buffer.buffer,
+					.offset = 0,
+					.range = g_ray_model_state.model_headers_buffer.size,
+				}
+			}
+		};
+	}
+
+	return true;
+}
+
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -593,10 +621,8 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
+	if (!modelHeadersCreate()) {
+		// TODO cleanup
 		return false;
 	}
 
