@@ -11,16 +11,15 @@
 
 // TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
-	X(TLAS, tlas) \
-	X(Buffer, ubo) \
-	X(Buffer, kusochki) \
+	X(TLAS, tlas) /* Has producing logic */ \
+	X(Buffer, ubo) /* Has logic based on frame_index */ \
 	X(Buffer, model_headers) \
 	X(Buffer, indices) \
 	X(Buffer, vertices) \
 	X(Buffer, lights) \
 	X(Buffer, light_grid) \
 	X(Texture, textures) \
-	X(Texture, skybox) \
+	X(Texture, skybox) /* Has picking logic */ \
 
 enum {
 #define RES_ENUM(type, name) ExternalResource_##name,

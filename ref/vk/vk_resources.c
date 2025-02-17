@@ -115,7 +115,6 @@ void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
 	RES_SET_BUFFER(name, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, source_, 0, (source_)->size)
 
 	// TODO move this to ray model producer
-	RES_SET_SBUFFER_FULL(kusochki, &g_ray_model_state.kusochki_buffer);
 	RES_SET_SBUFFER_FULL(model_headers, &g_ray_model_state.model_headers_buffer);
 
 	// TODO move these to vk_geometry

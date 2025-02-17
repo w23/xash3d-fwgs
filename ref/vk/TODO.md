@@ -30,6 +30,19 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2025-02-17 E394
+- [ ] register resources
+    - [x] kusochki
+    - [ ] model_headers
+    - [ ] indices
+    - [ ] vertices
+    - [ ] textures
+    - [ ] tlas
+    - [ ] ubo
+    - [ ] lights
+    - [ ] light_grid
+    - [ ] skybox
+
 ## 2025-02-13 E393
 - [ ] register all resources in their modules
     - [ ] resource management refactoring:

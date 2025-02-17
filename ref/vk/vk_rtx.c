@@ -535,6 +535,34 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
+static qboolean kusochkiCreate(void) {
+	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	{
+		rt_resource_t *const res_kusochki = R_VkResourceFindOrAlloc("kusochki");
+		ASSERT(res_kusochki);
+
+		res_kusochki->resource = (vk_resource_t){
+			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.ref.buffer = &g_ray_model_state.kusochki_buffer,
+			.value = (vk_descriptor_value_t) {
+				.buffer = (VkDescriptorBufferInfo) {
+					.buffer = g_ray_model_state.kusochki_buffer.buffer,
+					.offset = 0,
+					.range = g_ray_model_state.kusochki_buffer.size,
+				}
+			}
+		};
+	}
+
+	return true;
+}
+
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -550,25 +578,18 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-	R_VkResourcesInit();
-
-	reloadMainpipe();
-	if (!g_rtx.mainpipe)
-		return false;
-
 	g_rtx.uniform_unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
 
 	if (!VK_BufferCreate("ray uniform_buffer", &g_rtx.uniform_buffer, g_rtx.uniform_unit_size * MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
 	{
+		// TODO cleanup
 		return false;
 	}
 
-	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
+	if (!kusochkiCreate()) {
+		// TODO cleanup
 		return false;
 	}
 
@@ -578,6 +599,12 @@ qboolean VK_RayInit( void )
 		// FIXME complain, handle
 		return false;
 	}
+
+	R_VkResourcesInit();
+
+	reloadMainpipe();
+	if (!g_rtx.mainpipe)
+		return false;
 
 	RT_RayModel_Clear();
 
