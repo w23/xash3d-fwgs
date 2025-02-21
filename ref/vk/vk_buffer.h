@@ -63,7 +63,7 @@ typedef struct {
 	size_t offset;
 	size_t size;
 } r_vkbuffer_register_as_resource_t;
-void R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args);
+struct rt_resource_s *R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args);
 
 // Commits any staged regions for the specified buffer
 struct vk_combuf_s;

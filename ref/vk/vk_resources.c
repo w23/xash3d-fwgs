@@ -74,29 +74,13 @@ void R_VkResourcesCleanup(void) {
 	}
 }
 
-void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t args) {
+void R_VkResourcesSetBuiltinFIXME(void) {
 	g_res.res[ExternalResource_skybox].resource = (vk_resource_t){
 		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		.value = (vk_descriptor_value_t){
 			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
 		},
 	};
-
-#define RES_SET_BUFFER(name, type_, source_, offset_, size_) \
-	g_res.res[ExternalResource_##name].resource = (vk_resource_t){ \
-		.type = type_, \
-		.ref.buffer = (source_), \
-		.value = (vk_descriptor_value_t) { \
-			.buffer = (VkDescriptorBufferInfo) { \
-				.buffer = (source_)->buffer, \
-				.offset = (offset_), \
-				.range = (size_), \
-			} \
-		} \
-	}
-
-	RES_SET_BUFFER(ubo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, args.uniform_buffer, args.frame_index * args.uniform_unit_size, sizeof(struct UniformBuffer));
-#undef RES_SET_BUFFER
 }
 
 // FIXME not even sure what this functions is supposed to do in the end

@@ -33,6 +33,7 @@ static struct {
 	// Holds UniformBuffer data
 	vk_buffer_t uniform_buffer;
 	uint32_t uniform_unit_size;
+	rt_resource_t *uniform_buffer_resource;
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
@@ -164,7 +165,9 @@ static uint32_t getRandomSeed( void ) {
 }
 
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
-	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
+	const size_t ubo_slot_offset = frame_index * g_rtx.uniform_unit_size;
+	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + ubo_slot_offset);
+	g_rtx.uniform_buffer_resource->resource.value.buffer.offset = ubo_slot_offset;
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -222,11 +225,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	R_VkResourcesSetBuiltinFIXME((r_vk_resources_builtin_fixme_t){
-		.frame_index = args->frame_index,
-		.uniform_buffer = &g_rtx.uniform_buffer,
-		.uniform_unit_size = g_rtx.uniform_unit_size,
-	});
+	R_VkResourcesSetBuiltinFIXME();
 
 	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
@@ -591,6 +590,13 @@ qboolean VK_RayInit( void )
 		// TODO cleanup
 		return false;
 	}
+
+	g_rtx.uniform_buffer_resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "ubo",
+		.buffer = &g_rtx.uniform_buffer,
+		.offset = 0, // Will be set dynamically each frame
+		.size = sizeof(struct UniformBuffer),
+	});
 
 	if (!kusochkiCreate()) {
 		// TODO cleanup

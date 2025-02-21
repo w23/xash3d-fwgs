@@ -41,7 +41,7 @@
     - [x] textures
     - [x] tlas
     - [ ] skybox
-    - [ ] ubo
+    - [x] ubo
 
 ## 2025-02-13 E393
 - [ ] register all resources in their modules

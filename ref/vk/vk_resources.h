@@ -11,7 +11,6 @@
 
 // TODO each of these should be registered by the provider of the resource:
 #define EXTERNAL_RESOUCES(X) \
-	X(Buffer, ubo) /* Has logic based on frame_index */ \
 	X(Texture, skybox) /* Has picking logic */ \
 
 enum {
@@ -33,7 +32,7 @@ typedef struct vk_resource_s {
 
 typedef struct vk_resource_s *vk_resource_p;
 
-typedef struct {
+typedef struct rt_resource_s {
 		char name[64];
 		vk_resource_t resource;
 		r_vk_image_t image;
@@ -52,13 +51,7 @@ int R_VkResourceFindIndexByName(const char *name);
 void R_VkResourcesCleanup(void);
 
 // FIXME remove this by properly registering global resources
-typedef struct {
-	uint32_t frame_index;
-
-	vk_buffer_t *uniform_buffer;
-	uint32_t uniform_unit_size;
-} r_vk_resources_builtin_fixme_t;
-void R_VkResourcesSetBuiltinFIXME(r_vk_resources_builtin_fixme_t builtin);
+void R_VkResourcesSetBuiltinFIXME(void);
 
 struct vk_combuf_s;
 void R_VkResourcesFrameBeginStateChangeFIXME(struct vk_combuf_s* combuf, qboolean discontinuity);

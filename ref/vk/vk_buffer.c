@@ -215,7 +215,7 @@ void R_VkBufferUnlock(vk_buffer_locked_t lock) {
 	// Nothing to do?
 }
 
-void R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
+rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
 	rt_resource_t *const res = R_VkResourceFindOrAlloc(args.name);
 	ASSERT(res);
 
@@ -231,6 +231,8 @@ void R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
 			}
 		}
 	};
+
+	return res;
 }
 
 void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
