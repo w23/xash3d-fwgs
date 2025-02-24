@@ -21,11 +21,6 @@ static struct {
 } g_res;
 
 void R_VkResourcesInit(void) {
-#define REGISTER_EXTERNAL(type, name_) \
-	Q_strncpy(g_res.res[ExternalResource_##name_].name, #name_, sizeof(g_res.res[0].name)); \
-	g_res.res[ExternalResource_##name_].refcount = 1;
-	EXTERNAL_RESOUCES(REGISTER_EXTERNAL)
-#undef REGISTER_EXTERNAL
 }
 
 int R_VkResourceFindIndexByName(const char *name) {
@@ -51,7 +46,7 @@ rt_resource_t *R_VkResourceFindOrAlloc(const char *name) {
 		return res;
 
 	// Find first free slot
-	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
+	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t *const res = g_res.res + i;
 		if (res->name[0] != '\0')
 			continue;
@@ -74,19 +69,10 @@ void R_VkResourcesCleanup(void) {
 	}
 }
 
-void R_VkResourcesSetBuiltinFIXME(void) {
-	g_res.res[ExternalResource_skybox].resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-		.value = (vk_descriptor_value_t){
-			.image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxPatched ),
-		},
-	};
-}
-
 // FIXME not even sure what this functions is supposed to do in the end
 void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean discontinuity) {
 	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
-	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
+	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t* const res = g_res.res + i;
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
 			continue;
@@ -115,7 +101,7 @@ void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean disco
 	}
 
 	// Clear intra-frame resources
-	for (int i = ExternalResource_COUNT; i < MAX_VK_RESOURCES; ++i) {
+	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
 		rt_resource_t* const res = g_res.res + i;
 		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
 			continue;

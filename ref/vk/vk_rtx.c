@@ -225,8 +225,6 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
-	R_VkResourcesSetBuiltinFIXME();
-
 	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
 		DEBUG("discontinuity => false");

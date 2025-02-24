@@ -30,6 +30,10 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## 2025-02-24 E395
+- [x] register resources
+    - [x] skybox
+
 ## 2025-02-17 E394
 - [ ] register resources
     - [x] kusochki
@@ -40,7 +44,6 @@
     - [x] light_grid
     - [x] textures
     - [x] tlas
-    - [ ] skybox
     - [x] ubo
 
 ## 2025-02-13 E393

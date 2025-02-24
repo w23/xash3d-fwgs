@@ -38,8 +38,10 @@ static struct {
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
 
 	vk_texture_t skybox[kSkybox_COUNT];
+	rt_resource_t *skybox_resource;
 
 	vk_texture_t blue_noise;
+
 } g_vktextures;
 
 static VkSampler pickSamplerForFlags( texFlags_t flags );
@@ -190,6 +192,24 @@ qboolean R_VkTexturesInit( void ) {
 				.image_array = g_vktextures.dii_all_textures,
 			}
 		};
+	}
+
+	{
+		rt_resource_t *const res = R_VkResourceFindOrAlloc("skybox");
+		ASSERT(res);
+		res->refcount = 1;
+		res->resource = (vk_resource_t) {
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.value = (vk_descriptor_value_t){
+				.image = (VkDescriptorImageInfo) {
+					.sampler = g_vktextures.default_sampler,
+					.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view,
+					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+				},
+			},
+		};
+
+		g_vktextures.skybox_resource = res;
 	}
 
 	if (vk_core.rtx)
@@ -661,6 +681,11 @@ void R_VkTexturesSkyboxUnload(void) {
 			memset(skybox, 0, sizeof(*skybox));
 		}
 	}
+
+	// Revert skybox resource back to the placeholder slot
+	if (g_vktextures.skybox_resource) {
+		g_vktextures.skybox_resource->resource.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
+	}
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot ) {
@@ -689,7 +714,23 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
 	dest->flags |= TF_NOMIPMAP;
 	ASSERT(pic->flags & IMAGE_CUBEMAP);
-	return uploadTexture(-1, dest, pic, colorspace_hint);
+
+	const qboolean uploaded = uploadTexture(-1, dest, pic, colorspace_hint);
+	if (!uploaded)
+		return false;
+
+	if (g_vktextures.skybox_resource) {
+		for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
+			vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
+			if (skybox->vk.image.view == VK_NULL_HANDLE)
+				continue;
+
+			g_vktextures.skybox_resource->resource.value.image.imageView = skybox->vk.image.view;
+			break;
+		}
+	}
+
+	return uploaded;
 }
 
 VkDescriptorSet R_VkTextureGetDescriptorUnorm( uint index ) {

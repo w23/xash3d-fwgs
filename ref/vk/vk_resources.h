@@ -1,24 +1,10 @@
 #pragma once
 
-#include "vk_core.h"
 #include "vk_descriptor.h"
 #include "vk_image.h"
+#include "vk_buffer.h"
 #include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
 #include "arrays.h"
-
-// TODO remove
-#include "vk_light.h"
-
-// TODO each of these should be registered by the provider of the resource:
-#define EXTERNAL_RESOUCES(X) \
-	X(Texture, skybox) /* Has picking logic */ \
-
-enum {
-#define RES_ENUM(type, name) ExternalResource_##name,
-	EXTERNAL_RESOUCES(RES_ENUM)
-#undef RES_ENUM
-	ExternalResource_COUNT,
-};
 
 struct xvk_image_s;
 typedef struct vk_resource_s {
@@ -49,9 +35,6 @@ int R_VkResourceFindIndexByName(const char *name);
 
 // Destroys all resources with refcount = 0
 void R_VkResourcesCleanup(void);
-
-// FIXME remove this by properly registering global resources
-void R_VkResourcesSetBuiltinFIXME(void);
 
 struct vk_combuf_s;
 void R_VkResourcesFrameBeginStateChangeFIXME(struct vk_combuf_s* combuf, qboolean discontinuity);
