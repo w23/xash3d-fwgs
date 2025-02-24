@@ -797,10 +797,9 @@ void VK_RenderDebugLabelEnd( void )
 }
 
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
-	vk_buffer_t *const geom = R_GeometryBuffer_Get();
 	ASSERT(vk_core.rtx);
 
-	R_VkBufferStagingCommit(geom, combuf);
+	R_GeometryBufferProduce(combuf);
 
 	{
 		const vk_ray_frame_render_args_t args = {
@@ -809,11 +808,6 @@ void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
 
 			.projection = &g_render_state.vk_projection,
 			.view = &g_camera.viewMatrix,
-
-			.geometry_data = {
-				.buffer = geom,
-				.size = VK_WHOLE_SIZE,
-			},
 
 			.fov_angle_y = g_camera.fov_y,
 		};

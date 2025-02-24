@@ -70,6 +70,7 @@ static struct {
 	r_flipping_buffer_t tlas_geom_buffer_alloc;
 
 	struct {
+		rt_resource_t *resource;
 		VkAccelerationStructureKHR handle;
 
 		VkAccelerationStructureGeometryKHR geometry;
@@ -314,7 +315,7 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	g_accel.build.range_infos.count = 0;
 }
 
-vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
+static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 
 	const uint32_t instances_count = g_accel.frame.instances.count;
@@ -444,6 +445,11 @@ vk_resource_t RT_VkAccelPrepareTlas(vk_combuf_t *combuf) {
 	};
 }
 
+void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
+	ASSERT(g_accel.tlas.resource);
+	g_accel.tlas.resource->resource = RT_VkAccelProduceTlas(combuf);
+}
+
 qboolean RT_VkAccelInit(void) {
 	if (!VK_BufferCreate("ray accels_buffer", &g_accel.accels_buffer, MAX_ACCELS_BUFFER,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -479,6 +485,24 @@ qboolean RT_VkAccelInit(void) {
 	R_SPEEDS_COUNTER(g_accel.stats.accels_built, "built", kSpeedsMetricCount);
 
 	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
+
+	{
+		g_accel.tlas.resource = R_VkResourceFindOrAlloc("tlas");
+		ASSERT(g_accel.tlas.resource);
+
+		g_accel.tlas.resource->refcount = 1;
+		g_accel.tlas.resource->resource = (vk_resource_t){
+			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+			.value = (vk_descriptor_value_t){
+				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+					.accelerationStructureCount = 0,
+					.pAccelerationStructures = NULL,
+					.pNext = NULL,
+				},
+			},
+		};
+	}
 
 	return true;
 }

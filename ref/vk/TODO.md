@@ -1,7 +1,7 @@
 ## Next
 
 ## Upcoming
-- [ ] rendertests TODO
+- [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
     - [ ] takes vanilla valve steam HL data into installdir
@@ -29,6 +29,33 @@
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## 2025-02-24 E395
+- [x] register resources
+    - [x] skybox
+
+## 2025-02-17 E394
+- [ ] register resources
+    - [x] kusochki
+    - [x] model_headers
+    - [x] indices
+    - [x] vertices
+    - [x] lights
+    - [x] light_grid
+    - [x] textures
+    - [x] tlas
+    - [x] ubo
+
+## 2025-02-13 E393
+- [ ] register all resources in their modules
+    - [ ] resource management refactoring:
+        - [ ] resource automatic resolution: prducing, barriers, etc
+        - [ ] resource destruction
+    - [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
+### after stream
+- [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
+	- [x] blue_noise_texture as a quick test
+	- [ ] all textures
 
 ## 2025-02-10 E392
 - [x] fix vk_studio ASAN fail

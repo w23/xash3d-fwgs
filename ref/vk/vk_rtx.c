@@ -11,7 +11,6 @@
 #include "vk_light.h"
 #include "vk_math.h"
 #include "vk_meatpipe.h"
-#include "vk_pipeline.h"
 #include "vk_ray_internal.h"
 #include "r_textures.h"
 #include "vk_combuf.h"
@@ -34,6 +33,7 @@ static struct {
 	// Holds UniformBuffer data
 	vk_buffer_t uniform_buffer;
 	uint32_t uniform_unit_size;
+	rt_resource_t *uniform_buffer_resource;
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
@@ -165,7 +165,9 @@ static uint32_t getRandomSeed( void ) {
 }
 
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
-	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + frame_index * g_rtx.uniform_unit_size);
+	const size_t ubo_slot_offset = frame_index * g_rtx.uniform_unit_size;
+	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + ubo_slot_offset);
+	g_rtx.uniform_buffer_resource->resource.value.buffer.offset = ubo_slot_offset;
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -216,22 +218,12 @@ typedef struct {
 	int frame_index;
 	uint32_t frame_counter;
 	float fov_angle_y;
-	const vk_lights_bindings_t *light_bindings;
 	int frame_width, frame_height;
 } perform_tracing_args_t;
 
 static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-
-	R_VkResourcesSetBuiltinFIXME((r_vk_resources_builtin_fixme_t){
-		.frame_index = args->frame_index,
-		.uniform_buffer = &g_rtx.uniform_buffer,
-		.uniform_unit_size = g_rtx.uniform_unit_size,
-		.geometry_data.buffer = args->render_args->geometry_data.buffer,
-		.geometry_data.size = args->render_args->geometry_data.size,
-		.light_bindings = args->light_bindings,
-	});
 
 	R_VkResourcesFrameBeginStateChangeFIXME(combuf, g_rtx.discontinuity);
 	if (g_rtx.discontinuity) {
@@ -355,7 +347,6 @@ static void reloadMainpipe(void) {
 					.flags = 0,
 				};
 				res->image = R_VkImageCreate(&create);
-				Q_strncpy(res->name, mr->name, sizeof(res->name));
 			}
 		}
 
@@ -433,19 +424,17 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 {
 	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
 
-	// const xvk_ray_frame_images_t* current_frame = g_rtx.frames + (g_rtx.frame_number % 2);
-
 	ASSERT(vk_core.rtx);
 	// ubo should contain two matrices
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
 
-	RT_LightsFrameEnd();
-	const vk_lights_bindings_t light_bindings = VK_LightsUpload(args->combuf);
+	{
+		// TODO should be done by "producing" lights and lights_grid resources
+		RT_LightsFrameEnd();
+		VK_LightsUpload(args->combuf);
+	}
 
 	g_rtx.frame_number++;
-
-	// if (vk_core.debug)
-	// 	XVK_RayModel_Validate();
 
 	qboolean need_reload = g_rtx.reload_pipeline;
 
@@ -491,14 +480,15 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	const int frame_width = args->dst->width;
 	const int frame_height = args->dst->height;
 
-	rt_resource_t *const tlas = R_VkResourceGetByIndex(ExternalResource_tlas);
+	rt_resource_t *const tlas = R_VkResourceFindByName("tlas");
+	ASSERT(tlas);
 
 	// Do not draw when we have no swapchain
 	if (!args->dst->image)
 		goto tail;
 
 	// TODO move this to "TLAS producer"
-	tlas->resource = RT_VkAccelPrepareTlas(args->combuf);
+	RT_VkAccelBuildTlas_FIXME(args->combuf);
 	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
 		R_VkImageClear( &g_rtx.mainpipe_out->image, args->combuf, NULL );
 	} else {
@@ -507,7 +497,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_index = (g_rtx.frame_number % 2),
 			.frame_counter = g_rtx.frame_number,
 			.fov_angle_y = args->fov_angle_y,
-			.light_bindings = &light_bindings,
 			.frame_width = frame_width,
 			.frame_height = frame_height,
 		};
@@ -537,6 +526,44 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
+// TODO move to rt_kusochki.c
+static qboolean kusochkiCreate(void) {
+	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "kusochki",
+		.buffer = &g_ray_model_state.kusochki_buffer,
+		.offset = 0,
+		.size = g_ray_model_state.kusochki_buffer.size,
+	});
+
+	return true;
+}
+
+// TODO move to rt_model.c (s/vk_ray_model/rt_model)
+static qboolean modelHeadersCreate(void) {
+	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "model_headers",
+		.buffer = &g_ray_model_state.model_headers_buffer,
+		.offset = 0,
+		.size = g_ray_model_state.model_headers_buffer.size,
+	});
+
+	return true;
+}
+
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -552,34 +579,38 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-	R_VkResourcesInit();
-
-	reloadMainpipe();
-	if (!g_rtx.mainpipe)
-		return false;
-
 	g_rtx.uniform_unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
 
 	if (!VK_BufferCreate("ray uniform_buffer", &g_rtx.uniform_buffer, g_rtx.uniform_unit_size * MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
 	{
+		// TODO cleanup
 		return false;
 	}
 
-	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
+	g_rtx.uniform_buffer_resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "ubo",
+		.buffer = &g_rtx.uniform_buffer,
+		.offset = 0, // Will be set dynamically each frame
+		.size = sizeof(struct UniformBuffer),
+	});
+
+	if (!kusochkiCreate()) {
+		// TODO cleanup
 		return false;
 	}
 
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
+	if (!modelHeadersCreate()) {
+		// TODO cleanup
 		return false;
 	}
+
+	R_VkResourcesInit();
+
+	reloadMainpipe();
+	if (!g_rtx.mainpipe)
+		return false;
 
 	RT_RayModel_Clear();
 

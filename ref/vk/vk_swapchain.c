@@ -274,7 +274,7 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 		// TODO? .image_size = ???
 
 		.sync = {
-			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			.layout = VK_IMAGE_LAYOUT_UNDEFINED,
 			.write = {
 				.access = VK_ACCESS_2_NONE,
 				.stage = VK_PIPELINE_STAGE_2_NONE,

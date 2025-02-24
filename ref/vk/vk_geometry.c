@@ -1,6 +1,6 @@
 #include "vk_geometry.h"
 #include "vk_buffer.h"
-#include "vk_staging.h"
+#include "vk_resources.h"
 #include "r_speeds.h"
 
 #define MODULE_NAME "geom"
@@ -169,6 +169,15 @@ void R_GeometryBuffer_MapClear( void ) {
 	// allocated blocks count remains constant and doesn't grow between maps
 }
 
+static void registerGeometryBufferAs(const char *name) {
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = name,
+		.buffer = &g_geom.buffer,
+		.offset = 0,
+		.size = g_geom.buffer.size,
+	});
+}
+
 qboolean R_GeometryBuffer_Init(void) {
 	// TODO device memory and friends (e.g. handle mobile memory ...)
 
@@ -185,6 +194,10 @@ qboolean R_GeometryBuffer_Init(void) {
 	R_SPEEDS_METRIC(g_geom.stats.indices, "indices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_vertices, "dyn_vertices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_indices, "dyn_indices", kSpeedsMetricCount);
+
+	registerGeometryBufferAs("vertices");
+	registerGeometryBufferAs("indices");
+
 	return true;
 }
 
@@ -199,4 +212,8 @@ void R_GeometryBuffer_Flip(void) {
 
 vk_buffer_t* R_GeometryBuffer_Get(void) {
 	return &g_geom.buffer;
+}
+
+void R_GeometryBufferProduce(vk_combuf_t *combuf) {
+	R_VkBufferStagingCommit(&g_geom.buffer, combuf);
 }

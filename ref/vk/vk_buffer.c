@@ -1,6 +1,7 @@
 #include "vk_buffer.h"
 #include "vk_logs.h"
 #include "vk_combuf.h"
+#include "vk_resources.h"
 
 #include "arrays.h"
 
@@ -212,6 +213,26 @@ vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock) {
 void R_VkBufferUnlock(vk_buffer_locked_t lock) {
 	//DEBUG("buf=%llx staging pending++", (unsigned long long)lock.impl_.buf->buffer);
 	// Nothing to do?
+}
+
+rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
+	rt_resource_t *const res = R_VkResourceFindOrAlloc(args.name);
+	ASSERT(res);
+
+	res->refcount = 1;
+	res->resource = (vk_resource_t){
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		.ref.buffer = args.buffer,
+		.value = (vk_descriptor_value_t) {
+			.buffer = (VkDescriptorBufferInfo) {
+				.buffer = args.buffer->buffer,
+				.offset = args.offset,
+				.range = args.size,
+			}
+		}
+	};
+
+	return res;
 }
 
 void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
