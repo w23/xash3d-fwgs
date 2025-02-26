@@ -19,12 +19,16 @@ typedef struct vk_resource_s {
 typedef struct vk_resource_s *vk_resource_p;
 
 typedef struct rt_resource_s {
-		char name[64];
-		vk_resource_t resource;
-		r_vk_image_t image;
-		vk_buffer_t *buffer;
-		int refcount;
-		int source_index_plus_1;
+	char name[64];
+	vk_resource_t resource;
+
+	// TODO internal
+	r_vk_image_t image;
+	vk_buffer_t *buffer;
+
+	// TODO remove
+	int refcount;
+	int source_index_plus_1;
 } rt_resource_t;
 
 void R_VkResourcesInit(void);

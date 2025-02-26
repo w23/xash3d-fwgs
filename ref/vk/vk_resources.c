@@ -8,10 +8,6 @@
 
 #define LOG_MODULE rt
 
-// TODO remove
-#include "vk_textures.h"
-#include "vk_ray_internal.h" // UniformBuffer
-
 #include <stdlib.h>
 
 #define MAX_VK_RESOURCES 128
@@ -98,16 +94,6 @@ void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean disco
 			WARN("discontinuity: %s", res->name);
 			R_VkImageClear( &res->image, combuf, NULL );
 		}
-	}
-
-	// Clear intra-frame resources
-	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
-		rt_resource_t* const res = g_res.res + i;
-		if (!res->name[0] || !res->image.image || res->source_index_plus_1 > 0)
-			continue;
-
-		// 2024-12-12 E384 1:56:00 Commented out: Try not clearing this state. Could be beneficial for later barrier-based extra-cmdbuf sync
-		//res->resource.deprecate.write = (ray_resource_state_t){0};
 	}
 }
 
