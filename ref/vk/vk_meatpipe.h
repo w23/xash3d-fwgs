@@ -23,7 +23,7 @@ typedef struct {
 } vk_meatpipe_resource_t;
 
 struct vk_meatpipe_pass_s;
-typedef struct {
+typedef struct vk_meatpipe_s {
 	int passes_count;
 	struct vk_meatpipe_pass_s *passes;
 
@@ -31,16 +31,13 @@ typedef struct {
 	vk_meatpipe_resource_t *resources;
 } vk_meatpipe_t;
 
+struct ray_pass_s;
+typedef struct vk_meatpipe_pass_s {
+	struct ray_pass_s* pass;
+	int write_from;
+	int resource_count;
+	int *resource_map;
+} vk_meatpipe_pass_t;
+
 vk_meatpipe_t* R_VkMeatpipeCreateFromFile(const char *filename);
 void R_VkMeatpipeDestroy(vk_meatpipe_t *mp);
-
-struct vk_resource_s;
-typedef struct vk_resource_s* vk_resource_p;
-typedef struct vk_meatpipe_perfrom_args_s {
-	int frame_set_slot; // 0 or 1, until we do num_frame_slots
-	int width, height;
-	const vk_resource_p *resources;
-} vk_meatpipe_perfrom_args_t;
-
-struct vk_combuf_s;
-void R_VkMeatpipePerform(vk_meatpipe_t *mp, struct vk_combuf_s *combuf, vk_meatpipe_perfrom_args_t args);

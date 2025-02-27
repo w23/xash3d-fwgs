@@ -6,8 +6,6 @@
 #include "vk_common.h"
 #include "vk_logs.h"
 
-#include "profiler.h"
-
 #define LOG_MODULE meat
 
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -30,12 +28,12 @@ typedef struct load_context_t {
 	vk_meatpipe_t meatpipe;
 } load_context_t;
 
-typedef struct vk_meatpipe_pass_s {
-	ray_pass_p pass;
-	int write_from;
-	int resource_count;
-	int *resource_map;
-} vk_meatpipe_pass_t;
+/* typedef struct vk_meatpipe_pass_s { */
+/* 	ray_pass_p pass; */
+/* 	int write_from; */
+/* 	int resource_count; */
+/* 	int *resource_map; */
+/* } vk_meatpipe_pass_t; */
 
 static const void* curReadPtr(cursor_t *cur, int size) {
 	const int left = cur->size - cur->off;
@@ -425,21 +423,4 @@ void R_VkMeatpipeDestroy(vk_meatpipe_t *mp) {
 	Mem_Free(mp->passes);
 	Mem_Free(mp->resources);
 	Mem_Free(mp);
-}
-
-void R_VkMeatpipePerform(vk_meatpipe_t *mp, struct vk_combuf_s *combuf, vk_meatpipe_perfrom_args_t args) {
-	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
-	for (int i = 0; i < mp->passes_count; ++i) {
-		const vk_meatpipe_pass_t *pass = mp->passes + i;
-		RayPassPerform(pass->pass, combuf,
-			(ray_pass_perform_args_t){
-				.frame_set_slot = args.frame_set_slot,
-				.width = args.width,
-				.height = args.height,
-				.resources = args.resources,
-				.resources_map = pass->resource_map,
-			}
-		);
-	}
-	APROF_SCOPE_END(perform);
 }

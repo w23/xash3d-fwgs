@@ -30,6 +30,23 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
+## Resograf agenda
+- [ ] Move all resources/state/barrier management to passes
+- [ ] Metapass -- construct one from meatpipe + resources
+	- [ ] make meatpipe just a parser, load passes in metapass
+	- [ ] eventually metapass is just a linear set of ops and barriers to perform
+- [ ] hide resource internals; rt_resource_t is just a header
+	- [ ] regular images
+	- [ ] buffers
+	- [ ] ping-pong images
+- [ ] Explicit dependency graph
+	- [ ] Build it from meatpipe and resources
+	- [ ] Linearize it into metapass program
+
+## 2025-02-26 EN/A
+- [x] Metapass sketch
+	- [x] move meatpipe perform there
+
 ## 2025-02-24 E395
 - [x] register resources
     - [x] skybox
