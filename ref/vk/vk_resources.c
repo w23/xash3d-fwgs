@@ -1,8 +1,6 @@
 #include "vk_resources.h"
-#include "vk_core.h"
 #include "vk_image.h"
 #include "vk_common.h"
-#include "vk_logs.h"
 #include "vk_combuf.h"
 #include "arrays.h"
 
@@ -17,6 +15,12 @@ static struct {
 } g_res;
 
 void R_VkResourcesInit(void) {
+}
+
+rt_resource_t *R_VkResourceGetByIndex(int index) {
+	ASSERT(index >= 0);
+	ASSERT(index < MAX_VK_RESOURCES);
+	return g_res.res + index;
 }
 
 int R_VkResourceFindIndexByName(const char *name) {
@@ -65,37 +69,6 @@ void R_VkResourcesCleanup(void) {
 	}
 }
 
-// FIXME not even sure what this functions is supposed to do in the end
-void R_VkResourcesFrameBeginStateChangeFIXME(vk_combuf_t* combuf, qboolean discontinuity) {
-	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
-	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
-		rt_resource_t* const res = g_res.res + i;
-		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
-			continue;
-
-		ASSERT(res->source_index_plus_1 <= COUNTOF(g_res.res));
-		rt_resource_t *const src = g_res.res + res->source_index_plus_1 - 1;
-		ASSERT(res != src);
-
-		// Swap resources
-		const vk_resource_t tmp_res = res->resource;
-		const r_vk_image_t tmp_img = res->image;
-
-		res->resource = src->resource;
-		res->image = src->image;
-
-		// TODO this is slightly incorrect, as they technically can have different resource->type values
-		src->resource = tmp_res;
-		src->image = tmp_img;
-
-		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (discontinuity || res->image.sync.write.stage == 0) {
-			// TODO is there a better way? Can image be cleared w/o explicit clear op?
-			WARN("discontinuity: %s", res->name);
-			R_VkImageClear( &res->image, combuf, NULL );
-		}
-	}
-}
 
 static void barrierAddBuffer(r_vk_barrier_t *barrier, vk_buffer_t *buf, VkAccessFlags access) {
 	const r_vkcombuf_barrier_buffer_t bb = {

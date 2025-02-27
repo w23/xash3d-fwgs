@@ -35,13 +35,12 @@ void R_VkResourcesInit(void);
 
 rt_resource_t *R_VkResourceFindByName(const char *name);
 rt_resource_t *R_VkResourceFindOrAlloc(const char *name);
+rt_resource_t *R_VkResourceGetByIndex(int index);
 int R_VkResourceFindIndexByName(const char *name);
 
 // Destroys all resources with refcount = 0
 void R_VkResourcesCleanup(void);
 
-struct vk_combuf_s;
-void R_VkResourcesFrameBeginStateChangeFIXME(struct vk_combuf_s* combuf, qboolean discontinuity);
 
 typedef struct {
 	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 32);

@@ -8,8 +8,6 @@
 
 #include "profiler.h"
 
-#include "arrays.h"
-
 #define LOG_MODULE rt
 
 typedef struct Metapass {
@@ -178,10 +176,43 @@ void Metapass_Destroy(Metapass *mp) {
 	Mem_Free(mp);
 }
 
+// FIXME not even sure what this functions is supposed to do in the end
+static void R_VkResourcesFrameBeginStateChangeFIXME(Metapass *metapass, vk_combuf_t* combuf, qboolean discontinuity) {
+	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
+	for (int i = 0; i < metapass->meatpipe->resources_count; ++i) {
+		const vk_meatpipe_resource_t *mr = metapass->meatpipe->resources + i;
+		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
+
+		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
+			continue;
+
+		rt_resource_t *const src = R_VkResourceGetByIndex(res->source_index_plus_1 - 1);
+		ASSERT(res != src);
+
+		// Swap resources
+		const vk_resource_t tmp_res = res->resource;
+		const r_vk_image_t tmp_img = res->image;
+
+		res->resource = src->resource;
+		res->image = src->image;
+
+		// TODO this is slightly incorrect, as they technically can have different resource->type values
+		src->resource = tmp_res;
+		src->image = tmp_img;
+
+		// If there was no initial state, prepare it. (this should happen only for the first frame)
+		if (discontinuity || res->image.sync.write.stage == 0) {
+			// TODO is there a better way? Can image be cleared w/o explicit clear op?
+			WARN("discontinuity: %s", res->name);
+			R_VkImageClear( &res->image, combuf, NULL );
+		}
+	}
+}
+
 void Metapass_Dispatch(struct Metapass* metapass, MetapassDispatchArgs args) {
 	APROF_SCOPE_DECLARE_BEGIN(dispatch, __FUNCTION__);
 
-	R_VkResourcesFrameBeginStateChangeFIXME(args.combuf, args.is_discontinuous);
+	R_VkResourcesFrameBeginStateChangeFIXME(metapass, args.combuf, args.is_discontinuous);
 
 	// Update image resource links after the prev_-related swap above
 	// TODO Preserve the indexes somewhere to avoid searching
@@ -189,6 +220,7 @@ void Metapass_Dispatch(struct Metapass* metapass, MetapassDispatchArgs args) {
 	for (int i = 0; i < metapass->meatpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = metapass->meatpipe->resources + i;
 
+		// TODO store fetched resources, do not lookup every time
 		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
