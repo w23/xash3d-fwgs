@@ -2,7 +2,6 @@
 
 #include "vk_resources.h"
 #include "vk_ray_accel.h"
-#include "vk_metapass.h"
 #include "vk_buffer.h"
 #include "vk_common.h"
 #include "vk_core.h"
@@ -38,8 +37,8 @@ static struct {
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
 
-	struct Metapass *metapass;
-	rt_resource_t *metapass_out;
+	struct vk_meatpipe_s *meatpipe;
+	rt_resource_t *meatpipe_out;
 
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
@@ -220,8 +219,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
 
-	ASSERT(g_rtx.metapass);
-	Metapass_Dispatch(g_rtx.metapass, (MetapassDispatchArgs){
+	ASSERT(g_rtx.meatpipe);
+	R_VkMeatpipeDispatch(g_rtx.meatpipe, (vk_meatpipe_dispatch_t){
 		.combuf = combuf,
 		.frame_set_slot = args->frame_index,
 		.width = args->frame_width,
@@ -238,33 +237,30 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	APROF_SCOPE_END(perform);
 }
 
-static void destroyMetapass(void) {
-	if (!g_rtx.metapass)
-		return;
-
-	Metapass_Destroy(g_rtx.metapass);
-	g_rtx.metapass = NULL;
+static void destroyMeatpipe(void) {
+	R_VkMeatpipeDestroy(g_rtx.meatpipe);
+	g_rtx.meatpipe = NULL;
 }
 
-static void reloadMetapass(void) {
-	vk_meatpipe_t *const newpipe = R_VkMeatpipeCreateFromFile("rt.meat");
+static qboolean reloadMeatpipe(void) {
+	struct vk_meatpipe_s *const newpipe = R_VkMeatpipeCreateFromFile("rt.meat");
 	if (!newpipe)
-		return;
+		return false;
 
-	struct Metapass *new_metapass = Metapass_Create(newpipe, g_rtx.max_frame_width, g_rtx.max_frame_height);
-	if (!new_metapass)
+	if (!R_VkMeatpipeAcquireResources(newpipe, g_rtx.max_frame_width, g_rtx.max_frame_height))
 		goto fail;
 
-	destroyMetapass();
+	destroyMeatpipe();
 
-	g_rtx.metapass = new_metapass;
-	g_rtx.metapass_out = R_VkResourceFindByName("dest");
-	ASSERT(g_rtx.metapass_out);
+	g_rtx.meatpipe = newpipe;
+	g_rtx.meatpipe_out = R_VkResourceFindByName("dest");
+	ASSERT(g_rtx.meatpipe_out);
 
-	return;
+	return true;
 
 fail:
 	R_VkMeatpipeDestroy(newpipe);
+	return false;
 }
 
 void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
@@ -283,29 +279,35 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	g_rtx.frame_number++;
 
-	qboolean need_reload = g_rtx.reload_pipeline;
+	qboolean need_resize = false;
 
 	if (g_rtx.max_frame_width < args->dst->width) {
 		g_rtx.max_frame_width = ALIGN_UP(args->dst->width, 16);
 		WARN("Increasing max_frame_width to %d", g_rtx.max_frame_width);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		need_resize = true;
 	}
 
 	if (g_rtx.max_frame_height < args->dst->height) {
 		g_rtx.max_frame_height = ALIGN_UP(args->dst->height, 16);
 		WARN("Increasing max_frame_height to %d", g_rtx.max_frame_height);
-		// TODO only reload resources, no need to reload the entire pipeline
-		need_reload = true;
+		need_resize = true;
 	}
 
-	if (need_reload) {
+	if (g_rtx.reload_pipeline) {
 		WARN("Reloading RTX shaders/pipelines");
 		XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
 
-		reloadMetapass();
+		if (reloadMeatpipe())
+			need_resize = false;
 
 		g_rtx.reload_pipeline = false;
+	}
+
+	if (need_resize) {
+		if (!R_VkMeatpipeAcquireResources(g_rtx.meatpipe, g_rtx.max_frame_width, g_rtx.max_frame_height)) {
+			ERR("Unable to reacquire resources and resize RT framebuffer. Bad things will happen.");
+		}
+		need_resize = false;
 	}
 
 	// Feed tlas with dynamic data
@@ -332,10 +334,10 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// TODO move this to "TLAS producer"
 	rt_resource_t *const tlas = R_VkResourceFindByName("tlas");
 	ASSERT(tlas);
-	ASSERT(g_rtx.metapass_out);
+	ASSERT(g_rtx.meatpipe_out);
 	RT_VkAccelBuildTlas_FIXME(args->combuf);
 	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
-		R_VkImageClear( &g_rtx.metapass_out->image, args->combuf, NULL );
+		R_VkImageClear( &g_rtx.meatpipe_out->image, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
@@ -351,7 +353,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	{
 		const r_vkimage_blit_args blit_args = {
 			.src = {
-				.image = &g_rtx.metapass_out->image,
+				.image = &g_rtx.meatpipe_out->image,
 				.width = frame_width,
 				.height = frame_height,
 			},
@@ -453,8 +455,8 @@ qboolean VK_RayInit( void )
 
 	R_VkResourcesInit();
 
-	reloadMetapass();
-	if (!g_rtx.metapass)
+	reloadMeatpipe();
+	if (!g_rtx.meatpipe)
 		return false;
 
 	RT_RayModel_Clear();
@@ -478,7 +480,7 @@ qboolean VK_RayInit( void )
 void VK_RayShutdown( void ) {
 	ASSERT(vk_core.rtx);
 
-	destroyMetapass();
+	destroyMeatpipe();
 
 	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
 	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
