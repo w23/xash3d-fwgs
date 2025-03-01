@@ -59,14 +59,13 @@ struct ray_pass_s *RayPassCreateTracing( const ray_pass_create_tracing_t *create
 
 void RayPassDestroy( struct ray_pass_s *pass );
 
-struct vk_resource_s;
-typedef struct vk_resource_s *vk_resource_p;
+struct rt_resource_s;
 
 typedef struct ray_pass_perform_args_s {
 	int frame_set_slot; // 0 or 1, until we do num_frame_slots
 	int width, height;
-	const vk_resource_p *resources;
-	const int *resources_map;
+	struct rt_resource_s* *const resources;
+	const int *resources_map; // TODO remove?
 } ray_pass_perform_args_t;
 
 struct vk_combuf_s;

@@ -45,7 +45,7 @@ typedef struct vk_meatpipe_s {
 	// TODO move these into passes as ready-to-go rt_resource_p[]
 	// Helper list of resource pointers to global resource map
 	// Needed as an argument to `R_VkMeatpipePerform()` so that meatpipe can access resources
-	vk_resource_p *acquired_resources;
+	rt_resource_t* *acquired_resources;
 } vk_meatpipe_t;
 
 struct ray_pass_s;
@@ -70,13 +70,6 @@ typedef struct load_context_t {
 
 	vk_meatpipe_t meatpipe;
 } load_context_t;
-
-/* typedef struct vk_meatpipe_pass_s { */
-/* 	ray_pass_p pass; */
-/* 	int write_from; */
-/* 	int resource_count; */
-/* 	int *resource_map; */
-/* } vk_meatpipe_pass_t; */
 
 static const void* curReadPtr(cursor_t *cur, int size) {
 	const int left = cur->size - cur->off;
@@ -486,8 +479,8 @@ void R_VkMeatpipeDestroy(vk_meatpipe_t *mp) {
 }
 
 int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, int max_height) {
-	const size_t newpipe_resources_size = sizeof(vk_resource_p) * meatpipe->resources_count;
-	vk_resource_p *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
+	const size_t newpipe_resources_size = sizeof(rt_resource_t*) * meatpipe->resources_count;
+	rt_resource_t* *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
 	rt_resource_t *newpipe_out = NULL;
 
 	// FIXME this is only a verbatim copy of older code, not patched
@@ -555,11 +548,11 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 			}
 		}
 
-		acquired_resources[i] = &res->resource;
+		acquired_resources[i] = res;
 
 		if (create) {
 			if (mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-				acquired_resources[i]->ref.image = &res->image;
+				acquired_resources[i]->resource.ref.image = &res->image;
 			}
 
 			// TODO full r/w initialization
@@ -671,13 +664,13 @@ void R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_meatpipe_dispatch_t
 	// FIXME I don't really get why we need this, the pointers should have been preserved ?!
 	for (int i = 0; i < meatpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = meatpipe->resources + i;
+		rt_resource_t *const res = meatpipe->acquired_resources[i];
 
 		// TODO store fetched resources, do not lookup every time
-		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
 			// THIS FAILS WHY?! ASSERT(g_rtx.mainpipe_resources[i]->value.image_object == &res->image);
-			meatpipe->acquired_resources[i]->ref.image = &res->image;
+			meatpipe->acquired_resources[i]->resource.ref.image = &res->image;
 	}
 
 	const vk_meatpipe_t *const mp = meatpipe;

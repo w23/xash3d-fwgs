@@ -266,7 +266,7 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 	const int num_bindings = pass->desc.riptors.num_bindings;
 	for (int i = 0; i < num_bindings; ++i) {
 		const int index = args.resources_map ? args.resources_map[i] : i;
-		vk_resource_t* const res = args.resources[index];
+		vk_resource_t* const res = &args.resources[index]->resource;
 
 		const qboolean write = i >= pass->desc.write_from;
 		R_VkResourceAddToBarrier(res, write, pass->pipeline_type, &barrier);
@@ -277,7 +277,7 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 
 	for (int i = 0; i < num_bindings; ++i) {
 		const int index = args.resources_map ? args.resources_map[i] : i;
-		vk_resource_t* const res = args.resources[index];
+		vk_resource_t* const res = &args.resources[index]->resource;
 
 		const vk_descriptor_value_t *const src_value = &res->value;
 		vk_descriptor_value_t *const dst_value = pass->desc.riptors.values + i;
