@@ -455,8 +455,6 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	R_VkResourcesInit();
-
 	reloadMeatpipe();
 	if (!g_rtx.meatpipe)
 		return false;

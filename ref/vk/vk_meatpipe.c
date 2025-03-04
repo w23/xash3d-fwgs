@@ -478,6 +478,19 @@ void R_VkMeatpipeDestroy(vk_meatpipe_t *mp) {
 	Mem_Free(mp);
 }
 
+static rt_resource_t *createOrFindResourceNamed(const char* name) {
+	// FIXME this leaks
+	rt_resource_t *const found = R_VkResourceFindByName(name);
+	if (found)
+		return found;
+
+	rt_resource_t *const res = Mem_Calloc(vk_core.pool, sizeof(rt_resource_t));
+	Q_strncpy(res->name, name, sizeof(res->name));
+
+	ASSERT(R_VkResourceRegister(res));
+	return res;
+}
+
 int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, int max_height) {
 	const size_t newpipe_resources_size = sizeof(rt_resource_t*) * meatpipe->resources_count;
 	rt_resource_t* *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
@@ -508,7 +521,7 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 		// TODO this should be specified as a flag, from rt.json
 		const qboolean output = Q_strcmp("dest", mr->name) == 0;
 
-		rt_resource_t *const res = create ? R_VkResourceFindOrAlloc(mr->name) : R_VkResourceFindByName(mr->name);
+		rt_resource_t *const res = create ? createOrFindResourceNamed(mr->name) : R_VkResourceFindByName(mr->name);
 		if (!res) {
 			ERR("Couldn't find resource/slot for %s", mr->name);
 			goto fail;

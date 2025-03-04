@@ -6,10 +6,14 @@
 #include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
 #include "arrays.h"
 
-struct xvk_image_s;
 typedef struct vk_resource_s {
+	// Used for adding resource into correct typed barriers arrays (images and buffers)
 	VkDescriptorType type;
+
+	// Used for setting descriptor sets to bind
 	vk_descriptor_value_t value;
+
+	// Used for barriers "only"
 	union {
 		vk_buffer_t *buffer;
 		r_vk_image_t *image;
@@ -20,21 +24,28 @@ typedef struct vk_resource_s *vk_resource_p;
 
 typedef struct rt_resource_s {
 	char name[64];
+
+	// TODO move into producer
 	vk_resource_t resource;
 
-	// TODO internal
-	r_vk_image_t image;
-	vk_buffer_t *buffer;
+	// TODO things below are resource-specific
 
-	// TODO remove
+	// Used for meatpipe G-buffer images
+	r_vk_image_t image;
+
+	// Used for tracking meatpipe resources when reloading meatpipes
 	int refcount;
+
+	// Used for ping-pong meatpipe G-buffer images (e.g. for temporal denoiser)
 	int source_index_plus_1;
 } rt_resource_t;
 
 void R_VkResourcesInit(void);
 
 rt_resource_t *R_VkResourceFindByName(const char *name);
-rt_resource_t *R_VkResourceFindOrAlloc(const char *name);
+qboolean R_VkResourceRegister(rt_resource_t *res);
+
+// TODO remove these when ping-pong resource is a dedicated type of resource
 rt_resource_t *R_VkResourceGetByIndex(int index);
 int R_VkResourceFindIndexByName(const char *name);
 

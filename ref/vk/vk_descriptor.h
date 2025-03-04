@@ -23,7 +23,6 @@ extern descriptor_pool_t vk_desc_fixme;
 qboolean VK_DescriptorInit( void );
 void VK_DescriptorShutdown( void );
 
-struct xvk_image_s;
 typedef union {
 	VkDescriptorBufferInfo buffer;
 	VkDescriptorImageInfo image;

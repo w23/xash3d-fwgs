@@ -8,27 +8,27 @@
 
 #include <stdlib.h>
 
-#define MAX_VK_RESOURCES 128
-
 static struct {
-	rt_resource_t res[MAX_VK_RESOURCES];
+	ARRAY_DYNAMIC_DECLARE(rt_resource_t*, table);
 } g_res;
 
 void R_VkResourcesInit(void) {
+	arrayDynamicInitT(&g_res.table);
 }
 
 rt_resource_t *R_VkResourceGetByIndex(int index) {
 	ASSERT(index >= 0);
-	ASSERT(index < MAX_VK_RESOURCES);
-	return g_res.res + index;
+	ASSERT(index < g_res.table.count);
+	return g_res.table.items[index];
 }
 
 int R_VkResourceFindIndexByName(const char *name) {
 	// TODO hash table
 	// Find the exact match if exists
 	// There might be gaps, so we need to check everything
-	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
-		if (strcmp(g_res.res[i].name, name) == 0)
+	for (int i = 0; i < g_res.table.count; ++i) {
+		rt_resource_t *const res = g_res.table.items[i];
+		if (strcmp(res->name, name) == 0)
 			return i;
 	}
 
@@ -37,35 +37,32 @@ int R_VkResourceFindIndexByName(const char *name) {
 
 rt_resource_t *R_VkResourceFindByName(const char *name) {
 	const int index = R_VkResourceFindIndexByName(name);
-	return index < 0 ? NULL : g_res.res + index;
+	return index < 0 ? NULL : g_res.table.items[index];
 }
 
-rt_resource_t *R_VkResourceFindOrAlloc(const char *name) {
-	rt_resource_t *const res = R_VkResourceFindByName(name);
-	if (res)
-		return res;
+qboolean R_VkResourceRegister(rt_resource_t *res) {
+	if (R_VkResourceFindByName(res->name))
+		return false;
 
-	// Find first free slot
-	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
-		rt_resource_t *const res = g_res.res + i;
-		if (res->name[0] != '\0')
-			continue;
-
-		Q_strncpy(res->name, name, sizeof(res->name));
-		return res;
-	}
-
-	return NULL;
+	arrayDynamicAppendT(&g_res.table, &res);
+	return true;
 }
 
 void R_VkResourcesCleanup(void) {
-	for (int i = 0; i < MAX_VK_RESOURCES; ++i) {
-		rt_resource_t *const res = g_res.res + i;
+	for (int i = 0; i < g_res.table.count; ++i) {
+		rt_resource_t *const res = g_res.table.items[i];
 		if (!res->name[0] || res->refcount || !res->image.image)
 			continue;
 
+		// TODO resource dtor
+		// FIXME res itself leaks
 		R_VkImageDestroy(&res->image);
-		res->name[0] = '\0';
+
+		// Delete item: replace it last resource into current slot
+		g_res.table.items[i] = g_res.table.items[g_res.table.count-1];
+		g_res.table.count--;
+		g_res.table.items[g_res.table.count] = NULL;
+		i--;
 	}
 }
 

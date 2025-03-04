@@ -216,8 +216,9 @@ void R_VkBufferUnlock(vk_buffer_locked_t lock) {
 }
 
 rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
-	rt_resource_t *const res = R_VkResourceFindOrAlloc(args.name);
-	ASSERT(res);
+	// FIXME this leaks
+	rt_resource_t *const res = Mem_Calloc(vk_core.pool, sizeof(rt_resource_t));
+	Q_strncpy(res->name, args.name, sizeof(res->name));
 
 	res->refcount = 1;
 	res->resource = (vk_resource_t){
@@ -232,6 +233,7 @@ rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t ar
 		}
 	};
 
+	ASSERT(R_VkResourceRegister(res));
 	return res;
 }
 

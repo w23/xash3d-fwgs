@@ -186,6 +186,9 @@ qboolean R_GeometryBuffer_Init(void) {
 		(vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
 		return false;
 
+	registerGeometryBufferAs("vertices");
+	registerGeometryBufferAs("indices");
+
 #define EXPECTED_ALLOCS 1024
 	R_BlocksCreate(&g_geom.alloc, GEOMETRY_BUFFER_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE, EXPECTED_ALLOCS);
 
@@ -194,9 +197,6 @@ qboolean R_GeometryBuffer_Init(void) {
 	R_SPEEDS_METRIC(g_geom.stats.indices, "indices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_vertices, "dyn_vertices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_indices, "dyn_indices", kSpeedsMetricCount);
-
-	registerGeometryBufferAs("vertices");
-	registerGeometryBufferAs("indices");
 
 	return true;
 }

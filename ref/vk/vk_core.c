@@ -15,6 +15,7 @@
 #include "vk_studio.h"
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
+#include "vk_resources.h"
 #include "vk_nv_aftermath.h"
 #include "vk_devmem.h"
 #include "vk_commandpool.h"
@@ -793,6 +794,8 @@ qboolean R_VkInit( void )
 		return false;
 
 	VK_LoadCvarsAfterInit();
+
+	R_VkResourcesInit();
 
 	if (!R_VkImageInit())
 		return false;

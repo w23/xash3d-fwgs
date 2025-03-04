@@ -36,11 +36,14 @@ static struct {
 
 	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
+	rt_resource_t textures_resource;
 
 	vk_texture_t skybox[kSkybox_COUNT];
-	rt_resource_t *skybox_resource;
+	rt_resource_t skybox_resource;
 
+	// TODO is this used as vk_texture_t object anywhere after loading?
 	vk_texture_t blue_noise;
+	rt_resource_t blue_noise_resource;
 
 } g_vktextures;
 
@@ -130,20 +133,23 @@ static void loadBlueNoiseTextures(void) {
 	Mem_Free(scratch);
 
 	{
-		rt_resource_t *const blue_noise_resource = R_VkResourceFindOrAlloc("blue_noise_texture");
-		ASSERT(blue_noise_resource);
-		blue_noise_resource->refcount = 1;
-		blue_noise_resource->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
-				.image = (VkDescriptorImageInfo) {
-					.sampler = g_vktextures.default_sampler,
-					.imageView = g_vktextures.blue_noise.vk.image.view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		// TODO move vk_texture_t blue_noise.vk.image into here
+		g_vktextures.blue_noise_resource = (rt_resource_t) {
+			.name = "blue_noise_texture",
+			.refcount = 1,
+			.resource = (vk_resource_t){
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.value = (vk_descriptor_value_t){
+					.image = (VkDescriptorImageInfo) {
+						.sampler = g_vktextures.default_sampler,
+						.imageView = g_vktextures.blue_noise.vk.image.view,
+						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+					},
 				},
 			},
 		};
-	} // register blue_noise_texture resource
+		ASSERT(R_VkResourceRegister(&g_vktextures.blue_noise_resource));
+	}
 }
 
 qboolean R_VkTexturesInit( void ) {
@@ -183,33 +189,35 @@ qboolean R_VkTexturesInit( void ) {
 	}
 
 	{
-		rt_resource_t *const res_textures = R_VkResourceFindOrAlloc("textures");
-		ASSERT(res_textures);
-		res_textures->refcount = 1;
-		res_textures->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
-				.image_array = g_vktextures.dii_all_textures,
-			}
-		};
-	}
-
-	{
-		rt_resource_t *const res = R_VkResourceFindOrAlloc("skybox");
-		ASSERT(res);
-		res->refcount = 1;
-		res->resource = (vk_resource_t) {
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
-				.image = (VkDescriptorImageInfo) {
-					.sampler = g_vktextures.default_sampler,
-					.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		g_vktextures.textures_resource = (rt_resource_t) {
+			.name = "textures",
+			.refcount = 1,
+			.resource = {
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.value = {
+					.image_array = g_vktextures.dii_all_textures,
 				},
 			},
 		};
+		ASSERT(R_VkResourceRegister(&g_vktextures.textures_resource));
+	}
 
-		g_vktextures.skybox_resource = res;
+	{
+		g_vktextures.skybox_resource = (rt_resource_t) {
+			.name = "skybox",
+			.refcount = 1,
+			.resource = (vk_resource_t) {
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.value = (vk_descriptor_value_t){
+					.image = (VkDescriptorImageInfo) {
+						.sampler = g_vktextures.default_sampler,
+						.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view,
+						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+					},
+				},
+			},
+		};
+		ASSERT(R_VkResourceRegister(&g_vktextures.skybox_resource));
 	}
 
 	if (vk_core.rtx)
@@ -683,9 +691,7 @@ void R_VkTexturesSkyboxUnload(void) {
 	}
 
 	// Revert skybox resource back to the placeholder slot
-	if (g_vktextures.skybox_resource) {
-		g_vktextures.skybox_resource->resource.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
-	}
+	g_vktextures.skybox_resource.resource.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot ) {
@@ -719,15 +725,13 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 	if (!uploaded)
 		return false;
 
-	if (g_vktextures.skybox_resource) {
-		for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
-			vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
-			if (skybox->vk.image.view == VK_NULL_HANDLE)
-				continue;
+	for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
+		vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
+		if (skybox->vk.image.view == VK_NULL_HANDLE)
+			continue;
 
-			g_vktextures.skybox_resource->resource.value.image.imageView = skybox->vk.image.view;
-			break;
-		}
+		g_vktextures.skybox_resource.resource.value.image.imageView = skybox->vk.image.view;
+		break;
 	}
 
 	return uploaded;

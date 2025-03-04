@@ -70,7 +70,7 @@ static struct {
 	r_flipping_buffer_t tlas_geom_buffer_alloc;
 
 	struct {
-		rt_resource_t *resource;
+		rt_resource_t resource;
 		VkAccelerationStructureKHR handle;
 
 		VkAccelerationStructureGeometryKHR geometry;
@@ -446,8 +446,7 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 }
 
 void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	ASSERT(g_accel.tlas.resource);
-	g_accel.tlas.resource->resource = RT_VkAccelProduceTlas(combuf);
+	g_accel.tlas.resource.resource = RT_VkAccelProduceTlas(combuf);
 }
 
 qboolean RT_VkAccelInit(void) {
@@ -487,21 +486,23 @@ qboolean RT_VkAccelInit(void) {
 	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
 
 	{
-		g_accel.tlas.resource = R_VkResourceFindOrAlloc("tlas");
-		ASSERT(g_accel.tlas.resource);
-
-		g_accel.tlas.resource->refcount = 1;
-		g_accel.tlas.resource->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-			.value = (vk_descriptor_value_t){
-				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-					.accelerationStructureCount = 0,
-					.pAccelerationStructures = NULL,
-					.pNext = NULL,
+		g_accel.tlas.resource = (rt_resource_t) {
+			.name = "tlas",
+			.refcount = 1,
+			.resource = (vk_resource_t){
+				.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+				.value = (vk_descriptor_value_t){
+					.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
+						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+						.accelerationStructureCount = 0,
+						.pAccelerationStructures = NULL,
+						.pNext = NULL,
+					},
 				},
 			},
 		};
+
+		ASSERT(R_VkResourceRegister(&g_accel.tlas.resource));
 	}
 
 	return true;

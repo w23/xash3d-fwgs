@@ -248,8 +248,10 @@ static void performTracing( vk_combuf_t* combuf, int set_slot, const ray_pass_tr
 }
 
 static void performCompute( vk_combuf_t *combuf, int set_slot, const ray_pass_compute_impl_t *compute, int width, int height, int scope_id) {
+	// TODO tunable
 	const uint32_t WG_W = 8;
 	const uint32_t WG_H = 8;
+
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 
 	vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline);
