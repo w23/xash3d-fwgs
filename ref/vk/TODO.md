@@ -38,6 +38,7 @@
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 ## 2025-03-04 E396
+- [x] fix discontinuity glitches in rendertests
 - [ ] hide resource internals; rt_resource_t is just a header
     - [x] Disown `rt_resource_t`'s from vk_resources.c -- only store pointers
         - why: rt_resource_t will be an interface with variable size depending on type

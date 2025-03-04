@@ -662,7 +662,7 @@ static void R_VkResourcesFrameBeginStateChangeFIXME(vk_meatpipe_t *meatpipe, vk_
 		if (discontinuity || res->image.sync.write.stage == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
 			WARN("discontinuity: %s", res->name);
-			R_VkImageClear( &res->image, combuf, NULL );
+			R_VkImageClear( &src->image, combuf, NULL );
 		}
 	}
 }
