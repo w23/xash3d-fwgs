@@ -16,4 +16,4 @@ typedef struct {
 	int is_discontinuous;
 } vk_meatpipe_dispatch_t;
 
-void R_VkMeatpipeDispatch(struct vk_meatpipe_s *mp, vk_meatpipe_dispatch_t);
+struct r_vk_image_s* R_VkMeatpipeDispatch(struct vk_meatpipe_s *mp, vk_meatpipe_dispatch_t);

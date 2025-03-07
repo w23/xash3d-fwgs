@@ -46,6 +46,8 @@ typedef struct vk_meatpipe_s {
 	// Helper list of resource pointers to global resource map
 	// Needed as an argument to `R_VkMeatpipePerform()` so that meatpipe can access resources
 	rt_resource_t* *acquired_resources;
+
+	r_vk_image_t *image_dest;
 } vk_meatpipe_t;
 
 struct ray_pass_s;
@@ -478,20 +480,15 @@ void R_VkMeatpipeDestroy(vk_meatpipe_t *mp) {
 	Mem_Free(mp);
 }
 
-static rt_resource_t *createOrFindResourceNamed(const char* name) {
-	// FIXME this leaks
-	rt_resource_t *const found = R_VkResourceFindByName(name);
-	if (found)
-		return found;
 
-	rt_resource_t *const res = Mem_Calloc(vk_core.pool, sizeof(rt_resource_t));
-	Q_strncpy(res->name, name, sizeof(res->name));
+typedef struct {
+	rt_resource_t header;
+	r_vk_image_t image;
+} vk_resource_storage_image_t;
 
-	ASSERT(R_VkResourceRegister(res));
-	return res;
-}
+static vk_descriptor_value_t acquireStorageImageDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
+	vk_resource_storage_image_t *const res = (void*)r;
 
-static vk_descriptor_value_t acquireImageDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
 	const r_vkcombuf_barrier_image_t image_barrier = {
 		.image = &res->image,
 		.layout = args.image_layout,
@@ -501,14 +498,78 @@ static vk_descriptor_value_t acquireImageDescriptor(struct rt_resource_s* res, v
 
 	// TODO how do we make sure that the same image isn't used more than once with different layouts in the same barrier set?
 
-	res->resource__.value.image.imageLayout = args.image_layout;
-	return res->resource__.value;
+	return (vk_descriptor_value_t){
+		.image = (VkDescriptorImageInfo) {
+			.sampler = VK_NULL_HANDLE,
+			.imageView = res->image.view,
+			.imageLayout = args.image_layout,
+		},
+	};
+}
+
+static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *const mr, int max_width, int max_height) {
+	if (mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+		ERR("Only storage image creation is supported for meatpipes");
+		return NULL;
+	}
+
+	vk_resource_storage_image_t *res = NULL;
+	rt_resource_t *found = R_VkResourceFindByName(mr->name);
+	if (found) {
+		if (found->type != mr->descriptor_type) {
+			ERR("Expected resource[%s] type %s(%d) doesn't match registered %s(%d)",
+				mr->name,
+				R_VkDescriptorTypeName(mr->descriptor_type), mr->descriptor_type,
+				R_VkDescriptorTypeName(found->type), found->type);
+			return NULL;
+		}
+
+		// TODO how to check that it's really vk_resource_storage_image_t?
+		res = (void*)found;
+	} else {
+		res = Mem_Calloc(vk_core.pool, sizeof *res);
+		Q_strncpy(res->header.name, mr->name, sizeof(res->header.name));
+		res->header.type = mr->descriptor_type;
+		res->header.acquire_descriptor = acquireStorageImageDescriptor;
+		ASSERT(R_VkResourceRegister(&res->header));
+	}
+
+	const qboolean is_compatible = (res->image.image != VK_NULL_HANDLE)
+		&& (mr->image_format == res->image.format)
+		&& (max_width <= res->image.width)
+		&& (max_height <= res->image.height);
+
+	if (!is_compatible) {
+		if (res->image.image != VK_NULL_HANDLE)
+			R_VkImageDestroy(&res->image);
+
+		const r_vk_image_create_t create = {
+			.debug_name = mr->name,
+			.width = max_width,
+			.height = max_height,
+			.depth = 1,
+			.mips = 1,
+			.layers = 1,
+			.format = mr->image_format,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
+			//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
+			.usage = VK_IMAGE_USAGE_STORAGE_BIT
+				//| VK_IMAGE_USAGE_SAMPLED_BIT // required by VK_IMAGE_LAYOUT_SHADER_READ_OPTIMAL
+				| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+				| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+			.flags = 0,
+		};
+		res->image = R_VkImageCreate(&create);
+	}
+
+	return &res->header;
 }
 
 int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, int max_height) {
 	const size_t newpipe_resources_size = sizeof(rt_resource_t*) * meatpipe->resources_count;
 	rt_resource_t* *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
-	rt_resource_t *newpipe_out = NULL;
+	r_vk_image_t *newpipe_out = NULL;
 
 	// FIXME this is only a verbatim copy of older code, not patched
 	// FIXME this needs full further refactoring:
@@ -525,78 +586,30 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 			R_VkFormatName(mr->image_format),
 			mr->image_format);
 
-		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
-
-		if (create && mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-			ERR("Only storage image creation is supported for meatpipes");
-			goto fail;
-		}
-
 		// TODO this should be specified as a flag, from rt.json
 		const qboolean output = Q_strcmp("dest", mr->name) == 0;
 
-		// FIXME refactor the creation out of this func
-		rt_resource_t *const res = create ? createOrFindResourceNamed(mr->name) : R_VkResourceFindByName(mr->name);
+		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
+
+		rt_resource_t *const res = create
+			? createStorageImageResource(mr, max_width, max_height)
+			: R_VkResourceFindByName(mr->name);
+
 		if (!res) {
-			ERR("Couldn't find resource/slot for %s", mr->name);
+			ERR("Couldn't acquire resource with name \"%s\"", mr->name);
+			goto fail;
+		}
+
+		if (res->type != mr->descriptor_type) {
+			ERR("Expected resource[%s] type %s(%d) doesn't match registered %s(%d)",
+				res->name,
+				R_VkDescriptorTypeName(mr->descriptor_type), mr->descriptor_type,
+				R_VkDescriptorTypeName(res->type), res->type);
 			goto fail;
 		}
 
 		if (output)
-			newpipe_out = res;
-
-		if (create) {
-			const qboolean is_compatible = (res->image.image != VK_NULL_HANDLE)
-				&& (mr->image_format == res->image.format)
-				&& (max_width <= res->image.width)
-				&& (max_height <= res->image.height);
-
-			if (!is_compatible) {
-				if (res->image.image != VK_NULL_HANDLE)
-					R_VkImageDestroy(&res->image);
-
-				// TODO before doing that, check whether this resource has been created, *not found*. Otherwise, check for type compatibility
-				res->type = mr->descriptor_type;
-
-				const r_vk_image_create_t create = {
-					.debug_name = mr->name,
-					.width = max_width,
-					.height = max_height,
-					.depth = 1,
-					.mips = 1,
-					.layers = 1,
-					.format = mr->image_format,
-					.tiling = VK_IMAGE_TILING_OPTIMAL,
-					// TODO figure out how to detect this need properly. prev_dest is not defined as "output"
-					//.usage = VK_IMAGE_USAGE_STORAGE_BIT | (output ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
-					.usage = VK_IMAGE_USAGE_STORAGE_BIT
-						//| VK_IMAGE_USAGE_SAMPLED_BIT // required by VK_IMAGE_LAYOUT_SHADER_READ_OPTIMAL
-						| VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-						| VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-					.flags = 0,
-				};
-				res->image = R_VkImageCreate(&create);
-
-				res->acquire_descriptor = acquireImageDescriptor;
-				res->resource__ = (vk_resource_t) {
-					.value = (vk_descriptor_value_t){
-						.image = (VkDescriptorImageInfo) {
-							.sampler = VK_NULL_HANDLE,
-							.imageView = res->image.view,
-							.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-						},
-					},
-				};
-			}
-		} else {
-			if (res->type != mr->descriptor_type) {
-				ERR("Expected resource[%s] type %s(%d) doesn't match registered %s(%d)",
-					res->name,
-					R_VkDescriptorTypeName(mr->descriptor_type), mr->descriptor_type,
-					R_VkDescriptorTypeName(res->type), res->type);
-				goto fail;
-			}
-		}
+			newpipe_out = &((vk_resource_storage_image_t*)res)->image;
 
 		acquired_resources[i] = res;
 	}
@@ -606,26 +619,39 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 		goto fail;
 	}
 
-	// Resolve prev_ frame resources
+	// Validate prev frame ping pong links
 	for (int i = 0; i < meatpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = meatpipe->resources + i;
 		if (mr->prev_frame_index_plus_1 <= 0)
 			continue;
 
+		if (mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+			ERR("Resource[%s] prev_frame_index_plus_1=%d: unsupported descriptor_type=%s(%d), only storage image is supported",
+				mr->name,
+				mr->prev_frame_index_plus_1,
+				R_VkDescriptorTypeName(mr->descriptor_type),
+				mr->descriptor_type);
+			goto fail;
+		}
+
+		// TODO check, don't crash
 		ASSERT(mr->prev_frame_index_plus_1 < meatpipe->resources_count);
 
 		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
 		ASSERT(res);
+		ASSERT(res->type == mr->descriptor_type);
 
 		const vk_meatpipe_resource_t *pr = meatpipe->resources + (mr->prev_frame_index_plus_1 - 1);
-
-		const int dest_index = R_VkResourceFindIndexByName(pr->name);
-		if (dest_index < 0) {
-			ERR("Couldn't find prev_ resource/slot %s for resource %s", pr->name, mr->name);
+		if (mr->descriptor_type != pr->descriptor_type) {
+			ERR("Current and previous resource typed don't match");
 			goto fail;
 		}
 
-		res->source_index_plus_1 = dest_index + 1;
+		rt_resource_t *const prev = R_VkResourceFindByName(pr->name);
+		ASSERT(prev);
+		ASSERT(prev->type == pr->descriptor_type);
+
+		// TODO check for image compatibility
 	}
 
 	// Loading successful
@@ -646,6 +672,7 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 		meatpipe->acquired_resources = acquired_resources;
 	}
 
+	meatpipe->image_dest = newpipe_out;
 	return 1;
 
 fail:
@@ -657,44 +684,36 @@ fail:
 	return 0;
 }
 
-// FIXME not even sure what this functions is supposed to do in the end
-static void R_VkResourcesFrameBeginStateChangeFIXME(vk_meatpipe_t *meatpipe, vk_combuf_t* combuf, qboolean discontinuity) {
+static void swapPingPongImages(vk_meatpipe_t *meatpipe, vk_combuf_t* combuf, qboolean discontinuity) {
 	// TODO special rt_resource_t ping-pong subclass
 	// Transfer previous frames before they had a chance of their resource-barrier metadata overwritten (as there's no guaranteed order for them)
+	// Assumes resources were validated already
 	for (int i = 0; i < meatpipe->resources_count; ++i) {
 		const vk_meatpipe_resource_t *mr = meatpipe->resources + i;
-		rt_resource_t *const res = R_VkResourceFindByName(mr->name);
-
-		if (!res->name[0] || !res->image.image || res->source_index_plus_1 <= 0)
+		if (mr->prev_frame_index_plus_1 <= 0)
 			continue;
 
-		rt_resource_t *const src = R_VkResourceGetByIndex(res->source_index_plus_1 - 1);
-		ASSERT(res != src);
+		vk_resource_storage_image_t *const write = (void*)meatpipe->acquired_resources[i];
+		vk_resource_storage_image_t *const read = (void*)meatpipe->acquired_resources[mr->prev_frame_index_plus_1 - 1];
 
-		// Swap resources
-		const vk_resource_t tmp_res = res->resource__;
-		const r_vk_image_t tmp_img = res->image;
-
-		res->resource__ = src->resource__;
-		res->image = src->image;
-
-		// TODO this is slightly incorrect, as they technically can have different resource->type values
-		src->resource__ = tmp_res;
-		src->image = tmp_img;
+		// Swap images
+		const r_vk_image_t tmp_img = write->image;
+		write->image = read->image;
+		read->image = tmp_img;
 
 		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (discontinuity || res->image.sync.write.stage == 0) {
+		if (discontinuity || read->image.sync.write.stage == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
-			WARN("discontinuity: %s", res->name);
-			R_VkImageClear( &src->image, combuf, NULL );
+			WARN("discontinuity: %s", read->header.name);
+			R_VkImageClear( &read->image, combuf, NULL );
 		}
 	}
 }
 
-void R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_meatpipe_dispatch_t args) {
+struct r_vk_image_s* R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_meatpipe_dispatch_t args) {
 	APROF_SCOPE_DECLARE_BEGIN(dispatch, __FUNCTION__);
 
-	R_VkResourcesFrameBeginStateChangeFIXME(meatpipe, args.combuf, args.is_discontinuous);
+	swapPingPongImages(meatpipe, args.combuf, args.is_discontinuous);
 
 	const vk_meatpipe_t *const mp = meatpipe;
 	for (int i = 0; i < mp->passes_count; ++i) {
@@ -710,4 +729,6 @@ void R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_meatpipe_dispatch_t
 		);
 	}
 	APROF_SCOPE_END(dispatch);
+
+	return meatpipe->image_dest;
 }

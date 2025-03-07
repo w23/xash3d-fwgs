@@ -1,5 +1,4 @@
 #include "vk_resources.h"
-#include "vk_image.h"
 #include "vk_common.h"
 #include "vk_combuf.h"
 #include "arrays.h"
@@ -51,12 +50,12 @@ qboolean R_VkResourceRegister(rt_resource_t *res) {
 void R_VkResourcesCleanup(void) {
 	for (int i = 0; i < g_res.table.count; ++i) {
 		rt_resource_t *const res = g_res.table.items[i];
-		if (!res->name[0] || res->refcount || !res->image.image)
+		if (!res->name[0] || res->refcount)
 			continue;
 
 		// TODO resource dtor
 		// FIXME res itself leaks
-		R_VkImageDestroy(&res->image);
+		// FIXME R_VkImageDestroy(&res->image);
 
 		// Delete item: replace it last resource into current slot
 		g_res.table.items[i] = g_res.table.items[g_res.table.count-1];

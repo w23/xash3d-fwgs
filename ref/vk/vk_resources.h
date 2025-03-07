@@ -6,11 +6,6 @@
 #include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
 #include "arrays.h"
 
-typedef struct vk_resource_s {
-	// Used for setting descriptor sets to bind
-	vk_descriptor_value_t value;
-} vk_resource_t;
-
 typedef struct vk_resource_acquire_descriptor_args_s {
 	struct vk_combuf_s *combuf;
 	struct r_vk_barrier_s *barriers;
@@ -29,28 +24,7 @@ typedef struct rt_resource_s {
 
 	// Used for tracking meatpipe resources when reloading meatpipes
 	int refcount;
-
-	// Used for meatpipe G-buffer images
-	// FIXME remove
-	r_vk_image_t image;
-
-	// TODO move into acquire_descriptor
-	vk_resource_t resource__;
-
-	// TODO things below are resource-specific
-
-	// Used for ping-pong meatpipe G-buffer images (e.g. for temporal denoiser)
-	int source_index_plus_1;
 } rt_resource_t;
-
-
-// Dummy resource that just returns `descriptor_value` without doing anything else
-typedef struct rt_resource_dummy_s {
-	rt_resource_t header;
-	vk_descriptor_value_t descriptor_value;
-} rt_resource_dummy_t;
-
-void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType, vk_descriptor_value_t);
 
 
 void R_VkResourcesInit(void);
@@ -72,6 +46,15 @@ typedef struct r_vk_barrier_s {
 } r_vk_barrier_t;
 
 void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
+
+
+// Dummy resource that just returns `descriptor_value` without doing anything else
+typedef struct rt_resource_dummy_s {
+	rt_resource_t header;
+	vk_descriptor_value_t descriptor_value;
+} rt_resource_dummy_t;
+
+void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType, vk_descriptor_value_t);
 
 
 typedef struct vk_resource_buffer_t {

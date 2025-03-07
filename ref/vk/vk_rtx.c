@@ -212,7 +212,7 @@ typedef struct {
 	int frame_width, frame_height;
 } perform_tracing_args_t;
 
-static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
+static r_vk_image_t* performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* args) {
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
@@ -220,7 +220,7 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
 
 	ASSERT(g_rtx.meatpipe);
-	R_VkMeatpipeDispatch(g_rtx.meatpipe, (vk_meatpipe_dispatch_t){
+	r_vk_image_t *const ret = R_VkMeatpipeDispatch(g_rtx.meatpipe, (vk_meatpipe_dispatch_t){
 		.combuf = combuf,
 		.frame_set_slot = args->frame_index,
 		.width = args->frame_width,
@@ -235,6 +235,8 @@ static void performTracing( vk_combuf_t *combuf, const perform_tracing_args_t* a
 
 	DEBUG_END(cmdbuf);
 	APROF_SCOPE_END(perform);
+
+	return ret;
 }
 
 static void destroyMeatpipe(void) {
@@ -331,9 +333,8 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	if (!args->dst->image)
 		goto tail;
 
-	ASSERT(g_rtx.meatpipe_out);
 	if (!RT_VkAccelBuildTlas_FIXME(args->combuf)) {
-		R_VkImageClear( &g_rtx.meatpipe_out->image, args->combuf, NULL );
+		R_VkImageClear( args->dst, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
 			.render_args = args,
@@ -343,13 +344,11 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 			.frame_width = frame_width,
 			.frame_height = frame_height,
 		};
-		performTracing( args->combuf, &trace_args );
-	}
-
-	{
+		r_vk_image_t *const result = performTracing( args->combuf, &trace_args );
+		ASSERT(g_rtx.meatpipe_out);
 		const r_vkimage_blit_args blit_args = {
 			.src = {
-				.image = &g_rtx.meatpipe_out->image,
+				.image = result,
 				.width = frame_width,
 				.height = frame_height,
 			},

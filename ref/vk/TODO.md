@@ -45,8 +45,9 @@
 - [ ] resource types
 	- [x] buffer pointer type (non-owning)
 	- [x] TLAS type
-	- [ ] storage image pointer type (non-owning)
-	- [ ] ping-pong images
+	- [x] storage image pointer type (non-owning)
+	- [-] ping-pong images
+- [ ] add resource dtors
 
 ## 2025-03-06 EN/A offline
 - [ ] hide resource internals; rt_resource_t is just a header
