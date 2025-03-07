@@ -14,12 +14,13 @@ typedef struct vk_resource_acquire_descriptor_args_s {
 } vk_resource_acquire_descriptor_args_t;
 
 struct rt_resource_s;
+typedef void (vk_resource_dtor_f)(struct rt_resource_s*);
 typedef vk_descriptor_value_t (vk_resource_acquire_descriptor_f)(struct rt_resource_s*, vk_resource_acquire_descriptor_args_t);
 
 typedef struct rt_resource_s {
 	char name[64];
 	VkDescriptorType type;
-	// TODO dtor
+	vk_resource_dtor_f *destroy;
 	vk_resource_acquire_descriptor_f *acquire_descriptor;
 
 	// Used for tracking meatpipe resources when reloading meatpipes

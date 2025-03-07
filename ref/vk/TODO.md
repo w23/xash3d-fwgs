@@ -36,7 +36,6 @@
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Next
-- [ ] add resource dtors
 ## Barriers issues
 - [ ] no meatpipe g-buffer barriers?!
 - [ ] skybox texture usage issues noop barrier for some reason
@@ -47,6 +46,8 @@
 	- [x] TLAS type
 	- [x] storage image pointer type (non-owning)
 	- [-] ping-pong images
+### Off-stream
+- [x] add resource dtors
 
 ## 2025-03-06 EN/A offline
 - [ ] hide resource internals; rt_resource_t is just a header

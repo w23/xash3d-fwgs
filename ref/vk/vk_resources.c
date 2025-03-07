@@ -53,9 +53,8 @@ void R_VkResourcesCleanup(void) {
 		if (!res->name[0] || res->refcount)
 			continue;
 
-		// TODO resource dtor
-		// FIXME res itself leaks
-		// FIXME R_VkImageDestroy(&res->image);
+		if (res->destroy)
+			res->destroy(res);
 
 		// Delete item: replace it last resource into current slot
 		g_res.table.items[i] = g_res.table.items[g_res.table.count-1];

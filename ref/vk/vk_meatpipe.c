@@ -507,6 +507,13 @@ static vk_descriptor_value_t acquireStorageImageDescriptor(struct rt_resource_s*
 	};
 }
 
+static void destroyStorageImage(rt_resource_t *r) {
+	vk_resource_storage_image_t *const res = (void*)r;
+	if (res->image.image != VK_NULL_HANDLE)
+		R_VkImageDestroy(&res->image);
+	Mem_Free(res);
+}
+
 static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *const mr, int max_width, int max_height) {
 	if (mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 		ERR("Only storage image creation is supported for meatpipes");
@@ -530,6 +537,7 @@ static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *c
 		res = Mem_Calloc(vk_core.pool, sizeof *res);
 		Q_strncpy(res->header.name, mr->name, sizeof(res->header.name));
 		res->header.type = mr->descriptor_type;
+		res->header.destroy = destroyStorageImage;
 		res->header.acquire_descriptor = acquireStorageImageDescriptor;
 		ASSERT(R_VkResourceRegister(&res->header));
 	}
@@ -571,10 +579,8 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 	rt_resource_t* *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
 	r_vk_image_t *newpipe_out = NULL;
 
-	// FIXME this is only a verbatim copy of older code, not patched
-	// FIXME this needs full further refactoring:
-	// - acquire/release resources properly
-	// - recreate images later -- only when we're sure that older resources won't be used anymore
+	// TODO acquire/release resources properly
+	// TODO recreate images later -- only when we're sure that older resources won't be used anymore
 	// - etc
 
 	for (int i = 0; i < meatpipe->resources_count; ++i) {
