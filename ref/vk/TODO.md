@@ -1,6 +1,4 @@
-## Next
-
-## Upcoming
+# Upcoming
 - [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
@@ -37,17 +35,18 @@
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
+# Next
+- [ ] add resource dtors
 ## Barriers issues
 - [ ] no meatpipe g-buffer barriers?!
 - [ ] skybox texture usage issues noop barrier for some reason
 
 ## 2025-03-07 E398 resograph p.3
-- [ ] resource types
+- [x] resource types
 	- [x] buffer pointer type (non-owning)
 	- [x] TLAS type
 	- [x] storage image pointer type (non-owning)
 	- [-] ping-pong images
-- [ ] add resource dtors
 
 ## 2025-03-06 EN/A offline
 - [ ] hide resource internals; rt_resource_t is just a header
