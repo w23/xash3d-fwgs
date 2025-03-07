@@ -268,34 +268,25 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 	const int num_bindings = pass->desc.riptors.num_bindings;
 	for (int i = 0; i < num_bindings; ++i) {
 		const int index = args.resources_map ? args.resources_map[i] : i;
-		vk_resource_t* const res = &args.resources[index]->resource;
-
+		rt_resource_t* const res = args.resources[index];
 		const qboolean write = i >= pass->desc.write_from;
-		R_VkResourceAddToBarrier(res, write, pass->pipeline_type, &barrier);
+
+		ASSERT(pass->desc.riptors.bindings[i].descriptorType == res->type);
+
+		pass->desc.riptors.values[i] = res->acquire_descriptor(res, (vk_resource_acquire_descriptor_args_t){
+			.combuf = combuf,
+			.barriers = &barrier,
+			.access = write ? VK_ACCESS_2_SHADER_WRITE_BIT : VK_ACCESS_2_SHADER_READ_BIT,
+			// Image must remain in GENERAL layout regardless of r/w.
+			// Storage image reads still require GENERAL, not SHADER_READ_ONLY_OPTIMAL
+			// TODO figure out why exactly -- i remain not convinced
+			// Also, layout var only makes sense for images, for other descriptor types it is ignored.
+			.image_layout = VK_IMAGE_LAYOUT_GENERAL,
+		});
 	}
 
 	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
 	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
-
-	for (int i = 0; i < num_bindings; ++i) {
-		const int index = args.resources_map ? args.resources_map[i] : i;
-		vk_resource_t* const res = &args.resources[index]->resource;
-
-		const vk_descriptor_value_t *const src_value = &res->value;
-		vk_descriptor_value_t *const dst_value = pass->desc.riptors.values + i;
-
-		// layout is only known after barrier
-		// FIXME this is not true, it can be known earlier
-		if (res->type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-			dst_value->image = (VkDescriptorImageInfo) {
-				.imageLayout = res->ref.image->sync.layout,
-				.imageView = res->ref.image->view,
-				.sampler = VK_NULL_HANDLE,
-			};
-		} else {
-			*dst_value = *src_value;
-		}
-	}
 
 	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
 

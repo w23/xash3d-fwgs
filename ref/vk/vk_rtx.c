@@ -158,7 +158,7 @@ static uint32_t getRandomSeed( void ) {
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
 	const size_t ubo_slot_offset = frame_index * g_rtx.uniform_unit_size;
 	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + ubo_slot_offset);
-	g_rtx.uniform_buffer_resource->resource.value.buffer.offset = ubo_slot_offset;
+	g_rtx.uniform_buffer_resource->resource__.value.buffer.offset = ubo_slot_offset;
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -338,7 +338,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	ASSERT(tlas);
 	ASSERT(g_rtx.meatpipe_out);
 	RT_VkAccelBuildTlas_FIXME(args->combuf);
-	if (tlas->resource.value.accel.accelerationStructureCount == 0) {
+	if (tlas->resource__.value.accel.accelerationStructureCount == 0) {
 		R_VkImageClear( &g_rtx.meatpipe_out->image, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
@@ -444,6 +444,8 @@ qboolean VK_RayInit( void )
 		.offset = 0, // Will be set dynamically each frame
 		.size = sizeof(struct UniformBuffer),
 	});
+	// FIXME
+	g_rtx.uniform_buffer_resource->type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
 	if (!kusochkiCreate()) {
 		// TODO cleanup

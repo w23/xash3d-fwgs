@@ -7,9 +7,6 @@
 #include "arrays.h"
 
 typedef struct vk_resource_s {
-	// Used for adding resource into correct typed barriers arrays (images and buffers)
-	VkDescriptorType type;
-
 	// Used for setting descriptor sets to bind
 	vk_descriptor_value_t value;
 
@@ -22,11 +19,22 @@ typedef struct vk_resource_s {
 
 typedef struct vk_resource_s *vk_resource_p;
 
+typedef struct vk_resource_acquire_descriptor_args_s {
+	struct vk_combuf_s *combuf;
+	struct r_vk_barrier_s *barriers;
+	VkAccessFlags2 access;
+	VkImageLayout image_layout;
+} vk_resource_acquire_descriptor_args_t;
+
+typedef vk_descriptor_value_t (vk_resource_acquire_descriptor_f)(struct rt_resource_s*, vk_resource_acquire_descriptor_args_t);
+
 typedef struct rt_resource_s {
 	char name[64];
+	VkDescriptorType type;
+	vk_resource_acquire_descriptor_f *acquire_descriptor;
 
-	// TODO move into producer
-	vk_resource_t resource;
+	// TODO move into acquire_descriptor
+	vk_resource_t resource__;
 
 	// TODO things below are resource-specific
 
@@ -53,11 +61,11 @@ int R_VkResourceFindIndexByName(const char *name);
 void R_VkResourcesCleanup(void);
 
 
-typedef struct {
+typedef struct r_vk_barrier_s {
 	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 32);
 	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
 } r_vk_barrier_t;
 
 void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
 
-void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags2 dst_stage_mask, r_vk_barrier_t *barrier);
+//void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, r_vk_barrier_t *barrier);

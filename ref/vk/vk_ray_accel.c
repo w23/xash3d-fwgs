@@ -323,7 +323,6 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	if (instances_count == 0) {
 		APROF_SCOPE_END(prepare);
 		return (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
 			.value = (vk_descriptor_value_t){
 				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
 					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
@@ -433,7 +432,6 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 
 	APROF_SCOPE_END(prepare);
 	return (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
 		.value = (vk_descriptor_value_t){
 			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
 				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
@@ -446,7 +444,13 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 }
 
 void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	g_accel.tlas.resource.resource = RT_VkAccelProduceTlas(combuf);
+	g_accel.tlas.resource.resource__ = RT_VkAccelProduceTlas(combuf);
+}
+
+static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
+	(void)args;
+	// TODO barrier
+	return res->resource__.value;
 }
 
 qboolean RT_VkAccelInit(void) {
@@ -488,9 +492,10 @@ qboolean RT_VkAccelInit(void) {
 	{
 		g_accel.tlas.resource = (rt_resource_t) {
 			.name = "tlas",
+			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+			.acquire_descriptor = acquireTlasDescriptor,
 			.refcount = 1,
-			.resource = (vk_resource_t){
-				.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+			.resource__ = (vk_resource_t){
 				.value = (vk_descriptor_value_t){
 					.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
 						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,

@@ -1227,3 +1227,15 @@ What do we want? Resources and producers! When do we want it? Maybe next stream.
     - make a simple perf query test app (and put it on github or something)
     - just try force-enabling perf query on `GFX10` (bc250 is gfx1013)
 	- if fails: more research is needed, probably unfeasible at my skill level
+
+# 2025-03-05 E397
+## Abstract graph solver
+- `struct resource`
+	- type()
+	- descriptor()
+	- producer() ->
+- `struct producer`
+	- dependencies[] -> resource
+	- results[] -> resource
+	- dispatch(combuf, barriers)
+

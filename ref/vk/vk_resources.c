@@ -67,44 +67,6 @@ void R_VkResourcesCleanup(void) {
 }
 
 
-static void barrierAddBuffer(r_vk_barrier_t *barrier, vk_buffer_t *buf, VkAccessFlags access) {
-	const r_vkcombuf_barrier_buffer_t bb = {
-		.buffer = buf,
-		.access = access,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(barrier->buffers, bb);
-}
-
-void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, VkPipelineStageFlags2 dst_stage_mask, r_vk_barrier_t *barrier) {
-	switch (res->type) {
-		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-			{
-				const r_vkcombuf_barrier_image_t image_barrier = {
-					.image = res->ref.image,
-					// Image must remain in GENERAL layout regardless of r/w.
-					// Storage image reads still require GENERAL, not SHADER_READ_ONLY_OPTIMAL
-					.layout = VK_IMAGE_LAYOUT_GENERAL,
-					.access = write ? VK_ACCESS_2_SHADER_WRITE_BIT : VK_ACCESS_2_SHADER_READ_BIT,
-				};
-				BOUNDED_ARRAY_APPEND_ITEM(barrier->images, image_barrier);
-			}
-			break;
-		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-			ASSERT(!write);
-			barrierAddBuffer(barrier, res->ref.buffer, VK_ACCESS_2_SHADER_READ_BIT);
-			break;
-		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-			// nothing for now, as all textures are static at this point
-			break;
-		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-			// nop
-			break;
-		default:
-			ASSERT(!"Unsupported descriptor type");
-	}
-}
-
 void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask) {
 	if (barrier->images.count == 0 && barrier->buffers.count == 0)
 		return;

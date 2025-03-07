@@ -37,6 +37,14 @@
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
+## 2025-03-05 E397
+- [ ] hide resource internals; rt_resource_t is just a header
+    - [ ] `rt_resource_t` interface spec/API
+		- [x] acquire_descriptor func
+	- [ ] regular images
+	- [ ] buffers
+	- [ ] ping-pong images
+
 ## 2025-03-04 E396
 - [x] fix discontinuity glitches in rendertests
 - [ ] hide resource internals; rt_resource_t is just a header
@@ -44,10 +52,6 @@
         - why: rt_resource_t will be an interface with variable size depending on type
         - [x] vk_resources module only stores pointers
         - [x] replace alloc with register
-    - [ ] `rt_resource_t` interface spec/API
-	- [ ] regular images
-	- [ ] buffers
-	- [ ] ping-pong images
 
 ## 2025-02-26 EN/A: offline
 - [x] Metapass sketch

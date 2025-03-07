@@ -50,6 +50,20 @@ static struct {
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
 
+static vk_descriptor_value_t acquireTextureResourceDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
+	const r_vkcombuf_barrier_image_t image_barrier = {
+		.image = res->resource__.ref.image,
+		.layout = args.image_layout,
+		.access = args.access,
+	};
+	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->images, image_barrier);
+	return res->resource__.value;
+}
+
+static vk_descriptor_value_t acquireTexturesResourceDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
+	return res->resource__.value;
+}
+
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
 #define BLUE_NOISE_NAME_F "bluenoise/LDR_RGBA_%d.png"
@@ -136,9 +150,10 @@ static void loadBlueNoiseTextures(void) {
 		// TODO move vk_texture_t blue_noise.vk.image into here
 		g_vktextures.blue_noise_resource = (rt_resource_t) {
 			.name = "blue_noise_texture",
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.refcount = 1,
-			.resource = (vk_resource_t){
-				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.acquire_descriptor = acquireTextureResourceDescriptor,
+			.resource__ = (vk_resource_t){
 				.value = (vk_descriptor_value_t){
 					.image = (VkDescriptorImageInfo) {
 						.sampler = g_vktextures.default_sampler,
@@ -146,6 +161,7 @@ static void loadBlueNoiseTextures(void) {
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					},
 				},
+				.ref.image = &g_vktextures.blue_noise.vk.image,
 			},
 		};
 		ASSERT(R_VkResourceRegister(&g_vktextures.blue_noise_resource));
@@ -191,9 +207,10 @@ qboolean R_VkTexturesInit( void ) {
 	{
 		g_vktextures.textures_resource = (rt_resource_t) {
 			.name = "textures",
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.refcount = 1,
-			.resource = {
-				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.acquire_descriptor = acquireTexturesResourceDescriptor,
+			.resource__ = {
 				.value = {
 					.image_array = g_vktextures.dii_all_textures,
 				},
@@ -205,9 +222,10 @@ qboolean R_VkTexturesInit( void ) {
 	{
 		g_vktextures.skybox_resource = (rt_resource_t) {
 			.name = "skybox",
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			.refcount = 1,
-			.resource = (vk_resource_t) {
-				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.acquire_descriptor = acquireTextureResourceDescriptor,
+			.resource__ = (vk_resource_t) {
 				.value = (vk_descriptor_value_t){
 					.image = (VkDescriptorImageInfo) {
 						.sampler = g_vktextures.default_sampler,
@@ -215,6 +233,7 @@ qboolean R_VkTexturesInit( void ) {
 						.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 					},
 				},
+				.ref.image = &g_vktextures.skybox[kSkyboxPlaceholder].vk.image,
 			},
 		};
 		ASSERT(R_VkResourceRegister(&g_vktextures.skybox_resource));
@@ -691,7 +710,7 @@ void R_VkTexturesSkyboxUnload(void) {
 	}
 
 	// Revert skybox resource back to the placeholder slot
-	g_vktextures.skybox_resource.resource.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
+	g_vktextures.skybox_resource.resource__.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot ) {
@@ -730,7 +749,7 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 		if (skybox->vk.image.view == VK_NULL_HANDLE)
 			continue;
 
-		g_vktextures.skybox_resource.resource.value.image.imageView = skybox->vk.image.view;
+		g_vktextures.skybox_resource.resource__.value.image.imageView = skybox->vk.image.view;
 		break;
 	}
 
