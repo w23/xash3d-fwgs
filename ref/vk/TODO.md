@@ -41,8 +41,9 @@
 - [ ] hide resource internals; rt_resource_t is just a header
 	- [ ] resource types
 		- [x] dummy "return descriptors" type, no barriers
+		- [x] sampled image pointer type (non-owning)
 		- [ ] buffer pointer type (non-owning)
-		- [ ] image pointer type (non-owning)
+		- [ ] storage image pointer type (non-owning)
 		- [ ] TLAS type
 		- [ ] ping-pong images
 
