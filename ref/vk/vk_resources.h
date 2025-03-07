@@ -31,22 +31,34 @@ typedef vk_descriptor_value_t (vk_resource_acquire_descriptor_f)(struct rt_resou
 typedef struct rt_resource_s {
 	char name[64];
 	VkDescriptorType type;
+	// TODO dtor
 	vk_resource_acquire_descriptor_f *acquire_descriptor;
+
+	// Used for tracking meatpipe resources when reloading meatpipes
+	int refcount;
+
+	// Used for meatpipe G-buffer images
+	// FIXME remove
+	r_vk_image_t image;
 
 	// TODO move into acquire_descriptor
 	vk_resource_t resource__;
 
 	// TODO things below are resource-specific
 
-	// Used for meatpipe G-buffer images
-	r_vk_image_t image;
-
-	// Used for tracking meatpipe resources when reloading meatpipes
-	int refcount;
-
 	// Used for ping-pong meatpipe G-buffer images (e.g. for temporal denoiser)
 	int source_index_plus_1;
 } rt_resource_t;
+
+
+// Dummy resource that just returns `descriptor_value` without doing anything else
+typedef struct rt_resource_dummy_s {
+	rt_resource_t header;
+	vk_descriptor_value_t descriptor_value;
+} rt_resource_dummy_t;
+
+void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType, vk_descriptor_value_t);
+
 
 void R_VkResourcesInit(void);
 

@@ -36,7 +36,7 @@ static struct {
 
 	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
-	rt_resource_t textures_resource;
+	rt_resource_dummy_t textures_resource;
 
 	vk_texture_t skybox[kSkybox_COUNT];
 	rt_resource_t skybox_resource;
@@ -57,10 +57,6 @@ static vk_descriptor_value_t acquireTextureResourceDescriptor(struct rt_resource
 		.access = args.access,
 	};
 	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->images, image_barrier);
-	return res->resource__.value;
-}
-
-static vk_descriptor_value_t acquireTexturesResourceDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
 	return res->resource__.value;
 }
 
@@ -205,18 +201,13 @@ qboolean R_VkTexturesInit( void ) {
 	}
 
 	{
-		g_vktextures.textures_resource = (rt_resource_t) {
-			.name = "textures",
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.refcount = 1,
-			.acquire_descriptor = acquireTexturesResourceDescriptor,
-			.resource__ = {
-				.value = {
-					.image_array = g_vktextures.dii_all_textures,
-				},
-			},
-		};
-		ASSERT(R_VkResourceRegister(&g_vktextures.textures_resource));
+		R_VkResourceDummyInit(&g_vktextures.textures_resource,
+			"textures",
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			(vk_descriptor_value_t) {
+				.image_array = g_vktextures.dii_all_textures,
+			});
+		ASSERT(R_VkResourceRegister(&g_vktextures.textures_resource.header));
 	}
 
 	{

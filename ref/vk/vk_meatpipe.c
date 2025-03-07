@@ -586,8 +586,6 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 							.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 						},
 					},
-					// FIXME ...
-					.ref.image = &res->image,
 				};
 			}
 		} else {
@@ -697,20 +695,6 @@ void R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_meatpipe_dispatch_t
 	APROF_SCOPE_DECLARE_BEGIN(dispatch, __FUNCTION__);
 
 	R_VkResourcesFrameBeginStateChangeFIXME(meatpipe, args.combuf, args.is_discontinuous);
-
-	// Update image resource links after the prev_-related swap above
-	// TODO Preserve the indexes somewhere to avoid searching
-	// FIXME I don't really get why we need this, the pointers should have been preserved ?!
-	for (int i = 0; i < meatpipe->resources_count; ++i) {
-		const vk_meatpipe_resource_t *mr = meatpipe->resources + i;
-		rt_resource_t *const res = meatpipe->acquired_resources[i];
-
-		// TODO store fetched resources, do not lookup every time
-		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
-		if (create && mr->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-			// THIS FAILS WHY?! ASSERT(g_rtx.mainpipe_resources[i]->value.image_object == &res->image);
-			meatpipe->acquired_resources[i]->resource__.ref.image = &res->image;
-	}
 
 	const vk_meatpipe_t *const mp = meatpipe;
 	for (int i = 0; i < mp->passes_count; ++i) {

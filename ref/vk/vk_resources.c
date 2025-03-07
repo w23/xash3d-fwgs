@@ -83,3 +83,16 @@ void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineS
 	barrier->images.count = 0;
 	barrier->buffers.count = 0;
 }
+
+static vk_descriptor_value_t acquireDummyDescriptor(struct rt_resource_s *res, vk_resource_acquire_descriptor_args_t args) {
+	(void)args;
+	rt_resource_dummy_t *const dummy = (void*)res;
+	return dummy->descriptor_value;
+}
+
+void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType type, vk_descriptor_value_t value) {
+	Q_strncpy(res->header.name, name, sizeof(res->header.name));
+	res->header.acquire_descriptor = acquireDummyDescriptor;
+	res->header.type = type;
+	res->descriptor_value = value;
+}
