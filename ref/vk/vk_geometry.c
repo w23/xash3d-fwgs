@@ -172,6 +172,7 @@ void R_GeometryBuffer_MapClear( void ) {
 static void registerGeometryBufferAs(const char *name) {
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = name,
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_geom.buffer,
 		.offset = 0,
 		.size = g_geom.buffer.size,

@@ -32,7 +32,7 @@ static struct {
 	// Holds UniformBuffer data
 	vk_buffer_t uniform_buffer;
 	uint32_t uniform_unit_size;
-	rt_resource_t *uniform_buffer_resource;
+	vk_resource_buffer_t *uniform_buffer_resource;
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
@@ -158,7 +158,7 @@ static uint32_t getRandomSeed( void ) {
 static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
 	const size_t ubo_slot_offset = frame_index * g_rtx.uniform_unit_size;
 	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + ubo_slot_offset);
-	g_rtx.uniform_buffer_resource->resource__.value.buffer.offset = ubo_slot_offset;
+	g_rtx.uniform_buffer_resource->offset = ubo_slot_offset;
 
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
@@ -386,6 +386,7 @@ static qboolean kusochkiCreate(void) {
 
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "kusochki",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_ray_model_state.kusochki_buffer,
 		.offset = 0,
 		.size = g_ray_model_state.kusochki_buffer.size,
@@ -405,6 +406,7 @@ static qboolean modelHeadersCreate(void) {
 
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "model_headers",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_ray_model_state.model_headers_buffer,
 		.offset = 0,
 		.size = g_ray_model_state.model_headers_buffer.size,
@@ -440,12 +442,11 @@ qboolean VK_RayInit( void )
 
 	g_rtx.uniform_buffer_resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "ubo",
+		.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 		.buffer = &g_rtx.uniform_buffer,
 		.offset = 0, // Will be set dynamically each frame
 		.size = sizeof(struct UniformBuffer),
 	});
-	// FIXME
-	g_rtx.uniform_buffer_resource->type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
 	if (!kusochkiCreate()) {
 		// TODO cleanup

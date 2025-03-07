@@ -215,38 +215,6 @@ void R_VkBufferUnlock(vk_buffer_locked_t lock) {
 	// Nothing to do?
 }
 
-static vk_descriptor_value_t acquireBufferResourceDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
-	const r_vkcombuf_barrier_buffer_t bb = {
-		.buffer = res->resource__.ref.buffer, // FIXME direct reference from buffer-specific rt_resource_t subclass, instead of relying on vk_resource_t
-		.access = args.access,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->buffers, bb);
-	return res->resource__.value;
-}
-
-rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
-	// FIXME this leaks
-	rt_resource_t *const res = Mem_Calloc(vk_core.pool, sizeof(rt_resource_t));
-	Q_strncpy(res->name, args.name, sizeof(res->name));
-
-	res->type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-	res->refcount = 1;
-	res->acquire_descriptor = acquireBufferResourceDescriptor;
-	res->resource__ = (vk_resource_t){
-		.ref.buffer = args.buffer, // TODO move to this specific rt_resource_t subclass
-		.value = (vk_descriptor_value_t) {
-			.buffer = (VkDescriptorBufferInfo) {
-				.buffer = args.buffer->buffer,
-				.offset = args.offset,
-				.range = args.size,
-			}
-		}
-	};
-
-	ASSERT(R_VkResourceRegister(res));
-	return res;
-}
-
 void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	r_vk_staging_buffer_t *const stb = findExistingStagingSlotForBuffer(buf);
 	if (!stb || stb->regions.count == 0)

@@ -37,15 +37,18 @@
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
+## 2025-03-07 E398 resograph p.3
+- [ ] resource types
+	- [x] buffer pointer type (non-owning)
+	- [ ] storage image pointer type (non-owning)
+	- [ ] TLAS type
+	- [ ] ping-pong images
+
 ## 2025-03-06 EN/A offline
 - [ ] hide resource internals; rt_resource_t is just a header
 	- [ ] resource types
 		- [x] dummy "return descriptors" type, no barriers
 		- [x] sampled image pointer type (non-owning)
-		- [ ] buffer pointer type (non-owning)
-		- [ ] storage image pointer type (non-owning)
-		- [ ] TLAS type
-		- [ ] ping-pong images
 
 ## 2025-03-05 E397
 - [ ] hide resource internals; rt_resource_t is just a header

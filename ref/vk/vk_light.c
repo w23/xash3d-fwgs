@@ -11,6 +11,7 @@
 #include "r_speeds.h"
 #include "vk_logs.h"
 #include "vk_framectl.h"
+#include "vk_resources.h"
 
 #include "mod_local.h"
 #include "xash3d_mathlib.h"
@@ -110,6 +111,7 @@ qboolean VK_LightsInit( void ) {
 
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "lights",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_lights_.buffer,
 		.offset = 0,
 		.size = sizeof(struct LightsMetadata),
@@ -117,6 +119,7 @@ qboolean VK_LightsInit( void ) {
 
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "light_grid",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_lights_.buffer,
 		.offset = sizeof(struct LightsMetadata),
 		.size = sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS,

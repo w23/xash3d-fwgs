@@ -96,3 +96,38 @@ void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescrip
 	res->header.type = type;
 	res->descriptor_value = value;
 }
+
+static vk_descriptor_value_t acquireBufferResourceDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
+	vk_resource_buffer_t *const res = (void*)r;
+
+	const r_vkcombuf_barrier_buffer_t bb = {
+		.buffer = res->buffer,
+		.access = args.access,
+	};
+	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->buffers, bb);
+
+	return (vk_descriptor_value_t) {
+		.buffer = (VkDescriptorBufferInfo) {
+			.buffer = res->buffer->buffer,
+			.offset = res->offset,
+			.range = res->size,
+		}
+	};
+}
+
+vk_resource_buffer_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
+	// FIXME this leaks, add dtor?
+	vk_resource_buffer_t *const res = Mem_Calloc(vk_core.pool, sizeof *res);
+
+	Q_strncpy(res->header.name, args.name, sizeof(res->header.name));
+	res->header.type = args.type;
+	res->header.acquire_descriptor = acquireBufferResourceDescriptor;
+	res->header.refcount = 1;
+
+	res->buffer = args.buffer;
+	res->offset = args.offset;
+	res->size = args.size;
+
+	ASSERT(R_VkResourceRegister(&res->header));
+	return res;
+}

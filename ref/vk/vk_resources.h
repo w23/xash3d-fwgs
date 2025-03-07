@@ -9,12 +9,6 @@
 typedef struct vk_resource_s {
 	// Used for setting descriptor sets to bind
 	vk_descriptor_value_t value;
-
-	// Used for barriers "only"
-	union {
-		vk_buffer_t *buffer;
-		r_vk_image_t *image;
-	} ref;
 } vk_resource_t;
 
 typedef struct vk_resource_s *vk_resource_p;
@@ -26,6 +20,7 @@ typedef struct vk_resource_acquire_descriptor_args_s {
 	VkImageLayout image_layout;
 } vk_resource_acquire_descriptor_args_t;
 
+struct rt_resource_s;
 typedef vk_descriptor_value_t (vk_resource_acquire_descriptor_f)(struct rt_resource_s*, vk_resource_acquire_descriptor_args_t);
 
 typedef struct rt_resource_s {
@@ -80,4 +75,20 @@ typedef struct r_vk_barrier_s {
 
 void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
 
-//void R_VkResourceAddToBarrier(vk_resource_t *res, qboolean write, r_vk_barrier_t *barrier);
+
+typedef struct vk_resource_buffer_t {
+	rt_resource_t header;
+	vk_buffer_t *buffer;
+	size_t offset;
+	size_t size;
+} vk_resource_buffer_t;
+
+typedef struct {
+	const char *name;
+	VkDescriptorType type;
+	vk_buffer_t *buffer;
+	size_t offset;
+	size_t size;
+} r_vkbuffer_register_as_resource_t;
+
+vk_resource_buffer_t *R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args);
