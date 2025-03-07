@@ -37,11 +37,15 @@
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
+## Barriers issues
+- [ ] no meatpipe g-buffer barriers?!
+- [ ] skybox texture usage issues noop barrier for some reason
+
 ## 2025-03-07 E398 resograph p.3
 - [ ] resource types
 	- [x] buffer pointer type (non-owning)
+	- [x] TLAS type
 	- [ ] storage image pointer type (non-owning)
-	- [ ] TLAS type
 	- [ ] ping-pong images
 
 ## 2025-03-06 EN/A offline

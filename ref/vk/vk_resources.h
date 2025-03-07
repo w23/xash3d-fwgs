@@ -11,8 +11,6 @@ typedef struct vk_resource_s {
 	vk_descriptor_value_t value;
 } vk_resource_t;
 
-typedef struct vk_resource_s *vk_resource_p;
-
 typedef struct vk_resource_acquire_descriptor_args_s {
 	struct vk_combuf_s *combuf;
 	struct r_vk_barrier_s *barriers;

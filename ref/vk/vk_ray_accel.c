@@ -9,6 +9,7 @@
 #include "vk_geometry.h"
 #include "vk_render.h"
 #include "vk_logs.h"
+#include "vk_resources.h"
 
 #include "arrays.h"
 #include "profiler.h"
@@ -315,23 +316,14 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	g_accel.build.range_infos.count = 0;
 }
 
-static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
+static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 
 	const uint32_t instances_count = g_accel.frame.instances.count;
 
 	if (instances_count == 0) {
 		APROF_SCOPE_END(prepare);
-		return (vk_resource_t){
-			.value = (vk_descriptor_value_t){
-				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-					.accelerationStructureCount = 0,
-					.pAccelerationStructures = NULL,
-					.pNext = NULL,
-				},
-			},
-		};
+		return false;
 	}
 
 	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
@@ -431,26 +423,26 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	g_accel.frame.scratch_offset = 0;
 
 	APROF_SCOPE_END(prepare);
-	return (vk_resource_t){
-		.value = (vk_descriptor_value_t){
-			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-				.accelerationStructureCount = 1,
-				.pAccelerationStructures = &g_accel.tlas.handle,
-				.pNext = NULL,
-			},
-		},
-	};
+	return true;
 }
 
-void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	g_accel.tlas.resource.resource__ = RT_VkAccelProduceTlas(combuf);
+qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
+	return RT_VkAccelProduceTlas(combuf);
 }
 
 static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
 	(void)args;
+
 	// TODO barrier
-	return res->resource__.value;
+
+	return (vk_descriptor_value_t){
+		.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+			.accelerationStructureCount = 1,
+			.pAccelerationStructures = &g_accel.tlas.handle,
+			.pNext = NULL,
+		},
+	};
 }
 
 qboolean RT_VkAccelInit(void) {
@@ -495,16 +487,6 @@ qboolean RT_VkAccelInit(void) {
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
 			.acquire_descriptor = acquireTlasDescriptor,
 			.refcount = 1,
-			.resource__ = (vk_resource_t){
-				.value = (vk_descriptor_value_t){
-					.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-						.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-						.accelerationStructureCount = 0,
-						.pAccelerationStructures = NULL,
-						.pNext = NULL,
-					},
-				},
-			},
 		};
 
 		ASSERT(R_VkResourceRegister(&g_accel.tlas.resource));
