@@ -4,7 +4,6 @@
 #include "vk_image.h"
 #include "vk_buffer.h"
 #include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
-#include "arrays.h"
 
 typedef struct vk_resource_acquire_descriptor_args_s {
 	struct vk_combuf_s *combuf;

@@ -36,9 +36,17 @@
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Next
-## Barriers issues
-- [ ] no meatpipe g-buffer barriers?!
 - [ ] skybox texture usage issues noop barrier for some reason
+
+## 2025-03-11 E399 resograph p.4
+### Barriers
+- [x] swapchain barrier warning + error
+- [ ] skybox_placeholder unexpected barrier values
+- [ ] no meatpipe g-buffer barriers?!
+- [ ] API refactor:
+    - [ ] barrier object + function adding buf/img directly to vk barriers type
+    - [ ] check for incompatible duplicates
+
 
 ## 2025-03-07 E398 resograph p.3
 - [x] resource types
