@@ -1,8 +1,6 @@
 #include "vk_combuf.h"
 #include "vk_commandpool.h"
-#include "vk_buffer.h"
 #include "vk_logs.h"
-#include "vk_image.h"
 
 #include "profiler.h"
 
@@ -21,8 +19,6 @@ typedef struct {
 		int scopes[MAX_GPU_SCOPES];
 		int scopes_count;
 	} profiler;
-
-	uint32_t tag;
 } vk_combuf_impl_t;
 
 static struct {
@@ -38,8 +34,6 @@ static struct {
 	int scopes_count;
 
 	int entire_combuf_scope_id;
-
-	uint32_t tag;
 } g_combuf;
 
 qboolean R_VkCombuf_Init( void ) {
@@ -67,7 +61,6 @@ qboolean R_VkCombuf_Init( void ) {
 	}
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
-	g_combuf.tag = 1; // Do not start with special value of zero
 
 	return true;
 }
@@ -103,13 +96,6 @@ void R_VkCombufClose( vk_combuf_t* pub ) {
 
 void R_VkCombufBegin( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
-
-	g_combuf.tag++;
-	// Skip zero as special initial value for objects meaning "not yet used in combuf"
-	if (g_combuf.tag == 0)
-		g_combuf.tag = 1;
-
-	cb->tag = g_combuf.tag;
 
 	cb->profiler.scopes_count = 0;
 
