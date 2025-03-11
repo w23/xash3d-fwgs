@@ -160,6 +160,10 @@ int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id) {
 
 	ASSERT(scope_id < g_combuf.scopes_count);
 
+	if (LOG_VERBOSE) {
+		DEBUG("Begin scope id=%d (%s)", scope_id, g_combuf.scopes[scope_id].name);
+	}
+
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)cumbuf;
 	if (cb->profiler.scopes_count == MAX_GPU_SCOPES)
 		return -1;
@@ -179,6 +183,11 @@ void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFla
 	begin_index ^= BEGIN_INDEX_TAG;
 
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)combuf;
+
+	if (LOG_VERBOSE) {
+		const int scope_id = cb->profiler.scopes[begin_index];
+		DEBUG("End scope id=%d (%s)", scope_id, g_combuf.scopes[scope_id].name);
+	}
 
 	vkCmdWriteTimestamp(cb->public.cmdbuf, pipeline_stage, g_combuf.timestamp.pool, cb->profiler.timestamps_offset + begin_index * 2 + 1);
 }

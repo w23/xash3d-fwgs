@@ -315,7 +315,7 @@ void R_VkCombufIssueBarrier(struct vk_combuf_s* combuf, r_vkcombuf_barrier_t bar
 	for (int i = 0; i < bar.buffers.count; ++i) {
 		const r_vkcombuf_barrier_buffer_t *const bufbar = bar.buffers.items + i;
 		if (LOG_VERBOSE) {
-			DEBUG(" buf[%d]: buf=%llx (%s) barrier:", i,
+			DEBUG(" buf[%d]: buf=0x%llx (%s) barrier:", i,
 				(unsigned long long)bufbar->buffer->buffer,
 				bufbar->buffer->name);
 		}
@@ -333,7 +333,7 @@ void R_VkCombufIssueBarrier(struct vk_combuf_s* combuf, r_vkcombuf_barrier_t bar
 	for (int i = 0; i < bar.images.count; ++i) {
 		const r_vkcombuf_barrier_image_t *const imgbar = bar.images.items + i;
 		if (LOG_VERBOSE) {
-			DEBUG(" img[%d]: img=%llx (%s) barrier:", i, (unsigned long long)imgbar->image->image, imgbar->image->name);
+			DEBUG(" img[%d]: img=0x%llx (%s) barrier:", i, (unsigned long long)imgbar->image->image, imgbar->image->name);
 		}
 
 		VkImageMemoryBarrier2 imb;
