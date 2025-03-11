@@ -176,21 +176,18 @@ static void tlasCreate(void) {
 
 static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
+
 	{
-		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.accels_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
-		}, {
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.tlas_geom_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			.buffers = {
-				.count = COUNTOF(buffers),
-				.items = buffers,
-			},
 		});
+		barrierCommit(&barrier, combuf);
 	}
 
 	const uint32_t scratch_buffer_size = g_accel.tlas.sizes_info.buildScratchSize;
@@ -280,20 +277,16 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	R_VkBufferStagingCommit(geom, combuf);
 	{
-		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.accels_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-		}, {
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = geom,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			.buffers = {
-				.count = COUNTOF(buffers),
-				.items = buffers,
-			},
 		});
+		barrierCommit(&barrier, combuf);
 	}
 
 	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);

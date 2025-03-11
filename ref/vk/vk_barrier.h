@@ -3,6 +3,10 @@
 #include "vk_core.h"
 #include "arrays.h"
 
+#define MAX_BUFFER_BARRIERS 16
+#define MAX_IMAGE_BARRIERS 32
+
+struct vk_combuf_s;
 
 struct vk_buffer_s;
 typedef struct {
@@ -17,21 +21,20 @@ typedef struct {
 	VkAccessFlags2 access;
 } r_vkcombuf_barrier_image_t;
 
-typedef struct {
-	VkPipelineStageFlags2 stage;
-	VIEW_DECLARE_CONST(r_vkcombuf_barrier_buffer_t, buffers);
-	VIEW_DECLARE_CONST(r_vkcombuf_barrier_image_t, images);
-} r_vkcombuf_barrier_t;
+typedef struct Barrier {
+	VkPipelineStageFlagBits2 stage;
+	BOUNDED_ARRAY_DECLARE(VkBufferMemoryBarrier2, buffers, MAX_BUFFER_BARRIERS);
+	BOUNDED_ARRAY_DECLARE(VkImageMemoryBarrier2, images, MAX_IMAGE_BARRIERS);
+} Barrier;
 
-struct vk_combuf_s;
+static inline Barrier barrierMake(VkPipelineStageFlagBits2 stage) {
+	return (Barrier) {
+		.stage = stage,
+		.images.count = 0,
+		.buffers.count = 0,
+	};
+}
 
-// Immediately issues a barrier for the set of resources given desired usage and resources states
-void R_VkCombufIssueBarrier(struct vk_combuf_s*, r_vkcombuf_barrier_t);
-
-typedef struct r_vk_barrier_s {
-	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 32);
-	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
-} r_vk_barrier_t;
-
-void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
-
+void barrierAddImage(Barrier *, r_vkcombuf_barrier_image_t);
+void barrierAddBuffer(Barrier *, r_vkcombuf_barrier_buffer_t);
+void barrierCommit(Barrier *, struct vk_combuf_s *);

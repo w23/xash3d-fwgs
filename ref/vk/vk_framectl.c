@@ -335,33 +335,27 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	} else {
 		// FIXME: how to do this properly before render pass?
 		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
+		// TODO move to geometryProduce()
 		vk_buffer_t* const geom = R_GeometryBuffer_Get();
 		R_VkBufferStagingCommit(geom, combuf);
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT,
-			.buffers = {
-				.count = 1,
-				.items = &(r_vkcombuf_barrier_buffer_t){
-					.buffer = geom,
-					.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
-				},
-			},
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t){
+			.buffer = geom,
+			.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
 		});
+		barrierCommit(&barrier, combuf);
 	}
 
 	if (draw) {
-		const r_vkcombuf_barrier_image_t dst_use[] = {{
-			.image = &g_frame.current.framebuffer.image,
-			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
-			.stage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.images = {
-				.items = dst_use,
-				.count = COUNTOF(dst_use),
-			},
-		});
+		{
+			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+				.image = &g_frame.current.framebuffer.image,
+				.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+			});
+			barrierCommit(&barrier, combuf);
+		}
 
 		const VkClearValue clear_value[] = {
 			// *_UNORM is float
@@ -654,22 +648,18 @@ static rgbdata_t *R_VkReadPixels( void ) {
 			},
 		});
 	} else {
-		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COPY_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 			.image = &temp_image,
 			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
 			.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			}, {
+		});
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 			.image = framebuffer_image,
 			.access = VK_ACCESS_2_TRANSFER_READ_BIT,
 			.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-				.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
-				.images = {
-					.count = COUNTOF(image_barriers),
-					.items = image_barriers,
-				},
 		});
+		barrierCommit(&barrier, combuf);
 
 		const VkImageCopy copy = {
 			.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -689,24 +679,21 @@ static rgbdata_t *R_VkReadPixels( void ) {
 	}
 
 	{
-		const r_vkcombuf_barrier_image_t image_barriers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_HOST_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 			// Temp image: prepare for reading on CPU
 			.image = &temp_image,
 			.access = VK_ACCESS_2_MEMORY_READ_BIT,
 			.layout = VK_IMAGE_LAYOUT_GENERAL,
-			}, {
+		});
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 			// Framebuffer image: prepare for displaying
 			.image = framebuffer_image,
 			.access = 0,
 			.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-				.stage = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_HOST_BIT,
-				.images = {
-					.count = COUNTOF(image_barriers),
-					.items = image_barriers,
-				},
 		});
+
+		barrierCommit(&barrier, combuf);
 	}
 
 	{

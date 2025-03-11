@@ -80,11 +80,10 @@ void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescrip
 static vk_descriptor_value_t acquireBufferResourceDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
 	vk_resource_buffer_t *const res = (void*)r;
 
-	const r_vkcombuf_barrier_buffer_t bb = {
+	barrierAddBuffer(args.barriers, (r_vkcombuf_barrier_buffer_t) {
 		.buffer = res->buffer,
 		.access = args.access,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->buffers, bb);
+	});
 
 	return (vk_descriptor_value_t) {
 		.buffer = (VkDescriptorBufferInfo) {

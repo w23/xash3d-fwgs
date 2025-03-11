@@ -7,7 +7,7 @@
 
 typedef struct vk_resource_acquire_descriptor_args_s {
 	struct vk_combuf_s *combuf;
-	struct r_vk_barrier_s *barriers;
+	struct Barrier *barriers;
 	VkAccessFlags2 access;
 	VkImageLayout image_layout;
 } vk_resource_acquire_descriptor_args_t;

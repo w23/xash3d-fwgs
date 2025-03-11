@@ -264,7 +264,7 @@ static void performCompute( vk_combuf_t *combuf, int set_slot, const ray_pass_co
 }
 
 void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perform_args_t args ) {
-	r_vk_barrier_t barrier = {0};
+	Barrier barrier = barrierMake(pass->pipeline_type);
 
 	const int num_bindings = pass->desc.riptors.num_bindings;
 	for (int i = 0; i < num_bindings; ++i) {
@@ -287,7 +287,7 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 	}
 
 	DEBUG_BEGIN(combuf->cmdbuf, pass->debug_name);
-	R_VkBarrierCommit(combuf, &barrier, pass->pipeline_type);
+	barrierCommit(&barrier, combuf);
 
 	VK_DescriptorsWrite(&pass->desc.riptors, args.frame_set_slot);
 

@@ -220,16 +220,15 @@ void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	if (!stb || stb->regions.count == 0)
 		return;
 
-	const r_vkcombuf_barrier_buffer_t barrier[] = {{
-		.buffer = buf,
-		.access = VK_ACCESS_TRANSFER_WRITE_BIT,
-	}};
-
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
-		.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
-		.buffers = { barrier, COUNTOF(barrier) },
-		.images = { NULL, 0 },
-	});
+	{
+		// TODO accept external barrier in a particular context, could be an optimization for group barriers
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COPY_BIT);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = buf,
+			.access = VK_ACCESS_TRANSFER_WRITE_BIT,
+		});
+		barrierCommit(&barrier, combuf);
+	}
 
 	//TODO const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
 

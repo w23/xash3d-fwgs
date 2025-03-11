@@ -36,19 +36,18 @@
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Next
-- [ ] skybox texture usage issues noop barrier for some reason
+- [ ] Dependency graph
 
 ## 2025-03-11 E399 resograph p.4
 ### Barriers
 - [x] swapchain barrier warning + error
 - [x] skybox_placeholder unexpected barrier values
+    - [x] skybox texture usage issues noop barrier for some reason
 - [x] no meatpipe g-buffer barriers?!
 - [x] remove combuf tags?
 - [x] move combuf begin to frame end, where it is used
-- [ ] API refactor:
-    - [ ] barrier object + function adding buf/img directly to vk barriers type
-    - [ ] check for incompatible duplicates
-
+- [x] API refactor:
+    - [x] barrier object + function adding buf/img directly to vk barriers type
 
 ## 2025-03-07 E398 resograph p.3
 - [x] resource types
@@ -743,6 +742,7 @@ Longer-term agenda for current season:
 - [ ] studio models survive NewMap; need to compactify buffers after removing all brushes
 - [ ] sometimes it gets very slow (1fps) when ran under lldb (only on stream?)
 - [ ] rtx: non-realtime unbiased mode: make "ground truth" screenshots that take 1e5 samples per pixels and seconds to produce. what for: semi-interactive material tuning, comparison w/ denoise, etc.
+- [ ] Barrier: check for incompatible duplicates
 
 # Someday
 - [ ] more than one lightmap texture. E.g. sponza ends up having 3 lightmaps

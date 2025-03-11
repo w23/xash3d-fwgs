@@ -57,12 +57,12 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *lay
 
 static vk_descriptor_value_t acquireSampledImageDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
 	sampled_image_resource_t *const res = (void*)r;
-	const r_vkcombuf_barrier_image_t image_barrier = {
+
+	barrierAddImage(args.barriers, (r_vkcombuf_barrier_image_t) {
 		.image = res->image,
 		.layout = args.image_layout,
 		.access = args.access,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->images, image_barrier);
+	});
 
 	return (vk_descriptor_value_t){
 		.image = (VkDescriptorImageInfo) {

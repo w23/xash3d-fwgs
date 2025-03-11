@@ -490,12 +490,11 @@ typedef struct {
 static vk_descriptor_value_t acquireStorageImageDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
 	vk_resource_storage_image_t *const res = (void*)r;
 
-	const r_vkcombuf_barrier_image_t image_barrier = {
+	barrierAddImage(args.barriers, (r_vkcombuf_barrier_image_t) {
 		.image = &res->image,
 		.layout = args.image_layout,
 		.access = args.access,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(args.barriers->images, image_barrier);
+	});
 
 	// TODO how do we make sure that the same image isn't used more than once with different layouts in the same barrier set?
 

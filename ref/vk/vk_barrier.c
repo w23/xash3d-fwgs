@@ -7,10 +7,6 @@
 
 #define LOG_MODULE combuf
 
-#define MAX_BUFFER_BARRIERS 16
-#define MAX_IMAGE_BARRIERS 16
-
-
 #define ACCESS_WRITE_BITS (0 \
 	| VK_ACCESS_2_SHADER_WRITE_BIT \
 	| VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT \
@@ -140,23 +136,11 @@ static void printStageMask(const char *prefix, VkPipelineStageFlags2 stages) {
 	PRINT_FLAG(stages, VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV);
 }
 
-static int makeBufferBarrier(VkBufferMemoryBarrier2* out_bmb, const r_vkcombuf_barrier_buffer_t *const bufbar, VkPipelineStageFlags2 dst_stage, uint32_t cb_tag) {
+static int makeBufferBarrier(VkBufferMemoryBarrier2* out_bmb, const r_vkcombuf_barrier_buffer_t *const bufbar, VkPipelineStageFlags2 dst_stage) {
 	vk_buffer_t *const buf = bufbar->buffer;
 	const int is_write = (bufbar->access & ACCESS_WRITE_BITS) != 0;
 	const int is_read = (bufbar->access & ACCESS_READ_BITS) != 0;
 	ASSERT((bufbar->access & ~(ACCESS_KNOWN_BITS)) == 0);
-
-	if (buf->sync.combuf_tag != cb_tag) {
-		// This buffer hasn't been yet used in this command buffer, no need to issue a barrier
-		buf->sync.combuf_tag = cb_tag;
-		buf->sync.write = is_write
-			? (r_vksync_scope_t){.access = bufbar->access & ACCESS_WRITE_BITS, .stage = dst_stage}
-			: (r_vksync_scope_t){.access = 0, .stage = 0 };
-		buf->sync.read = is_read
-			? (r_vksync_scope_t){.access = bufbar->access & ACCESS_READ_BITS, .stage = dst_stage}
-			: (r_vksync_scope_t){.access = 0, .stage = 0 };
-		return 0;
-	}
 
 	*out_bmb = (VkBufferMemoryBarrier2) {
 		.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
@@ -308,70 +292,44 @@ static int makeImageBarrier(VkImageMemoryBarrier2* out_imb, const r_vkcombuf_bar
 	return 1;
 }
 
-void R_VkCombufIssueBarrier(struct vk_combuf_s* combuf, r_vkcombuf_barrier_t bar) {
-	//vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)combuf;
-
-	BOUNDED_ARRAY(VkBufferMemoryBarrier2, buffer_barriers, MAX_BUFFER_BARRIERS);
-	for (int i = 0; i < bar.buffers.count; ++i) {
-		const r_vkcombuf_barrier_buffer_t *const bufbar = bar.buffers.items + i;
-		if (LOG_VERBOSE) {
-			DEBUG(" buf[%d]: buf=0x%llx (%s) barrier:", i,
-				(unsigned long long)bufbar->buffer->buffer,
-				bufbar->buffer->name);
-		}
-
-		VkBufferMemoryBarrier2 bmb;
-		// FIXME if (!makeBufferBarrier(&bmb, bufbar, bar.stage, cb->tag)) {
-		if (!makeBufferBarrier(&bmb, bufbar, bar.stage, 0)) {
-			continue;
-		}
-
-		BOUNDED_ARRAY_APPEND_ITEM(buffer_barriers, bmb);
+void barrierAddImage(Barrier *bar, r_vkcombuf_barrier_image_t image) {
+	if (LOG_VERBOSE) {
+		DEBUG(" barrier img=0x%llx (%s) barrier:", (unsigned long long)image.image->image, image.image->name);
 	}
 
-	BOUNDED_ARRAY(VkImageMemoryBarrier2, image_barriers, MAX_IMAGE_BARRIERS);
-	for (int i = 0; i < bar.images.count; ++i) {
-		const r_vkcombuf_barrier_image_t *const imgbar = bar.images.items + i;
-		if (LOG_VERBOSE) {
-			DEBUG(" img[%d]: img=0x%llx (%s) barrier:", i, (unsigned long long)imgbar->image->image, imgbar->image->name);
-		}
+	VkImageMemoryBarrier2 imb;
+	if (makeImageBarrier(&imb, &image, bar->stage))
+		BOUNDED_ARRAY_APPEND_ITEM(bar->images, imb);
+}
 
-		VkImageMemoryBarrier2 imb;
-		if (!makeImageBarrier(&imb, imgbar, bar.stage)) {
-			continue;
-		}
-
-		BOUNDED_ARRAY_APPEND_ITEM(image_barriers, imb);
+void barrierAddBuffer(Barrier *bar, r_vkcombuf_barrier_buffer_t buffer) {
+	if (LOG_VERBOSE) {
+		DEBUG(" barrier buf=0x%llx (%s) barrier:",
+			(unsigned long long)buffer.buffer->buffer,
+			buffer.buffer->name);
 	}
 
-	if (buffer_barriers.count == 0 && image_barriers.count == 0)
+	VkBufferMemoryBarrier2 bmb;
+	if (makeBufferBarrier(&bmb, &buffer, bar->stage)) {
+		BOUNDED_ARRAY_APPEND_ITEM(bar->buffers, bmb);
+	}
+}
+
+void barrierCommit(Barrier *bar, struct vk_combuf_s * combuf) {
+	ASSERT(bar->stage != 0);
+
+	if (bar->buffers.count == 0 && bar->images.count == 0)
 		return;
 
 	vkCmdPipelineBarrier2(combuf->cmdbuf, &(VkDependencyInfo) {
 		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
 		.pNext = NULL,
 		.dependencyFlags = 0,
-		.bufferMemoryBarrierCount = buffer_barriers.count,
-		.pBufferMemoryBarriers = buffer_barriers.items,
-		.imageMemoryBarrierCount = image_barriers.count,
-		.pImageMemoryBarriers = image_barriers.items,
-	});
-}
-
-
-void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask) {
-	if (barrier->images.count == 0 && barrier->buffers.count == 0)
-		return;
-
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = dst_stage_mask,
-		.buffers.items = barrier->buffers.items,
-		.buffers.count = barrier->buffers.count,
-		.images.items = barrier->images.items,
-		.images.count = barrier->images.count,
+		.bufferMemoryBarrierCount = bar->buffers.count,
+		.pBufferMemoryBarriers = bar->buffers.items,
+		.imageMemoryBarrierCount = bar->images.count,
+		.pImageMemoryBarriers = bar->images.items,
 	});
 
-	// Mark as used
-	barrier->images.count = 0;
-	barrier->buffers.count = 0;
+	bar->stage = 0;
 }
