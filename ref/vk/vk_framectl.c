@@ -302,8 +302,6 @@ void R_BeginFrame( qboolean clearScene ) {
 
 	VK_RenderBegin( vk_frame.rtx_enabled );
 
-	R_VkCombufBegin( frame->combuf );
-
 	g_frame.current.phase = Phase_FrameBegan;
 	APROF_SCOPE_END(begin_frame);
 }
@@ -323,6 +321,8 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	const uint32_t frame_height = g_frame.current.framebuffer.image.height;
 
 	ASSERT(g_frame.current.phase == Phase_FrameBegan || g_frame.current.phase == Phase_FrameRendered);
+
+	R_VkCombufBegin( combuf );
 
 	// TODO: should be done by rendering when it requests textures
 	R_VkImageUploadCommit(combuf,
@@ -498,10 +498,6 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	}
 
 	APROF_SCOPE_END(submit);
-}
-
-inline static VkCommandBuffer currentCommandBuffer( void ) {
-	return g_frame.frames[g_frame.current.index].combuf->cmdbuf;
 }
 
 void R_EndFrame( void )

@@ -44,7 +44,7 @@
 - [x] skybox_placeholder unexpected barrier values
 - [x] no meatpipe g-buffer barriers?!
 - [ ] remove combuf tags?
-- [ ] move combuf begin to frame end, where it is used
+- [x] move combuf begin to frame end, where it is used
 - [ ] API refactor:
     - [ ] barrier object + function adding buf/img directly to vk barriers type
     - [ ] check for incompatible duplicates
