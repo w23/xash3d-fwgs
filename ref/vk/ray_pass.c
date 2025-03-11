@@ -4,6 +4,7 @@
 #include "vk_pipeline.h"
 #include "vk_descriptor.h"
 #include "vk_combuf.h"
+#include "vk_barrier.h"
 
 // FIXME this is only needed for MAX_CONCURRENT_FRAMES
 // TODO specify it externally as ctor arg

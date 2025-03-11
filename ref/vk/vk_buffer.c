@@ -1,7 +1,7 @@
 #include "vk_buffer.h"
 #include "vk_logs.h"
 #include "vk_combuf.h"
-#include "vk_resources.h"
+#include "vk_barrier.h"
 
 #include "arrays.h"
 

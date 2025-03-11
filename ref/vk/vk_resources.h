@@ -41,14 +41,6 @@ int R_VkResourceFindIndexByName(const char *name);
 void R_VkResourcesCleanup(void);
 
 
-typedef struct r_vk_barrier_s {
-	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_image_t, images, 32);
-	BOUNDED_ARRAY_DECLARE(r_vkcombuf_barrier_buffer_t, buffers, 16);
-} r_vk_barrier_t;
-
-void R_VkBarrierCommit(struct vk_combuf_s* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask);
-
-
 // Dummy resource that just returns `descriptor_value` without doing anything else
 typedef struct rt_resource_dummy_s {
 	rt_resource_t header;

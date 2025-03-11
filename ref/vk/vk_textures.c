@@ -5,6 +5,7 @@
 #include "vk_resources.h"
 #include "r_textures.h"
 #include "r_speeds.h"
+#include "vk_barrier.h"
 
 #include "xash3d_mathlib.h" // bound
 

@@ -2,6 +2,7 @@
 
 #include "vk_pipeline.h"
 #include "vk_resources.h"
+#include "vk_barrier.h"
 #include "ray_pass.h"
 #include "vk_common.h"
 #include "vk_logs.h"

@@ -5,6 +5,7 @@
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
 #include "vk_combuf.h"
+#include "vk_barrier.h"
 #include "vk_math.h"
 #include "vk_geometry.h"
 #include "vk_render.h"

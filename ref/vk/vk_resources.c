@@ -1,6 +1,6 @@
 #include "vk_resources.h"
 #include "vk_common.h"
-#include "vk_combuf.h"
+#include "vk_barrier.h"
 #include "arrays.h"
 
 #define LOG_MODULE rt
@@ -62,24 +62,6 @@ void R_VkResourcesCleanup(void) {
 		g_res.table.items[g_res.table.count] = NULL;
 		i--;
 	}
-}
-
-
-void R_VkBarrierCommit(vk_combuf_t* combuf, r_vk_barrier_t *barrier, VkPipelineStageFlags2 dst_stage_mask) {
-	if (barrier->images.count == 0 && barrier->buffers.count == 0)
-		return;
-
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = dst_stage_mask,
-		.buffers.items = barrier->buffers.items,
-		.buffers.count = barrier->buffers.count,
-		.images.items = barrier->images.items,
-		.images.count = barrier->images.count,
-	});
-
-	// Mark as used
-	barrier->images.count = 0;
-	barrier->buffers.count = 0;
 }
 
 static vk_descriptor_value_t acquireDummyDescriptor(struct rt_resource_s *res, vk_resource_acquire_descriptor_args_t args) {
