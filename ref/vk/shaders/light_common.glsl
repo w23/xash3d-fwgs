@@ -72,6 +72,9 @@ bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 #endif
 
 bool shadowed(vec3 pos, vec3 dir, float dist) {
+	if (isnan(dist))
+		return true;
+
 #ifdef RAY_TRACE
 	const uint flags =  0
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
