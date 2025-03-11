@@ -367,10 +367,14 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 		// Update image tracking state
 		up->image->sync.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		up->image->sync.read.access = VK_ACCESS_SHADER_READ_BIT;
+		up->image->sync.read.access = VK_ACCESS_2_SHADER_READ_BIT;
 		up->image->sync.read.stage = dst_stages;
-		up->image->sync.write.access = VK_ACCESS_TRANSFER_WRITE_BIT;
-		up->image->sync.write.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		/* SUPPOSEDLY: Write state is no longer relevant due to layout transfer below.
+		 * At least this fixes validation woes. */
+		/* up->image->sync.write.access = VK_ACCESS_2_TRANSFER_WRITE_BIT; */
+		/* up->image->sync.write.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT; */
+		up->image->sync.write.access = 0;
+		up->image->sync.write.stage = 0;
 
 		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

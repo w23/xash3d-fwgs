@@ -277,6 +277,12 @@ static int makeImageBarrier(VkImageMemoryBarrier2* out_imb, const r_vkcombuf_bar
 
 		img->sync.read.access |= imgbar->access;
 		img->sync.read.stage |= dst_stage;
+
+		// Layout transfer makes write state no longer usable (supposedly)
+		if (is_layout_transfer) {
+			img->sync.write.access = 0;
+			img->sync.write.stage = 0;
+		}
 	}
 
 	if (!is_layout_transfer && out_imb->srcAccessMask == 0 && out_imb->srcStageMask == 0) {

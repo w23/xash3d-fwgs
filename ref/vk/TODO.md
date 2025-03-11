@@ -41,8 +41,10 @@
 ## 2025-03-11 E399 resograph p.4
 ### Barriers
 - [x] swapchain barrier warning + error
-- [ ] skybox_placeholder unexpected barrier values
-- [ ] no meatpipe g-buffer barriers?!
+- [x] skybox_placeholder unexpected barrier values
+- [x] no meatpipe g-buffer barriers?!
+- [ ] remove combuf tags?
+- [ ] move combuf begin to frame end, where it is used
 - [ ] API refactor:
     - [ ] barrier object + function adding buf/img directly to vk barriers type
     - [ ] check for incompatible duplicates
