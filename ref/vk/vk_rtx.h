@@ -1,6 +1,5 @@
 #pragma once
 
-#include "vk_geometry.h"
 #include "vk_core.h"
 
 void VK_RayFrameBegin( void );

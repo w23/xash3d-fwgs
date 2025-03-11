@@ -173,6 +173,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		pos += mat.geometry_normal * kRayNormalOffsetFudge;
 
 		vec3 hit_color = vec3(0.);
+		// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
+		if (any(isnan(bounce_direction)))
+			break;
 		const bool did_hit = getHit(pos, bounce_direction, payload);
 		MaterialProperties hit_material;
 		const vec3 hit_pos = payload.hit_t.xyz;
@@ -250,7 +253,7 @@ void main() {
 		return;
 	}
 	const vec2 uv = (gl_GlobalInvocationID.xy + .5) / res * 2. - 1.;
-	
+
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_GI) != 0) {
 		imageStore(out_indirect_diffuse, pix, vec4(0.));
 		imageStore(out_indirect_specular, pix, vec4(0.));

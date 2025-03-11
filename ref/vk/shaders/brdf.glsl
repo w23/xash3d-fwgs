@@ -69,7 +69,6 @@ float ggxG(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
-	//l_dot_n = max(1e-4, l_dot_n);
 	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);
@@ -80,7 +79,6 @@ float ggxV(float a2, float l_dot_n, float h_dot_l, float n_dot_v, float h_dot_v)
 	if (h_dot_l <= 0. || h_dot_v <= 0.)
 		return 0.;
 
-	//l_dot_n = max(1e-4, l_dot_n);
 	n_dot_v = max(1e-4, n_dot_v);
 	const float denom1 = abs(l_dot_n) + sqrt(a2 + (1. - a2) * l_dot_n * l_dot_n);
 	const float denom2 = abs(n_dot_v) + sqrt(a2 + (1. - a2) * n_dot_v * n_dot_v);

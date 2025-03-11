@@ -1,6 +1,4 @@
-## Next
-
-## Upcoming
+# Upcoming
 - [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
@@ -29,6 +27,62 @@
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
 - [ ] performance profiling and comparison
+
+## Resograf agenda
+- [ ] Move all resources/state/barrier management to passes
+- [ ] Explicit dependency graph
+	- [ ] Build it from meatpipe and resources
+	- [ ] Linearize it into metapass program
+- [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
+
+# Next
+- [ ] Dependency graph
+
+## 2025-03-11 E399 resograph p.4
+### Barriers
+- [x] swapchain barrier warning + error
+- [x] skybox_placeholder unexpected barrier values
+    - [x] skybox texture usage issues noop barrier for some reason
+- [x] no meatpipe g-buffer barriers?!
+- [x] remove combuf tags?
+- [x] move combuf begin to frame end, where it is used
+- [x] API refactor:
+    - [x] barrier object + function adding buf/img directly to vk barriers type
+
+## 2025-03-07 E398 resograph p.3
+- [x] resource types
+	- [x] buffer pointer type (non-owning)
+	- [x] TLAS type
+	- [x] storage image pointer type (non-owning)
+	- [-] ping-pong images
+### Off-stream
+- [x] add resource dtors
+
+## 2025-03-06 EN/A offline
+- [ ] hide resource internals; rt_resource_t is just a header
+	- [ ] resource types
+		- [x] dummy "return descriptors" type, no barriers
+		- [x] sampled image pointer type (non-owning)
+
+## 2025-03-05 E397
+- [ ] hide resource internals; rt_resource_t is just a header
+    - [ ] `rt_resource_t` interface spec/API
+		- [x] acquire_descriptor func
+
+## 2025-03-04 E396
+- [x] fix discontinuity glitches in rendertests
+- [ ] hide resource internals; rt_resource_t is just a header
+    - [x] Disown `rt_resource_t`'s from vk_resources.c -- only store pointers
+        - why: rt_resource_t will be an interface with variable size depending on type
+        - [x] vk_resources module only stores pointers
+        - [x] replace alloc with register
+
+## 2025-02-26 EN/A: offline
+- [x] Metapass sketch
+	- [x] move meatpipe perform there
+- [x] Metapass -- construct one from meatpipe + resources
+	- [x] make meatpipe just a parser, load passes in metapass
+    - [x] moved everything into meatpipe, meatpipe === metapass
 
 ## 2025-02-24 E395
 - [x] register resources
@@ -688,6 +742,7 @@ Longer-term agenda for current season:
 - [ ] studio models survive NewMap; need to compactify buffers after removing all brushes
 - [ ] sometimes it gets very slow (1fps) when ran under lldb (only on stream?)
 - [ ] rtx: non-realtime unbiased mode: make "ground truth" screenshots that take 1e5 samples per pixels and seconds to produce. what for: semi-interactive material tuning, comparison w/ denoise, etc.
+- [ ] Barrier: check for incompatible duplicates
 
 # Someday
 - [ ] more than one lightmap texture. E.g. sponza ends up having 3 lightmaps

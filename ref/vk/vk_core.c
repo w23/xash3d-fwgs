@@ -15,6 +15,7 @@
 #include "vk_studio.h"
 #include "vk_rtx.h"
 #include "vk_descriptor.h"
+#include "vk_resources.h"
 #include "vk_nv_aftermath.h"
 #include "vk_devmem.h"
 #include "vk_commandpool.h"
@@ -185,6 +186,7 @@ static qboolean createInstance( void )
 	};
 
 	BOUNDED_ARRAY(VkValidationFeatureEnableEXT, validation_features, 8);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
 	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
 	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
 
@@ -793,6 +795,8 @@ qboolean R_VkInit( void )
 		return false;
 
 	VK_LoadCvarsAfterInit();
+
+	R_VkResourcesInit();
 
 	if (!R_VkImageInit())
 		return false;

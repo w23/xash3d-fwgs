@@ -72,6 +72,10 @@ bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 #endif
 
 bool shadowed(vec3 pos, vec3 dir, float dist) {
+	// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
+	if (isnan(dist))
+		return true;
+
 #ifdef RAY_TRACE
 	const uint flags =  0
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT

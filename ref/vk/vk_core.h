@@ -70,6 +70,7 @@ const char *R_VkPresentModeName(VkPresentModeKHR present_mode);
 const char *R_VkFormatName(VkFormat format);
 const char *R_VkColorSpaceName(VkColorSpaceKHR colorspace);
 const char *R_VkImageLayoutName(VkImageLayout);
+const char *R_VkDescriptorTypeName(VkDescriptorType);
 
 #define SET_DEBUG_NAME(object, type, name) \
 do { \

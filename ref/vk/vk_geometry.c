@@ -172,6 +172,7 @@ void R_GeometryBuffer_MapClear( void ) {
 static void registerGeometryBufferAs(const char *name) {
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = name,
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_geom.buffer,
 		.offset = 0,
 		.size = g_geom.buffer.size,
@@ -186,6 +187,9 @@ qboolean R_GeometryBuffer_Init(void) {
 		(vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
 		return false;
 
+	registerGeometryBufferAs("vertices");
+	registerGeometryBufferAs("indices");
+
 #define EXPECTED_ALLOCS 1024
 	R_BlocksCreate(&g_geom.alloc, GEOMETRY_BUFFER_SIZE, GEOMETRY_BUFFER_DYNAMIC_SIZE, EXPECTED_ALLOCS);
 
@@ -194,9 +198,6 @@ qboolean R_GeometryBuffer_Init(void) {
 	R_SPEEDS_METRIC(g_geom.stats.indices, "indices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_vertices, "dyn_vertices", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_geom.stats.dyn_indices, "dyn_indices", kSpeedsMetricCount);
-
-	registerGeometryBufferAs("vertices");
-	registerGeometryBufferAs("indices");
 
 	return true;
 }

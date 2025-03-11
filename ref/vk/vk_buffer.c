@@ -1,7 +1,7 @@
 #include "vk_buffer.h"
 #include "vk_logs.h"
 #include "vk_combuf.h"
-#include "vk_resources.h"
+#include "vk_barrier.h"
 
 #include "arrays.h"
 
@@ -215,41 +215,20 @@ void R_VkBufferUnlock(vk_buffer_locked_t lock) {
 	// Nothing to do?
 }
 
-rt_resource_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args) {
-	rt_resource_t *const res = R_VkResourceFindOrAlloc(args.name);
-	ASSERT(res);
-
-	res->refcount = 1;
-	res->resource = (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.ref.buffer = args.buffer,
-		.value = (vk_descriptor_value_t) {
-			.buffer = (VkDescriptorBufferInfo) {
-				.buffer = args.buffer->buffer,
-				.offset = args.offset,
-				.range = args.size,
-			}
-		}
-	};
-
-	return res;
-}
-
 void R_VkBufferStagingCommit(vk_buffer_t *buf, struct vk_combuf_s *combuf) {
 	r_vk_staging_buffer_t *const stb = findExistingStagingSlotForBuffer(buf);
 	if (!stb || stb->regions.count == 0)
 		return;
 
-	const r_vkcombuf_barrier_buffer_t barrier[] = {{
-		.buffer = buf,
-		.access = VK_ACCESS_TRANSFER_WRITE_BIT,
-	}};
-
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t) {
-		.stage = VK_PIPELINE_STAGE_2_COPY_BIT,
-		.buffers = { barrier, COUNTOF(barrier) },
-		.images = { NULL, 0 },
-	});
+	{
+		// TODO accept external barrier in a particular context, could be an optimization for group barriers
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COPY_BIT);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = buf,
+			.access = VK_ACCESS_TRANSFER_WRITE_BIT,
+		});
+		barrierCommit(&barrier, combuf);
+	}
 
 	//TODO const int begin_index = R_VkCombufScopeBegin(combuf, g_staging.buffer_upload_scope_id);
 

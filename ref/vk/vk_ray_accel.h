@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vk_resources.h"
+#include "xash3d_types.h" // qboolean, math types
 
 qboolean RT_VkAccelInit(void);
 void RT_VkAccelShutdown(void);
@@ -8,8 +8,9 @@ void RT_VkAccelShutdown(void);
 void RT_VkAccelNewMap(void);
 
 struct vk_combuf_s;
+
 // TODO should be hidden behind producer eventually
-void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf);
+qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf);
 
 typedef struct rt_draw_instance_t {
 	struct rt_blas_s *blas;

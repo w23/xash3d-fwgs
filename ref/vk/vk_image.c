@@ -2,6 +2,7 @@
 #include "vk_staging.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "vk_barrier.h"
 #include "arrays.h"
 
 #include "xash3d_mathlib.h" // Q_max
@@ -153,6 +154,17 @@ void R_VkImageDestroy(r_vk_image_t *img) {
 }
 
 void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClearColorValue* value) {
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_CLEAR_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+			.image = img,
+			// Could be VK_IMAGE_LAYOUT_GENERAL too
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		});
+		barrierCommit(&barrier, combuf);
+	}
+
 	const VkImageSubresourceRange ranges[] = {{
 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		.baseMipLevel = 0,
@@ -160,20 +172,6 @@ void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClear
 		.baseArrayLayer = 0,
 		.layerCount = VK_REMAINING_ARRAY_LAYERS,
 	}};
-	const r_vkcombuf_barrier_image_t ib[] = {{
-		.image = img,
-		// Could be VK_IMAGE_LAYOUT_GENERAL too
-		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-	}};
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_CLEAR_BIT,
-		.images = {
-			.items = ib,
-			.count = COUNTOF(ib),
-		},
-	});
-
 	const VkClearColorValue zero = {0};
 	vkCmdClearColorImage(combuf->cmdbuf, img->image, img->sync.layout,
 		value ? value : &zero,
@@ -181,22 +179,20 @@ void R_VkImageClear(r_vk_image_t *img, struct vk_combuf_s* combuf, const VkClear
 }
 
 void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *args ) {
-	const r_vkcombuf_barrier_image_t ib[] = {{
-		.image = args->src.image,
-		.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		.access = VK_ACCESS_2_TRANSFER_READ_BIT,
-	}, {
-		.image = args->dst.image,
-		.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-	}};
-	R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-		.stage = VK_PIPELINE_STAGE_2_BLIT_BIT,
-		.images = {
-			.items = ib,
-			.count = COUNTOF(ib),
-		},
-	});
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_BLIT_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+			.image = args->src.image,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			.access = VK_ACCESS_2_TRANSFER_READ_BIT,
+		});
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+			.image = args->dst.image,
+			.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		});
+		barrierCommit(&barrier, combuf);
+	}
 
 	{
 		VkImageBlit region = {0};
@@ -366,10 +362,14 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 		// Update image tracking state
 		up->image->sync.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		up->image->sync.read.access = VK_ACCESS_SHADER_READ_BIT;
+		up->image->sync.read.access = VK_ACCESS_2_SHADER_READ_BIT;
 		up->image->sync.read.stage = dst_stages;
-		up->image->sync.write.access = VK_ACCESS_TRANSFER_WRITE_BIT;
-		up->image->sync.write.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+		/* SUPPOSEDLY: Write state is no longer relevant due to layout transfer below.
+		 * At least this fixes validation woes. */
+		/* up->image->sync.write.access = VK_ACCESS_2_TRANSFER_WRITE_BIT; */
+		/* up->image->sync.write.stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT; */
+		up->image->sync.write.access = 0;
+		up->image->sync.write.stage = 0;
 
 		g_image_upload.barriers.items[barriers_count++] = (VkImageMemoryBarrier) {
 			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

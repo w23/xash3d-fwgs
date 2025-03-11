@@ -5,6 +5,7 @@
 #include "vk_resources.h"
 #include "r_textures.h"
 #include "r_speeds.h"
+#include "vk_barrier.h"
 
 #include "xash3d_mathlib.h" // bound
 
@@ -17,6 +18,11 @@
 #define MODULE_NAME "textures"
 
 #define MAX_SAMPLERS 8 // TF_NEAREST x 2 * TF_BORDER x 2 * TF_CLAMP x 2
+
+typedef struct {
+	rt_resource_t header;
+	r_vk_image_t *image;
+} sampled_image_resource_t;
 
 static struct {
 	struct {
@@ -36,16 +42,36 @@ static struct {
 
 	// All textures descriptors in their native formats used for RT
 	VkDescriptorImageInfo dii_all_textures[MAX_TEXTURES];
+	rt_resource_dummy_t textures_resource;
 
 	vk_texture_t skybox[kSkybox_COUNT];
-	rt_resource_t *skybox_resource;
+	sampled_image_resource_t skybox_resource;
 
+	// TODO is this used as vk_texture_t object anywhere after loading?
 	vk_texture_t blue_noise;
-
+	sampled_image_resource_t blue_noise_resource;
 } g_vktextures;
 
 static VkSampler pickSamplerForFlags( texFlags_t flags );
 static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *layers, colorspace_hint_e colorspace_hint);
+
+static vk_descriptor_value_t acquireSampledImageDescriptor(struct rt_resource_s* r, vk_resource_acquire_descriptor_args_t args) {
+	sampled_image_resource_t *const res = (void*)r;
+
+	barrierAddImage(args.barriers, (r_vkcombuf_barrier_image_t) {
+		.image = res->image,
+		.layout = args.image_layout,
+		.access = args.access,
+	});
+
+	return (vk_descriptor_value_t){
+		.image = (VkDescriptorImageInfo) {
+			.sampler = g_vktextures.default_sampler,
+			.imageView = res->image->view,
+			.imageLayout = args.image_layout,
+		},
+	};
+}
 
 // Hardcode blue noise texture size to 64x64x64
 #define BLUE_NOISE_SIZE 64
@@ -130,20 +156,18 @@ static void loadBlueNoiseTextures(void) {
 	Mem_Free(scratch);
 
 	{
-		rt_resource_t *const blue_noise_resource = R_VkResourceFindOrAlloc("blue_noise_texture");
-		ASSERT(blue_noise_resource);
-		blue_noise_resource->refcount = 1;
-		blue_noise_resource->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
-				.image = (VkDescriptorImageInfo) {
-					.sampler = g_vktextures.default_sampler,
-					.imageView = g_vktextures.blue_noise.vk.image.view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				},
+		// TODO move vk_texture_t blue_noise.vk.image into here
+		g_vktextures.blue_noise_resource = (sampled_image_resource_t) {
+			.header = {
+				.name = "blue_noise_texture",
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.acquire_descriptor = acquireSampledImageDescriptor,
+				.refcount = 1,
 			},
+			.image = &g_vktextures.blue_noise.vk.image,
 		};
-	} // register blue_noise_texture resource
+		ASSERT(R_VkResourceRegister(&g_vktextures.blue_noise_resource.header));
+	}
 }
 
 qboolean R_VkTexturesInit( void ) {
@@ -183,33 +207,26 @@ qboolean R_VkTexturesInit( void ) {
 	}
 
 	{
-		rt_resource_t *const res_textures = R_VkResourceFindOrAlloc("textures");
-		ASSERT(res_textures);
-		res_textures->refcount = 1;
-		res_textures->resource = (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
+		R_VkResourceDummyInit(&g_vktextures.textures_resource,
+			"textures",
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			(vk_descriptor_value_t) {
 				.image_array = g_vktextures.dii_all_textures,
-			}
-		};
+			});
+		ASSERT(R_VkResourceRegister(&g_vktextures.textures_resource.header));
 	}
 
 	{
-		rt_resource_t *const res = R_VkResourceFindOrAlloc("skybox");
-		ASSERT(res);
-		res->refcount = 1;
-		res->resource = (vk_resource_t) {
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			.value = (vk_descriptor_value_t){
-				.image = (VkDescriptorImageInfo) {
-					.sampler = g_vktextures.default_sampler,
-					.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view,
-					.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-				},
+		g_vktextures.skybox_resource = (sampled_image_resource_t) {
+			.header = {
+				.name = "skybox",
+				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.acquire_descriptor = acquireSampledImageDescriptor,
+				.refcount = 1,
 			},
+			.image = &g_vktextures.skybox[kSkyboxPlaceholder].vk.image,
 		};
-
-		g_vktextures.skybox_resource = res;
+		ASSERT(R_VkResourceRegister(&g_vktextures.skybox_resource.header));
 	}
 
 	if (vk_core.rtx)
@@ -683,9 +700,7 @@ void R_VkTexturesSkyboxUnload(void) {
 	}
 
 	// Revert skybox resource back to the placeholder slot
-	if (g_vktextures.skybox_resource) {
-		g_vktextures.skybox_resource->resource.value.image.imageView = g_vktextures.skybox[kSkyboxPlaceholder].vk.image.view;
-	}
+	g_vktextures.skybox_resource.image = &g_vktextures.skybox[kSkyboxPlaceholder].vk.image;
 }
 
 VkDescriptorImageInfo R_VkTexturesGetSkyboxDescriptorImageInfo( skybox_slot_e slot ) {
@@ -719,15 +734,13 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 	if (!uploaded)
 		return false;
 
-	if (g_vktextures.skybox_resource) {
-		for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
-			vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
-			if (skybox->vk.image.view == VK_NULL_HANDLE)
-				continue;
+	for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
+		vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
+		if (skybox->vk.image.view == VK_NULL_HANDLE)
+			continue;
 
-			g_vktextures.skybox_resource->resource.value.image.imageView = skybox->vk.image.view;
-			break;
-		}
+		g_vktextures.skybox_resource.image = &skybox->vk.image;
+		break;
 	}
 
 	return uploaded;

@@ -6,7 +6,6 @@
 #include "r_flipping.h"
 
 typedef struct {
-	uint32_t combuf_tag;
 	r_vksync_scope_t write, read;
 } r_vksync_state_t;
 
@@ -56,14 +55,6 @@ typedef struct {
 vk_buffer_locked_t R_VkBufferLock(vk_buffer_t *buf, vk_buffer_lock_t lock);
 
 void R_VkBufferUnlock(vk_buffer_locked_t lock);
-
-typedef struct {
-	const char *name;
-	vk_buffer_t *buffer;
-	size_t offset;
-	size_t size;
-} r_vkbuffer_register_as_resource_t;
-struct rt_resource_s *R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resource_t args);
 
 // Commits any staged regions for the specified buffer
 struct vk_combuf_s;

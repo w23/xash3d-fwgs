@@ -5,10 +5,12 @@
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
 #include "vk_combuf.h"
+#include "vk_barrier.h"
 #include "vk_math.h"
 #include "vk_geometry.h"
 #include "vk_render.h"
 #include "vk_logs.h"
+#include "vk_resources.h"
 
 #include "arrays.h"
 #include "profiler.h"
@@ -70,7 +72,7 @@ static struct {
 	r_flipping_buffer_t tlas_geom_buffer_alloc;
 
 	struct {
-		rt_resource_t *resource;
+		rt_resource_t resource;
 		VkAccelerationStructureKHR handle;
 
 		VkAccelerationStructureGeometryKHR geometry;
@@ -174,21 +176,18 @@ static void tlasCreate(void) {
 
 static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
+
 	{
-		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.accels_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
-		}, {
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.tlas_geom_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			.buffers = {
-				.count = COUNTOF(buffers),
-				.items = buffers,
-			},
 		});
+		barrierCommit(&barrier, combuf);
 	}
 
 	const uint32_t scratch_buffer_size = g_accel.tlas.sizes_info.buildScratchSize;
@@ -278,20 +277,16 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	R_VkBufferStagingCommit(geom, combuf);
 	{
-		const r_vkcombuf_barrier_buffer_t buffers[] = {{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = &g_accel.accels_buffer,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-		}, {
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
 			.buffer = geom,
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		}};
-		R_VkCombufIssueBarrier(combuf, (r_vkcombuf_barrier_t){
-			.stage = VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-			.buffers = {
-				.count = COUNTOF(buffers),
-				.items = buffers,
-			},
 		});
+		barrierCommit(&barrier, combuf);
 	}
 
 	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
@@ -315,24 +310,14 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	g_accel.build.range_infos.count = 0;
 }
 
-static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
+static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 
 	const uint32_t instances_count = g_accel.frame.instances.count;
 
 	if (instances_count == 0) {
 		APROF_SCOPE_END(prepare);
-		return (vk_resource_t){
-			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-			.value = (vk_descriptor_value_t){
-				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-					.accelerationStructureCount = 0,
-					.pAccelerationStructures = NULL,
-					.pNext = NULL,
-				},
-			},
-		};
+		return false;
 	}
 
 	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
@@ -432,22 +417,26 @@ static vk_resource_t RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	g_accel.frame.scratch_offset = 0;
 
 	APROF_SCOPE_END(prepare);
-	return (vk_resource_t){
-		.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-		.value = (vk_descriptor_value_t){
-			.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-				.accelerationStructureCount = 1,
-				.pAccelerationStructures = &g_accel.tlas.handle,
-				.pNext = NULL,
-			},
-		},
-	};
+	return true;
 }
 
-void RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	ASSERT(g_accel.tlas.resource);
-	g_accel.tlas.resource->resource = RT_VkAccelProduceTlas(combuf);
+qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
+	return RT_VkAccelProduceTlas(combuf);
+}
+
+static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
+	(void)args;
+
+	// TODO barrier
+
+	return (vk_descriptor_value_t){
+		.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+			.accelerationStructureCount = 1,
+			.pAccelerationStructures = &g_accel.tlas.handle,
+			.pNext = NULL,
+		},
+	};
 }
 
 qboolean RT_VkAccelInit(void) {
@@ -487,21 +476,14 @@ qboolean RT_VkAccelInit(void) {
 	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
 
 	{
-		g_accel.tlas.resource = R_VkResourceFindOrAlloc("tlas");
-		ASSERT(g_accel.tlas.resource);
-
-		g_accel.tlas.resource->refcount = 1;
-		g_accel.tlas.resource->resource = (vk_resource_t){
+		g_accel.tlas.resource = (rt_resource_t) {
+			.name = "tlas",
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-			.value = (vk_descriptor_value_t){
-				.accel = (VkWriteDescriptorSetAccelerationStructureKHR) {
-					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
-					.accelerationStructureCount = 0,
-					.pAccelerationStructures = NULL,
-					.pNext = NULL,
-				},
-			},
+			.acquire_descriptor = acquireTlasDescriptor,
+			.refcount = 1,
 		};
+
+		ASSERT(R_VkResourceRegister(&g_accel.tlas.resource));
 	}
 
 	return true;
