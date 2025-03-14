@@ -9,6 +9,7 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 
 typedef struct {
 	struct vk_combuf_s* combuf;
+	uint32_t frame_sequence;
 
 	// TODO This is kinda asking to be struct r_frame_context_t or something
 	int frame_set_slot; // 0 or 1, until we do num_frame_slots

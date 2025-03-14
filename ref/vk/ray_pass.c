@@ -274,6 +274,15 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 
 		ASSERT(pass->desc.riptors.bindings[i].descriptorType == res->type);
 
+		if (res->producer && res->producer->frame_sequence_tag != args.frame_sequence) {
+			res->producer->produce(res->producer, combuf, &(FrameContext){
+				.frame_sequence = args.frame_sequence,
+				.width = args.width,
+				.height = args.height,
+			});
+			res->producer->frame_sequence_tag = args.frame_sequence;
+		}
+
 		pass->desc.riptors.values[i] = res->acquire_descriptor(res, (vk_resource_acquire_descriptor_args_t){
 			.combuf = combuf,
 			.barriers = &barrier,

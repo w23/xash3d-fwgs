@@ -726,6 +726,7 @@ struct r_vk_image_s* R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_mea
 		const struct vk_meatpipe_pass_s *pass = meatpipe->passes + i;
 		RayPassPerform(pass->pass, args.combuf,
 			(ray_pass_perform_args_t){
+				.frame_sequence = args.frame_sequence,
 				.frame_set_slot = args.frame_set_slot,
 				.width = args.width,
 				.height = args.height,

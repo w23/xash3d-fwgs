@@ -62,6 +62,7 @@ void RayPassDestroy( struct ray_pass_s *pass );
 struct rt_resource_s;
 
 typedef struct ray_pass_perform_args_s {
+	uint32_t frame_sequence;
 	int frame_set_slot; // 0 or 1, until we do num_frame_slots
 	int width, height;
 	struct rt_resource_s* *const resources;

@@ -102,6 +102,7 @@ vk_resource_buffer_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resour
 	res->header.type = args.type;
 	res->header.acquire_descriptor = acquireBufferResourceDescriptor;
 	res->header.refcount = 1;
+	res->header.producer = args.producer;
 
 	res->buffer = args.buffer;
 	res->offset = args.offset;

@@ -78,11 +78,8 @@ void RT_LightsLoadBegin( const struct model_s *map );
 // Finalize loading light data, i.e. mark everything loaded so far as static light data
 void RT_LightsLoadEnd( void );
 
+// TODO can we call it from produce/consumed?
 void RT_LightsFrameBegin( void );
-void RT_LightsFrameEnd( void );
-
-struct vk_combuf_s;
-void VK_LightsUpload( struct vk_combuf_s* );
 
 qboolean RT_GetEmissiveForTexture( vec3_t out, int texture_id );
 

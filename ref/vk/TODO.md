@@ -1,4 +1,5 @@
 # Upcoming
+- [ ] Figure out naming, code style, make clang-format
 - [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
@@ -28,15 +29,27 @@
 - [ ] Render graph
 - [ ] performance profiling and comparison
 
-## Resograf agenda
-- [ ] Move all resources/state/barrier management to passes
+# Next
+## [ ] Resograf agenda
 - [ ] Explicit dependency graph
 	- [ ] Build it from meatpipe and resources
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
-# Next
-- [ ] Dependency graph
+# Log
+## 2025-03-14 E400 graphores p.1
+- [x] Producer interface
+    - [x] made notes
+- [ ] Make producers
+    - [ ] Builtin producers
+        - [ ] geometry: vertices, indices
+        - [x] lights
+        - [ ] TLAS
+        - [ ] kusochki
+            - [ ] extract to its own module
+        - [ ] model_headers
+        - [ ] UBO
+    - [ ] Meatpipe
 
 ## 2025-03-11 E399 resograph p.4
 ### Barriers
@@ -57,6 +70,7 @@
 	- [-] ping-pong images
 ### Off-stream
 - [x] add resource dtors
+- [x] Move all resources/state/barrier management to passes
 
 ## 2025-03-06 EN/A offline
 - [ ] hide resource internals; rt_resource_t is just a header
@@ -208,7 +222,8 @@
 - [ ] HDR and tonemapping
 
 ### Invisible blockers -- foundation/systems stuff
-- [ ] Render graph and resource tracking -- track textures, buffers+regions ownership and usage, automatic barriers, etc.
+- [ ] Render graph
+- [x] and resource tracking -- track textures, buffers+regions ownership and usage, automatic barriers, etc.
 - [ ] Modules and dependencies tracking
 - [ ] Integrate rendertests into CI
 

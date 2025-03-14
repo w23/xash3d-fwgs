@@ -68,7 +68,9 @@ static struct {
 
 	bit_array_t visited_cells;
 
+	// TODO depend on producer->produce(ctx.frame_sequence)
 	uint32_t frame_sequence;
+	Producer producer;
 
 	struct {
 		int dirty_cells;
@@ -93,7 +95,10 @@ static void debugDumpLights( void ) {
 	}
 }
 
+// TODO: only infotool uses this. Can make private, add `VK_LightsPrintInfo()`, and call that from infotool.c
 vk_lights_t g_lights = {0};
+
+static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx);
 
 qboolean VK_LightsInit( void ) {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
@@ -109,12 +114,19 @@ qboolean VK_LightsInit( void ) {
 		return false;
 	}
 
+	g_lights_.producer = (Producer) {
+		.name = "lights",
+		.frame_sequence_tag = 0,
+		.produce = lightsProduce,
+	};
+
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "lights",
 		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_lights_.buffer,
 		.offset = 0,
 		.size = sizeof(struct LightsMetadata),
+		.producer = &g_lights_.producer,
 	});
 
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
@@ -123,6 +135,7 @@ qboolean VK_LightsInit( void ) {
 		.buffer = &g_lights_.buffer,
 		.offset = sizeof(struct LightsMetadata),
 		.size = sizeof(struct LightCluster) * MAX_LIGHT_CLUSTERS,
+		.producer = &g_lights_.producer,
 	});
 
 	R_SPEEDS_COUNTER(g_lights_.stats.dirty_cells, "dirty_cells", kSpeedsMetricCount);
@@ -1313,7 +1326,7 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 	}
 }
 
-void VK_LightsUpload( struct vk_combuf_s *combuf ) {
+static void VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	APROF_SCOPE_DECLARE_BEGIN(upload, __FUNCTION__);
 	const vk_buffer_locked_t locked = R_VkBufferLock(&g_lights_.buffer,
 		(vk_buffer_lock_t) {
@@ -1343,7 +1356,7 @@ void VK_LightsUpload( struct vk_combuf_s *combuf ) {
 	R_VkBufferStagingCommit(&g_lights_.buffer, combuf);
 }
 
-void RT_LightsFrameEnd( void ) {
+static void RT_LightsFrameEnd( void ) {
 	APROF_SCOPE_BEGIN_EARLY(finalize);
 	if (g_lights_.num_polygons > UINT8_MAX) {
 		ERROR_THROTTLED(10, "Too many emissive surfaces found: %d; some areas will be dark", g_lights_.num_polygons);
@@ -1431,4 +1444,11 @@ void RT_LightsFrameEnd( void ) {
 
 	debug_dump_lights.enabled = false;
 	APROF_SCOPE_END(finalize);
+}
+
+static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+	ASSERT(p->frame_sequence_tag != ctx->frame_sequence);
+	RT_LightsFrameEnd();
+	VK_LightsUpload(combuf);
+	// TODO frame begin
 }

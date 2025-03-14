@@ -222,6 +222,7 @@ static r_vk_image_t* performTracing( vk_combuf_t *combuf, const perform_tracing_
 	ASSERT(g_rtx.meatpipe);
 	r_vk_image_t *const ret = R_VkMeatpipeDispatch(g_rtx.meatpipe, (vk_meatpipe_dispatch_t){
 		.combuf = combuf,
+		.frame_sequence = args->frame_counter,
 		.frame_set_slot = args->frame_index,
 		.width = args->frame_width,
 		.height = args->frame_height,
@@ -272,12 +273,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	ASSERT(vk_core.rtx);
 	// ubo should contain two matrices
 	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
-
-	{
-		// TODO should be done by "producing" lights and lights_grid resources
-		RT_LightsFrameEnd();
-		VK_LightsUpload(args->combuf);
-	}
 
 	g_rtx.frame_number++;
 
