@@ -313,6 +313,9 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 
+	// Feed tlas with dynamic data
+	RT_DynamicModelProcessFrame();
+
 	const uint32_t instances_count = g_accel.frame.instances.count;
 
 	if (instances_count == 0) {

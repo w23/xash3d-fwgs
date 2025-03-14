@@ -266,16 +266,7 @@ fail:
 	return false;
 }
 
-void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
-{
-	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
-
-	ASSERT(vk_core.rtx);
-	// ubo should contain two matrices
-	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
-
-	g_rtx.frame_number++;
-
+static void reloadOrResizeIfNeeded(const vk_ray_frame_render_args_t* args) {
 	qboolean need_resize = false;
 
 	if (g_rtx.max_frame_width < args->dst->width) {
@@ -307,8 +298,21 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		need_resize = false;
 	}
 
-	// Feed tlas with dynamic data
-	RT_DynamicModelProcessFrame();
+	ASSERT(args->dst->width <= g_rtx.max_frame_width);
+	ASSERT(args->dst->height <= g_rtx.max_frame_height);
+}
+
+void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
+{
+	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
+
+	ASSERT(vk_core.rtx);
+	// ubo should contain two matrices
+	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
+
+	g_rtx.frame_number++;
+
+	reloadOrResizeIfNeeded(args);
 
 	// FIXME what's the right place for this?
 	// This needs to happen every frame where we might've locked staging for kusochki
@@ -316,9 +320,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	// - Before performTracing(), even if it is not called
 	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
 	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
-
-	ASSERT(args->dst->width <= g_rtx.max_frame_width);
-	ASSERT(args->dst->height <= g_rtx.max_frame_height);
 
 	// TODO dynamic scaling based on perf
 	const int frame_width = args->dst->width;
