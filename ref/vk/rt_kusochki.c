@@ -20,6 +20,8 @@ static struct {
 	// Needs: STORAGE_BUFFER
 	vk_buffer_t buffer;
 	r_debuffer_t alloc;
+
+	Producer producer;
 } g_kusochki;
 
 void RT_KusochkiClear(void) {
@@ -131,12 +133,8 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 	return true;
 }
 
-void RT_KusochkiCommit_FIXME(struct vk_combuf_s *combuf) {
-	// FIXME what's the right place for this?
-	// This needs to happen every frame where we might've locked staging for kusochki
-	// - After dynamic stuff (might upload kusochki)
-	// - Before performTracing(), even if it is not called
-	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
+static void produceKusochki(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+	(void)p; (void)ctx;
 	R_VkBufferStagingCommit(&g_kusochki.buffer, combuf);
 }
 
@@ -148,12 +146,19 @@ qboolean RT_KusochkiInit(void) {
 		return false;
 	}
 
+	g_kusochki.producer = (Producer) {
+		.name = "kusochki",
+		.frame_sequence_tag = 0,
+		.produce = produceKusochki,
+	};
+
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "kusochki",
 		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 		.buffer = &g_kusochki.buffer,
 		.offset = 0,
 		.size = g_kusochki.buffer.size,
+		.producer = &g_kusochki.producer,
 	});
 
 	return true;

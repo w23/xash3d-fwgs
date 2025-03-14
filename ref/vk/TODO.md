@@ -45,7 +45,7 @@
         - [ ] geometry: vertices, indices
         - [x] lights
         - [ ] TLAS
-        - [ ] kusochki
+        - [x] kusochki
             - [x] extract to its own module
         - [ ] model_headers
         - [ ] UBO

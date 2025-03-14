@@ -14,6 +14,8 @@ qboolean RT_KusochkiInit(void);
 void RT_KusochkiShutdown(void);
 
 void RT_KusochkiClear(void);
+
+// TODO producer->consumed
 void RT_KusochkiFlip(void);
 
 rt_kusochki_t RT_KusochkiAllocLong(int count);
@@ -23,7 +25,3 @@ void RT_KusochkiFree(const rt_kusochki_t *kusochki);
 struct vk_render_geometry_s;
 struct r_vk_material_s;
 qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const struct r_vk_material_s *override_material, const vec4_t *override_colors);
-
-// FIXME this is a producer
-struct vk_combuf_s;
-void RT_KusochkiCommit_FIXME(struct vk_combuf_s *combuf);

@@ -316,8 +316,6 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	reloadOrResizeIfNeeded(args);
 
-	RT_KusochkiCommit_FIXME(args->combuf);
-
 	// TODO dynamic scaling based on perf
 	const int frame_width = args->dst->width;
 	const int frame_height = args->dst->height;
