@@ -1,12 +1,13 @@
 #include "vk_rtx.h"
 
+#include "shaders/ray_interop.h" // DEBUG_DISPLAY_...
+
 #include "vk_resources.h"
 #include "vk_ray_accel.h"
 #include "vk_buffer.h"
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_cvar.h"
-#include "vk_descriptor.h"
 #include "vk_light.h"
 #include "vk_math.h"
 #include "vk_meatpipe.h"
@@ -14,6 +15,7 @@
 #include "r_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "rt_kusochki.h"
 
 #include "profiler.h"
 
@@ -314,12 +316,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 
 	reloadOrResizeIfNeeded(args);
 
-	// FIXME what's the right place for this?
-	// This needs to happen every frame where we might've locked staging for kusochki
-	// - After dynamic stuff (might upload kusochki)
-	// - Before performTracing(), even if it is not called
-	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
-	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
+	RT_KusochkiCommit_FIXME(args->combuf);
 
 	// TODO dynamic scaling based on perf
 	const int frame_width = args->dst->width;
@@ -362,26 +359,6 @@ tail:
 
 static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
-}
-
-// TODO move to rt_kusochki.c
-static qboolean kusochkiCreate(void) {
-	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
-		.name = "kusochki",
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.buffer = &g_ray_model_state.kusochki_buffer,
-		.offset = 0,
-		.size = g_ray_model_state.kusochki_buffer.size,
-	});
-
-	return true;
 }
 
 // TODO move to rt_model.c (s/vk_ray_model/rt_model)
@@ -437,7 +414,7 @@ qboolean VK_RayInit( void )
 		.size = sizeof(struct UniformBuffer),
 	});
 
-	if (!kusochkiCreate()) {
+	if (!RT_KusochkiInit()) {
 		// TODO cleanup
 		return false;
 	}
@@ -475,7 +452,7 @@ void VK_RayShutdown( void ) {
 	destroyMeatpipe();
 
 	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
-	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
+	RT_KusochkiShutdown();
 	VK_BufferDestroy(&g_rtx.uniform_buffer);
 
 	RT_VkAccelShutdown();

@@ -1,5 +1,7 @@
 #include "vk_ray_accel.h"
 
+#include "shaders/ray_interop.h" // ModelHeader, ...
+
 #include "vk_core.h"
 #include "vk_rtx.h"
 #include "vk_ray_internal.h"

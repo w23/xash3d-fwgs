@@ -4,20 +4,9 @@
 #include "vk_rtx.h"
 
 #define MAX_INSTANCES 2048
-#define MAX_KUSOCHKI 32768
 #define MODEL_CACHE_SIZE 2048
 
-#include "shaders/ray_interop.h"
-
-typedef struct Kusok vk_kusok_data_t;
-
 typedef struct {
-	// Geometry metadata. Lifetime is similar to geometry lifetime itself.
-	// Semantically close to render buffer (describes layout for those objects)
-	// TODO unify with render buffer?
-	// Needs: STORAGE_BUFFER
-	vk_buffer_t kusochki_buffer;
-	r_debuffer_t kusochki_alloc;
 	// TODO when fully rt_model: r_blocks_t alloc;
 
 	// Model header

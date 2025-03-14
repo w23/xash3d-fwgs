@@ -46,7 +46,7 @@
         - [x] lights
         - [ ] TLAS
         - [ ] kusochki
-            - [ ] extract to its own module
+            - [x] extract to its own module
         - [ ] model_headers
         - [ ] UBO
     - [ ] Meatpipe

@@ -1,10 +1,12 @@
 #include "vk_ray_internal.h"
 
+#include "shaders/ray_interop.h" // MATERIAL_MODE_...
+
 #include "vk_rtx.h"
-#include "vk_materials.h"
 #include "vk_render.h"
 #include "vk_logs.h"
 #include "vk_ray_accel.h"
+#include "rt_kusochki.h"
 #include "profiler.h"
 
 #include "xash3d_mathlib.h"
@@ -13,100 +15,10 @@
 
 xvk_ray_model_state_t g_ray_model_state;
 
-typedef struct rt_kusochki_s {
-	uint32_t offset;
-	int count;
-	int internal_index__;
-} rt_kusochki_t;
-
 typedef struct rt_model_s {
 	struct rt_blas_s *blas;
 	rt_kusochki_t kusochki;
 } rt_model_t;
-
-static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometry_t *geom, const r_vk_material_t *override_material, const vec4_t override_color) {
-	const r_vk_material_t *const mat = override_material ? override_material : &geom->material;
-	ASSERT(mat);
-
-	ASSERT(mat->tex_base_color >= 0);
-	ASSERT(mat->tex_base_color < MAX_TEXTURES || mat->tex_base_color == TEX_BASE_SKYBOX);
-
-	ASSERT(mat->tex_roughness >= 0);
-	ASSERT(mat->tex_roughness < MAX_TEXTURES);
-
-	ASSERT(mat->tex_metalness >= 0);
-	ASSERT(mat->tex_metalness < MAX_TEXTURES);
-
-	ASSERT(mat->tex_normalmap >= 0);
-	ASSERT(mat->tex_normalmap < MAX_TEXTURES);
-
-	// TODO split kusochki into static geometry data and potentially dynamic material data
-	// This data is static, should never change
-	kusok->vertex_offset = geom->vertex_offset;
-	kusok->index_offset = geom->index_offset;
-
-	// Material data itself is mostly static. Except for animated textures, which just get a new material slot for each frame.
-	kusok->material = (struct Material){
-		.tex_base_color = mat->tex_base_color,
-		.tex_roughness = mat->tex_roughness,
-		.tex_metalness = mat->tex_metalness,
-		.tex_normalmap = mat->tex_normalmap,
-
-		.roughness = mat->roughness,
-		.metalness = mat->metalness,
-		.normal_scale = mat->normal_scale,
-	};
-
-	// TODO emissive is potentially "dynamic", not tied to the material directly, as it is specified per-surface in rad files
-	VectorCopy(geom->emissive, kusok->emissive);
-	Vector4Copy(mat->base_color, kusok->material.base_color);
-
-	if (override_color) {
-		kusok->material.base_color[0] *= override_color[0];
-		kusok->material.base_color[1] *= override_color[1];
-		kusok->material.base_color[2] *= override_color[2];
-		kusok->material.base_color[3] *= override_color[3];
-	}
-}
-
-// TODO utilize uploadKusochki([1]) to avoid 2 copies of staging code
-#if 0
-static qboolean uploadKusochkiSubset(const vk_ray_model_t *const model, const vk_render_model_t *const render_model,  const int *geom_indexes, int geom_indexes_count) {
-	// TODO can we sort all animated geometries (in brush) to have only a single range here?
-	for (int i = 0; i < geom_indexes_count; ++i) {
-		const int index = geom_indexes[i];
-
-		const vk_staging_buffer_args_t staging_args = {
-			.buffer = g_ray_model_state.kusochki_buffer.buffer,
-			.offset = (model->kusochki_offset + index) * sizeof(vk_kusok_data_t),
-			.size = sizeof(vk_kusok_data_t),
-			.alignment = 16,
-		};
-		const vk_staging_region_t kusok_staging = R_VkStagingLockForBuffer(staging_args);
-
-		if (!kusok_staging.ptr) {
-			gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochek for model %s\n", 1, render_model->debug_name);
-			return false;
-		}
-
-		vk_kusok_data_t *const kusochki = kusok_staging.ptr;
-
-		vk_render_geometry_t *geom = render_model->geometries + index;
-		applyMaterialToKusok(kusochki + 0, geom, -1, NULL);
-
-		/* gEngine.Con_Reportf("model %s: geom=%d kuoffs=%d kustoff=%d kustsz=%d sthndl=%d\n", */
-		/* 		render_model->debug_name, */
-		/* 		render_model->num_geometries, */
-		/* 		model->kusochki_offset, */
-		/* 		staging_args.offset, staging_args.size, */
-		/* 		kusok_staging.handle */
-		/* 		); */
-
-		R_VkStagingUnlock(kusok_staging.handle);
-	}
-	return true;
-}
-#endif
 
 // TODO this material mapping is context dependent. I.e. different entity types might need different ray tracing behaviours for
 // same render_mode/type and even texture.
@@ -139,7 +51,7 @@ uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type) {
 }
 
 void RT_RayModel_Clear(void) {
-	R_DEBuffer_Init(&g_ray_model_state.kusochki_alloc, MAX_KUSOCHKI / 2, MAX_KUSOCHKI / 2);
+	RT_KusochkiClear();
 
 	// FIXME
 	// This is a dirty workaround for sub-part memory management in this little project
@@ -151,67 +63,11 @@ void RT_RayModel_Clear(void) {
 }
 
 void XVK_RayModel_ClearForNextFrame( void ) {
-	R_DEBuffer_Flip(&g_ray_model_state.kusochki_alloc);
-}
-
-static rt_kusochki_t kusochkiAllocLong(int count) {
-	// TODO Proper block allocator, not just double-ended buffer
-	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeStatic, count, 1);
-
-	if (kusochki_offset == ALO_ALLOC_FAILED) {
-		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded\n");
-		return (rt_kusochki_t){0,0,-1};
-	}
-
-	return (rt_kusochki_t){
-		.offset = kusochki_offset,
-		.count = count,
-		.internal_index__ = 0, // ???
-	};
-}
-
-static uint32_t kusochkiAllocOnce(int count) {
-	// TODO Proper block allocator
-	uint32_t kusochki_offset = R_DEBuffer_Alloc(&g_ray_model_state.kusochki_alloc, LifetimeDynamic, count, 1);
-
-	if (kusochki_offset == ALO_ALLOC_FAILED) {
-		gEngine.Con_Printf(S_ERROR "Maximum number of kusochki exceeded\n");
-		return ALO_ALLOC_FAILED;
-	}
-
-	return kusochki_offset;
-}
-
-static void kusochkiFree(const rt_kusochki_t *kusochki) {
-	// TODO block alloc
-	PRINT_NOT_IMPLEMENTED();
-}
-
-// TODO this function can't really fail. It'd mean that staging is completely broken.
-static qboolean kusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geometry_s *geoms, int geoms_count, const r_vk_material_t *override_material, const vec4_t *override_colors) {
-	const vk_buffer_lock_t lock_args = {
-		.offset = kusochki_offset * sizeof(vk_kusok_data_t),
-		.size = geoms_count * sizeof(vk_kusok_data_t),
-	};
-	const vk_buffer_locked_t lock = R_VkBufferLock(&g_ray_model_state.kusochki_buffer, lock_args);
-
-	if (!lock.ptr) {
-		gEngine.Con_Printf(S_ERROR "Couldn't allocate staging for %d kusochkov\n", geoms_count);
-		return false;
-	}
-
-	vk_kusok_data_t *const p = lock.ptr;
-	for (int i = 0; i < geoms_count; ++i) {
-		const vk_render_geometry_t *geom = geoms + i;
-		applyMaterialToKusok(p + i, geom, override_material, override_colors ? override_colors[i] : NULL);
-	}
-
-	R_VkBufferUnlock(lock);
-	return true;
+	RT_KusochkiFlip();
 }
 
 struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
-	const rt_kusochki_t kusochki = kusochkiAllocLong(args.geometries_count);
+	const rt_kusochki_t kusochki = RT_KusochkiAllocLong(args.geometries_count);
 	if (kusochki.count == 0) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate kusochki for %s\n", args.debug_name);
 		return NULL;
@@ -229,7 +85,7 @@ struct rt_model_s *RT_ModelCreate(rt_model_create_t args) {
 	}
 
 	// Invokes staging, so this should be after all resource creation
-	kusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
+	RT_KusochkiUpload(kusochki.offset, args.geometries, args.geometries_count, NULL, NULL);
 
 	{
 		rt_model_t *const ret = Mem_Malloc(vk_core.pool, sizeof(*ret));
@@ -243,7 +99,7 @@ fail:
 		RT_BlasDestroy(blas);
 
 	if (kusochki.count)
-		kusochkiFree(&kusochki);
+		RT_KusochkiFree(&kusochki);
 
 	return NULL;
 }
@@ -256,7 +112,7 @@ void RT_ModelDestroy(struct rt_model_s* model) {
 		RT_BlasDestroy(model->blas);
 
 	if (model->kusochki.count)
-		kusochkiFree(&model->kusochki);
+		RT_KusochkiFree(&model->kusochki);
 
 	Mem_Free(model);
 }
@@ -274,7 +130,7 @@ qboolean RT_ModelUpdate(struct rt_model_s *model, const struct vk_render_geometr
 		return false;
 
 	// Also update materials
-	kusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
+	RT_KusochkiUpload(model->kusochki.offset, geometries, geometries_count, NULL, NULL);
 	return true;
 }
 
@@ -294,7 +150,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 			const int offset = geom_indices[begin];
 			const int count = i - begin;
 			ASSERT(offset + count <= geometries_count);
-			if (!kusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
+			if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 				APROF_SCOPE_END(update_materials);
 				return false;
 			}
@@ -307,7 +163,7 @@ qboolean RT_ModelUpdateMaterials(struct rt_model_s *model, const struct vk_rende
 		const int offset = geom_indices[begin];
 		const int count = geom_indices_count - begin;
 		ASSERT(offset + count <= geometries_count);
-		if (!kusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
+		if (!RT_KusochkiUpload(model->kusochki.offset + offset, geometries + offset, count, NULL, NULL)) {
 
 			APROF_SCOPE_END(update_materials);
 			return false;
@@ -365,11 +221,11 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	uint32_t kusochki_offset = model->kusochki.offset;
 
 	if (args.override.material != NULL) {
-		kusochki_offset = kusochkiAllocOnce(args.override.geoms_count);
+		kusochki_offset = RT_KusochkiAllocOnce(args.override.geoms_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED)
 			return;
 
-		if (!kusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
+		if (!RT_KusochkiUpload(kusochki_offset, args.override.geoms, args.override.geoms_count, args.override.material, NULL)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't upload kusochki for instanced model\n");
 			return;
 		}
@@ -464,13 +320,13 @@ void RT_DynamicModelProcessFrame(void) {
 		if (!dyn->geometries_count)
 			continue;
 
-		const uint32_t kusochki_offset = kusochkiAllocOnce(dyn->geometries_count);
+		const uint32_t kusochki_offset = RT_KusochkiAllocOnce(dyn->geometries_count);
 		if (kusochki_offset == ALO_ALLOC_FAILED) {
 			gEngine.Con_Printf(S_ERROR "Couldn't allocate kusochki once for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
 
-		if (!kusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
+		if (!RT_KusochkiUpload(kusochki_offset, dyn->geometries, dyn->geometries_count, NULL, dyn->colors)) {
 			gEngine.Con_Printf(S_ERROR "Couldn't build blas for %d geoms of %s, skipping\n", dyn->geometries_count, group_names[i]);
 			goto tail;
 		}
