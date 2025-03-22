@@ -29,11 +29,11 @@ def configure(conf):
 	if conf.env.DEST_OS == 'win32':
 		conf.start_msg('Vulkan SDK available?')
 		if not 'VULKAN_SDK' in conf.environ:
-			conf.error('VULKAN_SDK environment variable is not available, ref_vk will not be built')
+			conf.fatal('VULKAN_SDK environment variable is not available, ref_vk will not be built')
 			conf.end_msg('no')
 		conf.env.VULKAN_SDK = conf.environ['VULKAN_SDK']
 		if not os.path.isdir(conf.env.VULKAN_SDK):
-			conf.error(conf.env.VULKAN_SDK + ' is not a valid directory')
+			conf.fatal(conf.env.VULKAN_SDK + ' is not a valid directory')
 		conf.end_msg('found at ' + conf.env.VULKAN_SDK)
 
 	conf.load('glslc')
