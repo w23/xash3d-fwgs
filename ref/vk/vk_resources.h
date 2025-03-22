@@ -11,7 +11,7 @@ typedef struct FrameContext {
 } FrameContext;
 
 struct Producer;
-typedef void (ProducerProduceFunc)(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx);
+typedef void (ProducerProduceFunc)(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx);
 typedef struct Producer {
 	char name[64];
 	ProducerProduceFunc *produce;

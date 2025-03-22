@@ -133,7 +133,7 @@ qboolean RT_KusochkiUpload(uint32_t kusochki_offset, const struct vk_render_geom
 	return true;
 }
 
-static void produceKusochki(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+static void produceKusochki(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	(void)p; (void)ctx;
 	R_VkBufferStagingCommit(&g_kusochki.buffer, combuf);
 }

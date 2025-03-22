@@ -171,7 +171,7 @@ void R_GeometryBuffer_MapClear( void ) {
 	// allocated blocks count remains constant and doesn't grow between maps
 }
 
-static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx);
+static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx);
 
 static void registerGeometryBufferAs(const char *name) {
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
@@ -224,11 +224,7 @@ void R_GeometryBuffer_Flip(void) {
 	R_BlocksClearOnce(&g_geom.alloc);
 }
 
-vk_buffer_t* R_GeometryBuffer_Get(void) {
-	return &g_geom.buffer;
-}
-
-static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	(void)ctx;
 	ASSERT(p == &g_geom.producer);
 	R_VkBufferStagingCommit(&g_geom.buffer, combuf);

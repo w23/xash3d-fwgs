@@ -321,7 +321,7 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_resource_buffer_t *geometry
 	g_accel.build.range_infos.count = 0;
 }
 
-static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 	DEBUG_BEGIN(combuf->cmdbuf, "produceTlas");
 

@@ -12,9 +12,7 @@
 #include "vk_combuf.h"
 #include "vk_logs.h"
 #include "vk_barrier.h"
-
-#include "vk_buffer.h"
-#include "vk_geometry.h"
+#include "vk_resources.h"
 
 #include "arrays.h"
 #include "profiler.h"
@@ -63,6 +61,8 @@ static struct {
 		r_vk_swapchain_framebuffer_t framebuffer;
 		frame_phase_t phase;
 	} current;
+
+	uint32_t sequence;
 } g_frame;
 
 #define PROFILER_SCOPES(X) \
@@ -263,8 +263,9 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_DECLARE_BEGIN(begin_frame_tail, "R_BeginFrame_tail");
 	ASSERT(g_frame.current.phase == Phase_Submitted || g_frame.current.phase == Phase_Idle);
 	g_frame.current.index = (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES;
-
 	vk_framectl_frame_t *const frame = g_frame.frames + g_frame.current.index;
+
+	g_frame.sequence++;
 
 	{
 		waitForFrameFence();
@@ -333,17 +334,11 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	if (vk_frame.rtx_enabled) {
 		VK_RenderEndRTX( combuf, &g_frame.current.framebuffer.image );
 	} else {
-		// FIXME: how to do this properly before render pass?
-		// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
-		// TODO move to geometryProduce()
-		vk_buffer_t* const geom = R_GeometryBuffer_Get();
-		R_VkBufferStagingCommit(geom, combuf);
-		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
-		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t){
-			.buffer = geom,
-			.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+		VK_RenderEndPrepare_FIXME(combuf, &(FrameContext){
+			.frame_sequence = g_frame.sequence,
+			.width = frame_width,
+			.height = frame_height,
 		});
-		barrierCommit(&barrier, combuf);
 	}
 
 	if (draw) {

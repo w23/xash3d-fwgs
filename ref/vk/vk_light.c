@@ -98,7 +98,7 @@ static void debugDumpLights( void ) {
 // TODO: only infotool uses this. Can make private, add `VK_LightsPrintInfo()`, and call that from infotool.c
 vk_lights_t g_lights = {0};
 
-static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx);
+static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx);
 
 qboolean VK_LightsInit( void ) {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
@@ -1446,7 +1446,7 @@ static void RT_LightsFrameEnd( void ) {
 	APROF_SCOPE_END(finalize);
 }
 
-static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
+static void lightsProduce(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	ASSERT(p->frame_sequence_tag != ctx->frame_sequence);
 	RT_LightsFrameEnd();
 	VK_LightsUpload(combuf);
