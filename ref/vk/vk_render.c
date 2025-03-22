@@ -799,8 +799,6 @@ void VK_RenderDebugLabelEnd( void )
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
 	ASSERT(vk_core.rtx);
 
-	R_GeometryBufferProduce(combuf);
-
 	{
 		const vk_ray_frame_render_args_t args = {
 			.combuf = combuf,

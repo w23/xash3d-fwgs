@@ -37,14 +37,18 @@
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Log
+## 2025-03-21 EN/A offline
+- [ ] Make producers
+    - [ ] Builtin producers
+        - [x] geometry: vertices, indices
+        - [x] TLAS
+
 ## 2025-03-14 E400 graphores p.1
 - [x] Producer interface
     - [x] made notes
 - [ ] Make producers
     - [ ] Builtin producers
-        - [ ] geometry: vertices, indices
         - [x] lights
-        - [ ] TLAS
         - [x] kusochki
             - [x] extract to its own module
         - [ ] model_headers

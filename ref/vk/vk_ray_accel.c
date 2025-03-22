@@ -75,6 +75,7 @@ static struct {
 
 	struct {
 		rt_resource_t resource;
+		Producer producer;
 		VkAccelerationStructureKHR handle;
 
 		VkAccelerationStructureGeometryKHR geometry;
@@ -177,20 +178,6 @@ static void tlasCreate(void) {
 }
 
 static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
-	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
-
-	{
-		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = &g_accel.accels_buffer,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
-		});
-		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = &g_accel.tlas_geom_buffer,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		});
-		barrierCommit(&barrier, combuf);
-	}
 
 	const uint32_t scratch_buffer_size = g_accel.tlas.sizes_info.buildScratchSize;
 
@@ -212,6 +199,25 @@ static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
+
+	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
+
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.accels_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.tlas_geom_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.scratch_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+		});
+		barrierCommit(&barrier, combuf);
+	}
 
 	static int scope_id = -2;
 	if (scope_id == -2)
@@ -276,8 +282,7 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
 }
 
-static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
-	R_VkBufferStagingCommit(geom, combuf);
+static void blasBuildPerform(vk_combuf_t *combuf, vk_resource_buffer_t *geometry) {
 	{
 		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
@@ -285,8 +290,12 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
 		});
 		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = geom,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+			.buffer = geometry->buffer,
+			.access = VK_ACCESS_2_SHADER_READ_BIT,
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.scratch_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
 		});
 		barrierCommit(&barrier, combuf);
 	}
@@ -312,28 +321,27 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	g_accel.build.range_infos.count = 0;
 }
 
-static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
+static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, FrameContext *ctx) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
+	DEBUG_BEGIN(combuf->cmdbuf, "produceTlas");
+
+	ASSERT(p == &g_accel.tlas.producer);
+
+	const uint32_t instances_count = g_accel.frame.instances.count;
+	ASSERT(instances_count > 0);
 
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
-
-	const uint32_t instances_count = g_accel.frame.instances.count;
-
-	if (instances_count == 0) {
-		APROF_SCOPE_END(prepare);
-		return false;
-	}
-
-	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
 
 	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, instances_count, 1);
 	ASSERT(instance_offset != ALO_ALLOC_FAILED);
 
-	vk_buffer_t* const geom = R_GeometryBuffer_Get();
-	const VkDeviceAddress geometry_buffer_address = R_VkBufferGetDeviceAddress(geom->buffer);
+	vk_resource_buffer_t *const geometry = (void*)R_VkResourceFindByName("geometry");
+	// TODO vk_buffer_t addr field
+	const VkDeviceAddress geometry_buffer_address = R_VkBufferGetDeviceAddress(geometry->buffer->buffer);
+	geometry->header.producer->produce(geometry->header.producer, combuf, ctx);
 
 	// Upload all blas instances references to GPU mem
 	{
@@ -411,7 +419,7 @@ static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	g_accel.stats.instances_count = instances_count;
 
 	// Build all scheduled BLASes
-	blasBuildPerform(combuf, geom);
+	blasBuildPerform(combuf, geometry);
 
 	// 2. Build TLAS
 	tlasBuild(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
@@ -422,11 +430,6 @@ static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	g_accel.frame.scratch_offset = 0;
 
 	APROF_SCOPE_END(prepare);
-	return true;
-}
-
-qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	return RT_VkAccelProduceTlas(combuf);
 }
 
 static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
@@ -480,10 +483,16 @@ qboolean RT_VkAccelInit(void) {
 
 	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
 
+	g_accel.tlas.producer = (Producer) {
+		.name = "tlas",
+		.produce = produceTlas,
+	};
+
 	{
 		g_accel.tlas.resource = (rt_resource_t) {
 			.name = "tlas",
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+			.producer = &g_accel.tlas.producer,
 			.acquire_descriptor = acquireTlasDescriptor,
 			.refcount = 1,
 		};
@@ -688,4 +697,8 @@ void RT_VkAccelAddDrawInstance(const rt_draw_instance_t* instance) {
 	}
 
 	BOUNDED_ARRAY_APPEND_UNSAFE(g_accel.frame.instances) = *instance;
+}
+
+qboolean RT_VkAccelIsEmpty(void) {
+	return g_accel.frame.instances.count == 0;
 }

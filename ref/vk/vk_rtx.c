@@ -324,7 +324,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	if (!args->dst->image)
 		goto tail;
 
-	if (!RT_VkAccelBuildTlas_FIXME(args->combuf)) {
+	if (RT_VkAccelIsEmpty()) {
 		R_VkImageClear( args->dst, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
