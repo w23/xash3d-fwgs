@@ -1,20 +1,9 @@
 #pragma once
 
-#include "vk_buffer.h"
 #include "vk_rtx.h"
 
 #define MAX_INSTANCES 2048
 #define MODEL_CACHE_SIZE 2048
-
-typedef struct {
-	// TODO when fully rt_model: r_blocks_t alloc;
-
-	// Model header
-	// Array of struct ModelHeader: color, material_mode, prev_transform
-	vk_buffer_t model_headers_buffer;
-} xvk_ray_model_state_t;
-
-extern xvk_ray_model_state_t g_ray_model_state;
 
 void XVK_RayModel_ClearForNextFrame( void );
 void XVK_RayModel_Validate(void);

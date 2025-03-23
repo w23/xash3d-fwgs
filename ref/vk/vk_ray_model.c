@@ -8,12 +8,9 @@
 #include "vk_ray_accel.h"
 #include "rt_kusochki.h"
 #include "profiler.h"
+#include "alolcator.h" // ALO_ALLOC_FAILED
 
 #include "xash3d_mathlib.h"
-
-#include <string.h>
-
-xvk_ray_model_state_t g_ray_model_state;
 
 typedef struct rt_model_s {
 	struct rt_blas_s *blas;

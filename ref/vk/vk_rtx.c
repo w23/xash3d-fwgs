@@ -370,26 +370,6 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
-// TODO move to rt_model.c (s/vk_ray_model/rt_model)
-static qboolean modelHeadersCreate(void) {
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
-		.name = "model_headers",
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.buffer = &g_ray_model_state.model_headers_buffer,
-		.offset = 0,
-		.size = g_ray_model_state.model_headers_buffer.size,
-	});
-
-	return true;
-}
-
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -434,11 +414,6 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	if (!modelHeadersCreate()) {
-		// TODO cleanup
-		return false;
-	}
-
 	reloadMeatpipe();
 	if (!g_rtx.meatpipe)
 		return false;
@@ -466,7 +441,6 @@ void VK_RayShutdown( void ) {
 
 	destroyMeatpipe();
 
-	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
 	RT_KusochkiShutdown();
 	VK_BufferDestroy(&g_rtx.uniform.buffer);
 

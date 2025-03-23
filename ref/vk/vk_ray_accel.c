@@ -50,6 +50,10 @@ typedef struct rt_blas_s {
 } rt_blas_t;
 
 static struct {
+	// Model header
+	// Array of struct ModelHeader: color, material_mode, prev_transform
+	vk_buffer_t model_headers_buffer;
+
 	// Stores AS built data. Lifetime similar to render buffer:
 	// - some portion lives for entire map lifetime
 	// - some portion lives only for a single frame (may have several frames in flight)
@@ -75,7 +79,6 @@ static struct {
 
 	struct {
 		rt_resource_t resource;
-		Producer producer;
 		VkAccelerationStructureKHR handle;
 
 		VkAccelerationStructureGeometryKHR geometry;
@@ -85,6 +88,8 @@ static struct {
 		VkAccelerationStructureBuildSizesInfoKHR sizes_info;
 	} tlas;
 
+	// Produces TLAS and model_headers
+	Producer producer;
 
 	// Per-frame data that is accumulated between RayFrameBegin and End calls
 	struct {
@@ -321,22 +326,98 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_resource_buffer_t *geometry
 	g_accel.build.range_infos.count = 0;
 }
 
-static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress geometry_buffer_address) {
+	const uint32_t instances_count = g_accel.frame.instances.count;
+	ASSERT(instances_count > 0);
+
+	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, instances_count, 1);
+	ASSERT(instance_offset != ALO_ALLOC_FAILED);
+
+	const vk_buffer_locked_t headers_lock = R_VkBufferLock(&g_accel.model_headers_buffer,
+		(vk_buffer_lock_t){
+			.offset = 0,
+			.size = instances_count * sizeof(struct ModelHeader),
+	});
+
+	ASSERT(headers_lock.ptr);
+
+	VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
+	for (uint32_t i = 0; i < instances_count; ++i) {
+		const rt_draw_instance_t* const instance = g_accel.frame.instances.items + i;
+
+		blasBuildEnqueue(instance->blas, geometry_buffer_address);
+
+		ASSERT(instance->blas->address != 0);
+		inst[i] = (VkAccelerationStructureInstanceKHR){
+			.instanceCustomIndex = instance->kusochki_offset,
+			.instanceShaderBindingTableRecordOffset = 0,
+			.accelerationStructureReference = instance->blas->address,
+		};
+
+		const VkGeometryInstanceFlagsKHR flags =
+			(instance->material_flags & kMaterialFlag_CullBackFace_Bit) || g_accel.cv_force_culling->value
+			? 0
+			: VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+
+		switch (instance->material_mode) {
+			case MATERIAL_MODE_OPAQUE:
+				inst[i].mask = GEOMETRY_BIT_OPAQUE;
+				if (!(instance->material_flags & kMaterialFlag_DontCastShadow_Bit))
+					inst[i].mask |= GEOMETRY_BIT_CASTS_SHADOW;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+				// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
+				// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
+				break;
+			case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
+				inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR; // Alpha test always culls
+				break;
+			case MATERIAL_MODE_TRANSLUCENT:
+				inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+				// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
+				break;
+			case MATERIAL_MODE_BLEND_ADD:
+			case MATERIAL_MODE_BLEND_MIX:
+			case MATERIAL_MODE_BLEND_GLOW:
+				inst[i].mask = GEOMETRY_BIT_BLEND;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
+				// Force no-culling because these should be visible from any angle
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | flags;
+				break;
+			default:
+				gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);
+				break;
+		}
+		memcpy(&inst[i].transform, instance->transform_row, sizeof(VkTransformMatrixKHR));
+
+		struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
+		header->mode = instance->material_mode;
+		Vector4Copy(instance->color, header->color);
+		Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
+	}
+
+	R_VkBufferUnlock(headers_lock);
+	R_VkBufferStagingCommit(&g_accel.model_headers_buffer, combuf);
+
+	g_accel.stats.instances_count = instances_count;
+
+	return instance_offset;
+}
+
+static void produceTlasAndModelHeaders(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
 	DEBUG_BEGIN(combuf->cmdbuf, "produceTlas");
 
-	ASSERT(p == &g_accel.tlas.producer);
-
-	const uint32_t instances_count = g_accel.frame.instances.count;
-	ASSERT(instances_count > 0);
+	ASSERT(p == &g_accel.producer);
 
 	// Feed tlas with dynamic data
 	RT_DynamicModelProcessFrame();
 
 	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
-
-	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, instances_count, 1);
-	ASSERT(instance_offset != ALO_ALLOC_FAILED);
 
 	vk_resource_buffer_t *const geometry = (void*)R_VkResourceFindByName("geometry");
 	// TODO vk_buffer_t addr field
@@ -344,79 +425,7 @@ static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, const Fr
 	R_VkResourceProduce(&geometry->header, combuf, ctx);
 
 	// Upload all blas instances references to GPU mem
-	{
-		const vk_buffer_locked_t headers_lock = R_VkBufferLock(&g_ray_model_state.model_headers_buffer,
-			(vk_buffer_lock_t){
-				.offset = 0,
-				.size = instances_count * sizeof(struct ModelHeader),
-		});
-
-		ASSERT(headers_lock.ptr);
-
-		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
-		for (uint32_t i = 0; i < instances_count; ++i) {
-			const rt_draw_instance_t* const instance = g_accel.frame.instances.items + i;
-
-			blasBuildEnqueue(instance->blas, geometry_buffer_address);
-
-			ASSERT(instance->blas->address != 0);
-			inst[i] = (VkAccelerationStructureInstanceKHR){
-				.instanceCustomIndex = instance->kusochki_offset,
-				.instanceShaderBindingTableRecordOffset = 0,
-				.accelerationStructureReference = instance->blas->address,
-			};
-
-			const VkGeometryInstanceFlagsKHR flags =
-				(instance->material_flags & kMaterialFlag_CullBackFace_Bit) || g_accel.cv_force_culling->value
-				? 0
-				: VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-
-			switch (instance->material_mode) {
-				case MATERIAL_MODE_OPAQUE:
-					inst[i].mask = GEOMETRY_BIT_OPAQUE;
-					if (!(instance->material_flags & kMaterialFlag_DontCastShadow_Bit))
-						inst[i].mask |= GEOMETRY_BIT_CASTS_SHADOW;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
-					// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
-					break;
-				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
-					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR; // Alpha test always culls
-					break;
-				case MATERIAL_MODE_TRANSLUCENT:
-					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
-					break;
-				case MATERIAL_MODE_BLEND_ADD:
-				case MATERIAL_MODE_BLEND_MIX:
-				case MATERIAL_MODE_BLEND_GLOW:
-					inst[i].mask = GEOMETRY_BIT_BLEND;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
-					// Force no-culling because these should be visible from any angle
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | flags;
-					break;
-				default:
-					gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);
-					break;
-			}
-			memcpy(&inst[i].transform, instance->transform_row, sizeof(VkTransformMatrixKHR));
-
-			struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
-			header->mode = instance->material_mode;
-			Vector4Copy(instance->color, header->color);
-			Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
-		}
-
-		R_VkBufferUnlock(headers_lock);
-		R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
-	}
-
-	g_accel.stats.instances_count = instances_count;
+	const uint32_t instance_offset = processEnqueuedInstances(combuf, geometry_buffer_address);
 
 	// Build all scheduled BLASes
 	blasBuildPerform(combuf, geometry);
@@ -447,7 +456,38 @@ static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk
 	};
 }
 
+// TODO move to rt_model.c (s/vk_ray_model/rt_model)
+static qboolean modelHeadersCreate(void) {
+	if (!VK_BufferCreate("model headers", &g_accel.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "model_headers",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		.buffer = &g_accel.model_headers_buffer,
+		.offset = 0,
+		.size = g_accel.model_headers_buffer.size,
+		.producer = &g_accel.producer,
+	});
+
+	return true;
+}
+
 qboolean RT_VkAccelInit(void) {
+	g_accel.producer = (Producer) {
+		.name = "tlas",
+		.produce = produceTlasAndModelHeaders,
+	};
+
+	if (!modelHeadersCreate()) {
+		// TODO cleanup
+		return false;
+	}
+
 	if (!VK_BufferCreate("ray accels_buffer", &g_accel.accels_buffer, MAX_ACCELS_BUFFER,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -483,16 +523,11 @@ qboolean RT_VkAccelInit(void) {
 
 	g_accel.cv_force_culling = gEngine.Cvar_Get("rt_debug_force_backface_culling", "0", FCVAR_GLCONFIG | FCVAR_CHEAT, "Force backface culling for testing");
 
-	g_accel.tlas.producer = (Producer) {
-		.name = "tlas",
-		.produce = produceTlas,
-	};
-
 	{
 		g_accel.tlas.resource = (rt_resource_t) {
 			.name = "tlas",
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-			.producer = &g_accel.tlas.producer,
+			.producer = &g_accel.producer,
 			.acquire_descriptor = acquireTlasDescriptor,
 			.refcount = 1,
 		};
@@ -510,8 +545,11 @@ void RT_VkAccelShutdown(void) {
 	VK_BufferDestroy(&g_accel.scratch_buffer);
 	VK_BufferDestroy(&g_accel.accels_buffer);
 	VK_BufferDestroy(&g_accel.tlas_geom_buffer);
+
 	if (g_accel.accels_buffer_alloc)
 		aloPoolDestroy(g_accel.accels_buffer_alloc);
+
+	VK_BufferDestroy(&g_accel.model_headers_buffer);
 }
 
 void RT_VkAccelNewMap(void) {
