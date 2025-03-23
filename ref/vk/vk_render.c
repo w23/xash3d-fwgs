@@ -643,7 +643,7 @@ static uint32_t writeDlightsToUBO( void )
 // FIXME: how to do this properly before render pass?
 // Needed to avoid VUID-vkCmdCopyBuffer-renderpass
 void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
-	g_render.geometry->header.producer->produce(g_render.geometry->header.producer, combuf, ctx);
+	R_VkResourceProduce(&g_render.geometry->header, combuf, ctx);
 
 	Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
 	barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t){

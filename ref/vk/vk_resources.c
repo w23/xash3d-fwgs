@@ -47,6 +47,22 @@ qboolean R_VkResourceRegister(rt_resource_t *res) {
 	return true;
 }
 
+void R_VkResourceProduce(rt_resource_t *res, vk_combuf_t *combuf, const FrameContext *ctx) {
+	ASSERT(res);
+	//ASSERT(res->producer);
+
+	if (!res->producer)
+		return;
+
+	ASSERT(res->producer->produce);
+
+	if (res->producer->frame_sequence_tag == ctx->frame_sequence)
+		return;
+
+	res->producer->produce(res->producer, combuf, ctx);
+	res->producer->frame_sequence_tag = ctx->frame_sequence;
+}
+
 void R_VkResourcesCleanup(void) {
 	for (int i = 0; i < g_res.table.count; ++i) {
 		rt_resource_t *const res = g_res.table.items[i];

@@ -56,6 +56,8 @@ void R_VkResourcesInit(void);
 rt_resource_t *R_VkResourceFindByName(const char *name);
 qboolean R_VkResourceRegister(rt_resource_t *res);
 
+void R_VkResourceProduce(rt_resource_t *res, vk_combuf_t *combuf, const FrameContext *ctx);
+
 // TODO remove these when ping-pong resource is a dedicated type of resource
 rt_resource_t *R_VkResourceGetByIndex(int index);
 int R_VkResourceFindIndexByName(const char *name);

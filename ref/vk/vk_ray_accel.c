@@ -341,7 +341,7 @@ static void produceTlas(struct Producer* p, struct vk_combuf_s *combuf, const Fr
 	vk_resource_buffer_t *const geometry = (void*)R_VkResourceFindByName("geometry");
 	// TODO vk_buffer_t addr field
 	const VkDeviceAddress geometry_buffer_address = R_VkBufferGetDeviceAddress(geometry->buffer->buffer);
-	geometry->header.producer->produce(geometry->header.producer, combuf, ctx);
+	R_VkResourceProduce(&geometry->header, combuf, ctx);
 
 	// Upload all blas instances references to GPU mem
 	{
