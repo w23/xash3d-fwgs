@@ -5,14 +5,26 @@
 
 #define LOG_MODULE rt
 
-#include <stdlib.h>
-
 static struct {
 	ARRAY_DYNAMIC_DECLARE(rt_resource_t*, table);
+
+	// Note that frame_sequence_tag will be shared between all dummy users
+	Producer dummy_producer;
 } g_res;
+
+static void produceDummyNoop(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	(void)p;
+	(void)combuf;
+	(void)ctx;
+}
 
 void R_VkResourcesInit(void) {
 	arrayDynamicInitT(&g_res.table);
+
+	g_res.dummy_producer = (Producer) {
+		.name = "dummy",
+		.produce = produceDummyNoop,
+	};
 }
 
 rt_resource_t *R_VkResourceGetByIndex(int index) {
@@ -88,8 +100,9 @@ static vk_descriptor_value_t acquireDummyDescriptor(struct rt_resource_s *res, v
 
 void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType type, vk_descriptor_value_t value) {
 	Q_strncpy(res->header.name, name, sizeof(res->header.name));
-	res->header.acquire_descriptor = acquireDummyDescriptor;
 	res->header.type = type;
+	res->header.acquire_descriptor = acquireDummyDescriptor;
+	res->header.producer = &g_res.dummy_producer;
 	res->descriptor_value = value;
 }
 

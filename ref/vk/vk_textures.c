@@ -46,6 +46,7 @@ static struct {
 
 	vk_texture_t skybox[kSkybox_COUNT];
 	sampled_image_resource_t skybox_resource;
+	Producer skybox_producer;
 
 	// TODO is this used as vk_texture_t object anywhere after loading?
 	vk_texture_t blue_noise;
@@ -170,6 +171,17 @@ static void loadBlueNoiseTextures(void) {
 	}
 }
 
+static void produceSkybox(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	ASSERT(p == &g_vktextures.skybox_producer);
+
+	g_vktextures.skybox_resource.image =
+		(g_vktextures.skybox[kSkyboxPatched].vk.image.view != VK_NULL_HANDLE)
+		? &g_vktextures.skybox[kSkyboxPatched].vk.image
+	  : (g_vktextures.skybox[kSkyboxOriginal].vk.image.view != VK_NULL_HANDLE)
+		? &g_vktextures.skybox[kSkyboxOriginal].vk.image
+		: &g_vktextures.skybox[kSkyboxPlaceholder].vk.image;
+}
+
 qboolean R_VkTexturesInit( void ) {
 	R_SPEEDS_METRIC(g_vktextures.stats.count, "count", kSpeedsMetricCount);
 	R_SPEEDS_METRIC(g_vktextures.stats.size_total, "size_total", kSpeedsMetricBytes);
@@ -217,11 +229,17 @@ qboolean R_VkTexturesInit( void ) {
 	}
 
 	{
+		g_vktextures.skybox_producer = (Producer) {
+			.name = "skybox",
+			.produce = produceSkybox,
+		};
+
 		g_vktextures.skybox_resource = (sampled_image_resource_t) {
 			.header = {
 				.name = "skybox",
 				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				.acquire_descriptor = acquireSampledImageDescriptor,
+				.producer = &g_vktextures.skybox_producer,
 				.refcount = 1,
 			},
 			.image = &g_vktextures.skybox[kSkyboxPlaceholder].vk.image,
@@ -733,15 +751,6 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 	const qboolean uploaded = uploadTexture(-1, dest, pic, colorspace_hint);
 	if (!uploaded)
 		return false;
-
-	for (int i = kSkybox_COUNT - 1; i > kSkyboxPlaceholder; --i) {
-		vk_texture_t *const skybox = g_vktextures.skybox + skybox_slot;
-		if (skybox->vk.image.view == VK_NULL_HANDLE)
-			continue;
-
-		g_vktextures.skybox_resource.image = &skybox->vk.image;
-		break;
-	}
 
 	return uploaded;
 }
