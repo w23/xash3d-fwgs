@@ -163,7 +163,7 @@ static uint32_t getRandomSeed( void ) {
 	return (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 }
 
-void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+static void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
 	// TODO using frame_sequence is only accidental synchronization. It should be done via e.g. resource->consumed or smth.
 	const size_t ubo_slot_offset = (ctx->frame_sequence % MAX_FRAMES_IN_FLIGHT) * g_rtx.uniform.unit_size;
 	struct UniformBuffer *const ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform.buffer.mapped + ubo_slot_offset);
