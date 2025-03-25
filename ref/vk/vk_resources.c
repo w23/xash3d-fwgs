@@ -61,7 +61,7 @@ qboolean R_VkResourceRegister(rt_resource_t *res) {
 
 void R_VkResourceProduce(rt_resource_t *res, vk_combuf_t *combuf, const FrameContext *ctx) {
 	ASSERT(res);
-	//ASSERT(res->producer);
+	ASSERT(res->producer);
 
 	if (!res->producer)
 		return;

@@ -43,7 +43,7 @@
         - [x] geometry: vertices, indices
         - [x] TLAS
         - [x] UBO
-        - [ ] model_headers
+        - [x] model_headers
 
 ## 2025-03-14 E400 graphores p.1
 - [x] Producer interface

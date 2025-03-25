@@ -748,9 +748,9 @@ class PipelineCompute(Pipeline):
 		super().serialize(out)
 		out.writeU32(shaders.getIndex(self.comp))
 
-def parsePipeline(pipelines, name, desc):
+def parsePipeline(pipelines_desc, name, desc):
 	if 'inherit' in desc:
-		inherit = pipelines[desc['inherit']]
+		inherit = pipelines_desc[desc['inherit']]
 		for k, v in inherit.items():
 			if not k in desc:
 				desc[k] = v
@@ -759,13 +759,30 @@ def parsePipeline(pipelines, name, desc):
 	elif 'comp' in desc:
 		return PipelineCompute(name, desc)
 
+def fillResourceProducers(pipelines):
+	for (index, pipeline) in enumerate(pipelines):
+		for binding in pipeline.bindings():
+			if not binding.create:
+				continue
+
+			resource = binding.getResource()
+			if resource.producer:
+				raise Exception('Resource "%s" already has producer "%s"' % (resource.name, pipelines.getByIndex(resource.producer).name))
+
+			resource.producer = index
+
 def loadPipelines():
+	pipelines = NameIndex()
 	pipelines_desc = prepareJSON(args.pipelines)
-	pipelines = dict()
 	for k, v in pipelines_desc.items():
 		if 'template' in v and v['template']:
 			continue
-		pipelines[k] = parsePipeline(pipelines_desc, k, v)
+		pipelines.put(k, parsePipeline(pipelines_desc, k, v))
+
+	# FIXME: currently doesn't work due to denoiser reusing shX_ping/pong resources inbetween passes
+	# FIXME: blocked by https://github.com/w23/xash3d-fwgs/issues/774
+	#fillResourceProducers(pipelines)
+
 	return pipelines
 
 def writeOutput(file, pipelines):
@@ -774,7 +791,7 @@ def writeOutput(file, pipelines):
 	out.write(MAGIC)
 	resources.serialize(out)
 	shaders.serialize(out)
-	out.writeArray(pipelines.values())
+	pipelines.serialize(out)
 
 pipelines = loadPipelines()
 
@@ -785,24 +802,12 @@ if args.output:
 	shaders.parse()
 	writeOutput(args.output, pipelines)
 
+# TODO make an integration test for this
 if args.dot:
-	# 1. Mark which pipeline generates which resources
-	for name, pipeline in pipelines.items():
-		for binding in pipeline.bindings():
-			if not binding.create:
-				continue
-
-			resource = binding.getResource()
-			if resource.producer:
-				raise Exception('Resource "%s" already has producer "%s"' % (resource.name, resource.producer))
-
-			resource.producer = name
-
-	# 2. Find destination image
 	dest = resources.getByName('dest')
 	# TODO check that it's an image
 
-	# 3. Walk the tree
+	# Walk the tree
 	visited_res = dict()
 	visited_pipe = dict()
 	def visitResource(res):
@@ -810,17 +815,19 @@ if args.dot:
 			return
 		visited_res[res.name] = True
 
-		if res.producer:
+		producer = pipelines.getByIndex(res.producer) if res.producer else None
+
+		if producer:
 			args.dot.write('%s [shape=oval];\n' % res.name)
 		else:
 			args.dot.write('%s [shape=oval,style=filled,color="#ffff80"];\n' % res.name)
 			return
 
-		if res.producer in visited_pipe:
+		if producer.name in visited_pipe:
 			return
-		visited_pipe[res.producer] = True
+		visited_pipe[producer.name] = True
 
-		pipeline = pipelines[res.producer];
+		pipeline = pipelines.getByIndex(res.producer)
 		args.dot.write('%s [shape=box,style=filled,color="#ff9090"];\n' % pipeline.name)
 
 		for binding in pipeline.bindings():
