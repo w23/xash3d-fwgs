@@ -114,6 +114,7 @@ jobs:
       with:
         bundle: ${{ matrix.app }}.flatpak
         manifest-path: scripts/flatpak/${{ matrix.app }}.yml
+        cache: false
   release:
     name: "Upload releases"
     runs-on: ubuntu-latest
