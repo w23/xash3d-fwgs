@@ -514,7 +514,8 @@ static void destroyStorageImage(rt_resource_t *r) {
 	Mem_Free(res);
 }
 
-static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *const mr, int max_width, int max_height) {
+static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *const mr, Producer *producer,
+		int max_width, int max_height) {
 	if (mr->descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
 		ERR("Only storage image creation is supported for meatpipes");
 		return NULL;
@@ -539,6 +540,7 @@ static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *c
 		res->header.type = mr->descriptor_type;
 		res->header.destroy = destroyStorageImage;
 		res->header.acquire_descriptor = acquireStorageImageDescriptor;
+		res->header.producer = producer;
 		ASSERT(R_VkResourceRegister(&res->header));
 	}
 
@@ -574,6 +576,18 @@ static rt_resource_t *createStorageImageResource(const vk_meatpipe_resource_t *c
 	return &res->header;
 }
 
+static void producePass(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	(void)p;
+	(void)combuf;
+	(void)ctx;
+}
+
+// FIXME make the real producer when https://github.com/w23/xash3d-fwgs/issues/774 is solved or worked around
+static Producer fake_producer = {
+	.name = "fake_meatpipe_producer",
+	.produce = producePass,
+};
+
 int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, int max_height) {
 	const size_t newpipe_resources_size = sizeof(rt_resource_t*) * meatpipe->resources_count;
 	rt_resource_t* *acquired_resources = Mem_Calloc(vk_core.pool, newpipe_resources_size);
@@ -598,7 +612,7 @@ int R_VkMeatpipeAcquireResources(struct vk_meatpipe_s *meatpipe, int max_width, 
 		const qboolean create = !!(mr->flags & MEATPIPE_RES_CREATE);
 
 		rt_resource_t *const res = create
-			? createStorageImageResource(mr, max_width, max_height)
+			? createStorageImageResource(mr, &fake_producer, max_width, max_height)
 			: R_VkResourceFindByName(mr->name);
 
 		if (!res) {
@@ -726,6 +740,7 @@ struct r_vk_image_s* R_VkMeatpipeDispatch(struct vk_meatpipe_s *meatpipe, vk_mea
 		const struct vk_meatpipe_pass_s *pass = meatpipe->passes + i;
 		RayPassPerform(pass->pass, args.combuf,
 			(ray_pass_perform_args_t){
+				.frame_sequence = args.frame_sequence,
 				.frame_set_slot = args.frame_set_slot,
 				.width = args.width,
 				.height = args.height,

@@ -7,11 +7,6 @@ void RT_VkAccelShutdown(void);
 
 void RT_VkAccelNewMap(void);
 
-struct vk_combuf_s;
-
-// TODO should be hidden behind producer eventually
-qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf);
-
 typedef struct rt_draw_instance_t {
 	struct rt_blas_s *blas;
 	uint32_t kusochki_offset;
@@ -23,3 +18,5 @@ typedef struct rt_draw_instance_t {
 } rt_draw_instance_t;
 
 void RT_VkAccelAddDrawInstance(const rt_draw_instance_t*);
+
+qboolean RT_VkAccelIsEmpty(void);

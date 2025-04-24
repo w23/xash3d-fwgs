@@ -3,6 +3,8 @@
 #include "vk_core.h"
 #include "vk_buffer.h"
 #include "vk_geometry.h"
+#include "vk_barrier.h"
+#include "vk_resources.h"
 #include "vk_combuf.h"
 #include "vk_const.h"
 #include "vk_common.h"
@@ -75,6 +77,8 @@ static struct {
 	VkPipeline pipelines[kVkPipeline_COUNT];
 
 	r_pipeline_sky_t pipeline_sky;
+
+	vk_resource_buffer_t *geometry;
 
 	vk_buffer_t uniform_buffer;
 	uint32_t ubo_align;
@@ -402,6 +406,10 @@ qboolean VK_RenderInit( void ) {
 
 	g_render.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
 
+	// TODO type safety
+	g_render.geometry = (void*)R_VkResourceFindByName("geometry");
+	ASSERT(g_render.geometry);
+
 	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
 
 	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
@@ -632,6 +640,19 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
+// FIXME: how to do this properly before render pass?
+// Needed to avoid VUID-vkCmdCopyBuffer-renderpass
+void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
+	R_VkResourceProduce(&g_render.geometry->header, combuf, ctx);
+
+	Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+	barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t){
+		.buffer = g_render.geometry->buffer,
+		.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
+	});
+	barrierCommit(&barrier, combuf);
+}
+
 void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t height, int frame_index )
 {
 	if (!draw)
@@ -661,7 +682,10 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 	ASSERT(!g_render_state.current_frame_is_ray_traced);
 
 	{
-		vk_buffer_t* const geom = R_GeometryBuffer_Get();
+		vk_buffer_t* const geom = g_render.geometry->buffer;
+		ASSERT(geom->sync.read.stage & VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+		ASSERT(geom->sync.read.access & VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
+		ASSERT(geom->sync.read.access & VK_ACCESS_2_INDEX_READ_BIT);
 		const VkDeviceSize offset = 0;
 		vkCmdBindVertexBuffers(cmdbuf, 0, 1, &geom->buffer, &offset);
 		vkCmdBindIndexBuffer(cmdbuf, geom->buffer, 0, VK_INDEX_TYPE_UINT16);
@@ -798,8 +822,6 @@ void VK_RenderDebugLabelEnd( void )
 
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
 	ASSERT(vk_core.rtx);
-
-	R_GeometryBufferProduce(combuf);
 
 	{
 		const vk_ray_frame_render_args_t args = {

@@ -1,5 +1,7 @@
 #include "vk_ray_accel.h"
 
+#include "shaders/ray_interop.h" // ModelHeader, ...
+
 #include "vk_core.h"
 #include "vk_rtx.h"
 #include "vk_ray_internal.h"
@@ -48,6 +50,10 @@ typedef struct rt_blas_s {
 } rt_blas_t;
 
 static struct {
+	// Model header
+	// Array of struct ModelHeader: color, material_mode, prev_transform
+	vk_buffer_t model_headers_buffer;
+
 	// Stores AS built data. Lifetime similar to render buffer:
 	// - some portion lives for entire map lifetime
 	// - some portion lives only for a single frame (may have several frames in flight)
@@ -82,6 +88,8 @@ static struct {
 		VkAccelerationStructureBuildSizesInfoKHR sizes_info;
 	} tlas;
 
+	// Produces TLAS and model_headers
+	Producer producer;
 
 	// Per-frame data that is accumulated between RayFrameBegin and End calls
 	struct {
@@ -175,20 +183,6 @@ static void tlasCreate(void) {
 }
 
 static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
-	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
-
-	{
-		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = &g_accel.accels_buffer,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
-		});
-		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = &g_accel.tlas_geom_buffer,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-		});
-		barrierCommit(&barrier, combuf);
-	}
 
 	const uint32_t scratch_buffer_size = g_accel.tlas.sizes_info.buildScratchSize;
 
@@ -210,6 +204,25 @@ static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
+
+	R_VkBufferStagingCommit(&g_accel.tlas_geom_buffer, combuf);
+
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.accels_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, // TODO? WRITE? we're writing tlas here too
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.tlas_geom_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.scratch_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+		});
+		barrierCommit(&barrier, combuf);
+	}
 
 	static int scope_id = -2;
 	if (scope_id == -2)
@@ -274,8 +287,7 @@ static void blasBuildEnqueue(rt_blas_t* blas, VkDeviceAddress geometry_buffer_ad
 	ASSERT(g_accel.build.geometry_infos.count == g_accel.build.range_infos.count);
 }
 
-static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
-	R_VkBufferStagingCommit(geom, combuf);
+static void blasBuildPerform(vk_combuf_t *combuf, vk_resource_buffer_t *geometry) {
 	{
 		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
 		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
@@ -283,8 +295,12 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
 		});
 		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
-			.buffer = geom,
-			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+			.buffer = geometry->buffer,
+			.access = VK_ACCESS_2_SHADER_READ_BIT,
+		});
+		barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t) {
+			.buffer = &g_accel.scratch_buffer,
+			.access = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
 		});
 		barrierCommit(&barrier, combuf);
 	}
@@ -310,103 +326,109 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_buffer_t *geom) {
 	g_accel.build.range_infos.count = 0;
 }
 
-static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
-	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
-
+static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress geometry_buffer_address) {
 	const uint32_t instances_count = g_accel.frame.instances.count;
-
-	if (instances_count == 0) {
-		APROF_SCOPE_END(prepare);
-		return false;
-	}
-
-	DEBUG_BEGIN(combuf->cmdbuf, "prepare tlas");
-
-	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
+	ASSERT(instances_count > 0);
 
 	const uint32_t instance_offset = R_FlippingBuffer_Alloc(&g_accel.tlas_geom_buffer_alloc, instances_count, 1);
 	ASSERT(instance_offset != ALO_ALLOC_FAILED);
 
-	vk_buffer_t* const geom = R_GeometryBuffer_Get();
-	const VkDeviceAddress geometry_buffer_address = R_VkBufferGetDeviceAddress(geom->buffer);
+	const vk_buffer_locked_t headers_lock = R_VkBufferLock(&g_accel.model_headers_buffer,
+		(vk_buffer_lock_t){
+			.offset = 0,
+			.size = instances_count * sizeof(struct ModelHeader),
+	});
 
-	// Upload all blas instances references to GPU mem
-	{
-		const vk_buffer_locked_t headers_lock = R_VkBufferLock(&g_ray_model_state.model_headers_buffer,
-			(vk_buffer_lock_t){
-				.offset = 0,
-				.size = instances_count * sizeof(struct ModelHeader),
-		});
+	ASSERT(headers_lock.ptr);
 
-		ASSERT(headers_lock.ptr);
+	VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
+	for (uint32_t i = 0; i < instances_count; ++i) {
+		const rt_draw_instance_t* const instance = g_accel.frame.instances.items + i;
 
-		VkAccelerationStructureInstanceKHR* inst = ((VkAccelerationStructureInstanceKHR*)g_accel.tlas_geom_buffer.mapped) + instance_offset;
-		for (uint32_t i = 0; i < instances_count; ++i) {
-			const rt_draw_instance_t* const instance = g_accel.frame.instances.items + i;
+		blasBuildEnqueue(instance->blas, geometry_buffer_address);
 
-			blasBuildEnqueue(instance->blas, geometry_buffer_address);
+		ASSERT(instance->blas->address != 0);
+		inst[i] = (VkAccelerationStructureInstanceKHR){
+			.instanceCustomIndex = instance->kusochki_offset,
+			.instanceShaderBindingTableRecordOffset = 0,
+			.accelerationStructureReference = instance->blas->address,
+		};
 
-			ASSERT(instance->blas->address != 0);
-			inst[i] = (VkAccelerationStructureInstanceKHR){
-				.instanceCustomIndex = instance->kusochki_offset,
-				.instanceShaderBindingTableRecordOffset = 0,
-				.accelerationStructureReference = instance->blas->address,
-			};
+		const VkGeometryInstanceFlagsKHR flags =
+			(instance->material_flags & kMaterialFlag_CullBackFace_Bit) || g_accel.cv_force_culling->value
+			? 0
+			: VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 
-			const VkGeometryInstanceFlagsKHR flags =
-				(instance->material_flags & kMaterialFlag_CullBackFace_Bit) || g_accel.cv_force_culling->value
-				? 0
-				: VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-
-			switch (instance->material_mode) {
-				case MATERIAL_MODE_OPAQUE:
-					inst[i].mask = GEOMETRY_BIT_OPAQUE;
-					if (!(instance->material_flags & kMaterialFlag_DontCastShadow_Bit))
-						inst[i].mask |= GEOMETRY_BIT_CASTS_SHADOW;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
-					// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
-					break;
-				case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
-					inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR; // Alpha test always culls
-					break;
-				case MATERIAL_MODE_TRANSLUCENT:
-					inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-					// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
-					break;
-				case MATERIAL_MODE_BLEND_ADD:
-				case MATERIAL_MODE_BLEND_MIX:
-				case MATERIAL_MODE_BLEND_GLOW:
-					inst[i].mask = GEOMETRY_BIT_BLEND;
-					inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
-					// Force no-culling because these should be visible from any angle
-					inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | flags;
-					break;
-				default:
-					gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);
-					break;
-			}
-			memcpy(&inst[i].transform, instance->transform_row, sizeof(VkTransformMatrixKHR));
-
-			struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
-			header->mode = instance->material_mode;
-			Vector4Copy(instance->color, header->color);
-			Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
+		switch (instance->material_mode) {
+			case MATERIAL_MODE_OPAQUE:
+				inst[i].mask = GEOMETRY_BIT_OPAQUE;
+				if (!(instance->material_flags & kMaterialFlag_DontCastShadow_Bit))
+					inst[i].mask |= GEOMETRY_BIT_CASTS_SHADOW;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+				// Force no-culling because there are cases where culling leads to leaking shadows, holes in reflections, etc
+				// CULL_DISABLE_BIT disables culling even if the gl_RayFlagsCullFrontFacingTrianglesEXT bit is set in shaders
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
+				break;
+			case MATERIAL_MODE_OPAQUE_ALPHA_TEST:
+				inst[i].mask = GEOMETRY_BIT_ALPHA_TEST;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ALPHA_TEST,
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR; // Alpha test always culls
+				break;
+			case MATERIAL_MODE_TRANSLUCENT:
+				inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
+				// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
+				break;
+			case MATERIAL_MODE_BLEND_ADD:
+			case MATERIAL_MODE_BLEND_MIX:
+			case MATERIAL_MODE_BLEND_GLOW:
+				inst[i].mask = GEOMETRY_BIT_BLEND;
+				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
+				// Force no-culling because these should be visible from any angle
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | flags;
+				break;
+			default:
+				gEngine.Host_Error("Unexpected material mode %d\n", instance->material_mode);
+				break;
 		}
+		memcpy(&inst[i].transform, instance->transform_row, sizeof(VkTransformMatrixKHR));
 
-		R_VkBufferUnlock(headers_lock);
-		R_VkBufferStagingCommit(&g_ray_model_state.model_headers_buffer, combuf);
+		struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
+		header->mode = instance->material_mode;
+		Vector4Copy(instance->color, header->color);
+		Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
 	}
+
+	R_VkBufferUnlock(headers_lock);
+	R_VkBufferStagingCommit(&g_accel.model_headers_buffer, combuf);
 
 	g_accel.stats.instances_count = instances_count;
 
+	return instance_offset;
+}
+
+static void produceTlasAndModelHeaders(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	APROF_SCOPE_DECLARE_BEGIN(prepare, __FUNCTION__);
+	DEBUG_BEGIN(combuf->cmdbuf, "produceTlas");
+
+	ASSERT(p == &g_accel.producer);
+
+	// Feed tlas with dynamic data
+	RT_DynamicModelProcessFrame();
+
+	R_FlippingBuffer_Flip( &g_accel.tlas_geom_buffer_alloc );
+
+	vk_resource_buffer_t *const geometry = (void*)R_VkResourceFindByName("geometry");
+	// TODO vk_buffer_t addr field
+	const VkDeviceAddress geometry_buffer_address = R_VkBufferGetDeviceAddress(geometry->buffer->buffer);
+	R_VkResourceProduce(&geometry->header, combuf, ctx);
+
+	// Upload all blas instances references to GPU mem
+	const uint32_t instance_offset = processEnqueuedInstances(combuf, geometry_buffer_address);
+
 	// Build all scheduled BLASes
-	blasBuildPerform(combuf, geom);
+	blasBuildPerform(combuf, geometry);
 
 	// 2. Build TLAS
 	tlasBuild(combuf, g_accel.tlas_geom_buffer_addr + instance_offset * sizeof(VkAccelerationStructureInstanceKHR));
@@ -417,11 +439,6 @@ static qboolean RT_VkAccelProduceTlas(vk_combuf_t *combuf) {
 	g_accel.frame.scratch_offset = 0;
 
 	APROF_SCOPE_END(prepare);
-	return true;
-}
-
-qboolean RT_VkAccelBuildTlas_FIXME(struct vk_combuf_s *combuf) {
-	return RT_VkAccelProduceTlas(combuf);
 }
 
 static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk_resource_acquire_descriptor_args_t args) {
@@ -439,7 +456,38 @@ static vk_descriptor_value_t acquireTlasDescriptor(struct rt_resource_s* res, vk
 	};
 }
 
+// TODO move to rt_model.c (s/vk_ray_model/rt_model)
+static qboolean modelHeadersCreate(void) {
+	if (!VK_BufferCreate("model headers", &g_accel.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+		// FIXME complain, handle
+		return false;
+	}
+
+	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+		.name = "model_headers",
+		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		.buffer = &g_accel.model_headers_buffer,
+		.offset = 0,
+		.size = g_accel.model_headers_buffer.size,
+		.producer = &g_accel.producer,
+	});
+
+	return true;
+}
+
 qboolean RT_VkAccelInit(void) {
+	g_accel.producer = (Producer) {
+		.name = "tlas",
+		.produce = produceTlasAndModelHeaders,
+	};
+
+	if (!modelHeadersCreate()) {
+		// TODO cleanup
+		return false;
+	}
+
 	if (!VK_BufferCreate("ray accels_buffer", &g_accel.accels_buffer, MAX_ACCELS_BUFFER,
 			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -479,6 +527,7 @@ qboolean RT_VkAccelInit(void) {
 		g_accel.tlas.resource = (rt_resource_t) {
 			.name = "tlas",
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+			.producer = &g_accel.producer,
 			.acquire_descriptor = acquireTlasDescriptor,
 			.refcount = 1,
 		};
@@ -496,8 +545,11 @@ void RT_VkAccelShutdown(void) {
 	VK_BufferDestroy(&g_accel.scratch_buffer);
 	VK_BufferDestroy(&g_accel.accels_buffer);
 	VK_BufferDestroy(&g_accel.tlas_geom_buffer);
+
 	if (g_accel.accels_buffer_alloc)
 		aloPoolDestroy(g_accel.accels_buffer_alloc);
+
+	VK_BufferDestroy(&g_accel.model_headers_buffer);
 }
 
 void RT_VkAccelNewMap(void) {
@@ -683,4 +735,8 @@ void RT_VkAccelAddDrawInstance(const rt_draw_instance_t* instance) {
 	}
 
 	BOUNDED_ARRAY_APPEND_UNSAFE(g_accel.frame.instances) = *instance;
+}
+
+qboolean RT_VkAccelIsEmpty(void) {
+	return g_accel.frame.instances.count == 0;
 }

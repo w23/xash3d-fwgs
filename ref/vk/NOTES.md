@@ -1239,3 +1239,24 @@ What do we want? Resources and producers! When do we want it? Maybe next stream.
 	- results[] -> resource
 	- dispatch(combuf, barriers)
 
+# 2025-03-14 E400
+- Resource
+    - ...
+    - `Producer *producer;`
+        - optional -- can be `NULL`
+        - action to perform to make resource available for reading
+        - assumption: resource can be produced only once per frame
+        - and then read multiple times
+- Producer
+    - `const char *name;`
+    - dtor?
+        - currently all potential dynamic producers are handled by meatpipe
+        - so for now there's no need for dtor
+    - `void produce(combuf, ...frame context?.. )`
+    - `u32 frame_sequence_tag;`
+        - visitor must ensure that producer produces products only once
+    - Speculative:
+        - `rt_resource_t *products[];`
+            - produced resources
+            - no need for it now -- all dynamic producers are handled in meatpipe explicitly
+            - but might be beneficial for extracting graph from resource + producers soup

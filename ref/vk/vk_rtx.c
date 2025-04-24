@@ -1,12 +1,13 @@
 #include "vk_rtx.h"
 
+#include "shaders/ray_interop.h" // DEBUG_DISPLAY_...
+
 #include "vk_resources.h"
 #include "vk_ray_accel.h"
 #include "vk_buffer.h"
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_cvar.h"
-#include "vk_descriptor.h"
 #include "vk_light.h"
 #include "vk_math.h"
 #include "vk_meatpipe.h"
@@ -14,6 +15,7 @@
 #include "r_textures.h"
 #include "vk_combuf.h"
 #include "vk_logs.h"
+#include "rt_kusochki.h"
 
 #include "profiler.h"
 
@@ -29,10 +31,16 @@
 #define MIN_FRAME_HEIGHT 800
 
 static struct {
-	// Holds UniformBuffer data
-	vk_buffer_t uniform_buffer;
-	uint32_t uniform_unit_size;
-	vk_resource_buffer_t *uniform_buffer_resource;
+	struct {
+		// Holds UniformBuffer data
+		vk_buffer_t buffer;
+		uint32_t unit_size;
+
+		vk_resource_buffer_t *resource;
+		Producer producer;
+
+		struct UniformBuffer current;
+	} uniform;
 
 	// TODO with proper intra-cmdbuf sync we don't really need 2x images
 	unsigned frame_number;
@@ -155,53 +163,58 @@ static uint32_t getRandomSeed( void ) {
 	return (uint32_t)gEngine.COM_RandomLong(0, INT32_MAX);
 }
 
-static void prepareUniformBuffer( const vk_ray_frame_render_args_t *args, int frame_index, uint32_t frame_counter, float fov_angle_y, int frame_width, int frame_height ) {
-	const size_t ubo_slot_offset = frame_index * g_rtx.uniform_unit_size;
-	struct UniformBuffer *ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform_buffer.mapped + ubo_slot_offset);
-	g_rtx.uniform_buffer_resource->offset = ubo_slot_offset;
+static void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	// TODO using frame_sequence is only accidental synchronization. It should be done via e.g. resource->consumed or smth.
+	const size_t ubo_slot_offset = (ctx->frame_sequence % MAX_FRAMES_IN_FLIGHT) * g_rtx.uniform.unit_size;
+	struct UniformBuffer *const ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform.buffer.mapped + ubo_slot_offset);
+	g_rtx.uniform.resource->offset = ubo_slot_offset;
+	ubo->frame_counter = ctx->frame_sequence;
+	memcpy(ubo, &g_rtx.uniform.current, sizeof(struct UniformBuffer));
+}
 
+static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args_t *args, float fov_angle_y, int frame_width, int frame_height ) {
+	struct UniformBuffer ret;
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
-	Matrix4x4_ToArrayFloatGL(proj_inv, (float*)ubo->inv_proj);
+	Matrix4x4_ToArrayFloatGL(proj_inv, (float*)ret.inv_proj);
 
 	// TODO there's a more efficient way to construct an inverse view matrix
 	// from vforward/right/up vectors and origin in g_camera
 	Matrix4x4_Invert_Full(view_inv, *args->view);
-	Matrix4x4_ToArrayFloatGL(view_inv, (float*)ubo->inv_view);
+	Matrix4x4_ToArrayFloatGL(view_inv, (float*)ret.inv_view);
 
 	// previous frame matrices
-	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_proj, (float*)ubo->prev_inv_proj);
-	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_view, (float*)ubo->prev_inv_view);
+	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_proj, (float*)ret.prev_inv_proj);
+	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_view, (float*)ret.prev_inv_view);
 	Matrix4x4_Copy(g_rtx.prev_inv_view, view_inv);
 	Matrix4x4_Copy(g_rtx.prev_inv_proj, proj_inv);
 
-	ubo->res[0] = frame_width;
-	ubo->res[1] = frame_height;
-	ubo->ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
-	ubo->frame_counter = frame_counter;
-	ubo->skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
+	ret.res[0] = frame_width;
+	ret.res[1] = frame_height;
+	ret.ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
+	ret.skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
 
 	parseDebugDisplayValue();
 	if (g_rtx.debug.rt_debug_display_only_value) {
-		ubo->debug_display_only = g_rtx.debug.rt_debug_display_only_value;
+		ret.debug_display_only = g_rtx.debug.rt_debug_display_only_value;
 	} else {
-		ubo->debug_display_only = r_lightmap->value != 0 ? DEBUG_DISPLAY_LIGHTING : DEBUG_DISPLAY_DISABLED;
+		ret.debug_display_only = r_lightmap->value != 0 ? DEBUG_DISPLAY_LIGHTING : DEBUG_DISPLAY_DISABLED;
 	}
 
 	parseDebugFlags();
-	ubo->debug_flags = g_rtx.debug.rt_debug_flags_value;
+	ret.debug_flags = g_rtx.debug.rt_debug_flags_value;
 
-	ubo->random_seed = getRandomSeed();
+	ret.random_seed = getRandomSeed();
 
 #define SET_RENDERER_FLAG(cvar,flag) (CVAR_TO_BOOL(cvar) ? flag : 0)
-
-	ubo->renderer_flags = SET_RENDERER_FLAG(rt_only_diffuse_gi, RENDERER_FLAG_ONLY_DIFFUSE_GI) |
+	ret.renderer_flags = SET_RENDERER_FLAG(rt_only_diffuse_gi, RENDERER_FLAG_ONLY_DIFFUSE_GI) |
 						  SET_RENDERER_FLAG(rt_separated_reflection, RENDERER_FLAG_SEPARATED_REFLECTION) |
 						  SET_RENDERER_FLAG(rt_denoise_gi_by_sh, RENDERER_FLAG_DENOISE_GI_BY_SH) |
 						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI) |
 						  SET_RENDERER_FLAG(rt_spatial_reconstruction, RENDERER_FLAG_SPATIAL_RECONSTRUCTION);
-
 #undef SET_RENDERER_FLAG
+
+	return ret;
 }
 
 typedef struct {
@@ -217,11 +230,12 @@ static r_vk_image_t* performTracing( vk_combuf_t *combuf, const perform_tracing_
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
 
-	prepareUniformBuffer(args->render_args, args->frame_index, args->frame_counter, args->fov_angle_y, args->frame_width, args->frame_height);
+	g_rtx.uniform.current = prepareUniformBuffer(args->render_args, args->fov_angle_y, args->frame_width, args->frame_height);
 
 	ASSERT(g_rtx.meatpipe);
 	r_vk_image_t *const ret = R_VkMeatpipeDispatch(g_rtx.meatpipe, (vk_meatpipe_dispatch_t){
 		.combuf = combuf,
+		.frame_sequence = args->frame_counter,
 		.frame_set_slot = args->frame_index,
 		.width = args->frame_width,
 		.height = args->frame_height,
@@ -265,22 +279,7 @@ fail:
 	return false;
 }
 
-void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
-{
-	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
-
-	ASSERT(vk_core.rtx);
-	// ubo should contain two matrices
-	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
-
-	{
-		// TODO should be done by "producing" lights and lights_grid resources
-		RT_LightsFrameEnd();
-		VK_LightsUpload(args->combuf);
-	}
-
-	g_rtx.frame_number++;
-
+static void reloadOrResizeIfNeeded(const vk_ray_frame_render_args_t* args) {
 	qboolean need_resize = false;
 
 	if (g_rtx.max_frame_width < args->dst->width) {
@@ -312,18 +311,21 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 		need_resize = false;
 	}
 
-	// Feed tlas with dynamic data
-	RT_DynamicModelProcessFrame();
-
-	// FIXME what's the right place for this?
-	// This needs to happen every frame where we might've locked staging for kusochki
-	// - After dynamic stuff (might upload kusochki)
-	// - Before performTracing(), even if it is not called
-	// See ~3:00:00-3:40:00 of stream E383 about push-vs-pull models and their boundaries.
-	R_VkBufferStagingCommit(&g_ray_model_state.kusochki_buffer, args->combuf);
-
 	ASSERT(args->dst->width <= g_rtx.max_frame_width);
 	ASSERT(args->dst->height <= g_rtx.max_frame_height);
+}
+
+void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
+{
+	APROF_SCOPE_DECLARE_BEGIN(ray_frame_end, __FUNCTION__);
+
+	ASSERT(vk_core.rtx);
+	// ubo should contain two matrices
+	// FIXME pass these matrices explicitly to let RTX module handle ubo itself
+
+	g_rtx.frame_number++;
+
+	reloadOrResizeIfNeeded(args);
 
 	// TODO dynamic scaling based on perf
 	const int frame_width = args->dst->width;
@@ -333,7 +335,7 @@ void VK_RayFrameEnd(const vk_ray_frame_render_args_t* args)
 	if (!args->dst->image)
 		goto tail;
 
-	if (!RT_VkAccelBuildTlas_FIXME(args->combuf)) {
+	if (RT_VkAccelIsEmpty()) {
 		R_VkImageClear( args->dst, args->combuf, NULL );
 	} else {
 		const perform_tracing_args_t trace_args = {
@@ -368,46 +370,6 @@ static void reloadPipeline( void ) {
 	g_rtx.reload_pipeline = true;
 }
 
-// TODO move to rt_kusochki.c
-static qboolean kusochkiCreate(void) {
-	if (!VK_BufferCreate("ray kusochki_buffer", &g_ray_model_state.kusochki_buffer, sizeof(vk_kusok_data_t) * MAX_KUSOCHKI,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
-		.name = "kusochki",
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.buffer = &g_ray_model_state.kusochki_buffer,
-		.offset = 0,
-		.size = g_ray_model_state.kusochki_buffer.size,
-	});
-
-	return true;
-}
-
-// TODO move to rt_model.c (s/vk_ray_model/rt_model)
-static qboolean modelHeadersCreate(void) {
-	if (!VK_BufferCreate("model headers", &g_ray_model_state.model_headers_buffer, sizeof(struct ModelHeader) * MAX_INSTANCES,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-		// FIXME complain, handle
-		return false;
-	}
-
-	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
-		.name = "model_headers",
-		.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-		.buffer = &g_ray_model_state.model_headers_buffer,
-		.offset = 0,
-		.size = g_ray_model_state.model_headers_buffer.size,
-	});
-
-	return true;
-}
-
 qboolean VK_RayInit( void )
 {
 	ASSERT(vk_core.rtx);
@@ -423,9 +385,9 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-	g_rtx.uniform_unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+	g_rtx.uniform.unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
 
-	if (!VK_BufferCreate("ray uniform_buffer", &g_rtx.uniform_buffer, g_rtx.uniform_unit_size * MAX_FRAMES_IN_FLIGHT,
+	if (!VK_BufferCreate("ray uniform.buffer", &g_rtx.uniform.buffer, g_rtx.uniform.unit_size * MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
 	{
@@ -433,20 +395,21 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
-	g_rtx.uniform_buffer_resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+	g_rtx.uniform.producer = (Producer) {
+		.name = "ubo",
+		.produce = produceUboResource,
+	};
+
+	g_rtx.uniform.resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = "ubo",
 		.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		.buffer = &g_rtx.uniform_buffer,
+		.buffer = &g_rtx.uniform.buffer,
 		.offset = 0, // Will be set dynamically each frame
 		.size = sizeof(struct UniformBuffer),
+		.producer = &g_rtx.uniform.producer,
 	});
 
-	if (!kusochkiCreate()) {
-		// TODO cleanup
-		return false;
-	}
-
-	if (!modelHeadersCreate()) {
+	if (!RT_KusochkiInit()) {
 		// TODO cleanup
 		return false;
 	}
@@ -478,9 +441,8 @@ void VK_RayShutdown( void ) {
 
 	destroyMeatpipe();
 
-	VK_BufferDestroy(&g_ray_model_state.model_headers_buffer);
-	VK_BufferDestroy(&g_ray_model_state.kusochki_buffer);
-	VK_BufferDestroy(&g_rtx.uniform_buffer);
+	RT_KusochkiShutdown();
+	VK_BufferDestroy(&g_rtx.uniform.buffer);
 
 	RT_VkAccelShutdown();
 	RT_DynamicModelShutdown();

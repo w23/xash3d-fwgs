@@ -21,6 +21,8 @@ static struct {
 	vk_buffer_t buffer;
 	r_blocks_t alloc;
 
+	Producer producer;
+
 	struct {
 		int vertices, indices;
 		int dyn_vertices, dyn_indices;
@@ -169,6 +171,8 @@ void R_GeometryBuffer_MapClear( void ) {
 	// allocated blocks count remains constant and doesn't grow between maps
 }
 
+static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx);
+
 static void registerGeometryBufferAs(const char *name) {
 	R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
 		.name = name,
@@ -176,6 +180,7 @@ static void registerGeometryBufferAs(const char *name) {
 		.buffer = &g_geom.buffer,
 		.offset = 0,
 		.size = g_geom.buffer.size,
+		.producer = &g_geom.producer,
 	});
 }
 
@@ -187,6 +192,14 @@ qboolean R_GeometryBuffer_Init(void) {
 		(vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
 		return false;
 
+	g_geom.producer = (Producer) {
+		.name = "geometry",
+		.produce = produceGeometry,
+	};
+
+	registerGeometryBufferAs("geometry");
+
+	// TODO resource alias?
 	registerGeometryBufferAs("vertices");
 	registerGeometryBufferAs("indices");
 
@@ -211,10 +224,8 @@ void R_GeometryBuffer_Flip(void) {
 	R_BlocksClearOnce(&g_geom.alloc);
 }
 
-vk_buffer_t* R_GeometryBuffer_Get(void) {
-	return &g_geom.buffer;
-}
-
-void R_GeometryBufferProduce(vk_combuf_t *combuf) {
+static void produceGeometry(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	(void)ctx;
+	ASSERT(p == &g_geom.producer);
 	R_VkBufferStagingCommit(&g_geom.buffer, combuf);
 }

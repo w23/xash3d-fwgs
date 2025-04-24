@@ -24,7 +24,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 	vec3_t vec_end;
 	pmtrace_t trace;
 	const msurface_t *surf;
-	char buf[1024], *p = buf, *end = buf + sizeof(buf);
+	char buf[1024], *p = buf, *const end = buf + sizeof(buf);
 	const physent_t *physent = NULL;
 	const cl_entity_t *ent = NULL;
 
@@ -92,48 +92,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 		}
 	}
 
-	{
-		const int cell_raw[3] = {
-			floor(trace.endpos[0] / LIGHT_GRID_CELL_SIZE),
-			floor(trace.endpos[1] / LIGHT_GRID_CELL_SIZE),
-			floor(trace.endpos[2] / LIGHT_GRID_CELL_SIZE),
-		};
-		const int light_cell[3] = {
-			cell_raw[0] - g_lights.map.grid_min_cell[0],
-			cell_raw[1] - g_lights.map.grid_min_cell[1],
-			cell_raw[2] - g_lights.map.grid_min_cell[2],
-		};
-		const int cell_index = RT_LightCellIndex( light_cell );
-
-		const vk_lights_cell_t *cell = (cell_index >= 0 && cell_index < MAX_LIGHT_CLUSTERS) ? g_lights.cells + cell_index : NULL;
-		p += Q_snprintf(p, end - p,
-			"light raw=(%d, %d, %d) cell=(%d, %d, %d) index=%d poly=%d point=%d\n",
-			cell_raw[0],
-			cell_raw[1],
-			cell_raw[2],
-			light_cell[0],
-			light_cell[1],
-			light_cell[2],
-			cell_index,
-			cell ? cell->num_polygons : -1,
-			cell ? cell->num_point_lights : -1);
-
-		if (cell && cell->num_polygons > 0) {
-			p += Q_snprintf(p, end - p, "poly:");
-			for (int i = 0; i < cell->num_polygons; ++i) {
-				p += Q_snprintf(p, end - p, " %d", cell->polygons[i]);
-			}
-			p += Q_snprintf(p, end - p, "\n");
-		}
-
-		if (cell && cell->num_point_lights > 0) {
-			p += Q_snprintf(p, end - p, "point:");
-			for (int i = 0; i < cell->num_point_lights; ++i) {
-				p += Q_snprintf(p, end - p, " %d", cell->point_lights[i]);
-			}
-			p += Q_snprintf(p, end - p, "\n");
-		}
-	}
+	p = RT_LightPrintCellInfo(p, end, trace.endpos);
 
 	gEngine.CL_CenterPrint(buf, 0.5f);
 }

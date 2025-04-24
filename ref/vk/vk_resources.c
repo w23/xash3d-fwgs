@@ -5,14 +5,26 @@
 
 #define LOG_MODULE rt
 
-#include <stdlib.h>
-
 static struct {
 	ARRAY_DYNAMIC_DECLARE(rt_resource_t*, table);
+
+	// Note that frame_sequence_tag will be shared between all dummy users
+	Producer dummy_producer;
 } g_res;
+
+static void produceDummyNoop(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	(void)p;
+	(void)combuf;
+	(void)ctx;
+}
 
 void R_VkResourcesInit(void) {
 	arrayDynamicInitT(&g_res.table);
+
+	g_res.dummy_producer = (Producer) {
+		.name = "dummy",
+		.produce = produceDummyNoop,
+	};
 }
 
 rt_resource_t *R_VkResourceGetByIndex(int index) {
@@ -47,6 +59,22 @@ qboolean R_VkResourceRegister(rt_resource_t *res) {
 	return true;
 }
 
+void R_VkResourceProduce(rt_resource_t *res, vk_combuf_t *combuf, const FrameContext *ctx) {
+	ASSERT(res);
+	ASSERT(res->producer);
+
+	if (!res->producer)
+		return;
+
+	ASSERT(res->producer->produce);
+
+	if (res->producer->frame_sequence_tag == ctx->frame_sequence)
+		return;
+
+	res->producer->produce(res->producer, combuf, ctx);
+	res->producer->frame_sequence_tag = ctx->frame_sequence;
+}
+
 void R_VkResourcesCleanup(void) {
 	for (int i = 0; i < g_res.table.count; ++i) {
 		rt_resource_t *const res = g_res.table.items[i];
@@ -72,8 +100,9 @@ static vk_descriptor_value_t acquireDummyDescriptor(struct rt_resource_s *res, v
 
 void R_VkResourceDummyInit(rt_resource_dummy_t *res, const char *name, VkDescriptorType type, vk_descriptor_value_t value) {
 	Q_strncpy(res->header.name, name, sizeof(res->header.name));
-	res->header.acquire_descriptor = acquireDummyDescriptor;
 	res->header.type = type;
+	res->header.acquire_descriptor = acquireDummyDescriptor;
+	res->header.producer = &g_res.dummy_producer;
 	res->descriptor_value = value;
 }
 
@@ -102,6 +131,7 @@ vk_resource_buffer_t* R_VkBufferRegisterAsResource(r_vkbuffer_register_as_resour
 	res->header.type = args.type;
 	res->header.acquire_descriptor = acquireBufferResourceDescriptor;
 	res->header.refcount = 1;
+	res->header.producer = args.producer;
 
 	res->buffer = args.buffer;
 	res->offset = args.offset;

@@ -274,6 +274,10 @@ void RayPassPerform(struct ray_pass_s *pass, vk_combuf_t *combuf, ray_pass_perfo
 
 		ASSERT(pass->desc.riptors.bindings[i].descriptorType == res->type);
 
+		R_VkResourceProduce(res, combuf, &(FrameContext){
+			.frame_sequence = args.frame_sequence,
+		});
+
 		pass->desc.riptors.values[i] = res->acquire_descriptor(res, (vk_resource_acquire_descriptor_args_t){
 			.combuf = combuf,
 			.barriers = &barrier,
