@@ -259,7 +259,6 @@ void R_BeginFrame( qboolean clearScene ) {
 		return;
 	}
 
-
 	APROF_SCOPE_DECLARE_BEGIN(begin_frame_tail, "R_BeginFrame_tail");
 	ASSERT(g_frame.current.phase == Phase_Submitted || g_frame.current.phase == Phase_Idle);
 	g_frame.current.index = (g_frame.current.index + 1) % MAX_CONCURRENT_FRAMES;
@@ -272,6 +271,9 @@ void R_BeginFrame( qboolean clearScene ) {
 		// Current command buffer is done and available
 		// Previous might still be in flight
 	}
+
+	// Now that's the previous frame is done, we can mark all its resources as released
+	// TODO foreach(resource)->release()
 
 	APROF_SCOPE_END(begin_frame_tail);
 
@@ -295,12 +297,15 @@ void R_BeginFrame( qboolean clearScene ) {
 	ASSERT(!g_frame.current.framebuffer.framebuffer);
 
 	// TODO explicit frame dependency synced on frame-end-event/sema
+	// see release() above
 	R_VkStagingFrameCompleted(frame->staging_frame_tag);
 
 	g_frame.current.framebuffer = R_VkSwapchainAcquire( frame->sem_framebuffer_ready );
 	vk_frame.width = g_frame.current.framebuffer.image.width;
 	vk_frame.height = g_frame.current.framebuffer.image.height;
 
+	// TODO replace this with resource release above
+	// Mind the frame & resolution, though
 	VK_RenderBegin( vk_frame.rtx_enabled );
 
 	g_frame.current.phase = Phase_FrameBegan;

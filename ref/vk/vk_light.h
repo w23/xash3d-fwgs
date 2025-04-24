@@ -1,69 +1,6 @@
 #pragma once
 
-#include "vk_buffer.h"
-#include "vk_const.h"
-#include "vk_core.h"
-
 #include "xash3d_types.h"
-
-typedef struct {
-	uint8_t num_point_lights;
-	uint8_t num_polygons;
-
-	uint8_t point_lights[MAX_VISIBLE_POINT_LIGHTS];
-	uint8_t polygons[MAX_VISIBLE_SURFACE_LIGHTS];
-
-	struct {
-		uint8_t point_lights;
-		uint8_t polygons;
-	} num_static;
-
-	uint32_t frame_sequence;
-} vk_lights_cell_t;
-
-typedef struct {
-	vec4_t plane;
-	vec3_t center;
-	float area;
-
-	vec3_t emissive;
-
-	struct {
-		int offset, count; // reference g_light.polygon_vertices
-	} vertices;
-
-	// uint32_t kusok_index;
-} rt_light_polygon_t;
-
-enum {
-	LightFlag_Environment = 0x1,
-};
-
-typedef struct {
-	vec3_t origin;
-	vec3_t color;
-	vec3_t dir;
-	float stopdot;
-	float stopdot2_or_costheta;
-	float radius;
-	int flags;
-
-	int lightstyle;
-	vec3_t base_color;
-} vk_point_light_t;
-
-// Used by infotool
-typedef struct {
-	struct {
-		int grid_min_cell[3];
-		int grid_size[3];
-		int grid_cells;
-	} map;
-
-	vk_lights_cell_t cells[MAX_LIGHT_CLUSTERS];
-} vk_lights_t;
-
-extern vk_lights_t g_lights;
 
 qboolean VK_LightsInit( void );
 void VK_LightsShutdown( void );
@@ -105,3 +42,5 @@ typedef struct rt_light_add_polygon_s {
 	const matrix3x4 *transform_row;
 } rt_light_add_polygon_t;
 int RT_LightAddPolygon(const rt_light_add_polygon_t *light);
+
+char *RT_LightPrintCellInfo(char *p, char *const end, vec3_t pos);

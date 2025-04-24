@@ -32,6 +32,7 @@
 # Next
 ## [ ] Resograf agenda
 - [ ] Explicit dependency graph
+	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
 	- [ ] Build it from meatpipe and resources
 	- [ ] Linearize it into metapass program
 - [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
