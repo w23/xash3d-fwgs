@@ -7,7 +7,6 @@
 
 typedef struct FrameContext {
 	uint32_t frame_sequence;
-	uint32_t width, height;
 } FrameContext;
 
 struct Producer;

@@ -336,8 +336,6 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	} else {
 		VK_RenderEndPrepare_FIXME(combuf, &(FrameContext){
 			.frame_sequence = g_frame.sequence,
-			.width = frame_width,
-			.height = frame_height,
 		});
 	}
 
