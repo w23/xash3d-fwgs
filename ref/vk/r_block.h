@@ -1,7 +1,7 @@
 #pragma once
 
 #include "r_flipping.h"
-#include "alolcator.h"
+#include "std/alolcator.h"
 #include <stdint.h>
 
 struct r_blocks_s;

@@ -5,7 +5,7 @@
 #include "vk_logs.h"
 #include "r_speeds.h"
 
-#include "alolcator.h"
+#include "std/alolcator.h"
 #include "arrays.h"
 
 #include <memory.h>

@@ -1,5 +1,5 @@
 #include "vk_devmem.h"
-#include "alolcator.h"
+#include "std/alolcator.h"
 #include "r_speeds.h"
 
 #define MAX_DEVMEM_ALLOC_SLOTS 128
@@ -44,7 +44,7 @@ static struct {
 	vk_device_memory_slot_t alloc_slots[MAX_DEVMEM_ALLOC_SLOTS];
 	int alloc_slots_count;
 
-	// Size of memory allocated on logical device `VkDevice` 
+	// Size of memory allocated on logical device `VkDevice`
 	// (which is basically bound to physical device `VkPhysicalDevice`).
 	int device_allocated;
 
@@ -97,9 +97,9 @@ static void register_allocation_for_type( vk_devmem_usage_type_t type, int size,
 	ASSERT( type <  VK_DEVMEM_USAGE_TYPES_COUNT );
 
 	vk_devmem_allocation_stats_t *const stats = &g_devmem.stats[type];
-	
+
 	/* Update allocations stats. */
-	
+
 	// Update current allocations.
 	stats->current.allocations += 1;
 	stats->current.allocated   += size;
@@ -144,7 +144,7 @@ static void register_free_for_type( vk_devmem_usage_type_t type, int size, int a
 
 	stats->current.allocations -= 1;
 	stats->current.allocated   -= size;
-	
+
 	/* Update current alignment holes stats. */
 
 	if ( alignment_hole > 0 ) {
@@ -254,7 +254,7 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 	VkMemoryRequirements  req            = devmem_allocate_args.requirements;
 	VkMemoryPropertyFlags property_flags = devmem_allocate_args.property_flags;
 	VkMemoryAllocateFlags allocate_flags = devmem_allocate_args.allocate_flags;
-	
+
 	vk_devmem_t devmem = { .usage_type = usage_type };
 	const int type_index = findMemoryWithType(req.memoryTypeBits, property_flags);
 
@@ -304,7 +304,7 @@ vk_devmem_t VK_DevMemAllocate(const char *name, vk_devmem_usage_type_t usage_typ
 		devmem.mapped        = slot->mapped ? (char *)slot->mapped + block.offset : NULL;
 
 		if ( g_devmem.verbose ) {
-			gEngine.Con_Reportf( "  ^3->^7 Allocated: { slot: %d, block: %d, offset: %u, size: %u, hole: %u }\n", 
+			gEngine.Con_Reportf( "  ^3->^7 Allocated: { slot: %d, block: %d, offset: %u, size: %u, hole: %u }\n",
 				selected_slot_index, block.index, block.offset, block.size, block.alignment_hole );
 		}
 
@@ -379,12 +379,12 @@ qboolean VK_DevMemInit( void ) {
 	// Register standalone metrics.
 	R_SPEEDS_METRIC( g_devmem.alloc_slots_count, "allocated_slots", kSpeedsMetricCount );
 	R_SPEEDS_METRIC( g_devmem.device_allocated, "device_allocated", kSpeedsMetricBytes );
-	
+
 	// Register stats metrics for each usage type.
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_ALL,    _ALL );
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_BUFFER, _BUFFER );
 	REGISTER_STATS_METRICS( VK_DEVMEM_USAGE_TYPE_IMAGE,  _IMAGE );
-	
+
 	return true;
 }
 
