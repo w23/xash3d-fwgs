@@ -3,7 +3,7 @@
 #include "vk_framectl.h"
 #include "vk_cvar.h"
 #include "vk_combuf.h"
-#include "stringview.h"
+#include "std/stringview.h"
 
 #include "std/profiler.h"
 

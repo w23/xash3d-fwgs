@@ -7,7 +7,7 @@
 #include "vk_logs.h"
 #include "std/profiler.h"
 #include "unordered_roadmap.h"
-#include "stringview.h"
+#include "std/stringview.h"
 
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
