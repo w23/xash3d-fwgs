@@ -6,7 +6,7 @@
 #include "vk_common.h"
 #include "shaders/ray_interop.h"
 #include "std/bitarray.h"
-#include "profiler.h"
+#include "std/profiler.h"
 #include "vk_staging.h"
 #include "r_speeds.h"
 #include "vk_logs.h"

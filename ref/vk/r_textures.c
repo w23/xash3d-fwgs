@@ -5,7 +5,7 @@
 #include "vk_const.h"
 #include "vk_mapents.h" // wadlist
 #include "vk_logs.h"
-#include "profiler.h"
+#include "std/profiler.h"
 #include "unordered_roadmap.h"
 #include "stringview.h"
 

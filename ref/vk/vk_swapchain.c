@@ -1,6 +1,6 @@
 #include "vk_swapchain.h"
 #include "vk_image.h"
-#include "profiler.h"
+#include "std/profiler.h"
 
 #include "eiface.h" // ARRAYSIZE
 

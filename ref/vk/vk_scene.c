@@ -17,7 +17,7 @@
 #include "vk_materials.h"
 #include "camera.h"
 #include "vk_mapents.h"
-#include "profiler.h"
+#include "std/profiler.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
 

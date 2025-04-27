@@ -6,7 +6,7 @@
 #include "ray_pass.h"
 #include "vk_common.h"
 #include "vk_logs.h"
-#include "profiler.h"
+#include "std/profiler.h"
 
 #define LOG_MODULE meat
 

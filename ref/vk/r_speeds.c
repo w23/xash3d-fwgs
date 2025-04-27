@@ -5,7 +5,7 @@
 #include "vk_combuf.h"
 #include "stringview.h"
 
-#include "profiler.h"
+#include "std/profiler.h"
 
 #include "crclib.h" // CRC32 for stable random colors
 #include "xash3d_mathlib.h" // Q_min

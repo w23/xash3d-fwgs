@@ -17,7 +17,7 @@
 #include "vk_logs.h"
 #include "rt_kusochki.h"
 
-#include "profiler.h"
+#include "std/profiler.h"
 
 #include "xash3d_mathlib.h"
 

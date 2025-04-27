@@ -7,7 +7,7 @@
 #include "vk_logs.h"
 #include "vk_ray_accel.h"
 #include "rt_kusochki.h"
-#include "profiler.h"
+#include "std/profiler.h"
 #include "std/alolcator.h" // ALO_ALLOC_FAILED
 
 #include "xash3d_mathlib.h"
