@@ -38,7 +38,7 @@
 #include "com_strings.h"
 #include "eiface.h"
 
-#include "debugbreak.h"
+#include "std/debugbreak.h"
 
 #include <string.h>
 
