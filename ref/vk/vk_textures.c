@@ -12,7 +12,7 @@
 #include "ktx2.h"
 
 #define PCG_IMPLEMENT
-#include "pcg.h"
+#include "std/pcg.h"
 
 #define LOG_MODULE tex
 #define MODULE_NAME "textures"
