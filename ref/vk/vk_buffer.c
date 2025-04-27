@@ -3,7 +3,7 @@
 #include "vk_combuf.h"
 #include "vk_barrier.h"
 
-#include "arrays.h"
+#include "std/arrays.h"
 
 #define LOG_MODULE buf
 

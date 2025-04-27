@@ -3,7 +3,7 @@
 #include "vk_combuf.h"
 #include "vk_logs.h"
 #include "vk_barrier.h"
-#include "arrays.h"
+#include "std/arrays.h"
 
 #include "xash3d_mathlib.h" // Q_max
 

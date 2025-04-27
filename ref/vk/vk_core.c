@@ -25,7 +25,7 @@
 #include "vk_combuf.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
-#include "arrays.h"
+#include "std/arrays.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"

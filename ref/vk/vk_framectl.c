@@ -14,7 +14,7 @@
 #include "vk_barrier.h"
 #include "vk_resources.h"
 
-#include "arrays.h"
+#include "std/arrays.h"
 #include "profiler.h"
 #include "r_speeds.h"
 

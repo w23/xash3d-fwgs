@@ -14,7 +14,7 @@
 #include "vk_logs.h"
 #include "vk_resources.h"
 
-#include "arrays.h"
+#include "std/arrays.h"
 #include "profiler.h"
 
 #include "xash3d_mathlib.h"

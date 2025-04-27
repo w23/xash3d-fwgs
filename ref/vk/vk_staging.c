@@ -6,7 +6,7 @@
 #include "r_speeds.h"
 
 #include "std/alolcator.h"
-#include "arrays.h"
+#include "std/arrays.h"
 
 #include <memory.h>
 
