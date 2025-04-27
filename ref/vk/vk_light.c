@@ -5,7 +5,7 @@
 #include "vk_lightmap.h"
 #include "vk_common.h"
 #include "shaders/ray_interop.h"
-#include "bitarray.h"
+#include "std/bitarray.h"
 #include "profiler.h"
 #include "vk_staging.h"
 #include "r_speeds.h"
