@@ -1,7 +1,7 @@
-#include "../unordered_roadmap.h"
+#include "../std/unordered_roadmap.h"
 
 #define URMOM_TEST
-#include "../unordered_roadmap.c"
+#include "../std/unordered_roadmap.c"
 
 #define LOG(msg, ...) \
 	fprintf(stderr, "%s:%d: " msg "\n", __FILE__, __LINE__, ##__VA_ARGS__)

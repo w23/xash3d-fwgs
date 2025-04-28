@@ -6,7 +6,7 @@
 #include "vk_mapents.h" // wadlist
 #include "vk_logs.h"
 #include "std/profiler.h"
-#include "unordered_roadmap.h"
+#include "std/unordered_roadmap.h"
 #include "std/stringview.h"
 
 #include "xash3d_mathlib.h"

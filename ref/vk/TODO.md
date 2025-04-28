@@ -30,7 +30,7 @@
 - [ ] performance profiling and comparison
 
 # Next
-## [ ] Resograf agenda
+## Resograf agenda
 - [ ] Explicit dependency graph
 	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
 	- [ ] Build it from meatpipe and resources
