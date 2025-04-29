@@ -1,4 +1,4 @@
-#include "vk_nv_aftermath.h"
+#include "VNvAftermath.h"
 
 #include "vk_common.h"
 #include "vk_core.h"

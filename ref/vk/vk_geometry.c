@@ -1,6 +1,6 @@
 #include "vk_geometry.h"
-#include "vk_buffer.h"
-#include "vk_resources.h"
+#include "vulkan/VBuffer.h"
+#include "vulkan/VResource.h"
 #include "r_speeds.h"
 
 #define MODULE_NAME "geom"

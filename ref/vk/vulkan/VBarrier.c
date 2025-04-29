@@ -1,9 +1,9 @@
-#include "vk_barrier.h"
+#include "VBarrier.h"
 
 #include "vk_logs.h"
-#include "vk_buffer.h"
-#include "vk_image.h"
-#include "vk_combuf.h"
+#include "VBuffer.h"
+#include "VImage.h"
+#include "VCombuf.h"
 
 #define LOG_MODULE combuf
 

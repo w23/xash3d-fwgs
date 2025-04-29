@@ -2,10 +2,10 @@
 
 #include "vk_core.h"
 #include "vk_logs.h"
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 #include "r_textures.h"
 #include "r_speeds.h"
-#include "vk_barrier.h"
+#include "vulkan/VBarrier.h"
 
 #include "xash3d_mathlib.h" // bound
 

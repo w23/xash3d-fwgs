@@ -1,10 +1,10 @@
-#include "ray_pass.h"
+#include "VPass.h"
 #include "shaders/ray_interop.h" // for SPEC_SBT_RECORD_SIZE_INDEX
-#include "vk_resources.h"
-#include "vk_pipeline.h"
-#include "vk_descriptor.h"
-#include "vk_combuf.h"
-#include "vk_barrier.h"
+#include "VResource.h"
+#include "VPipeline.h"
+#include "VDescriptor.h"
+#include "VCombuf.h"
+#include "VBarrier.h"
 
 // FIXME this is only needed for MAX_CONCURRENT_FRAMES
 // TODO specify it externally as ctor arg

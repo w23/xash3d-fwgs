@@ -1,6 +1,6 @@
 #pragma once
 #include "vk_core.h"
-#include "vk_devmem.h"
+#include "VDevmem.h"
 
 qboolean R_VkImageInit(void);
 void R_VkImageShutdown(void);

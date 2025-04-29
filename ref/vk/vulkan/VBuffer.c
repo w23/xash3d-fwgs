@@ -1,7 +1,7 @@
-#include "vk_buffer.h"
+#include "VBuffer.h"
 #include "vk_logs.h"
-#include "vk_combuf.h"
-#include "vk_barrier.h"
+#include "VCombuf.h"
+#include "VBarrier.h"
 
 #include "std/arrays.h"
 

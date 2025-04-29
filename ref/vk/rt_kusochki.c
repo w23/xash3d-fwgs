@@ -1,9 +1,9 @@
 #include "rt_kusochki.h"
 
 #include "vk_materials.h"
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 #include "vk_render.h" // vk_render_geometry_t
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_logs.h"
 
 #include "xash3d_mathlib.h" // VectorCopy, ...

@@ -1,5 +1,5 @@
-#include "vk_swapchain.h"
-#include "vk_image.h"
+#include "VSwapchain.h"
+#include "VImage.h"
 #include "std/profiler.h"
 
 #include "eiface.h" // ARRAYSIZE

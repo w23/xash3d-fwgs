@@ -4,7 +4,7 @@
 #include "xash3d_types.h"
 #include "com_strings.h" // S_ERROR
 
-#include "vk_nv_aftermath.h" // TODO remove explicit usage in XVK_CHECK
+#include "vulkan/VNvAftermath.h" // TODO remove explicit usage in XVK_CHECK
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>

@@ -2,18 +2,18 @@
 
 #include "shaders/ray_interop.h" // DEBUG_DISPLAY_...
 
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 #include "vk_ray_accel.h"
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_cvar.h"
 #include "vk_light.h"
 #include "vk_math.h"
-#include "vk_meatpipe.h"
+#include "vulkan/VMeatpipe.h"
 #include "vk_ray_internal.h"
 #include "r_textures.h"
-#include "vk_combuf.h"
+#include "vulkan/VCombuf.h"
 #include "vk_logs.h"
 #include "rt_kusochki.h"
 

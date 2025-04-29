@@ -1,7 +1,7 @@
-#include "vk_pipeline.h"
+#include "VPipeline.h"
 
 #include "vk_framectl.h" // VkRenderPass
-#include "vk_combuf.h"
+#include "VCombuf.h"
 
 #include "eiface.h"
 

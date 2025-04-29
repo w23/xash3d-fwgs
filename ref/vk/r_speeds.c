@@ -2,7 +2,7 @@
 #include "vk_overlay.h"
 #include "vk_framectl.h"
 #include "vk_cvar.h"
-#include "vk_combuf.h"
+#include "vulkan/VCombuf.h"
 #include "std/stringview.h"
 
 #include "std/profiler.h"

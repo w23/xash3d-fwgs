@@ -1,13 +1,13 @@
 #include "vk_overlay.h"
 
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_core.h"
 #include "vk_common.h"
 #include "vk_textures.h"
 #include "vk_framectl.h"
 #include "vk_renderstate.h"
-#include "vk_pipeline.h"
-#include "vk_descriptor.h"
+#include "vulkan/VPipeline.h"
+#include "vulkan/VDescriptor.h"
 #include "vk_logs.h"
 
 #include "com_strings.h"

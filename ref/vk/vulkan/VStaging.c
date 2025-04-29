@@ -1,7 +1,7 @@
-#include "vk_staging.h"
+#include "VStaging.h"
 
-#include "vk_buffer.h"
-#include "vk_combuf.h"
+#include "VBuffer.h"
+#include "VCombuf.h"
 #include "vk_logs.h"
 #include "r_speeds.h"
 

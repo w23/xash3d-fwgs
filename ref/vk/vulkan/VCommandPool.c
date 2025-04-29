@@ -1,4 +1,4 @@
-#include "vk_commandpool.h"
+#include "VCommandPool.h"
 
 vk_command_pool_t R_VkCommandPoolCreate( int count ) {
 	vk_command_pool_t ret = {0};

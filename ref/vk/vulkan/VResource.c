@@ -1,6 +1,6 @@
-#include "vk_resources.h"
+#include "VResource.h"
 #include "vk_common.h"
-#include "vk_barrier.h"
+#include "VBarrier.h"
 #include "std/arrays.h"
 
 #define LOG_MODULE rt

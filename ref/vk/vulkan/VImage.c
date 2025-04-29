@@ -1,14 +1,14 @@
-#include "vk_image.h"
-#include "vk_staging.h"
-#include "vk_combuf.h"
+#include "VImage.h"
+#include "VStaging.h"
+#include "VCombuf.h"
 #include "vk_logs.h"
-#include "vk_barrier.h"
+#include "VBarrier.h"
 #include "std/arrays.h"
 
 #include "xash3d_mathlib.h" // Q_max
 
 // Long type lists functions
-#include "vk_image_extra.h"
+#include "VImageExtra.h"
 
 #define LOG_MODULE img
 
