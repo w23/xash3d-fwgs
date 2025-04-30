@@ -385,7 +385,7 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-	g_rtx.uniform.unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+	g_rtx.uniform.unit_size = ALIGN_UP(sizeof(struct UniformBuffer), v_device_info.properties.limits.minUniformBufferOffsetAlignment);
 
 	if (!VK_BufferCreate("ray uniform.buffer", &g_rtx.uniform.buffer, g_rtx.uniform.unit_size * MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,

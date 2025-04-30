@@ -945,15 +945,15 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 	if (speeds_bits) {
 		speedsPrintf( "Renderer: ^1Vulkan%s^7\n", vk_frame.rtx_enabled ? " RT" : "" );
 		int color_index = 7; // default color
-		switch (vk_core.physical_device.properties.vendorID) {
+		switch (v_device_info.properties.vendorID) {
 			case 0x1002: /* AMD */ color_index = 1; break;
 			case 0x10DE: /* NVIDIA */ color_index = 2; break;
 			case 0x8086: /* INTEL */ color_index = 4; break;
 		}
-		speedsPrintf( "^%d%s^7\n", color_index, vk_core.physical_device.properties.deviceName);
+		speedsPrintf( "^%d%s^7\n", color_index, v_device_info.properties.deviceName);
 		speedsPrintf( "Driver: %u.%u.%u, Vulkan: %u.%u.%u\n",
-			XVK_PARSE_VERSION(vk_core.physical_device.properties.driverVersion),
-			XVK_PARSE_VERSION(vk_core.physical_device.properties.apiVersion));
+			XVK_PARSE_VERSION(v_device_info.properties.driverVersion),
+			XVK_PARSE_VERSION(v_device_info.properties.apiVersion));
 		speedsPrintf( "Resolution: %ux%u\n", vk_frame.width, vk_frame.height);
 	}
 

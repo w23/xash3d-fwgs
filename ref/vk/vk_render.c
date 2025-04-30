@@ -410,7 +410,7 @@ qboolean VK_RenderInit( void ) {
 	g_render.geometry = (void*)R_VkResourceFindByName("geometry");
 	ASSERT(g_render.geometry);
 
-	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+	g_render.ubo_align = Q_max(4, v_device_info.properties.limits.minUniformBufferOffsetAlignment);
 
 	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
 	const uint32_t uniform_buffer_size = uniform_unit_size * MAX_UNIFORM_SLOTS;

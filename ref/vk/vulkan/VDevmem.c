@@ -168,7 +168,7 @@ static const char *VK_DevMemUsageTypeString( vk_devmem_usage_type_t type ) {
 }
 
 static int findMemoryWithType(uint32_t type_index_bits, VkMemoryPropertyFlags flags) {
-	const VkPhysicalDeviceMemoryProperties *const properties = &vk_core.physical_device.memory_properties2.memoryProperties;
+	const VkPhysicalDeviceMemoryProperties *const properties = &v_device_info.memory_properties2.memoryProperties;
 	for ( int type = 0; type < (int)properties->memoryTypeCount; type += 1 ) {
 		if ( !( type_index_bits & ( 1 << type ) ) )
 			continue;
@@ -219,7 +219,7 @@ static int allocateDeviceMemory(VkMemoryRequirements req, int type_index, VkMemo
 		vk_device_memory_slot_t *slot = &g_devmem.alloc_slots[g_devmem.alloc_slots_count];
 		XVK_CHECK( vkAllocateMemory( vk_core.device, &mai, NULL, &slot->device_memory ) );
 
-		const VkPhysicalDeviceMemoryProperties *const properties = &vk_core.physical_device.memory_properties2.memoryProperties;
+		const VkPhysicalDeviceMemoryProperties *const properties = &v_device_info.memory_properties2.memoryProperties;
 		slot->property_flags = properties->memoryTypes[mai.memoryTypeIndex].propertyFlags;
 		slot->allocate_flags = allocate_flags;
 		slot->type_index     = mai.memoryTypeIndex;

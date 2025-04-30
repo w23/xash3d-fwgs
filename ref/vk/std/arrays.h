@@ -8,6 +8,12 @@
 		int count; \
 	} NAME
 
+#define VIEW_DECLARE(TYPE, NAME) \
+	struct { \
+		TYPE *items; \
+		int count; \
+	} NAME
+
 // Array with compile-time maximum size
 #define BOUNDED_ARRAY_DECLARE(TYPE, NAME, MAX_SIZE) \
 		struct { \
@@ -76,6 +82,9 @@ void arrayDynamicResize(array_dynamic_t *array, int count);
 
 #define arrayDynamicResizeT(array, size) \
 	arrayDynamicResize((array_dynamic_t*)(array), (size))
+
+#define arrayDynamicReserveT(array, size) \
+	arrayDynamicReserve((array_dynamic_t*)(array), (size))
 
 #define arrayDynamicAppendT(array, item) \
 	arrayDynamicAppend((array_dynamic_t*)(array), (item))

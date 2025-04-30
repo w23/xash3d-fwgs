@@ -5,6 +5,7 @@
 #include "com_strings.h" // S_ERROR
 
 #include "vulkan/VNvAftermath.h" // TODO remove explicit usage in XVK_CHECK
+#include "vulkan/VDevice.h"
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
@@ -22,19 +23,6 @@ void R_VkSemaphoreDestroy(VkSemaphore sema);
 
 VkFence R_VkFenceCreate( qboolean signaled );
 void R_VkFenceDestroy(VkFence fence);
-
-// TODO move all these to vk_device.{h,c} or something
-typedef struct physical_device_s {
-	VkPhysicalDevice device;
-	VkPhysicalDeviceMemoryProperties2 memory_properties2;
-	VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget;
-	VkPhysicalDeviceProperties properties;
-	VkPhysicalDeviceProperties2 properties2;
-	VkPhysicalDeviceAccelerationStructurePropertiesKHR properties_accel;
-	VkPhysicalDeviceRayTracingPipelinePropertiesKHR properties_ray_tracing_pipeline;
-	qboolean anisotropy_enabled;
-	uint32_t sbt_record_size;
-} physical_device_t;
 
 typedef struct vulkan_core_s {
 	uint32_t vulkan_version;
@@ -55,7 +43,6 @@ typedef struct vulkan_core_s {
 		VkPresentModeKHR *present_modes;
 	} surface;
 
-	physical_device_t physical_device;
 	VkDevice device;
 	VkQueue queue;
 

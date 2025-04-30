@@ -22,7 +22,7 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 	vkGetBufferMemoryRequirements(vk_core.device, buf->buffer, &memreq);
 
 	if (usage & VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR) {
-		memreq.alignment = ALIGN_UP(memreq.alignment, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
+		memreq.alignment = ALIGN_UP(memreq.alignment, v_device_info.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 	}
 
 	vk_devmem_allocate_args_t args = (vk_devmem_allocate_args_t) {

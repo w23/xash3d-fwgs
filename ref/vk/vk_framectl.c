@@ -82,7 +82,7 @@ static VkFormat findSupportedImageFormat(const VkFormat *candidates, VkImageTili
 	for (int i = 0; candidates[i] != VK_FORMAT_UNDEFINED; ++i) {
 		VkFormatProperties props;
 		VkFormatFeatureFlags props_format;
-		vkGetPhysicalDeviceFormatProperties(vk_core.physical_device.device, candidates[i], &props);
+		vkGetPhysicalDeviceFormatProperties(v_device_info.physical_device, candidates[i], &props);
 		switch (tiling) {
 			case VK_IMAGE_TILING_OPTIMAL:
 				props_format = props.optimalTilingFeatures; break;
@@ -577,13 +577,13 @@ void VK_FrameCtlShutdown( void ) {
 static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {
 	VkFormatProperties props;
 
-	vkGetPhysicalDeviceFormatProperties(vk_core.physical_device.device, SWAPCHAIN_FORMAT, &props);
+	vkGetPhysicalDeviceFormatProperties(v_device_info.physical_device, SWAPCHAIN_FORMAT, &props);
 	if (!(props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT)) {
 		gEngine.Con_Reportf(S_WARN "Swapchain source format doesn't support blit\n");
 		return false;
 	}
 
-	vkGetPhysicalDeviceFormatProperties(vk_core.physical_device.device, dest_format, &props);
+	vkGetPhysicalDeviceFormatProperties(v_device_info.physical_device, dest_format, &props);
 	if (!(props.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
 		gEngine.Con_Reportf(S_WARN "Destination format doesn't support blit\n");
 		return false;
