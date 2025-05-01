@@ -61,7 +61,7 @@ static qboolean deviceSupportsExtensions(const VkExtensionProperties *exts, uint
 	qboolean result = true;
 	for (int i = 0; i < check_extensions_count; ++i) {
 		if (!findExtension(exts, num_exts, check_extensions[i])) {
-			WARN("Extension %s is not supported\n", check_extensions[i]);
+			WARN("Extension %s is not supported", check_extensions[i]);
 			result = false;
 		}
 	}
@@ -72,9 +72,9 @@ static void devicePrintExtensionsFromList(const VkExtensionProperties *exts, uin
 	for (int i = 0; i < print_extensions_count; ++i) {
 		const VkExtensionProperties *const ext_prop = findExtension(exts, num_exts, print_extensions[i]);
 		if (!ext_prop) {
-			INFO("\t\t\t%s: N/A\n", print_extensions[i]);
+			INFO("\t\t\t%s: N/A", print_extensions[i]);
 		} else {
-			INFO("\t\t\t%s: %u.%u.%u\n", ext_prop->extensionName, XVK_PARSE_VERSION(ext_prop->specVersion));
+			INFO("\t\t\t%s: %u.%u.%u", ext_prop->extensionName, XVK_PARSE_VERSION(ext_prop->specVersion));
 		}
 	}
 }
@@ -110,7 +110,7 @@ static uint32_t findUsableQueueFamilyIndex(VkPhysicalDevice physdev) {
 		const qboolean supports_compute = !!(queue_family_props.items[i].queueFlags & VK_QUEUE_COMPUTE_BIT);
 		vkGetPhysicalDeviceSurfaceSupportKHR(physdev, i, vk_core.surface.surface, &supports_present);
 
-		INFO("\t\tQueue %d/%d present: %d graphics: %d compute: %d\n", i, queue_family_props.count,
+		INFO("\t\tQueue %d/%d present: %d graphics: %d compute: %d", i, queue_family_props.count,
 			supports_present, supports_graphics, supports_compute);
 
 		if (!supports_present)
@@ -132,8 +132,8 @@ static uint32_t findUsableQueueFamilyIndex(VkPhysicalDevice physdev) {
 #if 0 // TODO
 static void addRefDeviceT(void) {
 		// Store devices list in vk_core.devices for pfnGetRenderDevices
--		vk_core.devices[i].vendorID = props.vendorID;
--		vk_core.devices[i].deviceID = props.deviceID;
+		vk_core.devices[i].vendorID = props.vendorID;
+		vk_core.devices[i].deviceID = props.deviceID;
 		switch( props.deviceType )
 		{
 		case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
@@ -157,20 +157,20 @@ static void addRefDeviceT(void) {
 #endif
 
 static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props, const VkPhysicalDeviceMemoryBudgetPropertiesEXT *budget) {
-	INFO("Memory heaps: %d\n", props->memoryHeapCount);
+	INFO("Memory heaps: %d", props->memoryHeapCount);
 	for (int i = 0; i < (int)props->memoryHeapCount; ++i) {
 		const VkMemoryHeap* const heap = props->memoryHeaps + i;
-		INFO("  %d: size=%dMb used=%dMb avail=%dMb device_local=%d\n", i,
+		INFO("  %d: size=%dMb used=%dMb avail=%dMb device_local=%d", i,
 			(int)(heap->size / (1024 * 1024)),
 			(int)(budget->heapUsage[i] / (1024 * 1024)),
 			(int)(budget->heapBudget[i] / (1024 * 1024)),
 			!!(heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT));
 	}
 
-	INFO("Memory types: %d\n", props->memoryTypeCount);
+	INFO("Memory types: %d", props->memoryTypeCount);
 	for (int i = 0; i < (int)props->memoryTypeCount; ++i) {
 		const VkMemoryType* const type = props->memoryTypes + i;
-		INFO("  %d: bit=0x%x heap=%d flags=%c%c%c%c%c\n", i,
+		INFO("  %d: bit=0x%x heap=%d flags=%c%c%c%c%c", i,
 			(1 << i),
 			type->heapIndex,
 			type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ? 'D' : '.',
@@ -201,23 +201,23 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 		GET_VULKAN_ARRAY(VkExtensionProperties, extensions, FUNC);
 #undef FUNC
 
-		INFO( "\t\tSupported device extensions: %u\n", extensions.count);
+		INFO( "\t\tSupported device extensions: %u", extensions.count);
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_req, COUNTOF(device_extensions_req));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_rt, COUNTOF(device_extensions_rt));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
 
 		info->anisotropy = info->features.features.samplerAnisotropy;
-		INFO("\t\tAnistoropy supported: %d\n", info->anisotropy);
+		INFO("\t\tAnistoropy supported: %d", info->anisotropy);
 
 		info->ray_tracing = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_rt, COUNTOF(device_extensions_rt));
-		INFO("\t\tRay tracing supported: %d\n", info->ray_tracing);
+		INFO("\t\tRay tracing supported: %d", info->ray_tracing);
 
 		info->nv_checkpoint = vk_core.debug && deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
-		INFO("\t\tNV checkpoints supported: %d\n", info->nv_checkpoint);
+		INFO("\t\tNV checkpoints supported: %d", info->nv_checkpoint);
 
 		info->calibrated_timestamps = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
-		INFO("\t\tCalibrated timestamps supported: %d\n", info->calibrated_timestamps);
+		INFO("\t\tCalibrated timestamps supported: %d", info->calibrated_timestamps);
 
 		Mem_Free(extensions.items);
 	}
@@ -251,13 +251,13 @@ static VDeviceInfos enumerateDevices(void) {
 	GET_VULKAN_ARRAY(VkPhysicalDevice, physical_devices, FUNC);
 #undef FUNC
 	if (physical_devices.count == 0) {
-		ERR("No physical Vulkan devices found\n");
+		ERR("No physical Vulkan devices found");
 		return infos;
 	}
 
 	arrayDynamicResizeT(&infos, physical_devices.count);
 
-	INFO("Got %u physical devices:\n", physical_devices.count);
+	INFO("Got %u physical devices:", physical_devices.count);
 	int devices_having_rt = 0;
 	for (uint32_t i = 0; i < physical_devices.count; ++i) {
 		VDeviceInfo *const info = infos.items + i;
@@ -265,13 +265,13 @@ static VDeviceInfos enumerateDevices(void) {
 
 		vkGetPhysicalDeviceProperties(info->physical_device, &info->properties);
 
-		INFO("\t%u: %04x:%04x %d %s %u.%u.%u %u.%u.%u\n",
+		INFO("\t%u: %04x:%04x %d %s %u.%u.%u %u.%u.%u",
 			i, info->properties.vendorID, info->properties.deviceID, info->properties.deviceType, info->properties.deviceName,
 			XVK_PARSE_VERSION(info->properties.driverVersion), XVK_PARSE_VERSION(info->properties.apiVersion));
 
 		info->queue_index = findUsableQueueFamilyIndex(info->physical_device);
 		if (info->queue_index == VK_QUEUE_FAMILY_IGNORED) {
-			WARN("\t\tSkipping this device as compatible queue (which has both compute and graphics and also can present) not found\n" );
+			WARN("\t\tSkipping this device as compatible queue (which has both compute and graphics and also can present) not found" );
 			continue;
 		}
 
@@ -300,9 +300,9 @@ static VDeviceInfos enumerateDevices(void) {
 
 static void loadDeviceFunctions(dllfunc_t *funcs, int count) {
 	for (int i = 0; i < count; ++i) {
-		*funcs[i].func = vkGetDeviceProcAddr(vk_core.device, funcs[i].name);
+		*funcs[i].func = vkGetDeviceProcAddr(v_device, funcs[i].name);
 		if (!*funcs[i].func) {
-			WARN("Function %s was not loaded\n", funcs[i].name);
+			WARN("Function %s was not loaded", funcs[i].name);
 		}
 	}
 }
@@ -415,6 +415,8 @@ static qboolean createDevice(const VDeviceInfo* info) {
 
 	// TODO do not access vk_core directly
 	vk_core.device = v_device;
+	vk_core.rtx = info->ray_tracing;
+	vk_core.nv_checkpoint = info->nv_checkpoint;
 	vkGetDeviceQueue(v_device, 0, 0, &vk_core.queue);
 
 	v_device_info = *info;
@@ -455,20 +457,18 @@ int vDeviceInit(int force_disable_rt) {
 			devinfo->ray_tracing = 0;
 		}
 
-		gEngine.Con_Printf("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u\n",
+		INFO("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u",
 			i, devinfo->properties.vendorID, devinfo->properties.deviceID, devinfo->properties.deviceType, devinfo->properties.deviceName,
 			XVK_PARSE_VERSION(devinfo->properties.driverVersion), XVK_PARSE_VERSION(devinfo->properties.apiVersion));
 
-		if (!createDevice(devinfo))
-			continue;
-
-		break;
+		if (createDevice(devinfo) == 1)
+			break;
 	}
 
 	Mem_Free(physical_devices.items);
 
 	if (v_device == VK_NULL_HANDLE) {
-		gEngine.Con_Printf( S_ERROR "No compatibe Vulkan devices found. Vulkan render will not be available\n" );
+		ERR("No compatibe Vulkan devices found. Vulkan render will not be available" );
 		return false;
 	}
 

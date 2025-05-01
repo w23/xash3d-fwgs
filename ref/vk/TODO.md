@@ -40,11 +40,12 @@
 # Log
 ## 2025-03-21 EN/A offline
 - [ ] Make producers
-    - [ ] Builtin producers
+    - [x] Builtin producers
         - [x] geometry: vertices, indices
         - [x] TLAS
         - [x] UBO
         - [x] model_headers
+		- [x] light
 
 ## 2025-03-14 E400 graphores p.1
 - [x] Producer interface
