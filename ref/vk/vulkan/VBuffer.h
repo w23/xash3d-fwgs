@@ -1,9 +1,9 @@
 #pragma once
 
 #include "vk_core.h"
-#include "vk_devmem.h"
-#include "vk_staging.h"
-#include "r_flipping.h"
+#include "VDevmem.h"
+#include "VStaging.h"
+#include "std/flipping.h"
 
 typedef struct {
 	r_vksync_scope_t write, read;

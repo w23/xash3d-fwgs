@@ -1,8 +1,8 @@
-#include "vk_combuf.h"
-#include "vk_commandpool.h"
+#include "VCombuf.h"
+#include "VCommandPool.h"
 #include "vk_logs.h"
 
-#include "profiler.h"
+#include "std/profiler.h"
 
 #define LOG_MODULE combuf
 
@@ -184,7 +184,7 @@ static uint64_t getGpuTimestampOffsetNs( uint64_t latest_gpu_timestamp, uint64_t
 		// Estimate based on supposed submission time, assuming that we submit, and it starts computing right after cmdbuffer closure
 		// which may not be true. But it's all we got
 		// TODO alternative approach: estimate based on end timestamp
-		const uint64_t gpu_begin_ns = (double) latest_gpu_timestamp * vk_core.physical_device.properties.limits.timestampPeriod;
+		const uint64_t gpu_begin_ns = (double) latest_gpu_timestamp * v_device_info.properties.limits.timestampPeriod;
 		return latest_cpu_timestamp_ns - gpu_begin_ns;
 	}
 
@@ -210,7 +210,7 @@ static uint64_t getGpuTimestampOffsetNs( uint64_t latest_gpu_timestamp, uint64_t
 	vkGetCalibratedTimestampsEXT(vk_core.device, 2, cti, timestamps, max_deviation);
 
 	const uint64_t cpu = aprof_time_platform_to_ns(timestamps[1]);
-	const uint64_t gpu = (double)timestamps[0] * vk_core.physical_device.properties.limits.timestampPeriod;
+	const uint64_t gpu = (double)timestamps[0] * v_device_info.properties.limits.timestampPeriod;
 	return cpu - gpu;
 }
 
@@ -225,7 +225,7 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 		vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, timestamps_count, timestamps_count * sizeof(uint64_t), timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
 
 		const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs( timestamps[1], aprof_time_now_ns() );
-		const double timestamp_period = vk_core.physical_device.properties.limits.timestampPeriod;
+		const double timestamp_period = v_device_info.properties.limits.timestampPeriod;
 
 		for (int i = 0; i < timestamps_count; ++i) {
 			const uint64_t gpu_ns = timestamps[i] * timestamp_period;

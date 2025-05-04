@@ -2,10 +2,10 @@
 
 #include "r_textures.h"
 #include "vk_core.h"
-#include "vk_image.h"
+#include "vulkan/VImage.h"
 #include "vk_const.h"
 
-#include "unordered_roadmap.h"
+#include "std/unordered_roadmap.h"
 
 typedef struct vk_texture_s
 {

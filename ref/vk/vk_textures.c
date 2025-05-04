@@ -2,17 +2,17 @@
 
 #include "vk_core.h"
 #include "vk_logs.h"
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 #include "r_textures.h"
 #include "r_speeds.h"
-#include "vk_barrier.h"
+#include "vulkan/VBarrier.h"
 
 #include "xash3d_mathlib.h" // bound
 
 #include "ktx2.h"
 
 #define PCG_IMPLEMENT
-#include "pcg.h"
+#include "std/pcg.h"
 
 #define LOG_MODULE tex
 #define MODULE_NAME "textures"
@@ -338,8 +338,8 @@ static VkSampler createSamplerForFlags( texFlags_t flags ) {
 		.addressModeU = addr_mode,
 		.addressModeV = addr_mode,
 		.addressModeW = addr_mode,
-		.anisotropyEnable = vk_core.physical_device.anisotropy_enabled,
-		.maxAnisotropy = vk_core.physical_device.properties.limits.maxSamplerAnisotropy,
+		.anisotropyEnable = v_device_info.anisotropy,
+		.maxAnisotropy = v_device_info.properties.limits.maxSamplerAnisotropy,
 		.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
 		.unnormalizedCoordinates = VK_FALSE,
 		.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,

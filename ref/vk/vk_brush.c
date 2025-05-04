@@ -10,8 +10,8 @@
 #include "vk_mapents.h"
 #include "r_speeds.h"
 #include "vk_logs.h"
-#include "profiler.h"
-#include "arrays.h"
+#include "std/profiler.h"
+#include "std/arrays.h"
 
 #include <math.h>
 #include <memory.h>

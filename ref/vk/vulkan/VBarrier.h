@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vk_core.h"
-#include "arrays.h"
+#include "std/arrays.h"
 
 #define MAX_BUFFER_BARRIERS 16
 #define MAX_IMAGE_BARRIERS 32

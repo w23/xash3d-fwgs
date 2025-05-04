@@ -1,4 +1,4 @@
-#include "vk_descriptor.h"
+#include "VDescriptor.h"
 
 #include "eiface.h" // ARRAYSIZE
 

@@ -1,10 +1,10 @@
-#include "ray_pass.h"
+#include "VPass.h"
 #include "shaders/ray_interop.h" // for SPEC_SBT_RECORD_SIZE_INDEX
-#include "vk_resources.h"
-#include "vk_pipeline.h"
-#include "vk_descriptor.h"
-#include "vk_combuf.h"
-#include "vk_barrier.h"
+#include "VResource.h"
+#include "VPipeline.h"
+#include "VDescriptor.h"
+#include "VCombuf.h"
+#include "VBarrier.h"
 
 // FIXME this is only needed for MAX_CONCURRENT_FRAMES
 // TODO specify it externally as ctor arg
@@ -75,7 +75,7 @@ struct ray_pass_s *RayPassCreateTracing( const ray_pass_create_tracing_t *create
 	const struct SpecializationData {
 		uint32_t sbt_record_size;
 	} spec_data = {
-		.sbt_record_size = vk_core.physical_device.sbt_record_size,
+		.sbt_record_size = v_device_info.sbt_record_size,
 	};
 	const VkSpecializationMapEntry spec_map[] = {
 		{.constantID = SPEC_SBT_RECORD_SIZE_INDEX, .offset = offsetof(struct SpecializationData, sbt_record_size), .size = sizeof(uint32_t) },

@@ -6,16 +6,16 @@
 #include "vk_rtx.h"
 #include "vk_ray_internal.h"
 #include "r_speeds.h"
-#include "vk_combuf.h"
-#include "vk_barrier.h"
+#include "VCombuf.h"
+#include "VBarrier.h"
 #include "vk_math.h"
 #include "vk_geometry.h"
 #include "vk_render.h"
 #include "vk_logs.h"
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 
-#include "arrays.h"
-#include "profiler.h"
+#include "std/arrays.h"
+#include "std/profiler.h"
 
 #include "xash3d_mathlib.h"
 
@@ -201,7 +201,7 @@ static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 
 	//uint32_t scratch_offset_initial = g_accel.frame.scratch_offset;
 	g_accel.frame.scratch_offset += scratch_buffer_size;
-	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
+	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, v_device_info.properties_accel.minAccelerationStructureScratchOffsetAlignment);
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 
@@ -263,7 +263,7 @@ static qboolean blasPrepareBuild(struct rt_blas_s *blas, VkDeviceAddress geometr
 
 	//uint32_t scratch_offset_initial = g_accel.frame.scratch_offset;
 	g_accel.frame.scratch_offset += scratch_size;
-	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, vk_core.physical_device.properties_accel.minAccelerationStructureScratchOffsetAlignment);
+	g_accel.frame.scratch_offset = ALIGN_UP(g_accel.frame.scratch_offset, v_device_info.properties_accel.minAccelerationStructureScratchOffsetAlignment);
 
 	//gEngine.Con_Reportf("AS=%p, n_geoms=%u, scratch: %#x %d %#x", *args->p_accel, args->n_geoms, scratch_offset_initial, scratch_buffer_size, scratch_offset_initial + scratch_buffer_size);
 

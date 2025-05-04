@@ -1,21 +1,21 @@
 #include "vk_render.h"
 
 #include "vk_core.h"
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_geometry.h"
-#include "vk_barrier.h"
-#include "vk_resources.h"
-#include "vk_combuf.h"
+#include "vulkan/VBarrier.h"
+#include "vulkan/VResource.h"
+#include "vulkan/VCombuf.h"
 #include "vk_const.h"
 #include "vk_common.h"
 #include "vk_cvar.h"
-#include "vk_pipeline.h"
+#include "vulkan/VPipeline.h"
 #include "vk_textures.h"
 #include "vk_math.h"
 #include "vk_rtx.h"
-#include "vk_descriptor.h"
-#include "alolcator.h"
-#include "profiler.h"
+#include "vulkan/VDescriptor.h"
+#include "std/alolcator.h"
+#include "std/profiler.h"
 #include "r_speeds.h"
 #include "camera.h"
 
@@ -410,7 +410,7 @@ qboolean VK_RenderInit( void ) {
 	g_render.geometry = (void*)R_VkResourceFindByName("geometry");
 	ASSERT(g_render.geometry);
 
-	g_render.ubo_align = Q_max(4, vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+	g_render.ubo_align = Q_max(4, v_device_info.properties.limits.minUniformBufferOffsetAlignment);
 
 	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
 	const uint32_t uniform_buffer_size = uniform_unit_size * MAX_UNIFORM_SLOTS;

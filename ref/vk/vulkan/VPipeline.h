@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vk_core.h"
-#include "vk_buffer.h"
+#include "VBuffer.h"
 
 VkShaderModule R_VkShaderLoadFromMem(const void *ptr, uint32_t size, const char *name);
 void R_VkShaderDestroy(VkShaderModule module);

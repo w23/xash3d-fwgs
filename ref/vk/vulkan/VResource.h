@@ -1,9 +1,9 @@
 #pragma once
 
-#include "vk_descriptor.h"
-#include "vk_image.h"
-#include "vk_buffer.h"
-#include "vk_combuf.h" // r_vkcombuf_barrier_buffer_t
+#include "VDescriptor.h"
+#include "VImage.h"
+#include "VBuffer.h"
+#include "VCombuf.h" // r_vkcombuf_barrier_buffer_t
 
 typedef struct FrameContext {
 	uint32_t frame_sequence;

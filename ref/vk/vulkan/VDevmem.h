@@ -11,7 +11,7 @@ enum VK_DevMemUsageTypes {
 	// to not overcomplicate things and index through
 	// internal global stats directly by these indices.
 	VK_DEVMEM_USAGE_TYPE_ALL     = 0,
-	
+
 	// Those are `vk_buffer_t` buffers.
 	VK_DEVMEM_USAGE_TYPE_BUFFER  = 1,
 
@@ -30,9 +30,9 @@ typedef struct vk_devmem_s {
 	struct {
 		int slot_index;
 		int block_index;
-		
+
 		// alolcator.h:
-		// typedef uint32_t alo_size_t; 
+		// typedef uint32_t alo_size_t;
 		uint32_t block_size;
 		uint32_t block_alignment;
 		uint32_t block_alignment_hole;

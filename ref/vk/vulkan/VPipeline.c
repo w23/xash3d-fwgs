@@ -1,7 +1,7 @@
-#include "vk_pipeline.h"
+#include "VPipeline.h"
 
 #include "vk_framectl.h" // VkRenderPass
-#include "vk_combuf.h"
+#include "VCombuf.h"
 
 #include "eiface.h"
 
@@ -320,7 +320,7 @@ vk_pipeline_ray_t VK_PipelineRayTracingCreate(const vk_pipeline_ray_create_info_
 	{
 		char buf[64];
 		Q_snprintf(buf, sizeof(buf), "%s sbt", create->debug_name);
-		if (!VK_BufferCreate(buf, &ret.sbt_buffer, shader_groups_count * vk_core.physical_device.sbt_record_size,
+		if (!VK_BufferCreate(buf, &ret.sbt_buffer, shader_groups_count * v_device_info.sbt_record_size,
 				VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 		{
@@ -331,21 +331,21 @@ vk_pipeline_ray_t VK_PipelineRayTracingCreate(const vk_pipeline_ray_create_info_
 	}
 
 	{
-		const uint32_t sbt_handle_size = vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupHandleSize;
+		const uint32_t sbt_handle_size = v_device_info.properties_ray_tracing_pipeline.shaderGroupHandleSize;
 		const uint32_t sbt_handles_buffer_size = shader_groups_count * sbt_handle_size;
 		uint8_t *sbt_handles = Mem_Malloc(vk_core.pool, sbt_handles_buffer_size);
 		XVK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(vk_core.device, ret.pipeline, 0, shader_groups_count, sbt_handles_buffer_size, sbt_handles));
 		for (int i = 0; i < shader_groups_count; ++i)
 		{
 			uint8_t *sbt_dst = ret.sbt_buffer.mapped;
-			memcpy(sbt_dst + vk_core.physical_device.sbt_record_size * i, sbt_handles + sbt_handle_size * i, sbt_handle_size);
+			memcpy(sbt_dst + v_device_info.sbt_record_size * i, sbt_handles + sbt_handle_size * i, sbt_handle_size);
 		}
 		Mem_Free(sbt_handles);
 	}
 
 	{
 		const VkDeviceAddress sbt_addr = R_VkBufferGetDeviceAddress(ret.sbt_buffer.buffer);
-		const uint32_t sbt_record_size = vk_core.physical_device.sbt_record_size;
+		const uint32_t sbt_record_size = v_device_info.sbt_record_size;
 		uint32_t index = 0;
 
 #define SBT_INDEX(count) (VkStridedDeviceAddressRegionKHR){ \

@@ -1,9 +1,9 @@
-#include "vk_buffer.h"
+#include "VBuffer.h"
 #include "vk_logs.h"
-#include "vk_combuf.h"
-#include "vk_barrier.h"
+#include "VCombuf.h"
+#include "VBarrier.h"
 
-#include "arrays.h"
+#include "std/arrays.h"
 
 #define LOG_MODULE buf
 
@@ -22,7 +22,7 @@ qboolean VK_BufferCreate(const char *debug_name, vk_buffer_t *buf, uint32_t size
 	vkGetBufferMemoryRequirements(vk_core.device, buf->buffer, &memreq);
 
 	if (usage & VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR) {
-		memreq.alignment = ALIGN_UP(memreq.alignment, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
+		memreq.alignment = ALIGN_UP(memreq.alignment, v_device_info.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 	}
 
 	vk_devmem_allocate_args_t args = (vk_devmem_allocate_args_t) {
@@ -63,35 +63,6 @@ void VK_BufferDestroy(vk_buffer_t *buf) {
 VkDeviceAddress R_VkBufferGetDeviceAddress(VkBuffer buffer) {
 	const VkBufferDeviceAddressInfo bdai = {.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buffer};
 	return vkGetBufferDeviceAddress(vk_core.device, &bdai);
-}
-
-void R_FlippingBuffer_Init(r_flipping_buffer_t *flibuf, uint32_t size) {
-	aloRingInit(&flibuf->ring, size);
-	R_FlippingBuffer_Clear(flibuf);
-}
-
-void R_FlippingBuffer_Clear(r_flipping_buffer_t *flibuf) {
-	aloRingInit(&flibuf->ring, flibuf->ring.size);
-	flibuf->frame_offsets[0] = flibuf->frame_offsets[1] = ALO_ALLOC_FAILED;
-}
-
-uint32_t R_FlippingBuffer_Alloc(r_flipping_buffer_t* flibuf, uint32_t size, uint32_t align) {
-	const uint32_t offset = aloRingAlloc(&flibuf->ring, size, align);
-	if (offset == ALO_ALLOC_FAILED)
-		return ALO_ALLOC_FAILED;
-
-	if (flibuf->frame_offsets[1] == ALO_ALLOC_FAILED)
-		flibuf->frame_offsets[1] = offset;
-
-	return offset;
-}
-
-void R_FlippingBuffer_Flip(r_flipping_buffer_t* flibuf) {
-	if (flibuf->frame_offsets[0] != ALO_ALLOC_FAILED)
-		aloRingFree(&flibuf->ring, flibuf->frame_offsets[0]);
-
-	flibuf->frame_offsets[0] = flibuf->frame_offsets[1];
-	flibuf->frame_offsets[1] = ALO_ALLOC_FAILED;
 }
 
 void R_DEBuffer_Init(r_debuffer_t *debuf, uint32_t static_size, uint32_t dynamic_size) {

@@ -2,22 +2,22 @@
 
 #include "shaders/ray_interop.h" // DEBUG_DISPLAY_...
 
-#include "vk_resources.h"
+#include "vulkan/VResource.h"
 #include "vk_ray_accel.h"
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_cvar.h"
 #include "vk_light.h"
 #include "vk_math.h"
-#include "vk_meatpipe.h"
+#include "vulkan/VMeatpipe.h"
 #include "vk_ray_internal.h"
 #include "r_textures.h"
-#include "vk_combuf.h"
+#include "vulkan/VCombuf.h"
 #include "vk_logs.h"
 #include "rt_kusochki.h"
 
-#include "profiler.h"
+#include "std/profiler.h"
 
 #include "xash3d_mathlib.h"
 
@@ -385,7 +385,7 @@ qboolean VK_RayInit( void )
 	if (!RT_DynamicModelInit())
 		return false;
 
-	g_rtx.uniform.unit_size = ALIGN_UP(sizeof(struct UniformBuffer), vk_core.physical_device.properties.limits.minUniformBufferOffsetAlignment);
+	g_rtx.uniform.unit_size = ALIGN_UP(sizeof(struct UniformBuffer), v_device_info.properties.limits.minUniformBufferOffsetAlignment);
 
 	if (!VK_BufferCreate("ray uniform.buffer", &g_rtx.uniform.buffer, g_rtx.uniform.unit_size * MAX_FRAMES_IN_FLIGHT,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,

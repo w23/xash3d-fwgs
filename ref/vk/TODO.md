@@ -30,7 +30,7 @@
 - [ ] performance profiling and comparison
 
 # Next
-## [ ] Resograf agenda
+## Resograf agenda
 - [ ] Explicit dependency graph
 	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
 	- [ ] Build it from meatpipe and resources
@@ -40,11 +40,12 @@
 # Log
 ## 2025-03-21 EN/A offline
 - [ ] Make producers
-    - [ ] Builtin producers
+    - [x] Builtin producers
         - [x] geometry: vertices, indices
         - [x] TLAS
         - [x] UBO
         - [x] model_headers
+		- [x] light
 
 ## 2025-03-14 E400 graphores p.1
 - [x] Producer interface

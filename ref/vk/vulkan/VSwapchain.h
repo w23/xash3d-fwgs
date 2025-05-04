@@ -1,5 +1,5 @@
 #include "vk_core.h"
-#include "vk_image.h"
+#include "VImage.h"
 
 // TODO this needs to be negotiated by swapchain creation
 // however, currently render pass also needs it so ugh

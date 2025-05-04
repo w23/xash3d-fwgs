@@ -1,7 +1,7 @@
 #pragma once
 #include "vk_common.h"
 #include "r_block.h"
-#include "vk_buffer.h" // FIXME vk_buffer_locked_t should not be exposed
+#include "vulkan/VBuffer.h" // FIXME vk_buffer_locked_t should not be exposed
 #include "vk_core.h"
 
 #include <stdint.h>
