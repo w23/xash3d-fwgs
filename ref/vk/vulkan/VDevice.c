@@ -6,7 +6,7 @@
 
 #define LOG_MODULE core
 
-VDeviceInfo v_device_info = {};
+VDeviceInfo v_device_info = {0};
 VkDevice v_device = VK_NULL_HANDLE;
 
 #define X(f) PFN_##f f = NULL;
@@ -92,7 +92,7 @@ static int appendDeviceExtensions(const char** out, int out_count, const char *i
 	struct { \
 		TYPE *items; \
 		uint32_t count; \
-	} NAME = {}; \
+	} NAME = {0}; \
 	FUNC(&NAME.count, NULL); \
 	NAME.items = Mem_Malloc(vk_core.pool, sizeof(TYPE) * NAME.count); \
 	FUNC(&NAME.count, NAME.items)
