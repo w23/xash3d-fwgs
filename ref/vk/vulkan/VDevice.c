@@ -183,7 +183,9 @@ static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props,
 }
 
 static void readPhysicalDeviceInfo(VDeviceInfo *info) {
-	info->features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	info->features = (VkPhysicalDeviceFeatures2) {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+	};
 	vkGetPhysicalDeviceFeatures2(info->physical_device, &info->features);
 
 	// Get memory properties and budget
