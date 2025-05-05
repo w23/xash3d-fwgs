@@ -22,6 +22,13 @@ typedef struct VDeviceInfo {
 	qboolean ray_tracing;
 	qboolean nv_checkpoint;
 	qboolean calibrated_timestamps;
+	qboolean perf_query;
+
+	struct {
+		uint32_t count;
+		const VkPerformanceCounterKHR *counters;
+		VkPerformanceCounterDescriptionKHR *desc;
+	} perf_counters;
 } VDeviceInfo;
 
 extern VDeviceInfo v_device_info;

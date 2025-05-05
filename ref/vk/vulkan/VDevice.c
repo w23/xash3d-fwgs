@@ -28,8 +28,6 @@ static dllfunc_t device_funcs_rtx[] = {
 
 static const char* device_extensions_req[] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-	// FIXME make optional
-	VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME,
 };
 
 static const char* device_extensions_rt[] = {
@@ -49,6 +47,10 @@ static const char* device_extensions_nv_checkpoint[] = {
 
 static const char* device_extensions_extra[] = {
 	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
+};
+
+static const char* device_extensions_perf_query[] = {
+	VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME,
 };
 
 static const VkExtensionProperties *findExtension( const VkExtensionProperties *exts, uint32_t num_exts, const char *extension ) {
@@ -211,32 +213,32 @@ static const char *perfCounterScopeName(VkPerformanceCounterScopeKHR scope) {
 }
 
 static void queryPerformanceQuery(VDeviceInfo *info) {
-	const uint32_t queue_family_index = 0;
+	ASSERT(info->perf_query);
+
 	uint32_t counters_count = 0;
-	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, queue_family_index, &counters_count, NULL, NULL));
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, NULL, NULL));
 
 	VkPerformanceCounterKHR *const counters = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters));
 	VkPerformanceCounterDescriptionKHR *const counters_desc = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters_desc));
 
 	for (uint32_t i = 0; i < counters_count; ++i) {
-		counters[i] = (VkPerformanceCounterKHR) {
-			.sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_KHR,
-		};
-
-		counters_desc[i] = (VkPerformanceCounterDescriptionKHR) {
-			.sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_DESCRIPTION_KHR,
-		};
+		counters[i] = (VkPerformanceCounterKHR) { .sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_KHR, };
+		counters_desc[i] = (VkPerformanceCounterDescriptionKHR) { .sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_DESCRIPTION_KHR, };
 	}
 
-	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, queue_family_index, &counters_count, counters, counters_desc));
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, counters, counters_desc));
 
-	gEngine.Con_Reportf("Got %d counters:\n", counters_count);
+	INFO("Got %d counters:", counters_count);
 	for (uint32_t i = 0; i < counters_count; ++i) {
 		const VkPerformanceCounterKHR *const cnt = counters + i;
 		const VkPerformanceCounterDescriptionKHR *const desc = counters_desc + i;
-		gEngine.Con_Reportf("  %d: %s %s/%s, %s (%s)\n",
+		INFO("  %d: %s %s/%s, %s (%s)",
 			i, perfCounterScopeName(cnt->scope), desc->category, desc->name, perfCounterUnitName(cnt->unit), desc->description);
 	}
+
+	info->perf_counters.count = counters_count;
+	info->perf_counters.counters = counters;
+	info->perf_counters.desc = counters_desc;
 }
 
 static void readPhysicalDeviceInfo(VDeviceInfo *info) {
@@ -265,6 +267,7 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_rt, COUNTOF(device_extensions_rt));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
+		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
 
 		info->anisotropy = info->features.features.samplerAnisotropy;
 		INFO("\t\tAnistoropy supported: %d", info->anisotropy);
@@ -277,6 +280,11 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 
 		info->calibrated_timestamps = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
 		INFO("\t\tCalibrated timestamps supported: %d", info->calibrated_timestamps);
+
+		info->perf_query = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
+		INFO("\t\tPerformance query supported: %d", info->perf_query);
+		if (info->perf_query)
+			queryPerformanceQuery(info);
 
 		Mem_Free(extensions.items);
 	}
@@ -297,10 +305,6 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 			//??? g_rtx.sbt_record_size = ALIGN_UP(info->properties_ray_tracing_pipeline.shaderGroupHandleSize, info->properties_ray_tracing_pipeline.shaderGroupHandleAlignment);
 			info->sbt_record_size = ALIGN_UP(info->properties_ray_tracing_pipeline.shaderGroupHandleSize, info->properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 		}
-	}
-
-	{
-		queryPerformanceQuery(info);
 	}
 }
 
@@ -324,7 +328,9 @@ static VDeviceInfos enumerateDevices(void) {
 	int devices_having_rt = 0;
 	for (uint32_t i = 0; i < physical_devices.count; ++i) {
 		VDeviceInfo *const info = infos.items + i;
-		info->physical_device = physical_devices.items[i];
+		*info = (VDeviceInfo) {
+			.physical_device = physical_devices.items[i],
+		};
 
 		vkGetPhysicalDeviceProperties(info->physical_device, &info->properties);
 
@@ -541,4 +547,9 @@ int vDeviceInit(int force_disable_rt) {
 void vDeviceShutdown(void) {
 	vkDestroyDevice(v_device, NULL);
 	v_device = VK_NULL_HANDLE;
+
+	if (v_device_info.perf_counters.count) {
+		Mem_Free((void*)v_device_info.perf_counters.counters);
+		Mem_Free((void*)v_device_info.perf_counters.desc);
+	}
 }
