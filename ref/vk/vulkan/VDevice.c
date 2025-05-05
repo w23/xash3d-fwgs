@@ -212,9 +212,19 @@ static const char *perfCounterScopeName(VkPerformanceCounterScopeKHR scope) {
 	}
 }
 
-static void queryPerformanceQuery(VDeviceInfo *info) {
-	ASSERT(info->perf_query);
+static const char *perfCounterStorageName(VkPerformanceCounterStorageKHR storage) {
+	switch (storage) {
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT32_KHR: return "i32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT64_KHR: return "i64";
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT32_KHR: return "u32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT64_KHR: return "u64";
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT32_KHR: return "f32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT64_KHR: return "f64";
+		default: return "unknown";
+	}
+}
 
+static void queryPerformanceCounters(VDeviceInfo *info) {
 	uint32_t counters_count = 0;
 	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, NULL, NULL));
 
@@ -232,8 +242,11 @@ static void queryPerformanceQuery(VDeviceInfo *info) {
 	for (uint32_t i = 0; i < counters_count; ++i) {
 		const VkPerformanceCounterKHR *const cnt = counters + i;
 		const VkPerformanceCounterDescriptionKHR *const desc = counters_desc + i;
-		INFO("  %d: %s %s/%s, %s (%s)",
-			i, perfCounterScopeName(cnt->scope), desc->category, desc->name, perfCounterUnitName(cnt->unit), desc->description);
+		INFO("  %d: %s %s/%s, %s@%s (%s)",
+			i, perfCounterScopeName(cnt->scope),
+			desc->category, desc->name,
+			perfCounterUnitName(cnt->unit), perfCounterStorageName(cnt->storage),
+			desc->description);
 	}
 
 	info->perf_counters.count = counters_count;
@@ -242,33 +255,35 @@ static void queryPerformanceQuery(VDeviceInfo *info) {
 }
 
 static void readPhysicalDeviceInfo(VDeviceInfo *info) {
-	info->features = (VkPhysicalDeviceFeatures2) {
-		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-	};
-	vkGetPhysicalDeviceFeatures2(info->physical_device, &info->features);
-
-	// Get memory properties and budget
-	{
-		info->memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
-		info->memory_properties2.pNext = &info->memory_budget;
-		info->memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
-		info->memory_budget.pNext = NULL;
-		vkGetPhysicalDeviceMemoryProperties2(info->physical_device, &info->memory_properties2);
-		devicePrintMemoryInfo(&info->memory_properties2.memoryProperties, &info->memory_budget);
-	}
-
-	{
 #define FUNC(COUNT, ITEMS) XVK_CHECK(vkEnumerateDeviceExtensionProperties(info->physical_device, NULL, COUNT, ITEMS))
 		GET_VULKAN_ARRAY(VkExtensionProperties, extensions, FUNC);
 #undef FUNC
-
+	{
 		INFO( "\t\tSupported device extensions: %u", extensions.count);
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_req, COUNTOF(device_extensions_req));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_rt, COUNTOF(device_extensions_rt));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
+	}
 
+	void *features_head = NULL;
+	VkPhysicalDevicePerformanceQueryFeaturesKHR perf_query_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR,
+		.pNext = features_head,
+	};
+
+	const qboolean perf_query_extension_supported = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
+	if (perf_query_extension_supported)
+		features_head = &perf_query_features;
+
+	info->features = (VkPhysicalDeviceFeatures2) {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+		.pNext = features_head,
+	};
+	vkGetPhysicalDeviceFeatures2(info->physical_device, &info->features);
+
+	{
 		info->anisotropy = info->features.features.samplerAnisotropy;
 		INFO("\t\tAnistoropy supported: %d", info->anisotropy);
 
@@ -281,13 +296,23 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 		info->calibrated_timestamps = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
 		INFO("\t\tCalibrated timestamps supported: %d", info->calibrated_timestamps);
 
-		info->perf_query = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
-		INFO("\t\tPerformance query supported: %d", info->perf_query);
-		if (info->perf_query)
-			queryPerformanceQuery(info);
-
-		Mem_Free(extensions.items);
+		info->perf_query = perf_query_extension_supported && perf_query_features.performanceCounterQueryPools;
+		INFO("\t\tPerformance query support: extension: %d, pool: %d", perf_query_extension_supported, info->perf_query);
 	}
+
+	if (perf_query_extension_supported)
+		queryPerformanceCounters(info);
+
+	// Get memory properties and budget
+	{
+		info->memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+		info->memory_properties2.pNext = &info->memory_budget;
+		info->memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+		info->memory_budget.pNext = NULL;
+		vkGetPhysicalDeviceMemoryProperties2(info->physical_device, &info->memory_properties2);
+		devicePrintMemoryInfo(&info->memory_properties2.memoryProperties, &info->memory_budget);
+	}
+
 
 	{
 		// TODO should we check Vk version first?
@@ -306,6 +331,8 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 			info->sbt_record_size = ALIGN_UP(info->properties_ray_tracing_pipeline.shaderGroupHandleSize, info->properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 		}
 	}
+
+	Mem_Free(extensions.items);
 }
 
 typedef ARRAY_DYNAMIC_DECLARE(VDeviceInfo, VDeviceInfos);
@@ -414,6 +441,14 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		.rayQuery = VK_TRUE,
 	};
 	head = info->ray_tracing ? &ray_query_pipeline_feature : NULL;
+
+	VkPhysicalDevicePerformanceQueryFeaturesKHR perf_query_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR,
+		.pNext = head,
+		.performanceCounterQueryPools = VK_TRUE,
+	};
+	if (info->perf_query)
+		head = &perf_query_features;
 
 	VkPhysicalDeviceVulkan13Features vk13_features = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
