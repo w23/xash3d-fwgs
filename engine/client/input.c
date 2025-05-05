@@ -17,6 +17,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "client.h"
 #include "vgui_draw.h"
+#include "cursor_type.h"
 
 #if XASH_SDL
 #include <SDL.h>
@@ -36,16 +37,17 @@ static struct inputstate_s
 	float lastpitch, lastyaw;
 } inputstate;
 
-extern convar_t *vid_fullscreen;
-convar_t *m_pitch;
-convar_t *m_yaw;
+CVAR_DEFINE_AUTO( m_pitch, "0.022", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "mouse pitch value" );
+CVAR_DEFINE_AUTO( m_yaw, "0.022", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "mouse yaw value" );
+CVAR_DEFINE_AUTO( m_ignore, DEFAULT_M_IGNORE, FCVAR_ARCHIVE | FCVAR_FILTERABLE, "ignore mouse events" );
+static CVAR_DEFINE_AUTO( look_filter, "0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "filter look events making it smoother" );
+static CVAR_DEFINE_AUTO( m_rawinput, "1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable mouse raw input" );
 
-convar_t *m_ignore;
-convar_t *cl_forwardspeed;
-convar_t *cl_sidespeed;
-convar_t *cl_backspeed;
-convar_t *look_filter;
-convar_t *m_rawinput;
+static CVAR_DEFINE_AUTO( cl_forwardspeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default forward move speed" );
+static CVAR_DEFINE_AUTO( cl_backspeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default back move speed"  );
+static CVAR_DEFINE_AUTO( cl_sidespeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default side move speed"  );
+
+static CVAR_DEFINE_AUTO( m_grab_debug, "0", FCVAR_PRIVILEGED, "show debug messages on mouse state change" );
 
 /*
 ================
@@ -58,7 +60,7 @@ uint IN_CollectInputDevices( void )
 {
 	uint ret = 0;
 
-	if( !m_ignore->value ) // no way to check is mouse connected, so use cvar only
+	if( !m_ignore.value ) // no way to check is mouse connected, so use cvar only
 		ret |= INPUT_DEVICE_MOUSE;
 
 	if( touch_enable.value )
@@ -86,18 +88,18 @@ player is connected to the server
 */
 void IN_LockInputDevices( qboolean lock )
 {
-	extern convar_t *joy_enable; // private to input system
+	extern convar_t joy_enable; // private to input system
 
 	if( lock )
 	{
-		SetBits( m_ignore->flags, FCVAR_READ_ONLY );
-		SetBits( joy_enable->flags, FCVAR_READ_ONLY );
+		SetBits( m_ignore.flags, FCVAR_READ_ONLY );
+		SetBits( joy_enable.flags, FCVAR_READ_ONLY );
 		SetBits( touch_enable.flags, FCVAR_READ_ONLY );
 	}
 	else
 	{
-		ClearBits( m_ignore->flags, FCVAR_READ_ONLY );
-		ClearBits( joy_enable->flags, FCVAR_READ_ONLY );
+		ClearBits( m_ignore.flags, FCVAR_READ_ONLY );
+		ClearBits( joy_enable.flags, FCVAR_READ_ONLY );
 		ClearBits( touch_enable.flags, FCVAR_READ_ONLY );
 	}
 }
@@ -108,25 +110,21 @@ void IN_LockInputDevices( qboolean lock )
 IN_StartupMouse
 ===========
 */
-void IN_StartupMouse( void )
+static void IN_StartupMouse( void )
 {
-	m_ignore = Cvar_Get( "m_ignore", DEFAULT_M_IGNORE, FCVAR_ARCHIVE | FCVAR_FILTERABLE, "ignore mouse events" );
+	Cvar_RegisterVariable( &m_ignore );
 
-	m_pitch = Cvar_Get( "m_pitch", "0.022", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "mouse pitch value" );
-	m_yaw = Cvar_Get( "m_yaw", "0.022", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "mouse yaw value" );
-	look_filter = Cvar_Get( "look_filter", "0", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "filter look events making it smoother" );
-	m_rawinput = Cvar_Get( "m_rawinput", "1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable mouse raw input" );
+	Cvar_RegisterVariable( &m_pitch );
+	Cvar_RegisterVariable( &m_yaw );
+	Cvar_RegisterVariable( &look_filter );
+	Cvar_RegisterVariable( &m_rawinput );
+	Cvar_RegisterVariable( &m_grab_debug );
 
 	// You can use -nomouse argument to prevent using mouse from client
 	// -noenginemouse will disable all mouse input
 	if( Sys_CheckParm(  "-noenginemouse" )) return;
 
 	in_mouseinitialized = true;
-}
-
-void GAME_EXPORT IN_SetCursor( void *hCursor )
-{
-	// stub
 }
 
 /*
@@ -176,14 +174,11 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 
 	// since SetCursorType controls cursor visibility
 	// execute it first, and then check mouse grab state
-	if( newstate == key_menu || newstate == key_console || newstate == key_message )
+	if( newstate == key_menu || newstate == key_console )
 	{
 		Platform_SetCursorType( dc_arrow );
 
-#if XASH_ANDROID
-		Android_ShowMouse( true );
-#endif
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 		Evdev_SetGrab( false );
 #endif
 	}
@@ -191,13 +186,14 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 	{
 		Platform_SetCursorType( dc_none );
 
-#if XASH_ANDROID
-		Android_ShowMouse( false );
-#endif
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 		Evdev_SetGrab( true );
 #endif
 	}
+
+	// don't leave the user without cursor if they enabled m_ignore
+	if( m_ignore.value )
+		return;
 
 	if( oldstate == key_game )
 	{
@@ -209,65 +205,81 @@ void IN_ToggleClientMouse( int newstate, int oldstate )
 	}
 }
 
-void IN_CheckMouseState( qboolean active )
+static void IN_SetRelativeMouseMode( qboolean set, qboolean verbose )
 {
-	static qboolean s_bRawInput, s_bMouseGrab;
+	static qboolean s_bRawInput;
+
+	if( set && !s_bRawInput )
+	{
+#if XASH_SDL == 2
+		SDL_GetRelativeMouseState( NULL, NULL );
+		SDL_SetRelativeMouseMode( SDL_TRUE );
+#endif
+		s_bRawInput = true;
+		if( verbose )
+			Con_Printf( "%s: true\n", __func__ );
+	}
+	else if( !set && s_bRawInput )
+	{
+#if XASH_SDL == 2
+		SDL_GetRelativeMouseState( NULL, NULL );
+		SDL_SetRelativeMouseMode( SDL_FALSE );
+#endif
+		s_bRawInput = false;
+		if( verbose )
+			Con_Printf( "%s: false\n", __func__ );
+	}
+}
+
+static void IN_SetMouseGrab( qboolean set, qboolean verbose )
+{
+	static qboolean s_bMouseGrab;
+
+	if( set && !s_bMouseGrab )
+	{
+#if XASH_SDL
+		SDL_SetWindowGrab( host.hWnd, SDL_TRUE );
+#endif
+		s_bMouseGrab = true;
+		if( verbose )
+			Con_Printf( "%s: true\n", __func__ );
+	}
+	else if( !set && s_bMouseGrab )
+	{
+#if XASH_SDL
+		SDL_SetWindowGrab( host.hWnd, SDL_FALSE );
+#endif
+
+		s_bMouseGrab = false;
+		if( verbose )
+			Con_Printf( "%s: false\n", __func__ );
+	}
+}
+
+static void IN_CheckMouseState( qboolean active )
+{
+	qboolean use_raw_input, verbose;
 
 #if XASH_WIN32
-	qboolean useRawInput = CVAR_TO_BOOL( m_rawinput ) && clgame.client_dll_uses_sdl || clgame.dllFuncs.pfnLookEvent;
+	use_raw_input = ( m_rawinput.value && clgame.client_dll_uses_sdl ) || clgame.dllFuncs.pfnLookEvent != NULL;
 #else
-	qboolean useRawInput = true; // always use SDL code
+	use_raw_input = true; // always use SDL code
 #endif
 
-	if( active && useRawInput && !host.mouse_visible && cls.state == ca_active )
-	{
-		if( !s_bRawInput )
-		{
-#if XASH_SDL == 2
-			SDL_GetRelativeMouseState( NULL, NULL );
-			SDL_SetRelativeMouseMode( SDL_TRUE );
-#endif
+	verbose = m_grab_debug.value ? true : false;
 
-			// Con_Printf( "Enable relative mode\n" );
-			s_bRawInput = true;
-		}
-	}
+	if( m_ignore.value )
+		active = false;
+
+	if( active && use_raw_input && !host.mouse_visible && cls.state == ca_active )
+		IN_SetRelativeMouseMode( true, verbose );
 	else
-	{
-		if( s_bRawInput )
-		{
-#if XASH_SDL == 2
-			SDL_GetRelativeMouseState( NULL, NULL );
-			SDL_SetRelativeMouseMode( SDL_FALSE );
-#endif
-			// Con_Printf( "Disable relative mode\n" );
-			s_bRawInput = false;
-		}
-	}
+		IN_SetRelativeMouseMode( false, verbose );
 
 	if( active && !host.mouse_visible && cls.state == ca_active )
-	{
-		if( !s_bMouseGrab )
-		{
-#if XASH_SDL
-			SDL_SetWindowGrab( host.hWnd, SDL_TRUE );
-#endif
-			// Con_Printf( "Enable grab\n" );
-			s_bMouseGrab = true;
-		}
-	}
+		IN_SetMouseGrab( true, verbose );
 	else
-	{
-		if( s_bMouseGrab )
-		{
-#if XASH_SDL
-			SDL_SetWindowGrab( host.hWnd, SDL_FALSE );
-#endif
-
-			// Con_Printf( "Disable grab\n" );
-			s_bMouseGrab = false;
-		}
-	}
+		IN_SetMouseGrab( false, verbose );
 }
 
 /*
@@ -313,14 +325,14 @@ void IN_DeactivateMouse( void )
 IN_MouseMove
 ================
 */
-void IN_MouseMove( void )
+static void IN_MouseMove( void )
 {
 	int x, y;
 
 	if( !in_mouseinitialized )
 		return;
 
-	if( touch_emulate.value )
+	if( Touch_Emulated( ))
 	{
 		// touch emulation overrides all input
 		Touch_KeyEvent( 0, 0 );
@@ -351,7 +363,7 @@ void IN_MouseEvent( int key, int down )
 	else ClearBits( in_mstate, BIT( key ));
 
 	// touch emulation overrides all input
-	if( touch_emulate.value )
+	if( Touch_Emulated( ))
 	{
 		Touch_KeyEvent( K_MOUSE1 + key, down );
 	}
@@ -399,7 +411,7 @@ void IN_Shutdown( void )
 {
 	IN_DeactivateMouse( );
 
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 	Evdev_Shutdown();
 #endif
 
@@ -414,9 +426,9 @@ IN_Init
 */
 void IN_Init( void )
 {
-	cl_forwardspeed	= Cvar_Get( "cl_forwardspeed", "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default forward move speed" );
-	cl_backspeed	= Cvar_Get( "cl_backspeed", "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default back move speed"  );
-	cl_sidespeed	= Cvar_Get( "cl_sidespeed", "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL | FCVAR_FILTERABLE, "Default side move speed"  );
+	Cvar_RegisterVariable( &cl_forwardspeed );
+	Cvar_RegisterVariable( &cl_backspeed );
+	Cvar_RegisterVariable( &cl_sidespeed );
 
 	if( !Host_IsDedicated() )
 	{
@@ -426,7 +438,7 @@ void IN_Init( void )
 
 		Touch_Init();
 
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 		Evdev_Init();
 #endif
 	}
@@ -453,8 +465,8 @@ static void IN_JoyAppendMove( usercmd_t *cmd, float forwardmove, float sidemove 
 {
 	static uint moveflags = T | S;
 
-	if( forwardmove ) cmd->forwardmove  = forwardmove * cl_forwardspeed->value;
-	if( sidemove ) cmd->sidemove  = sidemove * cl_sidespeed->value;
+	if( forwardmove ) cmd->forwardmove  = forwardmove * cl_forwardspeed.value;
+	if( sidemove ) cmd->sidemove  = sidemove * cl_sidespeed.value;
 
 	if( forwardmove )
 	{
@@ -529,10 +541,10 @@ static void IN_CollectInput( float *forward, float *side, float *pitch, float *y
 	{
 		float x, y;
 		Platform_MouseMove( &x, &y );
-		*pitch += y * m_pitch->value;
-		*yaw   -= x * m_yaw->value;
+		*pitch += y * m_pitch.value;
+		*yaw   -= x * m_yaw.value;
 
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 		IN_EvdevMove( yaw, pitch );
 #endif
 	}
@@ -540,7 +552,7 @@ static void IN_CollectInput( float *forward, float *side, float *pitch, float *y
 	Joy_FinalizeMove( forward, side, yaw, pitch );
 	Touch_GetMove( forward, side, yaw, pitch );
 
-	if( look_filter->value )
+	if( look_filter.value )
 	{
 		*pitch = ( inputstate.lastpitch + *pitch ) / 2;
 		*yaw   = ( inputstate.lastyaw   + *yaw ) / 2;
@@ -557,10 +569,9 @@ IN_EngineAppendMove
 Called from cl_main.c after generating command in client
 ================
 */
-void IN_EngineAppendMove( float frametime, void *cmd1, qboolean active )
+void IN_EngineAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 {
 	float forward, side, pitch, yaw;
-	usercmd_t *cmd = cmd1;
 
 	if( clgame.dllFuncs.pfnLookEvent )
 		return;
@@ -588,9 +599,9 @@ void IN_EngineAppendMove( float frametime, void *cmd1, qboolean active )
 	}
 }
 
-void IN_Commands( void )
+static void IN_Commands( void )
 {
-#ifdef XASH_USE_EVDEV
+#if XASH_USE_EVDEV
 	IN_EvdevFrame();
 #endif
 
@@ -598,7 +609,7 @@ void IN_Commands( void )
 	{
 		float forward = 0, side = 0, pitch = 0, yaw = 0;
 
-		IN_CollectInput( &forward, &side, &pitch, &yaw, in_mouseinitialized && !CVAR_TO_BOOL( m_ignore ) );
+		IN_CollectInput( &forward, &side, &pitch, &yaw, in_mouseinitialized && !m_ignore.value );
 
 		if( cls.key_dest == key_game )
 		{
@@ -622,8 +633,6 @@ Called every frame, even if not generating commands
 */
 void Host_InputFrame( void )
 {
-	Sys_SendKeyEvents ();
-
 	IN_Commands();
 
 	IN_MouseMove();

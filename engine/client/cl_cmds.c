@@ -85,6 +85,12 @@ void CL_PlayCDTrack_f( void )
 		paused = false;
 		looped = false;
 	}
+	else if( !Q_stricmp( command, "playfile" ))
+	{
+		S_StartBackgroundTrack( pszTrack, NULL, 0, true );
+		paused = false;
+		looped = false;
+	}
 	else if( !Q_stricmp( command, "loop" ))
 	{
 		if( Q_isdigit( pszTrack ))
@@ -93,6 +99,12 @@ void CL_PlayCDTrack_f( void )
 			S_StartBackgroundTrack( clgame.cdtracks[track-1], clgame.cdtracks[track-1], 0, false );
 		}
 		else S_StartBackgroundTrack( pszTrack, pszTrack, 0, true );
+		paused = false;
+		looped = true;
+	}
+	else if( !Q_stricmp( command, "loopfile" ))
+	{
+		S_StartBackgroundTrack( pszTrack, pszTrack, 0, true );
 		paused = false;
 		looped = true;
 	}
@@ -134,7 +146,7 @@ void CL_PlayCDTrack_f( void )
 			if( paused ) Con_Printf( "Paused %s track %u\n", looped ? "looping" : "playing", track );
 			else Con_Printf( "Currently %s track %u\n", looped ? "looping" : "playing", track );
 		}
-		Con_Printf( "Volume is %f\n", Cvar_VariableValue( "MP3Volume" ));
+		Con_Printf( "Volume is %f\n", s_musicvolume.value );
 		return;
 	}
 	else Con_Printf( "%s: unknown command %s\n", Cmd_Argv( 0 ), command );
@@ -145,36 +157,12 @@ void CL_PlayCDTrack_f( void )
 CL_ScreenshotGetName
 ==================
 */
-qboolean CL_ScreenshotGetName( int lastnum, char *filename )
+static qboolean CL_ScreenshotGetName( const char *fmt, int lastnum, char *filename, size_t size )
 {
 	if( lastnum < 0 || lastnum > 9999 )
-	{
-		Con_Printf( S_ERROR "unable to write screenshot\n" );
 		return false;
-	}
 
-	Q_sprintf( filename, "scrshots/%s_shot%04d.png", clgame.mapname, lastnum );
-
-	return true;
-}
-
-/*
-==================
-CL_SnapshotGetName
-==================
-*/
-qboolean CL_SnapshotGetName( int lastnum, char *filename )
-{
-	if( lastnum < 0 || lastnum > 9999 )
-	{
-		Con_Printf( S_ERROR "unable to write snapshot\n" );
-		FS_AllowDirectPaths( false );
-		return false;
-	}
-
-	Q_sprintf( filename, "../%s_%04d.png", clgame.mapname, lastnum );
-
-	return true;
+	return Q_snprintf( filename, size, fmt, clgame.mapname, lastnum ) > 0;
 }
 
 /*
@@ -184,127 +172,6 @@ qboolean CL_SnapshotGetName( int lastnum, char *filename )
 
 ==============================================================================
 */
-/*
-==================
-CL_ScreenShot_f
-
-normal screenshot
-==================
-*/
-void CL_ScreenShot_f( void )
-{
-	int	i;
-	string	checkname;
-
-	if( CL_IsDevOverviewMode() == 1 )
-	{
-		// special case for write overview image and script file
-		Q_snprintf( cls.shotname, sizeof( cls.shotname ), "overviews/%s.bmp", clgame.mapname );
-		cls.scrshot_action = scrshot_mapshot; // build new frame for mapshot
-	}
-	else
-	{
-		// scan for a free filename
-		for( i = 0; i < 9999; i++ )
-		{
-			if( !CL_ScreenshotGetName( i, checkname ))
-				return;	// no namespace
-
-			if( !FS_FileExists( checkname, false ))
-				break;
-		}
-
-		Q_strncpy( cls.shotname, checkname, sizeof( cls.shotname ));
-		cls.scrshot_action = scrshot_normal; // build new frame for screenshot
-	}
-
-	cls.envshot_vieworg = NULL; // no custom view
-	cls.envshot_viewsize = 0;
-}
-
-/*
-==================
-CL_SnapShot_f
-
-save screenshots into root dir
-==================
-*/
-void CL_SnapShot_f( void )
-{
-	int	i;
-	string	checkname;
-
-	if( CL_IsDevOverviewMode() == 1 )
-	{
-		// special case for write overview image and script file
-		Q_snprintf( cls.shotname, sizeof( cls.shotname ), "overviews/%s.bmp", clgame.mapname );
-		cls.scrshot_action = scrshot_mapshot; // build new frame for mapshot
-	}
-	else
-	{
-		FS_AllowDirectPaths( true );
-
-		// scan for a free filename
-		for( i = 0; i < 9999; i++ )
-		{
-			if( !CL_SnapshotGetName( i, checkname ))
-				return;	// no namespace
-
-			if( !FS_FileExists( checkname, false ))
-				break;
-		}
-
-		FS_AllowDirectPaths( false );
-		Q_strncpy( cls.shotname, checkname, sizeof( cls.shotname ));
-		cls.scrshot_action = scrshot_snapshot; // build new frame for screenshot
-	}
-
-	cls.envshot_vieworg = NULL; // no custom view
-	cls.envshot_viewsize = 0;
-}
-
-/*
-==================
-CL_EnvShot_f
-
-cubemap view
-==================
-*/
-void CL_EnvShot_f( void )
-{
-	if( Cmd_Argc() < 2 )
-	{
-		Con_Printf( S_USAGE "envshot <shotname>\n" );
-		return;
-	}
-
-	Q_sprintf( cls.shotname, "gfx/env/%s", Cmd_Argv( 1 ));
-	cls.scrshot_action = scrshot_envshot;	// build new frame for envshot
-	cls.envshot_vieworg = NULL; // no custom view
-	cls.envshot_viewsize = 0;
-}
-
-/*
-==================
-CL_SkyShot_f
-
-skybox view
-==================
-*/
-void CL_SkyShot_f( void )
-{
-	if( Cmd_Argc() < 2 )
-	{
-		Con_Printf( S_USAGE "skyshot <shotname>\n" );
-		return;
-	}
-
-	Q_sprintf( cls.shotname, "gfx/env/%s", Cmd_Argv( 1 ));
-	cls.scrshot_action = scrshot_skyshot;	// build new frame for skyshot
-	cls.envshot_vieworg = NULL; // no custom view
-	cls.envshot_viewsize = 0;
-}
-
 /*
 ==================
 CL_LevelShot_f
@@ -323,7 +190,8 @@ void CL_LevelShot_f( void )
 	// check for exist
 	if( cls.demoplayback && ( cls.demonum != -1 ))
 	{
-		Q_sprintf( cls.shotname, "levelshots/%s_%s.bmp", cls.demoname, refState.wideScreen ? "16x9" : "4x3" );
+		Q_snprintf( cls.shotname, sizeof( cls.shotname ),
+			"levelshots/%s_%s.bmp", cls.demoname, refState.wideScreen ? "16x9" : "4x3" );
 		Q_snprintf( filename, sizeof( filename ), "%s.dem", cls.demoname );
 
 		// make sure what levelshot is newer than demo
@@ -332,7 +200,8 @@ void CL_LevelShot_f( void )
 	}
 	else
 	{
-		Q_sprintf( cls.shotname, "levelshots/%s_%s.bmp", clgame.mapname, refState.wideScreen ? "16x9" : "4x3" );
+		Q_snprintf( cls.shotname, sizeof( cls.shotname ),
+			"levelshots/%s_%s.bmp", clgame.mapname, refState.wideScreen ? "16x9" : "4x3" );
 
 		// make sure what levelshot is newer than bsp
 		ft1 = FS_FileTime( cl.worldmodel->name, false );
@@ -345,23 +214,107 @@ void CL_LevelShot_f( void )
 	else cls.scrshot_action = scrshot_inactive;	// disable - not needs
 }
 
-/*
-==================
-CL_SaveShot_f
-
-mini-pic in loadgame menu
-==================
-*/
-void CL_SaveShot_f( void )
+static scrshot_t CL_GetScreenshotTypeFromString( const char *string )
 {
-	if( Cmd_Argc() < 2 )
+	if( !Q_stricmp( string, "snapshot" ))
+		return scrshot_snapshot;
+
+	if( !Q_stricmp( string, "screenshot" ))
+		return scrshot_normal;
+
+	if( !Q_stricmp( string, "saveshot" ))
+		return scrshot_savegame;
+
+	if( !Q_stricmp( string, "envshot" ))
+		return scrshot_envshot;
+
+	if( !Q_stricmp( string, "skyshot" ))
+		return scrshot_skyshot;
+
+	return scrshot_inactive;
+}
+
+void CL_GenericShot_f( void )
+{
+	const char *argv0 = Cmd_Argv( 0 );
+	scrshot_t type;
+
+	type = CL_GetScreenshotTypeFromString( argv0 );
+
+	if( type == scrshot_normal || type == scrshot_snapshot )
 	{
-		Con_Printf( S_USAGE "saveshot <savename>\n" );
-		return;
+		if( CL_IsDevOverviewMode() == 1 )
+			type = scrshot_mapshot;
+	}
+	else
+	{
+		if( Cmd_Argc() < 2 )
+		{
+			Con_Printf( S_USAGE "%s <shotname>\n", argv0 );
+			return;
+		}
 	}
 
-	Q_sprintf( cls.shotname, DEFAULT_SAVE_DIRECTORY "%s.bmp", Cmd_Argv( 1 ));
-	cls.scrshot_action = scrshot_savegame;	// build new frame for saveshot
+	switch( type )
+	{
+	case scrshot_envshot:
+	case scrshot_skyshot:
+		Q_snprintf( cls.shotname, sizeof( cls.shotname ), "gfx/env/%s", Cmd_Argv( 1 ));
+		break;
+	case scrshot_savegame:
+		Q_snprintf( cls.shotname, sizeof( cls.shotname ), DEFAULT_SAVE_DIRECTORY "%s.bmp", Cmd_Argv( 1 ));
+		break;
+	case scrshot_mapshot:
+		Q_snprintf( cls.shotname, sizeof( cls.shotname ), "overviews/%s.bmp", clgame.mapname );
+		break;
+	case scrshot_normal:
+	case scrshot_snapshot:
+	{
+		const char *fmt;
+		string checkname;
+		int i;
+
+		// allow overriding screenshot by users request
+		if( Cmd_Argc() > 1 )
+		{
+			Q_strncpy( cls.shotname, Cmd_Argv( 1 ), sizeof( cls.shotname ));
+			break;
+		}
+
+		if( type == scrshot_snapshot )
+		{
+			fmt = "../%s_%04d.png";
+			FS_AllowDirectPaths( true );
+		}
+		else fmt = "scrshots/%s_shot%04d.png";
+
+		for( i = 0; i < 9999; i++ )
+		{
+			if( !CL_ScreenshotGetName( fmt, i, checkname, sizeof( checkname )))
+			{
+				Con_Printf( S_ERROR "unable to write %s\n", argv0 );
+				FS_AllowDirectPaths( false );
+				return;
+			}
+
+			if( !FS_FileExists( checkname, true ))
+				break;
+		}
+
+		FS_AllowDirectPaths( false );
+
+		Q_strncpy( cls.shotname, checkname, sizeof( cls.shotname ));
+		break;
+	}
+	case scrshot_inactive:
+	case scrshot_plaque:
+	default:
+		return; // shouldn't happen
+	}
+
+	cls.scrshot_action = type; // build new frame for saveshot
+	cls.envshot_vieworg = NULL;
+	cls.envshot_viewsize = 0;
 }
 
 /*
@@ -403,7 +356,7 @@ void CL_SetSky_f( void )
 		return;
 	}
 
-	ref.dllFuncs.R_SetupSky( Cmd_Argv( 1 ));
+	R_SetupSky( Cmd_Argv( 1 ));
 }
 
 /*

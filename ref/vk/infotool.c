@@ -1,7 +1,7 @@
 #include "camera.h"
 #include "vk_math.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_brush.h"
 #include "vk_light.h"
 
@@ -24,7 +24,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 	vec3_t vec_end;
 	pmtrace_t trace;
 	const msurface_t *surf;
-	char buf[1024], *p = buf, *end = buf + sizeof(buf);
+	char buf[1024], *p = buf, *const end = buf + sizeof(buf);
 	const physent_t *physent = NULL;
 	const cl_entity_t *ent = NULL;
 
@@ -37,7 +37,7 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 		physent = gEngine.EV_GetPhysent( trace.ent );
 	}
 
-	ent = gEngine.GetEntityByIndex( (physent && physent->info > 0) ? physent->info : 0 );
+	ent = globals.entities + ((physent && physent->info > 0) ? physent->info : 0);
 
 	p += Q_snprintf(p, end - p,
 		"^\n"
@@ -50,7 +50,8 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 	);
 
 	p += Q_snprintf(p, end - p,
-		"entity index: %d, name: %s\n",
+		"entity (dynamic index: %d, info: %d), name: %s\n",
+		ent ? ent->index : -1,
 		(physent && physent->info > 0) ? physent->info : -1,
 		(ent && ent->model) ? ent->model->name : "N/A");
 
@@ -64,14 +65,18 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 
 	if (surf && ent && ent->model && ent->model->surfaces) {
 		const int surface_index = surf - ent->model->surfaces;
-		const texture_t *current_tex = R_TextureAnimation(ent, surf, NULL);
+		const texture_t *current_tex = R_TextureAnimation(ent, surf);
 		const int tex_id = current_tex->gl_texturenum;
-		const vk_texture_t* const texture = findTexture( tex_id );
+		const char *const tex_name = R_TextureGetNameByIndex( tex_id );
 		const texture_t *tex = surf->texinfo->texture;
 
+		const texture_t* const alt = tex->alternate_anims;
+
 		p += Q_snprintf(p, end - p,
-			"surface index: %d; texture: %s(%d)\n",
-			surface_index, texture ? texture->name : "NONE", tex_id
+			"surface index: [[ %d ]];\ntexture: %s(%d)\n"
+			"alternate_texture: %s(%d)\n",
+			surface_index, tex_name ? tex_name : "NONE", tex_id,
+			alt ? alt->name : "N/A", alt ? alt->gl_texturenum : -1
 		);
 
 		if (tex->anim_total > 0 && tex->anim_next) {
@@ -79,56 +84,15 @@ void XVK_CameraDebugPrintCenterEntity( void ) {
 			p += Q_snprintf(p, end - p,
 				"anim textures chain (%d):\n", tex->anim_total);
 			for (int i = 0; i < tex->anim_total && tex; ++i) {
-				const vk_texture_t *vkt = findTexture(tex->gl_texturenum);
+				const char* const texname = R_TextureGetNameByIndex(tex->gl_texturenum);
 				p += Q_snprintf(p, end - p,
-					"%d: %s(%d)%s\n", i, vkt ? vkt->name : "NONE", tex->gl_texturenum, tex == current_tex ? " <-" : "   ");
+					"%d: %s(%d)%s\n", i, texname ? texname : "NONE", tex->gl_texturenum, tex == current_tex ? " <-" : "   ");
 				tex = tex->anim_next;
 			}
 		}
 	}
 
-	{
-		const int cell_raw[3] = {
-			floor(trace.endpos[0] / LIGHT_GRID_CELL_SIZE),
-			floor(trace.endpos[1] / LIGHT_GRID_CELL_SIZE),
-			floor(trace.endpos[2] / LIGHT_GRID_CELL_SIZE),
-		};
-		const int light_cell[3] = {
-			cell_raw[0] - g_lights.map.grid_min_cell[0],
-			cell_raw[1] - g_lights.map.grid_min_cell[1],
-			cell_raw[2] - g_lights.map.grid_min_cell[2],
-		};
-		const int cell_index = RT_LightCellIndex( light_cell );
-
-		const vk_lights_cell_t *cell = (cell_index >= 0 && cell_index < MAX_LIGHT_CLUSTERS) ? g_lights.cells + cell_index : NULL;
-		p += Q_snprintf(p, end - p,
-			"light raw=(%d, %d, %d) cell=(%d, %d, %d) index=%d poly=%d point=%d\n",
-			cell_raw[0],
-			cell_raw[1],
-			cell_raw[2],
-			light_cell[0],
-			light_cell[1],
-			light_cell[2],
-			cell_index,
-			cell ? cell->num_polygons : -1,
-			cell ? cell->num_point_lights : -1);
-
-		if (cell && cell->num_polygons > 0) {
-			p += Q_snprintf(p, end - p, "poly:");
-			for (int i = 0; i < cell->num_polygons; ++i) {
-				p += Q_snprintf(p, end - p, " %d", cell->polygons[i]);
-			}
-			p += Q_snprintf(p, end - p, "\n");
-		}
-
-		if (cell && cell->num_point_lights > 0) {
-			p += Q_snprintf(p, end - p, "point:");
-			for (int i = 0; i < cell->num_point_lights; ++i) {
-				p += Q_snprintf(p, end - p, " %d", cell->point_lights[i]);
-			}
-			p += Q_snprintf(p, end - p, "\n");
-		}
-	}
+	p = RT_LightPrintCellInfo(p, end, trace.endpos);
 
 	gEngine.CL_CenterPrint(buf, 0.5f);
 }

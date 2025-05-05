@@ -1,13 +1,14 @@
 #include "vk_overlay.h"
 
-#include "vk_buffer.h"
+#include "vulkan/VBuffer.h"
 #include "vk_core.h"
 #include "vk_common.h"
 #include "vk_textures.h"
 #include "vk_framectl.h"
 #include "vk_renderstate.h"
-#include "vk_pipeline.h"
-#include "vk_descriptor.h"
+#include "vulkan/VPipeline.h"
+#include "vulkan/VDescriptor.h"
+#include "vk_logs.h"
 
 #include "com_strings.h"
 #include "eiface.h"
@@ -90,7 +91,7 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 
 	if (!p) {
 		/* gEngine.Con_Printf(S_ERROR "VK FIXME %s(%f, %f, %f, %f, %f, %f, %f, %f, %d(%s))\n", __FUNCTION__, */
-		/* 	x, y, w, h, s1, t1, s2, t2, texnum, findTexture(texnum)->name); */
+		/* 	x, y, w, h, s1, t1, s2, t2, texnum, R_TextureGetByIndex(texnum)->name); */
 		return;
 	}
 
@@ -119,7 +120,7 @@ static void drawFill( float x, float y, float w, float h, int r, int g, int b, i
 	const int prev_blending = vk_renderstate.blending_mode;
 	vk_renderstate.blending_mode = blending_mode;
 	vk_renderstate.tri_color = (color_rgba8_t){r, g, b, a};
-	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, VK_FindTexture(REF_WHITE_TEXTURE));
+	R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, /* TODO what is this garbage, get it by number */ R_TextureFindByName(REF_WHITE_TEXTURE));
 	vk_renderstate.tri_color = prev_color;
 	vk_renderstate.blending_mode = prev_blending;
 }
@@ -144,7 +145,7 @@ static qboolean createPipelines( void )
 		/* }; */
 
 		VkDescriptorSetLayout descriptor_layouts[] = {
-			vk_desc.one_texture_layout,
+			vk_desc_fixme.one_texture_layout,
 		};
 
 		VkPipelineLayoutCreateInfo plci = {
@@ -253,7 +254,7 @@ void R_VkOverlay_Shutdown( void ) {
 	vkDestroyPipelineLayout(vk_core.device, g2d.pipeline_layout, NULL);
 }
 
-void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf ) {
+static void drawOverlay( VkCommandBuffer cmdbuf ) {
 	DEBUG_BEGIN(cmdbuf, "2d overlay");
 
 	{
@@ -263,17 +264,22 @@ void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf ) {
 
 	for (int i = 0; i < g2d.batch_count && g2d.batch[i].vertex_count > 0; ++i)
 	{
-		vk_texture_t *texture = findTexture(g2d.batch[i].texture);
+		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm( g2d.batch[i].texture );
 		const VkPipeline pipeline = g2d.pipelines[g2d.batch[i].blending_mode];
-		if (texture->vk.descriptor)
+		if (tex_unorm)
 		{
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &texture->vk.descriptor, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g2d.pipeline_layout, 0, 1, &tex_unorm, 0, NULL);
 			vkCmdDraw(cmdbuf, g2d.batch[i].vertex_count, 1, g2d.batch[i].vertex_offset, 0);
 		} // FIXME else what?
 	}
 
 	DEBUG_END(cmdbuf);
+}
+
+void R_VkOverlay_DrawAndFlip( VkCommandBuffer cmdbuf, qboolean draw ) {
+	if (draw)
+		drawOverlay(cmdbuf);
 
 	clearAccumulated();
 }
@@ -283,17 +289,7 @@ void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, c
 	PRINT_NOT_IMPLEMENTED();
 }
 
-void R_DrawTileClear( int texnum, int x, int y, int w, int h )
+void CL_FillRGBA( int rendermode, float x, float y, float w, float h, byte r, byte g, byte b, byte a )
 {
-	PRINT_NOT_IMPLEMENTED_ARGS("%s", findTexture(texnum)->name );
-}
-
-void CL_FillRGBA( float x, float y, float w, float h, int r, int g, int b, int a )
-{
-	drawFill(x, y, w, h, r, g, b, a, kRenderTransAdd);
-}
-
-void CL_FillRGBABlend( float x, float y, float w, float h, int r, int g, int b, int a )
-{
-	drawFill(x, y, w, h, r, g, b, a, kRenderTransColor);
+	drawFill(x, y, w, h, r, g, b, a, rendermode);
 }

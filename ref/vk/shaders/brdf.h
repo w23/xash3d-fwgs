@@ -10,6 +10,9 @@ This work is published from: Germany. */
 // - remove c++ compat
 // - port to glsl
 
+#ifndef BRDF_H_INCLUDED
+#define BRDF_H_INCLUDED
+
 float rsqrt(float x) { return inversesqrt(x); }
 float saturate(float x) { return clamp(x, 0.0f, 1.0f); }
 vec3 saturate(vec3 x) { return clamp(x, vec3(0.0f), vec3(1.0f)); }
@@ -179,7 +182,7 @@ vec3 saturate(vec3 x) { return clamp(x, vec3(0.0f), vec3(1.0f)); }
 
 struct MaterialProperties
 {
-	vec3 baseColor;
+	vec3 base_color;
 	float metalness;
 
 	vec3 emissive;
@@ -249,13 +252,13 @@ float luminance(vec3 rgb)
 	return dot(rgb, vec3(0.2126f, 0.7152f, 0.0722f));
 }
 
-vec3 baseColorToSpecularF0(vec3 baseColor, float metalness) {
-	return mix(vec3(MIN_DIELECTRICS_F0, MIN_DIELECTRICS_F0, MIN_DIELECTRICS_F0), baseColor, metalness);
+vec3 baseColorToSpecularF0(vec3 base_color, float metalness) {
+	return mix(vec3(MIN_DIELECTRICS_F0, MIN_DIELECTRICS_F0, MIN_DIELECTRICS_F0), base_color, metalness);
 }
 
-vec3 baseColorToDiffuseReflectance(vec3 baseColor, float metalness)
+vec3 baseColorToDiffuseReflectance(vec3 base_color, float metalness)
 {
-	return baseColor * (1.0f - metalness);
+	return base_color * (1.0f - metalness);
 }
 
 float none(const BrdfData data) {
@@ -867,8 +870,8 @@ BrdfData prepareBRDFData(vec3 N, vec3 L, vec3 V, MaterialProperties material) {
 	data.VdotH = saturate(dot(V, data.H));
 
 	// Unpack material properties
-	data.specularF0 = baseColorToSpecularF0(material.baseColor, material.metalness);
-	data.diffuseReflectance = baseColorToDiffuseReflectance(material.baseColor, material.metalness);
+	data.specularF0 = baseColorToSpecularF0(material.base_color, material.metalness);
+	data.diffuseReflectance = baseColorToDiffuseReflectance(material.base_color, material.metalness);
 
 	// Unpack 'perceptively linear' -> 'linear' -> 'squared' roughness
 	data.roughness = material.roughness;
@@ -957,8 +960,8 @@ float getBrdfProbability(MaterialProperties material, vec3 V, vec3 shadingNormal
 
 	// Evaluate Fresnel term using the shading normal
 	// Note: we use the shading normal instead of the microfacet normal (half-vector) for Fresnel term here. That's suboptimal for rough surfaces at grazing angles, but half-vector is yet unknown at this point
-	float specularF0 = luminance(baseColorToSpecularF0(material.baseColor, material.metalness));
-	float diffuseReflectance = luminance(baseColorToDiffuseReflectance(material.baseColor, material.metalness));
+	float specularF0 = luminance(baseColorToSpecularF0(material.base_color, material.metalness));
+	float diffuseReflectance = luminance(baseColorToDiffuseReflectance(material.base_color, material.metalness));
 	float Fresnel = saturate(luminance(evalFresnel(vec3(specularF0), shadowedF90(vec3(specularF0)), max(0.0f, dot(V, shadingNormal)))));
 
 	// Approximate relative contribution of BRDFs using the Fresnel term
@@ -971,3 +974,4 @@ float getBrdfProbability(MaterialProperties material, vec3 V, vec3 shadingNormal
 	// Clamp probability to avoid undersampling of less prominent BRDF
 	return clamp(p, 0.1f, 0.9f);
 }
+#endif // ifndef BRDF_H_INCLUDED

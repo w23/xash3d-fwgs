@@ -44,9 +44,8 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #error // port me!
 #endif
 
-#define E_GAME	"XASH3D_GAME" // default env dir to start from
 #ifndef XASH_GAMEDIR
-#define XASH_GAMEDIR	"valve"
+#define XASH_GAMEDIR "valve" // !!! Replace with your default (base) game directory !!!
 #endif
 
 typedef void (*pfnChangeGame)( const char *progname );
@@ -151,19 +150,28 @@ _inline int Sys_Start( void )
 {
 	int ret;
 	pfnChangeGame changeGame = NULL;
-	const char *game = getenv( E_GAME );
 
-	if( !game )
-		game = XASH_GAMEDIR;
+#if XASH_SAILFISH
+	const char *home = getenv( "HOME" );
+	char buf[1024];
 
-	strncpy( szGameDir, game, sizeof( szGameDir ) - 1 );
+	snprintf( buf, sizeof( buf ), "%s/xash", home );
+	setenv( "XASH3D_BASEDIR", buf, true );
+#if XASH_AURORAOS
+	setenv( "XASH3D_RODIR", "/usr/share/su.xash.Engine/rodir", true );
+#else
+	setenv( "XASH3D_RODIR", "/usr/share/harbour-xash3d-fwgs/rodir", true );
+#endif // XASH_AURORAOS
+#endif // XASH_SAILFISH
+
+	strncpy( szGameDir, XASH_GAMEDIR, sizeof( szGameDir ) - 1 );
 
 	Sys_LoadEngine();
 
 	if( Xash_Shutdown )
 		changeGame = Sys_ChangeGame;
 
-	ret = Xash_Main( szArgc, szArgv, szGameDir, 0, changeGame );
+	ret = Xash_Main( szArgc, szArgv, szGameDir, 0, XASH_DISABLE_MENU_CHANGEGAME ? NULL : changeGame );
 
 	Sys_UnloadEngine();
 

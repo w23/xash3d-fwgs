@@ -48,8 +48,6 @@ qboolean  R_Init_Video( const int type )
 {
 	qboolean retval;
 
-	VID_StartupGamma();
-
 	if( type != REF_SOFTWARE )
 		return false; /// glide???
 
@@ -76,12 +74,12 @@ void R_Free_Video( void )
 
 qboolean VID_SetMode( void )
 {
-	R_ChangeDisplaySettings( 0, 0, false ); // width and height are ignored anyway
+	R_ChangeDisplaySettings( 0, 0, WINDOW_MODE_FULLSCREEN ); // width and height are ignored anyway
 
 	return true;
 }
 
-rserr_t   R_ChangeDisplaySettings( int width, int height, qboolean fullscreen )
+rserr_t   R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode )
 {
 	int render_w, render_h;
 	uint rotate = vid_rotate->value;
@@ -91,7 +89,7 @@ rserr_t   R_ChangeDisplaySettings( int width, int height, qboolean fullscreen )
 	render_w = width;
 	render_h = height;
 
-	Con_Reportf( "R_ChangeDisplaySettings: forced resolution to %dx%d)\n", width, height );
+	Con_Reportf( "%s: forced resolution to %dx%d)\n", __func__, width, height );
 
 	if( ref.dllFuncs.R_SetDisplayTransform( rotate, 0, 0, vid_scale->value, vid_scale->value ) )
 	{

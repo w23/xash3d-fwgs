@@ -75,14 +75,19 @@ Then you can use another oneliner to query all variables:
 #undef XASH_NETBSD
 #undef XASH_OPENBSD
 #undef XASH_POSIX
+#undef XASH_PPC
 #undef XASH_RISCV
 #undef XASH_RISCV_DOUBLEFP
 #undef XASH_RISCV_SINGLEFP
 #undef XASH_RISCV_SOFTFP
 #undef XASH_SERENITY
+#undef XASH_SUNOS
 #undef XASH_WIN32
 #undef XASH_X86
 #undef XASH_NSWITCH
+#undef XASH_PSVITA
+#undef XASH_WASI
+#undef XASH_WASM
 
 //================================================================
 //
@@ -98,10 +103,10 @@ Then you can use another oneliner to query all variables:
 #else // POSIX compatible
 	#define XASH_POSIX 1
 	#if defined __linux__
-		#define XASH_LINUX 1
 		#if defined __ANDROID__
 			#define XASH_ANDROID 1
 		#endif
+		#define XASH_LINUX 1
 	#elif defined __FreeBSD__
 		#define XASH_FREEBSD 1
 	#elif defined __NetBSD__
@@ -122,12 +127,23 @@ Then you can use another oneliner to query all variables:
 		#endif // TARGET_OS_IOS
 	#elif defined __SWITCH__
 		#define XASH_NSWITCH 1
+	#elif defined __vita__
+		#define XASH_PSVITA 1
+	#elif defined __wasi__
+		#define XASH_WASI 1
+	#elif defined __sun__
+		#define XASH_SUNOS 1
 	#else
 		#error
 	#endif
 #endif
 
-#if XASH_ANDROID || defined XASH_IOS || defined XASH_NSWITCH
+// XASH_SAILFISH is special: SailfishOS by itself is a normal GNU/Linux platform
+// It doesn't make sense to split it to separate platform
+// but we still need XASH_MOBILE_PLATFORM for the engine.
+// So this macro is defined entirely in build-system: see main wscript
+// HLSDK/PrimeXT/other SDKs users note: you may ignore this macro
+#if XASH_ANDROID || XASH_IOS || XASH_NSWITCH || XASH_PSVITA || XASH_SAILFISH
 	#define XASH_MOBILE_PLATFORM 1
 #endif
 
@@ -179,6 +195,11 @@ Then you can use another oneliner to query all variables:
 #elif defined __e2k__
 	#define XASH_64BIT 1
 	#define XASH_E2K 1
+#elif defined __PPC__ || defined __powerpc__
+	#define XASH_PPC 1
+	#if defined __PPC64__ || defined __powerpc64__
+		#define XASH_64BIT 1
+	#endif
 #elif defined _M_ARM // msvc
 	#define XASH_ARM 7
 	#define XASH_ARM_HARDFP 1
@@ -220,8 +241,17 @@ Then you can use another oneliner to query all variables:
 	#else
 		#error "Unknown RISC-V float ABI"
 	#endif
+#elif defined __wasm__
+	#if defined __wasm64__
+		#define XASH_64BIT 1
+	#endif
+	#define XASH_WASM 1
 #else
 	#error "Place your architecture name here! If this is a mistake, try to fix conditions above and report a bug"
+#endif
+
+#if !XASH_64BIT && ( defined( __LP64__ ) || defined( _LP64 ))
+#define XASH_64BIT 1
 #endif
 
 #if XASH_ARM == 8

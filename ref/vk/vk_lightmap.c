@@ -1,6 +1,6 @@
 #include "vk_lightmap.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_cvar.h"
 
 #include "com_strings.h"
@@ -66,6 +66,7 @@ static int LM_AllocBlock( int w, int h, int *x, int *y )
 	return true;
 }
 
+/*
 static void LM_UploadDynamicBlock( void )
 {
 	int	height = 0, i;
@@ -79,6 +80,7 @@ static void LM_UploadDynamicBlock( void )
 	gEngine.Con_Printf(S_ERROR "VK NOT IMPLEMENTED %s\n", __FUNCTION__);
 	//pglTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, BLOCK_SIZE, height, GL_RGBA, GL_UNSIGNED_BYTE, gl_lms.lightmap_buffer );
 }
+*/
 
 static void LM_UploadBlock( qboolean dynamic )
 {
@@ -115,7 +117,7 @@ static void LM_UploadBlock( qboolean dynamic )
 		r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
 		r_lightmap.flags = IMAGE_HAS_COLOR;
 		r_lightmap.buffer = gl_lms.lightmap_buffer;
-		tglob.lightmapTextures[i] = VK_LoadTextureInternal( lmName, &r_lightmap, TF_FONT|TF_ATLAS_PAGE|TF_NOMIPMAP );
+		tglob.lightmapTextures[i] = R_TextureUploadFromBuffer( lmName, &r_lightmap, TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP, false );
 
 		if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 			gEngine.Host_Error( "AllocBlock: full\n" );
@@ -153,9 +155,9 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 		const uint scale = g_lightmap.lightstylevalue[surf->styles[map]];
 		for( i = 0, bl = r_blocklights; i < size; i++, bl += 3, lm++ )
 		{
-			bl[0] += gEngine.LightToTexGamma( lm->r ) * scale;
-			bl[1] += gEngine.LightToTexGamma( lm->g ) * scale;
-			bl[2] += gEngine.LightToTexGamma( lm->b ) * scale;
+			bl[0] += LightToTexGamma( lm->r ) * scale;
+			bl[1] += LightToTexGamma( lm->g ) * scale;
+			bl[2] += LightToTexGamma( lm->b ) * scale;
 		}
 	}
 
@@ -227,20 +229,20 @@ void VK_UploadLightmap( void )
 void VK_ClearLightmap( void )
 {
 	for (int i = 0; i < gl_lms.current_lightmap_texture; ++i)
-		VK_FreeTexture(tglob.lightmapTextures[i]);
+		R_TextureFree(tglob.lightmapTextures[i]);
 	gl_lms.current_lightmap_texture = 0;
 
 	LM_InitBlock();
 }
 
-void VK_RunLightStyles( void )
+void VK_RunLightStyles( lightstyle_t *styles )
 {
 	int		i, k, flight, clight;
 	float		l, lerpfrac, backlerp;
-	float		frametime = (gpGlobals->time -   gpGlobals->oldtime);
+	float		frametime = (gp_cl->time -   gp_cl->oldtime);
 	float		scale;
 	lightstyle_t	*ls;
-	const model_t *world = gEngine.pfnGetModelByIndex( 1 );
+	const model_t *world = WORLDMODEL;
 
 	if( !world ) return;
 
@@ -248,9 +250,11 @@ void VK_RunLightStyles( void )
 
 	// light animations
 	// 'm' is normal light, 'a' is no light, 'z' is double bright
+
+	// TODO
 	for( i = 0; i < MAX_LIGHTSTYLES; i++ )
 	{
-		ls = gEngine.GetLightStyle( i );
+		ls = styles + i;
 		if( !world->lightdata )
 		{
 			g_lightmap.lightstylevalue[i] = 256 * 256;

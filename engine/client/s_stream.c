@@ -16,6 +16,7 @@ GNU General Public License for more details.
 #include "common.h"
 #include "sound.h"
 #include "client.h"
+#include "soundlib.h"
 
 static bg_track_t		s_bgTrack;
 static musicfade_t		musicfade;	// controlled by game dlls
@@ -57,6 +58,12 @@ float S_GetMusicVolume( void )
 {
 	float	scale = 1.0f;
 
+	if( host.status == HOST_NOFOCUS && snd_mute_losefocus.value != 0.0f )
+	{
+		// we return zero volume to keep sounds running
+		return 0.0f;
+	}
+
 	if( !s_listener.inmenu && musicfade.percent != 0 )
 	{
 		scale = bound( 0.0f, musicfade.percent / 100.0f, 1.0f );
@@ -95,7 +102,8 @@ void S_StartBackgroundTrack( const char *introTrack, const char *mainTrack, int 
 	else Q_strncpy( s_bgTrack.loopName, mainTrack, sizeof( s_bgTrack.loopName ));
 
 	// open stream
-	s_bgTrack.stream = FS_OpenStream( va( "media/%s", introTrack ));
+	s_bgTrack.stream = FS_OpenStream( introTrack );
+
 	Q_strncpy( s_bgTrack.current, introTrack, sizeof( s_bgTrack.current ));
 	memset( &musicfade, 0, sizeof( musicfade )); // clear any soundfade
 	s_bgTrack.source = cls.key_dest;
@@ -141,7 +149,7 @@ S_StreamGetCurrentState
 save\restore code
 =================
 */
-qboolean S_StreamGetCurrentState( char *currentTrack, char *loopTrack, int *position )
+qboolean S_StreamGetCurrentState( char *currentTrack, size_t currentTrackSize, char *loopTrack, size_t loopTrackSize, int *position )
 {
 	if( !s_bgTrack.stream )
 		return false; // not active
@@ -149,15 +157,15 @@ qboolean S_StreamGetCurrentState( char *currentTrack, char *loopTrack, int *posi
 	if( currentTrack )
 	{
 		if( s_bgTrack.current[0] )
-			Q_strncpy( currentTrack, s_bgTrack.current, MAX_STRING );
-		else Q_strncpy( currentTrack, "*", MAX_STRING ); // no track
+			Q_strncpy( currentTrack, s_bgTrack.current, currentTrackSize );
+		else Q_strncpy( currentTrack, "*", currentTrackSize ); // no track
 	}
 
 	if( loopTrack )
 	{
 		if( s_bgTrack.loopName[0] )
-			Q_strncpy( loopTrack, s_bgTrack.loopName, MAX_STRING );
-		else Q_strncpy( loopTrack, "*", MAX_STRING ); // no track
+			Q_strncpy( loopTrack, s_bgTrack.loopName, loopTrackSize );
+		else Q_strncpy( loopTrack, "*", loopTrackSize ); // no track
 	}
 
 	if( position )
@@ -205,7 +213,7 @@ void S_StreamBackgroundTrack( void )
 
 	while( ch->s_rawend < soundtime + ch->max_samples )
 	{
-		wavdata_t	*info = FS_StreamInfo( s_bgTrack.stream );
+		const stream_t *info = s_bgTrack.stream;
 
 		bufferSamples = ch->max_samples - (ch->s_rawend - soundtime);
 
@@ -242,7 +250,7 @@ void S_StreamBackgroundTrack( void )
 			if( s_bgTrack.loopName[0] )
 			{
 				FS_FreeStream( s_bgTrack.stream );
-				s_bgTrack.stream = FS_OpenStream( va( "media/%s", s_bgTrack.loopName ));
+				s_bgTrack.stream = FS_OpenStream( s_bgTrack.loopName );
 				Q_strncpy( s_bgTrack.current, s_bgTrack.loopName, sizeof( s_bgTrack.current ));
 
 				if( !s_bgTrack.stream ) return;

@@ -31,7 +31,7 @@ class elf2nro(Task.Task):
 			return '%sConverting to NRO' % Logs.colors_lst['CYAN']
 		return 'Converting to NRO'
 
-@TaskGen.feature('cxxprogram')
+@TaskGen.feature('cxxprogram', 'cprogram')
 @TaskGen.after_method('apply_link')
 def apply_nro(self):
 	elffile = self.link_task.outputs[0]
@@ -58,7 +58,7 @@ def apply_nro(self):
 	tsk = self.nro_task = self.create_task('elf2nro', nodes)
 	self.nro_task.set_outputs(nodes[0].change_ext('.nro'))
 
-	inst_to = getattr(self, 'nro_install_path', None)
+	inst_to = getattr(self, 'special_install_path', None)
 	if inst_to:
 		self.add_install_files(install_to=inst_to,
 			install_from=tsk.outputs[:], chmod=Utils.O755, task=tsk)

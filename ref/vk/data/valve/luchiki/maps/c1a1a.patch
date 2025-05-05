@@ -1,0 +1,24 @@
+// section 1
+{
+"_xvk_ent_id" "191 181" // remove hack lights entity
+}
+
+
+
+// razdevalka
+{
+"_xvk_ent_id" "310 255" // remove hack lights entity
+}
+
+// mirror in toilet
+{
+"_xvk_surface_id" "1936 1934 1933 1935"
+"_xvk_material" "mirror_broken"
+}
+
+//smooth
+
+//wall
+{
+//"_xvk_smoothing_excluded" "2471"
+}

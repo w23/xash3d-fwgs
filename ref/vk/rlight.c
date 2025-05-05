@@ -48,7 +48,6 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 	color24		*lm, *dm;
 	mextrasurf_t	*info;
 	msurface_t	*surf;
-	mtexinfo_t	*tex;
 	matrix3x4		tbn;
 	vec3_t		mid;
 
@@ -65,7 +64,7 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 
 	side = front < 0;
 	if(( back < 0 ) == side )
-		return R_RecursiveLightPoint( model, node->children[side], p1f, p2f, cv, start, end );
+		return R_RecursiveLightPoint( model, node_child(node, side, model), p1f, p2f, cv, start, end );
 
 	frac = front / ( front - back );
 
@@ -73,7 +72,7 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 	midf = p1f + ( p2f - p1f ) * frac;
 
 	// co down front side
-	if( R_RecursiveLightPoint( model, node->children[side], p1f, midf, cv, start, mid ))
+	if( R_RecursiveLightPoint( model, node_child(node, side, model), p1f, midf, cv, start, mid ))
 		return true; // hit something
 
 	if(( back < 0 ) == side )
@@ -83,14 +82,13 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 	}
 
 	// check for impact on this node
-	surf = model->surfaces + node->firstsurface;
+	surf = model->surfaces + node_firstsurface(node, model);
 	VectorCopy( mid, g_trace_lightspot );
 
-	for( i = 0; i < node->numsurfaces; i++, surf++ )
+	for( i = 0; i < node_numsurfaces(node, model); i++, surf++ )
 	{
 		int	smax, tmax;
 
-		tex = surf->texinfo;
 		info = surf->info;
 
 		if( FBitSet( surf->flags, SURF_DRAWTILED ))
@@ -161,9 +159,9 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			}
 			else */
 			{
-				cv->r += gEngine.LightToTexGamma( lm->r ) * scale;
-				cv->g += gEngine.LightToTexGamma( lm->g ) * scale;
-				cv->b += gEngine.LightToTexGamma( lm->b ) * scale;
+				cv->r += LightToTexGamma( lm->r ) * scale;
+				cv->g += LightToTexGamma( lm->g ) * scale;
+				cv->b += LightToTexGamma( lm->b ) * scale;
 			}
 			lm += size; // skip to next lightmap
 
@@ -184,7 +182,7 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 	}
 
 	// go down back side
-	return R_RecursiveLightPoint( model, node->children[!side], midf, p2f, cv, mid, end );
+	return R_RecursiveLightPoint( model, node_child(node, !side, model), midf, p2f, cv, mid, end );
 }
 
 /*
@@ -194,12 +192,12 @@ R_LightVec
 check bspmodels to get light from
 =================
 */
-colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec )
+static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec )
 {
 	float	last_fraction;
 	int	i, maxEnts = 1;
 	colorVec	light, cv;
-    const model_t* world_model = gEngine.pfnGetModelByIndex( 1 );
+	const model_t* world_model = WORLDMODEL;
 
 	if( lspot ) VectorClear( lspot );
 	if( lvec ) VectorClear( lvec );

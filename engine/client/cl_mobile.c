@@ -20,29 +20,19 @@ GNU General Public License for more details.
 #include "input.h"
 #include "platform/platform.h"
 
-mobile_engfuncs_t *gMobileEngfuncs;
-
-convar_t *vibration_length;
-convar_t *vibration_enable;
+static CVAR_DEFINE_AUTO( vibration_length, "1.0", FCVAR_ARCHIVE | FCVAR_PRIVILEGED, "vibration length" );
+static CVAR_DEFINE_AUTO( vibration_enable, "1", FCVAR_ARCHIVE | FCVAR_PRIVILEGED, "enable vibration" );
 
 static cl_font_t g_scaled_font;
 static float g_font_scale;
 
 static void pfnVibrate( float life, char flags )
 {
-	if( !vibration_enable->value )
+	if( !vibration_enable.value || life < 0.0f )
 		return;
-
-	if( life < 0.0f )
-	{
-		Con_Reportf( S_WARN "Negative vibrate time: %f\n", life );
-		return;
-	}
-
-	//Con_Reportf( "Vibrate: %f %d\n", life, flags );
 
 	// here goes platform-specific backends
-	Platform_Vibrate( life * vibration_length->value, flags );
+	Platform_Vibrate( life * vibration_length.value, flags );
 }
 
 static void Vibrate_f( void )
@@ -53,7 +43,7 @@ static void Vibrate_f( void )
 		return;
 	}
 
-	pfnVibrate( Q_atof( Cmd_Argv(1) ), VIBRATE_NORMAL );
+	pfnVibrate( Q_atof( Cmd_Argv( 1 )), VIBRATE_NORMAL );
 }
 
 static void pfnEnableTextInput( int enable )
@@ -67,7 +57,7 @@ static int pfnDrawScaledCharacter( int x, int y, int number, int r, int g, int b
 	rgba_t color = { r, g, b, 255 };
 	int flags = FONT_DRAW_HUD;
 
-	if( hud_utf8->value )
+	if( hud_utf8.value )
 		SetBits( flags, FONT_DRAW_UTF8 );
 
 	if( fabs( g_font_scale - scale ) > 0.1f ||
@@ -87,15 +77,6 @@ static int pfnDrawScaledCharacter( int x, int y, int number, int r, int g, int b
 	return CL_DrawCharacter( x, y, number, color, &g_scaled_font, flags );
 }
 
-static void *pfnGetNativeObject( const char *obj )
-{
-	if( !obj )
-		return NULL;
-
-	// Backend should consider that obj is case-sensitive
-	return Platform_GetNativeObject( obj );
-}
-
 static void pfnTouch_HideButtons( const char *name, byte state )
 {
 	Touch_HideButtons( name, state, true );
@@ -111,7 +92,7 @@ static char *pfnParseFileSafe( char *data, char *buf, const int size, unsigned i
 	return COM_ParseFileSafe( data, buf, size, flags, len, NULL );
 }
 
-static mobile_engfuncs_t gpMobileEngfuncs =
+static const mobile_engfuncs_t gMobileEngfuncs =
 {
 	MOBILITY_API_VERSION,
 	pfnVibrate,
@@ -124,28 +105,45 @@ static mobile_engfuncs_t gpMobileEngfuncs =
 	Touch_ResetDefaultButtons,
 	pfnDrawScaledCharacter,
 	Sys_Warn,
-	pfnGetNativeObject,
+	Sys_GetNativeObject,
 	ID_SetCustomClientID,
 	pfnParseFileSafe
 };
 
 qboolean Mobile_Init( void )
 {
-	qboolean success = false;
 	pfnMobilityInterface ExportToClient;
 
-	// find a mobility interface
-	ExportToClient = COM_GetProcAddress( clgame.hInstance, MOBILITY_CLIENT_EXPORT );
-	gMobileEngfuncs = &gpMobileEngfuncs;
+	Cmd_AddCommand( "vibrate", Vibrate_f, "Vibrate for specified time");
+	Cvar_RegisterVariable( &vibration_length );
+	Cvar_RegisterVariable( &vibration_enable );
 
-	if( ExportToClient && !ExportToClient( gMobileEngfuncs ) )
-		success = true;
+	// find mobility interface
+	if(( ExportToClient = COM_GetProcAddress( clgame.hInstance, MOBILITY_CLIENT_EXPORT )))
+	{
+		static mobile_engfuncs_t mobile_engfuncs; // keep a copy, don't let user change engine pointers
 
-	Cmd_AddCommand( "vibrate", (xcommand_t)Vibrate_f, "Vibrate for specified time");
-	vibration_length = Cvar_Get( "vibration_length", "1.0", FCVAR_ARCHIVE | FCVAR_PRIVILEGED, "Vibration length");
-	vibration_enable = Cvar_Get( "vibration_enable", "1", FCVAR_ARCHIVE | FCVAR_PRIVILEGED, "Enable vibration");
+		mobile_engfuncs = gMobileEngfuncs;
 
-	return success;
+		if( !ExportToClient( &mobile_engfuncs ))
+		{
+			Con_Reportf( "%s: ^2initailized extended MobilityAPI ^7ver. %i\n", __func__, MOBILITY_API_VERSION );
+			return true;
+		}
+
+		// make sure that mobile functions are cleared
+#if 1
+		// some SDKs define export as returning void, breaking the contract
+		// ignore result for now...
+		return true;
+#else
+		memset( &mobile_engfuncs, 0, sizeof( mobile_engfuncs ));
+
+		return false; // just tell user about problems
+#endif
+	}
+
+	return true; // mobile interface is missed
 }
 
 void Mobile_Shutdown( void )

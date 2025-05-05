@@ -19,6 +19,7 @@ layout(location=4) out vec4 vColor;
 
 void main() {
 	vPos = aPos.xyz;
+	// FIXME mul by normal matrix
 	vNormal = aNormal;
 	vTexture0 = aTexture0;
 	vLightmapUV = aLightmapUV;

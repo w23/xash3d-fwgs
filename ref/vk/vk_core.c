@@ -1,27 +1,30 @@
 #include "vk_core.h"
 
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_overlay.h"
-#include "vk_renderstate.h"
-#include "vk_staging.h"
+#include "vulkan/VImage.h"
+#include "vulkan/VStaging.h"
 #include "vk_framectl.h"
 #include "vk_brush.h"
 #include "vk_scene.h"
 #include "vk_cvar.h"
-#include "vk_pipeline.h"
+#include "vulkan/VPipeline.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_studio.h"
 #include "vk_rtx.h"
-#include "vk_descriptor.h"
-#include "vk_nv_aftermath.h"
-#include "vk_devmem.h"
-#include "vk_commandpool.h"
+#include "vulkan/VDescriptor.h"
+#include "vulkan/VResource.h"
+#include "vulkan/VNvAftermath.h"
+#include "vulkan/VDevmem.h"
 #include "r_speeds.h"
 #include "vk_sprite.h"
 #include "vk_beams.h"
-#include "vk_combuf.h"
+#include "vulkan/VCombuf.h"
+#include "vk_entity_data.h"
+#include "vk_logs.h"
+#include "std/arrays.h"
 
 // FIXME move this rt-specific stuff out
 #include "vk_light.h"
@@ -34,13 +37,11 @@
 #include "com_strings.h"
 #include "eiface.h"
 
-#include <string.h>
-#include <errno.h>
+#include "std/debugbreak.h"
 
-#define XVK_PARSE_VERSION(v) \
-	VK_VERSION_MAJOR(v), \
-	VK_VERSION_MINOR(v), \
-	VK_VERSION_PATCH(v)
+#include <string.h>
+
+#define LOG_MODULE core
 
 #define NULLINST_FUNCS(X) \
 	X(vkEnumerateInstanceVersion) \
@@ -52,8 +53,6 @@ static PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
 	NULLINST_FUNCS(X)
 	INSTANCE_FUNCS(X)
 	INSTANCE_DEBUG_FUNCS(X)
-	DEVICE_FUNCS(X)
-	DEVICE_FUNCS_RTX(X)
 #undef X
 
 static dllfunc_t nullinst_funcs[] = {
@@ -74,45 +73,11 @@ static dllfunc_t instance_debug_funcs[] = {
 #undef X
 };
 
-static dllfunc_t device_funcs[] = {
-#define X(f) {#f, (void**)&f},
-	DEVICE_FUNCS(X)
-#undef X
-};
-
-static dllfunc_t device_funcs_rtx[] = {
-#define X(f) {#f, (void**)&f},
-	DEVICE_FUNCS_RTX(X)
-#undef X
-};
-
 static const char *validation_layers[] = {
 	"VK_LAYER_KHRONOS_validation",
 };
 
-static const char* device_extensions_req[] = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-	// FIXME make optional
-	VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME,
-};
-
-static const char* device_extensions_rt[] = {
-	VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-	VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-	VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-	VK_KHR_RAY_QUERY_EXTENSION_NAME,
-};
-
-static const char* device_extensions_nv_checkpoint[] = {
-	VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME,
-	VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME,
-};
-
-static const char* device_extensions_extra[] = {
-	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
-};
-
-VkBool32 VKAPI_PTR debugCallback(
+static VkBool32 VKAPI_PTR debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT           messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
     const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
@@ -121,22 +86,22 @@ VkBool32 VKAPI_PTR debugCallback(
 	(void)(messageTypes);
 	(void)(messageSeverity);
 
-	if (Q_strcmp(pCallbackData->pMessageIdName, "VUID-vkMapMemory-memory-00683") == 0)
-		return VK_FALSE;
-
-	/* if (messageSeverity != VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) { */
-	/* 	gEngine.Con_Printf(S_WARN "Validation: %s\n", pCallbackData->pMessage); */
-	/* } */
-
 	// TODO better messages, not only errors, what are other arguments for, ...
 	if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-		gEngine.Con_Printf(S_ERROR "Validation: %s\n", pCallbackData->pMessage);
+		gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
 #ifdef _MSC_VER
 		__debugbreak();
 #else
-		__builtin_trap();
+		debug_break();
 #endif
+	} else {
+		if (Q_strcmp(pCallbackData->pMessageIdName, "UNASSIGNED-DEBUG-PRINTF") == 0) {
+			gEngine.Con_Printf(S_ERROR "vk/dbg: %s\n", pCallbackData->pMessage);
+		} else {
+			gEngine.Con_Printf(S_WARN "vk/dbg: %s\n", pCallbackData->pMessage);
+		}
 	}
+
 	return VK_FALSE;
 }
 
@@ -154,18 +119,6 @@ static void loadInstanceFunctions(dllfunc_t *funcs, int count)
 	}
 }
 
-static void loadDeviceFunctions(dllfunc_t *funcs, int count)
-{
-	for (int i = 0; i < count; ++i)
-	{
-		*funcs[i].func = vkGetDeviceProcAddr(vk_core.device, funcs[i].name);
-		if (!*funcs[i].func)
-		{
-			gEngine.Con_Printf( S_WARN "Function %s was not loaded\n", funcs[i].name);
-		}
-	}
-}
-
 static qboolean createInstance( void )
 {
 	const char ** instance_extensions = NULL;
@@ -175,21 +128,27 @@ static qboolean createInstance( void )
 		// TODO support versions 1.0 and 1.1 for simple traditional rendering
 		// This would require using older physical device features and props query structures
 		// .apiVersion = vk_core.rtx ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1,
-		.apiVersion = VK_API_VERSION_1_2,
+		.apiVersion = VK_API_VERSION_1_3,
 		.applicationVersion = VK_MAKE_VERSION(0, 0, 0), // TODO
 		.engineVersion = VK_MAKE_VERSION(0, 0, 0),
 		.pApplicationName = "",
 		.pEngineName = "xash3d-fwgs",
 	};
-	const VkValidationFeatureEnableEXT validation_features[] = {
-		VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
-		VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT,
-	};
+
+	BOUNDED_ARRAY(VkValidationFeatureEnableEXT, validation_features, 8);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+	BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+
+	if (!!gEngine.Sys_CheckParm("-vkdbg_shaderprintf"))
+		BOUNDED_ARRAY_APPEND_ITEM(validation_features, VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+
 	const VkValidationFeaturesEXT validation_ext = {
 		.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-		.pEnabledValidationFeatures = validation_features,
-		.enabledValidationFeatureCount = COUNTOF(validation_features),
+		.pEnabledValidationFeatures = validation_features.items,
+		.enabledValidationFeatureCount = validation_features.count,
 	};
+
 	VkInstanceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
@@ -264,386 +223,11 @@ static qboolean createInstance( void )
 	return true;
 }
 
-static const VkExtensionProperties *findExtension( const VkExtensionProperties *exts, uint32_t num_exts, const char *extension ) {
-	for (uint32_t i = 0; i < num_exts; ++i) {
-		if (strncmp(exts[i].extensionName, extension, sizeof(exts[i].extensionName)) == 0)
-			return exts + i;
-	}
-	return NULL;
-}
-
-static qboolean deviceSupportsExtensions(const VkExtensionProperties *exts, uint32_t num_exts, const char *check_extensions[], int check_extensions_count) {
-	qboolean result = true;
-	for (int i = 0; i < check_extensions_count; ++i) {
-		if (!findExtension(exts, num_exts, check_extensions[i])) {
-			gEngine.Con_Reportf(S_ERROR "Extension %s is not supported\n", check_extensions[i]);
-			result = false;
-		}
-	}
-	return result;
-}
-
-static void devicePrintExtensionsFromList(const VkExtensionProperties *exts, uint32_t num_exts, const char *print_extensions[], int print_extensions_count) {
-	for (int i = 0; i < print_extensions_count; ++i) {
-		const VkExtensionProperties *const ext_prop = findExtension(exts, num_exts, print_extensions[i]);
-		if (!ext_prop) {
-			gEngine.Con_Printf( "\t\t\t%s: N/A\n", print_extensions[i]);
-		} else {
-			gEngine.Con_Printf( "\t\t\t%s: %u.%u.%u\n", ext_prop->extensionName, XVK_PARSE_VERSION(ext_prop->specVersion));
-		}
-	}
-}
-
-#define MAX_DEVICE_EXTENSIONS 16
-static int appendDeviceExtensions(const char** out, int out_count, const char *in_extensions[], int in_extensions_count) {
-	for (int i = 0; i < in_extensions_count; ++i) {
-		ASSERT(out_count < MAX_DEVICE_EXTENSIONS);
-		out[out_count++] = in_extensions[i];
-	}
-	return out_count;
-}
-
-// FIXME this is almost exactly the physical_device_t, reuse
-typedef struct {
-	VkPhysicalDevice device;
-	VkPhysicalDeviceFeatures2 features;
-	VkPhysicalDeviceProperties props;
-	uint32_t queue_index;
-	qboolean anisotropy;
-	qboolean ray_tracing;
-	qboolean nv_checkpoint;
-	qboolean calibrated_timestamps;
-} vk_available_device_t;
-
-static int enumerateDevices( vk_available_device_t **available_devices ) {
-	VkPhysicalDevice *physical_devices = NULL;
-	uint32_t num_physical_devices = 0;
-	vk_available_device_t *this_device = NULL;
-
-	XVK_CHECK(vkEnumeratePhysicalDevices(vk_core.instance, &num_physical_devices, physical_devices));
-	physical_devices = Mem_Malloc(vk_core.pool, sizeof(VkPhysicalDevice) * num_physical_devices);
-	XVK_CHECK(vkEnumeratePhysicalDevices(vk_core.instance, &num_physical_devices, physical_devices));
-	gEngine.Con_Reportf("Have %u devices:\n", num_physical_devices);
-
-	vk_core.num_devices = num_physical_devices;
-	vk_core.devices = Mem_Calloc( vk_core.pool, num_physical_devices * sizeof( *vk_core.devices ));
-
-	*available_devices = Mem_Malloc(vk_core.pool, num_physical_devices * sizeof(vk_available_device_t));
-	this_device = *available_devices;
-	for (uint32_t i = 0; i < num_physical_devices; ++i) {
-		uint32_t queue_index = VK_QUEUE_FAMILY_IGNORED;
-		VkPhysicalDeviceProperties props;
-		VkPhysicalDeviceFeatures2 features = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,};
-
-		// FIXME also pay attention to various device limits. We depend on them implicitly now.
-
-		vkGetPhysicalDeviceProperties(physical_devices[i], &props);
-
-		// Store devices list in vk_core.devices for pfnGetRenderDevices
-		vk_core.devices[i].vendorID = props.vendorID;
-		vk_core.devices[i].deviceID = props.deviceID;
-		switch( props.deviceType )
-		{
-		case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
-			vk_core.devices[i].deviceType = REF_DEVICE_TYPE_INTERGRATED_GPU;
-			break;
-		case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
-			vk_core.devices[i].deviceType = REF_DEVICE_TYPE_DISCRETE_GPU;
-			break;
-		case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
-			vk_core.devices[i].deviceType = REF_DEVICE_TYPE_VIRTUAL_GPU;
-			break;
-		case VK_PHYSICAL_DEVICE_TYPE_CPU:
-			vk_core.devices[i].deviceType = REF_DEVICE_TYPE_CPU;
-			break;
-		default:
-			vk_core.devices[i].deviceType = REF_DEVICE_TYPE_OTHER;
-			break;
-		}
-		Q_strncpy( vk_core.devices[i].deviceName, props.deviceName, sizeof( vk_core.devices[i].deviceName ));
-
-		gEngine.Con_Printf("\t%u: %04x:%04x %d %s %u.%u.%u %u.%u.%u\n",
-			i, props.vendorID, props.deviceID, props.deviceType, props.deviceName,
-			XVK_PARSE_VERSION(props.driverVersion), XVK_PARSE_VERSION(props.apiVersion));
-
-		{
-			uint32_t num_queue_family_properties = 0;
-			VkQueueFamilyProperties *queue_family_props = NULL;
-			vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &num_queue_family_properties, queue_family_props);
-			queue_family_props = Mem_Malloc(vk_core.pool, sizeof(VkQueueFamilyProperties) * num_queue_family_properties);
-			vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &num_queue_family_properties, queue_family_props);
-
-			// Find queue family that supports needed properties
-			for (uint32_t j = 0; j < num_queue_family_properties; ++j) {
-				VkBool32 supports_present = 0;
-				const qboolean supports_graphics = !!(queue_family_props[j].queueFlags & VK_QUEUE_GRAPHICS_BIT);
-				const qboolean supports_compute = !!(queue_family_props[j].queueFlags & VK_QUEUE_COMPUTE_BIT);
-				vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], j, vk_core.surface.surface, &supports_present);
-
-				gEngine.Con_Reportf("\t\tQueue %d/%d present: %d graphics: %d compute: %d\n", j, num_queue_family_properties, supports_present, supports_graphics, supports_compute);
-
-				if (!supports_present)
-					continue;
-
-				// ray tracing needs compute
-				// also, by vk spec graphics queue must support compute
-				if (!supports_graphics || !supports_compute)
-					continue;
-
-				queue_index = j;
-				break;
-			}
-
-			Mem_Free(queue_family_props);
-		}
-
-		if (queue_index == VK_QUEUE_FAMILY_IGNORED) {
-			gEngine.Con_Printf( S_WARN "\t\tSkipping this device as compatible queue (which has both compute and graphics and also can present) not found\n" );
-			continue;
-		}
-
-		{
-			uint32_t num_device_extensions = 0;
-			VkExtensionProperties *extensions;
-
-			XVK_CHECK(vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &num_device_extensions, NULL));
-			extensions = Mem_Malloc(vk_core.pool, sizeof(VkExtensionProperties) * num_device_extensions);
-			XVK_CHECK(vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &num_device_extensions, extensions));
-
-			gEngine.Con_Reportf( "\t\tSupported device extensions: %u\n", num_device_extensions);
-			devicePrintExtensionsFromList(extensions, num_device_extensions, device_extensions_req, ARRAYSIZE(device_extensions_req));
-			devicePrintExtensionsFromList(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
-			devicePrintExtensionsFromList(extensions, num_device_extensions, device_extensions_nv_checkpoint, ARRAYSIZE(device_extensions_nv_checkpoint));
-			devicePrintExtensionsFromList(extensions, num_device_extensions, device_extensions_extra, ARRAYSIZE(device_extensions_extra));
-
-			vkGetPhysicalDeviceFeatures2(physical_devices[i], &features);
-			this_device->anisotropy = features.features.samplerAnisotropy;
-			gEngine.Con_Printf("\t\tAnistoropy supported: %d\n", this_device->anisotropy);
-
-			this_device->ray_tracing = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
-			gEngine.Con_Printf("\t\tRay tracing supported: %d\n", this_device->ray_tracing);
-
-			this_device->nv_checkpoint = vk_core.debug && deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_nv_checkpoint, ARRAYSIZE(device_extensions_nv_checkpoint));
-			gEngine.Con_Printf("\t\tNV checkpoints supported: %d\n", this_device->nv_checkpoint);
-
-			this_device->calibrated_timestamps = deviceSupportsExtensions(extensions, num_device_extensions, device_extensions_extra, ARRAYSIZE(device_extensions_extra));
-
-			Mem_Free(extensions);
-		}
-
-		this_device->device = physical_devices[i];
-		this_device->queue_index = queue_index;
-		this_device->features = features;
-		this_device->props = props;
-		++this_device;
-	}
-
-	Mem_Free(physical_devices);
-
-	return this_device - *available_devices;
-}
-
-static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props, const VkPhysicalDeviceMemoryBudgetPropertiesEXT *budget) {
-	gEngine.Con_Printf("Memory heaps: %d\n", props->memoryHeapCount);
-	for (int i = 0; i < (int)props->memoryHeapCount; ++i) {
-		const VkMemoryHeap* const heap = props->memoryHeaps + i;
-		gEngine.Con_Printf("  %d: size=%dMb used=%dMb avail=%dMb device_local=%d\n", i,
-			(int)(heap->size / (1024 * 1024)),
-			(int)(budget->heapUsage[i] / (1024 * 1024)),
-			(int)(budget->heapBudget[i] / (1024 * 1024)),
-			!!(heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT));
-	}
-
-	gEngine.Con_Printf("Memory types: %d\n", props->memoryTypeCount);
-	for (int i = 0; i < (int)props->memoryTypeCount; ++i) {
-		const VkMemoryType* const type = props->memoryTypes + i;
-		gEngine.Con_Printf("  %d: bit=0x%x heap=%d flags=%c%c%c%c%c\n", i,
-			(1 << i),
-			type->heapIndex,
-			type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT ? 'D' : '.',
-			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT ? 'V' : '.',
-			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT ? 'C' : '.',
-			type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT ? '$' : '.',
-			type->propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT ? 'L' : '.'
-		);
-	}
-}
-
-static qboolean createDevice( void ) {
-	void *head = NULL;
-	vk_available_device_t *available_devices;
-	const int num_available_devices = enumerateDevices( &available_devices );
-	char unique_deviceID[16];
-	const qboolean is_target_device = vk_device_target_id && Q_stricmp(vk_device_target_id->string, "") && num_available_devices > 0;
-	qboolean is_target_device_found = false;
-
-	for (int i = 0; i < num_available_devices; ++i) {
-		const vk_available_device_t *candidate_device = available_devices + i;
-		// Skip non-target device
-		Q_snprintf( unique_deviceID, sizeof( unique_deviceID ), "%04x:%04x", candidate_device->props.vendorID, candidate_device->props.deviceID );
-		if (is_target_device && !is_target_device_found && Q_stricmp(vk_device_target_id->string, unique_deviceID)) {
-			if (i == num_available_devices-1) {
-				gEngine.Con_Printf("Not found device %s, start on %s. Please set a valid device.\n", vk_device_target_id->string, unique_deviceID);
-			} else {
-				gEngine.Con_Printf("Skip device %s, because selected %s\n", unique_deviceID, vk_device_target_id->string);
-				continue;
-			}
-		} else {
-			is_target_device_found = true;
-		}
-
-		if (candidate_device->ray_tracing && !CVAR_TO_BOOL(vk_only)) {
-			vk_core.rtx = true;
-		}
-
-		VkPhysicalDeviceAccelerationStructureFeaturesKHR accel_feature = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-			.pNext = head,
-			.accelerationStructure = VK_TRUE,
-		};
-		head = &accel_feature;
-		VkPhysicalDevice16BitStorageFeatures sixteen_bit_feature = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
-			.pNext = head,
-			.storageBuffer16BitAccess = VK_TRUE,
-		};
-		head = &sixteen_bit_feature;
-		VkPhysicalDeviceVulkan12Features vk12_features = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-			.pNext = head,
-			.shaderSampledImageArrayNonUniformIndexing = VK_TRUE, // Needed for texture sampling in closest hit shader
-			.storageBuffer8BitAccess = VK_TRUE,
-			.uniformAndStorageBuffer8BitAccess = VK_TRUE,
-			.bufferDeviceAddress = VK_TRUE,
-		};
-		head = &vk12_features;
-		VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_feature = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-			.pNext = head,
-			.rayTracingPipeline = VK_TRUE,
-			// TODO .rayTraversalPrimitiveCulling = VK_TRUE,
-		};
-		head = &ray_tracing_pipeline_feature;
-		VkPhysicalDeviceRayQueryFeaturesKHR ray_query_pipeline_feature = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
-			.pNext = head,
-			.rayQuery = VK_TRUE,
-		};
-
-		if (vk_core.rtx) {
-			head = &ray_query_pipeline_feature;
-		} else {
-			head = NULL;
-		}
-
-		VkPhysicalDeviceFeatures2 features = {
-			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-			.pNext = head,
-			.features.samplerAnisotropy = candidate_device->features.features.samplerAnisotropy,
-			.features.shaderInt16 = true,
-		};
-		head = &features;
-
-		VkDeviceDiagnosticsConfigCreateInfoNV diag_config_nv = {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
-			.pNext = head,
-			.flags = VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_AUTOMATIC_CHECKPOINTS_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_RESOURCE_TRACKING_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_DEBUG_INFO_BIT_NV | VK_DEVICE_DIAGNOSTICS_CONFIG_ENABLE_SHADER_ERROR_REPORTING_BIT_NV
-		};
-
-		if (candidate_device->nv_checkpoint)
-			head = &diag_config_nv;
-
-		const float queue_priorities[1] = {1.f};
-		VkDeviceQueueCreateInfo queue_info = {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-			.flags = 0,
-			.queueFamilyIndex = candidate_device->queue_index,
-			.queueCount = ARRAYSIZE(queue_priorities),
-			.pQueuePriorities = queue_priorities,
-		};
-
-		const char* device_extensions[MAX_DEVICE_EXTENSIONS];
-		int device_extensions_count = 0;
-		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_req, ARRAYSIZE(device_extensions_req));
-		if (vk_core.rtx)
-			device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_rt, ARRAYSIZE(device_extensions_rt));
-		if (candidate_device->nv_checkpoint)
-			device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_nv_checkpoint, ARRAYSIZE(device_extensions_nv_checkpoint));
-
-		if (candidate_device->calibrated_timestamps)
-			device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_extra, ARRAYSIZE(device_extensions_extra));
-
-		VkDeviceCreateInfo create_info = {
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pNext = head,
-			.flags = 0,
-			.queueCreateInfoCount = 1,
-			.pQueueCreateInfos = &queue_info,
-			.enabledExtensionCount = device_extensions_count,
-			.ppEnabledExtensionNames = device_extensions,
-		};
-
-		{
-			vk_core.physical_device.memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
-			vk_core.physical_device.memory_properties2.pNext = &vk_core.physical_device.memory_budget;
-			vk_core.physical_device.memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
-			vk_core.physical_device.memory_budget.pNext = NULL;
-			vkGetPhysicalDeviceMemoryProperties2(candidate_device->device, &vk_core.physical_device.memory_properties2);
-		}
-
-		gEngine.Con_Printf("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u\n",
-			i, candidate_device->props.vendorID, candidate_device->props.deviceID, candidate_device->props.deviceType, candidate_device->props.deviceName,
-			XVK_PARSE_VERSION(candidate_device->props.driverVersion), XVK_PARSE_VERSION(candidate_device->props.apiVersion));
-
-		devicePrintMemoryInfo(&vk_core.physical_device.memory_properties2.memoryProperties, &vk_core.physical_device.memory_budget);
-
-		{
-			const VkResult result = vkCreateDevice(candidate_device->device, &create_info, NULL, &vk_core.device);
-			if (result != VK_SUCCESS) {
-				gEngine.Con_Printf( S_ERROR "%s:%d vkCreateDevice failed (%d): %s\n",
-					__FILE__, __LINE__, result, R_VkResultName(result));
-				continue;
-			}
-		}
-		vk_core.nv_checkpoint = candidate_device->nv_checkpoint;
-
-		vk_core.physical_device.device = candidate_device->device;
-		vk_core.physical_device.anisotropy_enabled = features.features.samplerAnisotropy;
-		vk_core.physical_device.properties = candidate_device->props;
-
-		loadDeviceFunctions(device_funcs, ARRAYSIZE(device_funcs));
-
-		if (vk_core.rtx)
-		{
-			loadDeviceFunctions(device_funcs_rtx, ARRAYSIZE(device_funcs_rtx));
-			vk_core.physical_device.properties2.pNext = &vk_core.physical_device.properties_accel;
-			vk_core.physical_device.properties_accel.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
-			vk_core.physical_device.properties_accel.pNext = &vk_core.physical_device.properties_ray_tracing_pipeline;
-			vk_core.physical_device.properties_ray_tracing_pipeline.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-			vk_core.physical_device.properties_ray_tracing_pipeline.pNext = NULL;
-		}
-
-		// TODO should we check Vk version first?
-		vk_core.physical_device.properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-		vkGetPhysicalDeviceProperties2(vk_core.physical_device.device, &vk_core.physical_device.properties2);
-
-		if (vk_core.rtx) {
-			//g_rtx.sbt_record_size = ALIGN_UP(vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupHandleSize, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupHandleAlignment);
-			vk_core.physical_device.sbt_record_size = ALIGN_UP(vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupHandleSize, vk_core.physical_device.properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
-		}
-
-		vkGetDeviceQueue(vk_core.device, 0, 0, &vk_core.queue);
-		return true;
-	}
-
-	gEngine.Con_Printf( S_ERROR "No compatibe Vulkan devices found. Vulkan render will not be available\n" );
-	return false;
-}
 static qboolean initSurface( void )
 {
-	XVK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(vk_core.physical_device.device, vk_core.surface.surface, &vk_core.surface.num_present_modes, vk_core.surface.present_modes));
+	XVK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(v_device_info.physical_device, vk_core.surface.surface, &vk_core.surface.num_present_modes, vk_core.surface.present_modes));
 	vk_core.surface.present_modes = Mem_Malloc(vk_core.pool, sizeof(*vk_core.surface.present_modes) * vk_core.surface.num_present_modes);
-	XVK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(vk_core.physical_device.device, vk_core.surface.surface, &vk_core.surface.num_present_modes, vk_core.surface.present_modes));
+	XVK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(v_device_info.physical_device, vk_core.surface.surface, &vk_core.surface.num_present_modes, vk_core.surface.present_modes));
 
 	gEngine.Con_Printf("Supported surface present modes: %u\n", vk_core.surface.num_present_modes);
 	for (uint32_t i = 0; i < vk_core.surface.num_present_modes; ++i)
@@ -651,9 +235,9 @@ static qboolean initSurface( void )
 		gEngine.Con_Reportf("\t%u: %s (%u)\n", i, R_VkPresentModeName(vk_core.surface.present_modes[i]), vk_core.surface.present_modes[i]);
 	}
 
-	XVK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_core.physical_device.device, vk_core.surface.surface, &vk_core.surface.num_surface_formats, vk_core.surface.surface_formats));
+	XVK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(v_device_info.physical_device, vk_core.surface.surface, &vk_core.surface.num_surface_formats, vk_core.surface.surface_formats));
 	vk_core.surface.surface_formats = Mem_Malloc(vk_core.pool, sizeof(*vk_core.surface.surface_formats) * vk_core.surface.num_surface_formats);
-	XVK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(vk_core.physical_device.device, vk_core.surface.surface, &vk_core.surface.num_surface_formats, vk_core.surface.surface_formats));
+	XVK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(v_device_info.physical_device, vk_core.surface.surface, &vk_core.surface.num_surface_formats, vk_core.surface.surface_formats));
 
 	gEngine.Con_Reportf("Supported surface formats: %u\n", vk_core.surface.num_surface_formats);
 	for (uint32_t i = 0; i < vk_core.surface.num_surface_formats; ++i)
@@ -695,59 +279,22 @@ static const r_vk_module_t *const modules[] = {
 };
 */
 
-static const char* perfCounterUnitName(VkPerformanceCounterUnitKHR unit) {
-	switch (unit) {
-		case VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR: return "generic";
-		case VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR: return "%";
-		case VK_PERFORMANCE_COUNTER_UNIT_NANOSECONDS_KHR: return "ns";
-		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_KHR: return "b";
-		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_PER_SECOND_KHR: return "bps";
-		case VK_PERFORMANCE_COUNTER_UNIT_KELVIN_KHR: return "K";
-		case VK_PERFORMANCE_COUNTER_UNIT_WATTS_KHR: return "W";
-		case VK_PERFORMANCE_COUNTER_UNIT_VOLTS_KHR: return "V";
-		case VK_PERFORMANCE_COUNTER_UNIT_AMPS_KHR: return "A";
-		case VK_PERFORMANCE_COUNTER_UNIT_HERTZ_KHR: return "Hz";
-		case VK_PERFORMANCE_COUNTER_UNIT_CYCLES_KHR: return "C";
-		default: return "?";
-	}
-}
-
-static const char *perfCounterScopeName(VkPerformanceCounterScopeKHR scope) {
-	switch(scope) {
-		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_BUFFER_KHR: return "cmdbuf";
-		case VK_PERFORMANCE_COUNTER_SCOPE_RENDER_PASS_KHR: return "renderpass";
-		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_KHR: return "command";
-		default: return "unknown";
-	}
-}
-
-static void queryPerformanceQuery(void) {
-	const uint32_t queue_family_index = 0;
-	uint32_t counters_count = 0;
-	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(vk_core.physical_device.device, queue_family_index, &counters_count, NULL, NULL));
-
-	VkPerformanceCounterKHR *const counters = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters));
-	VkPerformanceCounterDescriptionKHR *const counters_desc = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters_desc));
-
-	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(vk_core.physical_device.device, queue_family_index, &counters_count, counters, counters_desc));
-
-	gEngine.Con_Reportf("Got %d counters:\n", counters_count);
-	for (uint32_t i = 0; i < counters_count; ++i) {
-		const VkPerformanceCounterKHR *const cnt = counters + i;
-		const VkPerformanceCounterDescriptionKHR *const desc = counters_desc + i;
-		gEngine.Con_Reportf("  %d: %s %s/%s, %s (%s)\n",
-			i, perfCounterScopeName(cnt->scope), desc->category, desc->name, perfCounterUnitName(cnt->unit), desc->description);
-	}
-}
-
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
+	INFO("R_VkInit");
 
 	vk_core.validate = !!gEngine.Sys_CheckParm("-vkvalidate");
 	vk_core.debug = vk_core.validate || !!(gEngine.Sys_CheckParm("-vkdebug") || gEngine.Sys_CheckParm("-gldebug"));
 	vk_core.rtx = false;
+
 	VK_LoadCvars();
+
+	// Force extremely verbose logs at startup.
+	// This is instrumental in some investigations, because the usual "vk_debug_log" cvar is not set
+	// at this point and cannot be used to selectively swith things on.
+	if (gEngine.Sys_CheckParm("-vkverboselogs"))
+		g_log_debug_bits = 0xffffffffu;
 
 	R_SpeedsInit();
 
@@ -795,12 +342,15 @@ qboolean R_VkInit( void )
 	}
 #endif
 
-	if (!createDevice())
+	if (!vDeviceInit(CVAR_TO_BOOL(rt_force_disable)))
 		return false;
 
-	queryPerformanceQuery();
-
 	VK_LoadCvarsAfterInit();
+
+	R_VkResourcesInit();
+
+	if (!R_VkImageInit())
+		return false;
 
 	if (!R_VkCombuf_Init())
 		return false;
@@ -834,33 +384,39 @@ qboolean R_VkInit( void )
 
 	VK_SceneInit();
 
-	initTextures();
+	R_TexturesInit();
 
 	// All below need render_pass
 
 	if (!R_VkOverlay_Init())
 		return false;
 
-	if (!VK_BrushInit())
+	if (!R_BrushInit())
 		return false;
 
 	if (vk_core.rtx)
 	{
-		if (!VK_RayInit())
+		// FIXME move all this to rt-specific modules
+		if (!VK_LightsInit())
 			return false;
 
-		// FIXME move all this to rt-specific modules
-		VK_LightsInit();
+		if (!VK_RayInit())
+			return false;
 	}
 
 	R_SpriteInit();
 	R_BeamInit();
 
+	INFO("R_VkInit done");
 	return true;
 }
 
 void R_VkShutdown( void ) {
 	XVK_CHECK(vkDeviceWaitIdle(vk_core.device));
+
+	VK_EntityDataClear();
+
+	R_SpriteShutdown();
 
 	if (vk_core.rtx)
 	{
@@ -868,7 +424,7 @@ void R_VkShutdown( void ) {
 		VK_RayShutdown();
 	}
 
-	VK_BrushShutdown();
+	R_BrushShutdown();
 	VK_StudioShutdown();
 	R_VkOverlay_Shutdown();
 
@@ -877,7 +433,9 @@ void R_VkShutdown( void ) {
 
 	VK_FrameCtlShutdown();
 
-	destroyTextures();
+	R_VkMaterialsShutdown();
+
+	R_TexturesShutdown();
 
 	VK_PipelineShutdown();
 
@@ -889,7 +447,7 @@ void R_VkShutdown( void ) {
 
 	VK_DevMemDestroy();
 
-	vkDestroyDevice(vk_core.device, NULL);
+	vDeviceShutdown();
 
 #if USE_AFTERMATH
 	VK_AftermathShutdown();

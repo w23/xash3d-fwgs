@@ -91,11 +91,6 @@ void GAME_EXPORT Platform_SetMousePos(int x, int y)
 
 }
 
-int Platform_JoyInit( int numjoy )
-{
-	return 0;
-}
-
 void Platform_EnableTextInput( qboolean enable )
 {
 	keystate.chars = enable;

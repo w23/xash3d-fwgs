@@ -28,10 +28,10 @@ GNU General Public License for more details.
 //
 //================================================================
 #define PLATFORM_WIN32      1
-#define PLATFORM_ANDROID    2
-#define PLATFORM_LINUX      3
-#define PLATFORM_APPLE      4
-#define PLATFORM_FREEBSD    5
+#define PLATFORM_LINUX      2
+#define PLATFORM_FREEBSD    3
+#define PLATFORM_ANDROID    4
+#define PLATFORM_APPLE      5
 #define PLATFORM_NETBSD     6
 #define PLATFORM_OPENBSD    7
 #define PLATFORM_EMSCRIPTEN 8
@@ -40,6 +40,9 @@ GNU General Public License for more details.
 #define PLATFORM_SERENITY   11
 #define PLATFORM_IRIX       12
 #define PLATFORM_NSWITCH    13
+#define PLATFORM_PSVITA     14
+#define PLATFORM_WASI       15
+#define PLATFORM_SUNOS      16
 
 #if XASH_WIN32
 	#define XASH_PLATFORM PLATFORM_WIN32
@@ -67,6 +70,12 @@ GNU General Public License for more details.
 	#define XASH_PLATFORM PLATFORM_IRIX
 #elif XASH_NSWITCH
 	#define XASH_PLATFORM PLATFORM_NSWITCH
+#elif XASH_PSVITA
+	#define XASH_PLATFORM PLATFORM_PSVITA
+#elif XASH_WASI
+	#define XASH_PLATFORM PLATFORM_WASI
+#elif XASH_SUNOS
+	#define XASH_PLATFORM PLATFORM_SUNOS
 #else
 	#error
 #endif
@@ -76,13 +85,15 @@ GNU General Public License for more details.
 //           CPU ARCHITECTURE DEFINES
 //
 //================================================================
-#define ARCHITECTURE_AMD64   1
-#define ARCHITECTURE_X86     2
+#define ARCHITECTURE_X86     1
+#define ARCHITECTURE_AMD64   2
 #define ARCHITECTURE_ARM     3
 #define ARCHITECTURE_MIPS    4
 #define ARCHITECTURE_JS      6
 #define ARCHITECTURE_E2K     7
 #define ARCHITECTURE_RISCV   8
+#define ARCHITECTURE_PPC     9
+#define ARCHITECTURE_WASM  10
 
 #if XASH_AMD64
 	#define XASH_ARCHITECTURE ARCHITECTURE_AMD64
@@ -98,6 +109,10 @@ GNU General Public License for more details.
 	#define XASH_ARCHITECTURE ARCHITECTURE_E2K
 #elif XASH_RISCV
 	#define XASH_ARCHITECTURE ARCHITECTURE_RISCV
+#elif XASH_PPC
+	#define XASH_ARCHITECTURE ARCHITECTURE_PPC
+#elif XASH_WASM
+	#define XASH_ARCHITECTURE ARCHITECTURE_WASM
 #else
 	#error
 #endif
@@ -125,27 +140,27 @@ GNU General Public License for more details.
 //================================================================
 #define BIT( n )		( 1U << ( n ))
 
-#define ARCHITECTURE_ARM_VER_MASK   ( BIT( 5 ) - 1 )
-#define ARCHITECTURE_ARM_VER_SHIFT  0
-#define ARCHITECTURE_ARM_HARDFP     BIT( 5 )
+#define ARCH_ARM_VER_MASK   ( BIT( 5 ) - 1 )
+#define ARCH_ARM_VER_SHIFT  0
+#define ARCH_ARM_HARDFP     BIT( 5 )
 
-#define ARCHITECTURE_RISCV_FP_SOFT   0
-#define ARCHITECTURE_RISCV_FP_SINGLE 1
-#define ARCHITECTURE_RISCV_FP_DOUBLE 2
+#define ARCH_RISCV_FP_SOFT   0
+#define ARCH_RISCV_FP_SINGLE 1
+#define ARCH_RISCV_FP_DOUBLE 2
 
 #if XASH_ARCHITECTURE == ARCHITECTURE_ARM
 	#if XASH_ARM_HARDFP
-		#define XASH_ARCHITECTURE_ABI ( ARCHITECTURE_ARM_HARDFP | XASH_ARM )
+		#define XASH_ARCHITECTURE_ABI ( ARCH_ARM_HARDFP | XASH_ARM )
 	#else
 		#define XASH_ARCHITECTURE_ABI ( XASH_ARM )
 	#endif
 #elif XASH_ARCHITECTURE == ARCHITECTURE_RISCV
 	#if XASH_RISCV_SOFTFP
-		#define XASH_ARCHITECTURE_ABI ARCHITECTURE_RISCV_FP_SOFT
+		#define XASH_ARCHITECTURE_ABI ARCH_RISCV_FP_SOFT
 	#elif XASH_RISCV_SINGLEFP
-		#define XASH_ARCHITECTURE_ABI ARCHITECTURE_RISCV_FP_SINGLE
+		#define XASH_ARCHITECTURE_ABI ARCH_RISCV_FP_SINGLE
 	#elif XASH_RISCV_DOUBLEFP
-		#define XASH_ARCHITECTURE_ABI ARCHITECTURE_RISCV_FP_DOUBLE
+		#define XASH_ARCHITECTURE_ABI ARCH_RISCV_FP_DOUBLE
 	#else
 		#error
 	#endif

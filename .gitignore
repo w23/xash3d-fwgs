@@ -6,6 +6,7 @@
 
 # Other
 *.save
+prefix/
 
 # Qt Creator for some reason creates *.user.$version files, so exclude it too
 *.user*
@@ -54,12 +55,18 @@ CMakeFiles
 Makefile
 cmake_install.cmake
 install_manifest.txt
+CMakeLists.txt*
+CMakeScripts
+Testing
+compile_commands.json
+_deps
 # makedepend
 Makefile.dep
 *.bak
 ALL_BUILD.*
 INSTALL.*
 ZERO_CHECK.*
+CMakeLists.txt
 
 # Visual Studio
 *.obj
@@ -339,3 +346,9 @@ core
 .history/*
 .cache/*
 enc_temp_folder/
+
+# KDevelop4
+*.kdev4
+
+# ccls langauge server
+.ccls-*

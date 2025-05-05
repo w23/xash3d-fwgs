@@ -6,10 +6,13 @@ build_hlsdk()
 {
 	echo "Building HLSDK: $1 branch..."
 	git checkout $1
-	./waf configure -T release --nswitch || die_configure
+
+	# This is not our bug if HLSDK doesn't build with -Werrors enabled
+	./waf configure -T release --nswitch --disable-werror || die_configure
 	./waf build install --destdir=../pkgtemp/xash3d || die
-	./waf clean
 }
+
+git config --global --add safe.directory '*'
 
 echo "Setting up environment..."
 
@@ -40,13 +43,16 @@ make -C libsolder install || die
 echo "Building engine..."
 
 ./waf configure -T release --nswitch || die_configure
-./waf build install --destdir=pkgtemp/xash3d || die
+./waf build install --destdir=pkgtemp/xash3d -v || die
 
 echo "Building HLSDK..."
 
-# TODO: replace with hlsdk-portable when PRs are merged
-pushd hlsdk-portable
+pushd hlsdk-portable || die
 build_hlsdk mobile_hacks valve
 build_hlsdk opfor gearbox
-build_hlsdk bshift bshift
+popd
+
+# bshift can be used from mobile_hacks branch
+pushd pkgtemp/xash3d
+cp -v valve/dlls/hl_nswitch_arm64.so bshift/dlls/bshift_nswitch_arm64.so
 popd

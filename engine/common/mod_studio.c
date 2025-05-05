@@ -24,17 +24,17 @@ typedef int (*STUDIOAPI)( int, sv_blending_interface_t**, server_studio_api_t*, 
 
 typedef struct mstudiocache_s
 {
-	float	frame;
-	int	sequence;
-	vec3_t	angles;
-	vec3_t	origin;
-	vec3_t	size;
-	byte	controller[4];
-	byte	blending[2];
-	model_t	*model;
-	uint	current_hull;
-	uint	current_plane;
-	uint	numhitboxes;
+	model_t *model;
+	float   frame;
+	int     sequence;
+	vec3_t  angles;
+	vec3_t  origin;
+	vec3_t  size;
+	byte    controller[4];
+	byte    blending[2];
+	uint    current_hull;
+	uint    current_plane;
+	uint    numhitboxes;
 } mstudiocache_t;
 
 #define STUDIO_CACHESIZE		16
@@ -50,9 +50,8 @@ static matrix3x4			studio_bones[MAXSTUDIOBONES];
 static uint			studio_hull_hitgroup[MAXSTUDIOBONES];
 static uint			cache_hull_hitgroup[MAXSTUDIOBONES];
 static mstudiocache_t		cache_studio[STUDIO_CACHESIZE];
-static mclipnode_t			studio_clipnodes[6];
-static mplane_t			studio_planes[768];
-static mplane_t			cache_planes[768];
+static mplane_t			studio_planes[MAXSTUDIOBONES * 6];
+static mplane_t			cache_planes[MAXSTUDIOBONES * 6];
 
 // current cache state
 static int			cache_current;
@@ -66,25 +65,14 @@ Mod_InitStudioHull
 */
 void Mod_InitStudioHull( void )
 {
-	int	i, side;
+	int	i;
 
 	if( studio_hull[0].planes != NULL )
 		return;	// already initailized
 
-	for( i = 0; i < 6; i++ )
-	{
-		studio_clipnodes[i].planenum = i;
-
-		side = i & 1;
-
-		studio_clipnodes[i].children[side] = CONTENTS_EMPTY;
-		if( i != 5 ) studio_clipnodes[i].children[side^1] = i + 1;
-		else studio_clipnodes[i].children[side^1] = CONTENTS_SOLID;
-	}
-
 	for( i = 0; i < MAXSTUDIOBONES; i++ )
 	{
-		studio_hull[i].clipnodes = studio_clipnodes;
+		studio_hull[i].clipnodes16 = (mclipnode16_t *)box_clipnodes16;
 		studio_hull[i].planes = &studio_planes[i*6];
 		studio_hull[i].firstclipnode = 0;
 		studio_hull[i].lastclipnode = 5;
@@ -239,7 +227,7 @@ hull_t *Mod_HullForStudio( model_t *model, float frame, int sequence, vec3_t ang
 	bSkipShield = false;
 	*numhitboxes = 0; // assume error
 
-	if( mod_studiocache->value )
+	if( mod_studiocache.value )
 	{
 		bonecache = Mod_CheckStudioCache( model, frame, sequence, angles, origin, size, pcontroller, pblending );
 
@@ -270,6 +258,11 @@ hull_t *Mod_HullForStudio( model_t *model, float frame, int sequence, vec3_t ang
 
 	for( i = j = 0; i < mod_studiohdr->numhitboxes; i++, j += 6 )
 	{
+		if( world.version == QBSP2_VERSION )
+			studio_hull[i].clipnodes32 = (mclipnode32_t *)box_clipnodes32;
+		else
+			studio_hull[i].clipnodes16 = (mclipnode16_t *)box_clipnodes16;
+
 		if( bSkipShield && i == 21 )
 			continue;	// CS stuff
 
@@ -286,7 +279,7 @@ hull_t *Mod_HullForStudio( model_t *model, float frame, int sequence, vec3_t ang
 	// tell trace code about hitbox count
 	*numhitboxes = (bSkipShield) ? (mod_studiohdr->numhitboxes - 1) : (mod_studiohdr->numhitboxes);
 
-	if( mod_studiocache->value )
+	if( mod_studiocache.value )
 		Mod_AddToStudioCache( frame, sequence, angles, origin, size, pcontroller, pblending, model, studio_hull, *numhitboxes );
 
 	return studio_hull;
@@ -429,15 +422,15 @@ void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstud
 	{
 		string	filepath, modelname, modelpath;
 
-		COM_FileBase( m_pSubModel->name, modelname );
+		COM_FileBase( m_pSubModel->name, modelname, sizeof( modelname ));
 		COM_ExtractFilePath( m_pSubModel->name, modelpath );
 
 		// NOTE: here we build real sub-animation filename because stupid user may rename model without recompile
 		Q_snprintf( filepath, sizeof( filepath ), "%s/%s%i%i.mdl", modelpath, modelname, pseqdesc->seqgroup / 10, pseqdesc->seqgroup % 10 );
 
 		buf = FS_LoadFile( filepath, &filesize, false );
-		if( !buf || !filesize ) Host_Error( "StudioGetAnim: can't load %s\n", filepath );
-		if( IDSEQGRPHEADER != *(uint *)buf ) Host_Error( "StudioGetAnim: %s is corrupted\n", filepath );
+		if( !buf || !filesize ) Host_Error( "%s: can't load %s\n", __func__, filepath );
+		if( IDSEQGRPHEADER != *(uint *)buf ) Host_Error( "%s: %s is corrupted\n", __func__, filepath );
 
 		Con_Printf( "loading: %s\n", filepath );
 
@@ -482,7 +475,7 @@ static void SV_StudioSetupBones( model_t *pModel,	float frame, int sequence, con
 	{
 		// only show warn if sequence that out of range was specified intentionally
 		if( sequence > mod_studiohdr->numseq )
-			Con_Reportf( S_WARN "SV_StudioSetupBones: sequence %i/%i out of range for model %s\n", sequence, mod_studiohdr->numseq, pModel->name );
+			Con_Reportf( S_WARN "%s: sequence %i/%i out of range for model %s\n", __func__, sequence, mod_studiohdr->numseq, pModel->name );
 		sequence = 0;
 	}
 
@@ -780,7 +773,7 @@ extract texture filename from modelname
 */
 const char *Mod_StudioTexName( const char *modname )
 {
-	static char	texname[MAX_QPATH];
+	static char	texname[MAX_QPATH+1];
 
 	Q_strncpy( texname, modname, sizeof( texname ));
 	COM_StripExtension( texname );
@@ -841,6 +834,22 @@ static studiohdr_t *R_StudioLoadHeader( model_t *mod, const void *buffer )
 	return (studiohdr_t *)buffer;
 }
 
+static studiohdr_t *Mod_MaybeTruncateStudioTextureData( model_t *mod )
+{
+#if XASH_LOW_MEMORY
+	studiohdr_t *phdr = (studiohdr_t *)mod->cache.data;
+
+	mod->cache.data = Mem_Realloc( mod->mempool, mod->cache.data, phdr->texturedataindex );
+	phdr = (studiohdr_t *)mod->cache.data; // get the new pointer on studiohdr
+	phdr->length = phdr->texturedataindex; // update model size
+
+	return phdr;
+#else
+	// NOTE: some mods potentially might require full studio model data
+	return (studiohdr_t *)mod->cache.data;
+#endif
+}
+
 /*
 =================
 Mod_LoadStudioModel
@@ -848,106 +857,102 @@ Mod_LoadStudioModel
 */
 void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
 {
+	char poolname[MAX_VA_STRING];
 	studiohdr_t	*phdr;
+	qboolean textures_loaded = false;
+
+	Q_snprintf( poolname, sizeof( poolname ), "^2%s^7", mod->name );
 
 	if( loaded ) *loaded = false;
-	loadmodel->mempool = Mem_AllocPool( va( "^2%s^7", loadmodel->name ));
-	loadmodel->type = mod_studio;
+	mod->mempool = Mem_AllocPool( poolname );
+	mod->type = mod_studio;
 
 	phdr = R_StudioLoadHeader( mod, buffer );
-	if( !phdr ) return;	// bad model
+	if( !phdr || phdr->length < sizeof( studiohdr_t )) // garbage value in length
+		return;	// bad model
 
-	if( !Host_IsDedicated() )
-	{
-		if( phdr->numtextures == 0 )
-		{
-			studiohdr_t	*thdr;
-			byte		*in, *out;
-			void		*buffer2 = NULL;
-			size_t		size1, size2;
-
-			buffer2 = FS_LoadFile( Mod_StudioTexName( mod->name ), NULL, false );
-			thdr = R_StudioLoadHeader( mod, buffer2 );
-
-			if( !thdr )
-			{
-				Con_Printf( S_WARN "Mod_LoadStudioModel: %s missing textures file\n", mod->name );
-				if( buffer2 ) Mem_Free( buffer2 );
-			}
-			else
-			{
 #if !XASH_DEDICATED
-				ref.dllFuncs.Mod_StudioLoadTextures( mod, thdr );
+	if( !Host_IsDedicated( ) && phdr->numtextures == 0 )
+	{
+		studiohdr_t *thdr;
+		void *buffer2;
+
+		buffer2 = FS_LoadFile( Mod_StudioTexName( mod->name ), NULL, false );
+		thdr = R_StudioLoadHeader( mod, buffer2 );
+
+		if( thdr != NULL )
+		{
+			byte *in, *out;
+			size_t size1, size2;
+
+			// TODO: Mod_StudioLoadTextures will crash if passed a merged studio model!
+			ref.dllFuncs.Mod_StudioLoadTextures( mod, thdr );
+			textures_loaded = true;
+
+			// give space for textures and skinrefs
+			size1 = thdr->numtextures * sizeof( mstudiotexture_t );
+			size2 = thdr->numskinfamilies * thdr->numskinref * sizeof( short );
+			mod->cache.data = Mem_Calloc( mod->mempool, phdr->length + size1 + size2 );
+			memcpy( mod->cache.data, buffer, phdr->length ); // copy main mdl buffer
+			phdr = (studiohdr_t *)mod->cache.data; // get the new pointer on studiohdr
+			phdr->numskinfamilies = thdr->numskinfamilies;
+			phdr->numtextures = thdr->numtextures;
+			phdr->numskinref = thdr->numskinref;
+			phdr->textureindex = phdr->length;
+			phdr->skinindex = phdr->textureindex + size1;
+
+			in = (byte *)thdr + thdr->textureindex;
+			out = (byte *)phdr + phdr->textureindex;
+			memcpy( out, in, size1 + size2 );	// copy textures + skinrefs
+			phdr->length += size1 + size2;
+		}
+		else Con_Printf( S_WARN "%s: %s missing textures file\n", __func__, mod->name );
+
+		if( buffer2 )
+			Mem_Free( buffer2 ); // release T.mdl
+	}
 #endif
 
-				// give space for textures and skinrefs
-				size1 = thdr->numtextures * sizeof( mstudiotexture_t );
-				size2 = thdr->numskinfamilies * thdr->numskinref * sizeof( short );
-				mod->cache.data = Mem_Calloc( loadmodel->mempool, phdr->length + size1 + size2 );
-				memcpy( loadmodel->cache.data, buffer, phdr->length ); // copy main mdl buffer
-				phdr = (studiohdr_t *)loadmodel->cache.data; // get the new pointer on studiohdr
-				phdr->numskinfamilies = thdr->numskinfamilies;
-				phdr->numtextures = thdr->numtextures;
-				phdr->numskinref = thdr->numskinref;
-				phdr->textureindex = phdr->length;
-				phdr->skinindex = phdr->textureindex + size1;
+	if( !textures_loaded )
+	{
+		// NOTE: don't modify source buffer because it's used for CRC computing
+		mod->cache.data = Mem_Calloc( mod->mempool, phdr->length );
+		memcpy( mod->cache.data, buffer, phdr->length );
+		phdr = mod->cache.data;
 
-				in = (byte *)thdr + thdr->textureindex;
-				out = (byte *)phdr + phdr->textureindex;
-				memcpy( out, in, size1 + size2 );	// copy textures + skinrefs
-				phdr->length += size1 + size2;
-				Mem_Free( buffer2 ); // release T.mdl
-			}
-		}
-		else
-		{
-			// NOTE: don't modify source buffer because it's used for CRC computing
-			loadmodel->cache.data = Mem_Calloc( loadmodel->mempool, phdr->length );
-			memcpy( loadmodel->cache.data, buffer, phdr->length );
-			phdr = (studiohdr_t *)loadmodel->cache.data; // get the new pointer on studiohdr
 #if !XASH_DEDICATED
+		if( !Host_IsDedicated( ))
 			ref.dllFuncs.Mod_StudioLoadTextures( mod, phdr );
 #endif
-
-			// NOTE: we wan't keep raw textures in memory. just cutoff model pointer above texture base
-			loadmodel->cache.data = Mem_Realloc( loadmodel->mempool, loadmodel->cache.data, phdr->texturedataindex );
-			phdr = (studiohdr_t *)loadmodel->cache.data; // get the new pointer on studiohdr
-			phdr->length = phdr->texturedataindex;	// update model size
-		}
 	}
-	else
-	{
-		// just copy model into memory
-		loadmodel->cache.data = Mem_Calloc( loadmodel->mempool, phdr->length );
-		memcpy( loadmodel->cache.data, buffer, phdr->length );
 
-		phdr = loadmodel->cache.data;
-	}
+	// NOTE: we may not want to keep raw textures in memory. just cutoff model pointer above texture base
+	phdr = Mod_MaybeTruncateStudioTextureData( mod );
 
 	// setup bounding box
 	if( !VectorCompare( vec3_origin, phdr->bbmin ))
 	{
 		// clipping bounding box
-		VectorCopy( phdr->bbmin, loadmodel->mins );
-		VectorCopy( phdr->bbmax, loadmodel->maxs );
+		VectorCopy( phdr->bbmin, mod->mins );
+		VectorCopy( phdr->bbmax, mod->maxs );
 	}
 	else if( !VectorCompare( vec3_origin, phdr->min ))
 	{
 		// movement bounding box
-		VectorCopy( phdr->min, loadmodel->mins );
-		VectorCopy( phdr->max, loadmodel->maxs );
+		VectorCopy( phdr->min, mod->mins );
+		VectorCopy( phdr->max, mod->maxs );
 	}
 	else
 	{
 		// well compute bounds from vertices and round to nearest even values
-		Mod_StudioComputeBounds( phdr, loadmodel->mins, loadmodel->maxs, true );
-		RoundUpHullSize( loadmodel->mins );
-		RoundUpHullSize( loadmodel->maxs );
+		Mod_StudioComputeBounds( phdr, mod->mins, mod->maxs, true );
+		RoundUpHullSize( mod->mins );
+		RoundUpHullSize( mod->maxs );
 	}
 
-	loadmodel->numframes = Mod_StudioBodyVariations( loadmodel );
-	loadmodel->radius = RadiusFromBounds( loadmodel->mins, loadmodel->maxs );
-	loadmodel->flags = phdr->flags; // copy header flags
+	mod->numframes = Mod_StudioBodyVariations( mod );
+	mod->radius = RadiusFromBounds( mod->mins, mod->maxs );
+	mod->flags = phdr->flags; // copy header flags
 
 	if( loaded ) *loaded = true;
 }
@@ -982,7 +987,7 @@ void Mod_InitStudioAPI( void )
 	pBlendIface = (STUDIOAPI)COM_GetProcAddress( svgame.hInstance, "Server_GetBlendingInterface" );
 	if( pBlendIface && pBlendIface( SV_BLENDING_INTERFACE_VERSION, &pBlendAPI, &gStudioAPI, &studio_transform, &studio_bones ))
 	{
-		Con_Reportf( "SV_LoadProgs: ^2initailized Server Blending interface ^7ver. %i\n", SV_BLENDING_INTERFACE_VERSION );
+		Con_Reportf( "%s: ^2initailized Server Blending interface ^7ver. %i\n", __func__, SV_BLENDING_INTERFACE_VERSION );
 		return;
 	}
 

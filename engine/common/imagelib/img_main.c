@@ -15,6 +15,7 @@ GNU General Public License for more details.
 
 #include <math.h>
 #include "imagelib.h"
+#include "eiface.h" // ARRAYSIZE
 
 // global image variables
 imglib_t	image;
@@ -67,7 +68,6 @@ static const cubepack_t load_cubemap[] =
 { "3Ds Sky1", skybox_qv1 },
 { "3Ds Sky2", skybox_qv2 },
 { "3Ds Cube", cubemap_v1 },
-{ NULL, NULL },
 };
 
 // soul of ImageLib - table of image format constants
@@ -110,7 +110,7 @@ void Image_Reset( void )
 	image.size = 0;
 }
 
-static rgbdata_t *ImagePack( void )
+static MALLOC_LIKE( FS_FreeImage, 1 ) rgbdata_t *ImagePack( void )
 {
 	rgbdata_t	*pack;
 
@@ -178,7 +178,9 @@ static qboolean FS_AddSideToPack( int adjust_flags )
 	}
 
 	// keep constant size, render.dll expecting it
-	image.size = image.source_width * image.source_height * 4;
+	// NOTE: This is super incorrect for compressed images.
+	// No idea why it was needed
+	// image.size = image.source_width * image.source_height * 4;
 
 	// mixing dds format with any existing ?
 	if( image.type != image.source_type )
@@ -297,9 +299,8 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 {
 	const char	*ext = COM_FileExtension( filename );
 	string		loadname;
-	int		i;
+	int		i, j;
 	const loadpixformat_t *extfmt;
-	const cubepack_t	*cmap;
 
 	Q_strncpy( loadname, filename, sizeof( loadname ));
 	Image_Reset(); // clear old image
@@ -317,14 +318,15 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 		return ImagePack();
 
 	// check all cubemap sides with package suffix
-	for( cmap = load_cubemap; cmap && cmap->type; cmap++ )
+	for( j = 0; j < ARRAYSIZE( load_cubemap ); j++ )
 	{
+		const cubepack_t	*cmap = &load_cubemap[j];
+
 		for( i = 0; i < 6; i++ )
 		{
-			if( Image_ProbeLoad( extfmt, loadname, cmap->type[i].suf, cmap->type[i].hint ) &&
-				 FS_AddSideToPack( cmap->type[i].flags )) // process flags to flip some sides
+			if( Image_ProbeLoad( extfmt, loadname, cmap->type[i].suf, cmap->type[i].hint ))
 			{
-				break;
+				FS_AddSideToPack( cmap->type[i].flags );
 			}
 
 			if( image.num_sides != i + 1 ) // check side
@@ -339,7 +341,7 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 			}
 		}
 
-		// make sure what all sides is loaded
+		// make sure that all sides is loaded
 		if( image.num_sides != 6 )
 		{
 			// unexpected errors ?
@@ -361,7 +363,7 @@ load_internal:
 	}
 
 	if( loadname[0] != '#' )
-		Con_Reportf( S_WARN "FS_LoadImage: couldn't load \"%s\"\n", loadname );
+		Con_Reportf( S_WARN "%s: couldn't load \"%s\"\n", __func__, loadname );
 
 	// clear any force flags
 	image.force_flags = 0;
@@ -423,7 +425,8 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 			{
 				for( i = 0; i < 6; i++ )
 				{
-					Q_sprintf( path, format->formatstring, savename, box[i].suf, format->ext );
+					Q_snprintf( path, sizeof( path ),
+						format->formatstring, savename, box[i].suf, format->ext );
 					if( !format->savefunc( path, pix )) break; // there were errors
 					pix->buffer += pix->size; // move pointer
 				}
@@ -445,7 +448,8 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 		{
 			if( !Q_stricmp( ext, format->ext ))
 			{
-				Q_sprintf( path, format->formatstring, savename, "", format->ext );
+				Q_snprintf( path, sizeof( path ),
+					format->formatstring, savename, "", format->ext );
 				if( format->savefunc( path, pix ))
 				{
 					// clear any force flags
@@ -546,7 +550,7 @@ static void Test_CheckImage( const char *name, rgbdata_t *rgb )
 	TASSERT( load->size == rgb->size )
 	TASSERT( memcmp(load->buffer, rgb->buffer, rgb->size ) == 0 )
 
-	Mem_Free( load );
+	FS_FreeImage( load );
 }
 
 void Test_RunImagelib( void )
@@ -577,10 +581,13 @@ void Test_RunImagelib( void )
 
 	for( i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++ )
 	{
-		const char *name = va( "test_gen.%s", extensions[i] );
+		qboolean ret;
+		char name[MAX_VA_STRING];
+
+		Q_snprintf( name, sizeof( name ), "test_gen.%s", extensions[i] );
 
 		// test saving
-		qboolean ret = FS_SaveImage( name, &rgb );
+		ret = FS_SaveImage( name, &rgb );
 		Con_Printf( "Checking if we can save images in '%s' format...\n", extensions[i] );
 		ASSERT(ret == true);
 
@@ -593,6 +600,7 @@ void Test_RunImagelib( void )
 }
 
 #define IMPLEMENT_IMAGELIB_FUZZ_TARGET( export, target ) \
+int export( const uint8_t *Data, size_t Size ); \
 int EXPORT export( const uint8_t *Data, size_t Size ) \
 { \
 	rgbdata_t *rgb; \

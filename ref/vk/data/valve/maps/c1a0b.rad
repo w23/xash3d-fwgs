@@ -1,5 +1,7 @@
 +0~GENERIC86B    60  220 170  10000
-+0~LAB1_CMP2     255 255 255  20
+//+0~LAB1_CMP2     255 255 255  20 // TODO: emissive texture
+//+1~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
+//+2~LAB1_CMP2     255 255 255  20 // hack, because no inheritance yet
 ~LIGHT3C         220 210 150  2500
 +A~FIFTIES_LGT2  160 170 220  4000
 +0~FIFTIES_LGT2  160 170 220  10000

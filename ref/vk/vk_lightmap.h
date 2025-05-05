@@ -3,6 +3,7 @@
 #include "const.h"
 #include "com_model.h"
 #include "protocol.h"
+#include "lightstyle.h"
 
 #define BLOCK_SIZE_MAX	1024
 #define BLOCK_SIZE BLOCK_SIZE_MAX
@@ -16,4 +17,5 @@ extern xvk_lightmap_state_t g_lightmap;
 void VK_ClearLightmap( void );
 void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel );
 void VK_UploadLightmap( void );
-void VK_RunLightStyles( void );
+
+void VK_RunLightStyles( lightstyle_t *ls );

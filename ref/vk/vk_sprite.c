@@ -1,10 +1,12 @@
 #include "vk_sprite.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "camera.h"
 #include "vk_render.h"
 #include "vk_geometry.h"
 #include "vk_scene.h"
 #include "r_speeds.h"
+#include "vk_math.h"
+#include "vk_logs.h"
 
 #include "sprite.h"
 #include "xash3d_mathlib.h"
@@ -14,6 +16,9 @@
 
 #include <memory.h>
 
+#define MODULE_NAME "sprite"
+#define LOG_MODULE sprite
+
 // it's a Valve default value for LoadMapSprite (probably must be power of two)
 #define MAPSPRITE_SIZE	128
 #define GLARE_FALLOFF	19000.0f
@@ -22,11 +27,122 @@ static struct {
 	struct {
 		int sprites;
 	} stats;
+
+	struct {
+		r_geometry_range_t geom;
+		vk_render_geometry_t geometry;
+		vk_render_model_t model;
+	} quad;
 } g_sprite;
 
+static qboolean createQuadModel(void) {
+	g_sprite.quad.geom = R_GeometryRangeAlloc(4, 6);
+	if (g_sprite.quad.geom.block_handle.size == 0) {
+		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
+		return false;
+	}
+
+	const r_geometry_range_lock_t lock = R_GeometryRangeLock(&g_sprite.quad.geom);
+
+	vec3_t point;
+	vk_vertex_t *dst_vtx;
+	uint16_t *dst_idx;
+
+	dst_vtx = lock.vertices;
+	dst_idx = lock.indices;
+
+	const vec3_t org = {0, 0, 0};
+	const vec3_t v_right = {1, 0, 0};
+	const vec3_t v_up = {0, 1, 0};
+	vec3_t v_normal;
+	CrossProduct(v_right, v_up, v_normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[0].pos );
+	dst_vtx[0].gl_tc[0] = 0.f;
+	dst_vtx[0].gl_tc[1] = 1.f;
+	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[0].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, -1.f, v_right, dst_vtx[1].pos );
+	dst_vtx[1].gl_tc[0] = 0.f;
+	dst_vtx[1].gl_tc[1] = 0.f;
+	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[1].normal);
+
+	VectorMA( org, 1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[2].pos );
+	dst_vtx[2].gl_tc[0] = 1.f;
+	dst_vtx[2].gl_tc[1] = 0.f;
+	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[2].normal);
+
+	VectorMA( org, -1.f, v_up, point );
+	VectorMA( point, 1.f, v_right, dst_vtx[3].pos );
+	dst_vtx[3].gl_tc[0] = 1.f;
+	dst_vtx[3].gl_tc[1] = 1.f;
+	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
+	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
+	VectorCopy(v_normal, dst_vtx[3].normal);
+
+	dst_idx[0] = 0;
+	dst_idx[1] = 1;
+	dst_idx[2] = 2;
+	dst_idx[3] = 0;
+	dst_idx[4] = 2;
+	dst_idx[5] = 3;
+
+	R_GeometryRangeUnlock( &lock );
+
+	g_sprite.quad.geometry = (vk_render_geometry_t){
+		.max_vertex = 4,
+		.vertex_offset = g_sprite.quad.geom.vertices.unit_offset,
+
+		.element_count = 6,
+		.index_offset = g_sprite.quad.geom.indices.unit_offset,
+
+		.material = R_VkMaterialGetForTexture(tglob.defaultTexture),
+		.ye_olde_texture = tglob.defaultTexture,
+		.emissive = {1,1,1},
+	};
+
+	return R_RenderModelCreate(&g_sprite.quad.model, (vk_render_model_init_t){
+		.name = "sprite",
+		.geometries = &g_sprite.quad.geometry,
+		.geometries_count = 1,
+		.dynamic = false,
+		});
+}
+
+static void destroyQuadModel(void) {
+	if (g_sprite.quad.model.num_geometries)
+		R_RenderModelDestroy(&g_sprite.quad.model);
+
+	if (g_sprite.quad.geom.block_handle.size)
+		R_GeometryRangeFree(&g_sprite.quad.geom);
+
+	g_sprite.quad.model.num_geometries = 0;
+	g_sprite.quad.geom.block_handle.size = 0;
+}
+
 qboolean R_SpriteInit(void) {
-	R_SpeedsRegisterMetric(&g_sprite.stats.sprites, "sprites_count", kSpeedsMetricCount);
+	R_SPEEDS_COUNTER(g_sprite.stats.sprites, "count", kSpeedsMetricCount);
+
 	return true;
+	// TODO return createQuadModel();
+}
+
+void R_SpriteShutdown(void) {
+	destroyQuadModel();
+}
+
+void R_SpriteNewMapFIXME(void) {
+	destroyQuadModel();
+	ASSERT(createQuadModel());
 }
 
 static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float yaw )
@@ -58,14 +174,14 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 	}
 	else if( psprite->frames[frame].type == SPR_GROUP )
 	{
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pintervals = pspritegroup->intervals;
 		numframes = pspritegroup->numframes;
 		fullinterval = pintervals[numframes-1];
 
 		// when loading in Mod_LoadSpriteGroup, we guaranteed all interval values
 		// are positive, so we don't have to worry about division by zero
-		targettime = gpGlobals->time - ((int)( gpGlobals->time / fullinterval )) * fullinterval;
+		targettime = gp_cl->time - ((int)( gp_cl->time / fullinterval )) * fullinterval;
 
 		for( i = 0; i < (numframes - 1); i++ )
 		{
@@ -74,7 +190,7 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 		}
 		pspriteframe = pspritegroup->frames[i];
 	}
-	else if( psprite->frames[frame].type == FRAME_ANGLED )
+	else if( psprite->frames[frame].type == SPR_ANGLED )
 	{
 		//int	angleframe = (int)(Q_rint(( g_camera.viewangles[1] - yaw + 45.0f ) / 360 * 8) - 4) & 7;
 		const int	angleframe = (int)(Q_rint(( 0 - yaw + 45.0f ) / 360 * 8) - 4) & 7;
@@ -82,7 +198,7 @@ static mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float
 		gEngine.Con_Printf(S_WARN "VK FIXME: %s doesn't know about viewangles\n", __FUNCTION__);
 
 		// e.g. doom-style sprite monsters
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pspriteframe = pspritegroup->frames[angleframe];
 	}
 
@@ -126,12 +242,12 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	if( FBitSet( mod->flags, MODEL_CLIENT )) // it's a HUD sprite
 	{
 		Q_snprintf( texname, sizeof( texname ), "#HUD/%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 	else
 	{
 		Q_snprintf( texname, sizeof( texname ), "#%s(%s:%i%i).spr", ctx->sprite_name, ctx->group_suffix, num / 10, num % 10 );
-		gl_texturenum = VK_LoadTexture( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
+		gl_texturenum = R_TextureUploadFromFile( texname, pin, pinframe.width * pinframe.height * bytes, ctx->r_texFlags );
 	}
 
 	// setup frame description
@@ -145,7 +261,7 @@ static const dframetype_t *VK_SpriteLoadFrame( model_t *mod, const void *pin, ms
 	pspriteframe->gl_texturenum = gl_texturenum;
 	*ppframe = pspriteframe;
 
-	return ( const dframetype_t* )(( const byte* )pin + sizeof( dspriteframe_t ) + pinframe.width * pinframe.height * bytes );
+	return PTR_CAST(const dframetype_t, ( const byte* )pin + sizeof( dspriteframe_t ) + pinframe.width * pinframe.height * bytes );
 }
 
 static const dframetype_t *VK_SpriteLoadGroup( model_t *mod, const void *pin, mspriteframe_t **ppframe, int framenum, const SpriteLoadContext *ctx )
@@ -283,128 +399,6 @@ int R_GetSpriteTexture( const model_t *m_pSpriteModel, int frame )
 }
 
 /*
-====================
-Mod_LoadMapSprite
-
-Loading a bitmap image as sprite with multiple frames
-as pieces of input image
-====================
-*/
-void Mod_LoadMapSprite( model_t *mod, const void *buffer, size_t size, qboolean *loaded )
-{
-	byte		*src, *dst;
-	rgbdata_t		*pix, temp;
-	char		texname[128];
-	int		i, j, x, y, w, h;
-	int		xl, yl, xh, yh;
-	int		linedelta, numframes;
-	mspriteframe_t	*pspriteframe;
-	msprite_t		*psprite;
-	SpriteLoadContext ctx = {0};
-
-	if( loaded ) *loaded = false;
-	Q_snprintf( texname, sizeof( texname ), "#%s", mod->name );
-	gEngine.Image_SetForceFlags( IL_OVERVIEW );
-	pix = gEngine.FS_LoadImage( texname, buffer, size );
-	gEngine.Image_ClearForceFlags();
-	if( !pix ) return;	// bad image or something else
-
-	mod->type = mod_sprite;
-	ctx.r_texFlags = 0; // no custom flags for map sprites
-
-	if( pix->width % MAPSPRITE_SIZE )
-		w = pix->width - ( pix->width % MAPSPRITE_SIZE );
-	else w = pix->width;
-
-	if( pix->height % MAPSPRITE_SIZE )
-		h = pix->height - ( pix->height % MAPSPRITE_SIZE );
-	else h = pix->height;
-
-	if( w < MAPSPRITE_SIZE ) w = MAPSPRITE_SIZE;
-	if( h < MAPSPRITE_SIZE ) h = MAPSPRITE_SIZE;
-
-	// resample image if needed
-	gEngine.Image_Process( &pix, w, h, IMAGE_FORCE_RGBA|IMAGE_RESAMPLE, 0.0f );
-
-	w = h = MAPSPRITE_SIZE;
-
-	// check range
-	if( w > pix->width ) w = pix->width;
-	if( h > pix->height ) h = pix->height;
-
-	// determine how many frames we needs
-	numframes = (pix->width * pix->height) / (w * h);
-	mod->mempool = Mem_AllocPool( va( "^2%s^7", mod->name ));
-	psprite = Mem_Calloc( mod->mempool, sizeof( msprite_t ) + ( numframes - 1 ) * sizeof( psprite->frames ));
-	mod->cache.data = psprite;	// make link to extradata
-
-	psprite->type = SPR_FWD_PARALLEL_ORIENTED;
-	psprite->texFormat = SPR_ALPHTEST;
-	psprite->numframes = mod->numframes = numframes;
-	psprite->radius = sqrt(((w >> 1) * (w >> 1)) + ((h >> 1) * (h >> 1)));
-
-	mod->mins[0] = mod->mins[1] = -w / 2;
-	mod->maxs[0] = mod->maxs[1] = w / 2;
-	mod->mins[2] = -h / 2;
-	mod->maxs[2] = h / 2;
-
-	// create a temporary pic
-	memset( &temp, 0, sizeof( temp ));
-	temp.width = w;
-	temp.height = h;
-	temp.type = pix->type;
-	temp.flags = pix->flags;
-	temp.size = w * h * gEngine.Image_GetPFDesc(temp.type)->bpp;
-	temp.buffer = Mem_Malloc( /* FIXME VK r_temppool*/ vk_core.pool, temp.size );
-	temp.palette = NULL;
-
-	// chop the image and upload into video memory
-	for( i = xl = yl = 0; i < numframes; i++ )
-	{
-		xh = xl + w;
-		yh = yl + h;
-
-		src = pix->buffer + ( yl * pix->width + xl ) * 4;
-		linedelta = ( pix->width - w ) * 4;
-		dst = temp.buffer;
-
-		// cut block from source
-		for( y = yl; y < yh; y++ )
-		{
-			for( x = xl; x < xh; x++ )
-				for( j = 0; j < 4; j++ )
-					*dst++ = *src++;
-			src += linedelta;
-		}
-
-		// build uinque frame name
-		Q_snprintf( texname, sizeof( texname ), "#MAP/%s_%i%i.spr", mod->name, i / 10, i % 10 );
-
-		psprite->frames[i].frameptr = Mem_Calloc( mod->mempool, sizeof( mspriteframe_t ));
-		pspriteframe = psprite->frames[i].frameptr;
-		pspriteframe->width = w;
-		pspriteframe->height = h;
-		pspriteframe->up = ( h >> 1 );
-		pspriteframe->left = -( w >> 1 );
-		pspriteframe->down = ( h >> 1 ) - h;
-		pspriteframe->right = w + -( w >> 1 );
-		pspriteframe->gl_texturenum = VK_LoadTextureInternal( texname, &temp, TF_IMAGE );
-
-		xl += w;
-		if( xl >= pix->width )
-		{
-			xl = 0;
-			yl += h;
-		}
-	}
-
-	gEngine.FS_FreeImage( pix );
-	Mem_Free( temp.buffer );
-
-	if( loaded ) *loaded = true;
-}
-
-/*
 ================
 R_GetSpriteFrameInterpolant
 
@@ -447,25 +441,25 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 				// this can be happens when rendering switched between single and angled frames
 				// or change model on replace delta-entity
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 1.0f;
 			}
 
-			if( ent->latched.sequencetime < gpGlobals->time )
+			if( ent->latched.sequencetime < gp_cl->time )
 			{
 				if( frame != ent->latched.prevblending[1] )
 				{
 					ent->latched.prevblending[0] = ent->latched.prevblending[1];
 					ent->latched.prevblending[1] = frame;
-					ent->latched.sequencetime = gpGlobals->time;
+					ent->latched.sequencetime = gp_cl->time;
 					lerpFrac = 0.0f;
 				}
-				else lerpFrac = (gpGlobals->time - ent->latched.sequencetime) * 11.0f;
+				else lerpFrac = (gp_cl->time - ent->latched.sequencetime) * 11.0f;
 			}
 			else
 			{
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 0.0f;
 			}
 		}
@@ -479,7 +473,7 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		{
 			// reset interpolation on change model
 			ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-			ent->latched.sequencetime = gpGlobals->time;
+			ent->latched.sequencetime = gp_cl->time;
 			lerpFrac = 0.0f;
 		}
 
@@ -487,14 +481,14 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		if( oldframe ) *oldframe = psprite->frames[ent->latched.prevblending[0]].frameptr;
 		if( curframe ) *curframe = psprite->frames[frame].frameptr;
 	}
-	else if( psprite->frames[frame].type == FRAME_GROUP )
+	else if( psprite->frames[frame].type == SPR_GROUP )
 	{
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		pintervals = pspritegroup->intervals;
 		numframes = pspritegroup->numframes;
 		fullinterval = pintervals[numframes-1];
 		jinterval = pintervals[1] - pintervals[0];
-		time = gpGlobals->time;
+		time = gp_cl->time;
 		jtime = 0.0f;
 
 		// when loading in Mod_LoadSpriteGroup, we guaranteed all interval values
@@ -520,7 +514,7 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		if( oldframe ) *oldframe = pspritegroup->frames[j];
 		if( curframe ) *curframe = pspritegroup->frames[i];
 	}
-	else if( psprite->frames[frame].type == FRAME_ANGLED )
+	else if( psprite->frames[frame].type == SPR_ANGLED )
 	{
 		// e.g. doom-style sprite monsters
 		float	yaw = ent->angles[YAW];
@@ -528,30 +522,30 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 
 		if( m_fDoInterp )
 		{
-			if( ent->latched.prevblending[0] >= psprite->numframes || psprite->frames[ent->latched.prevblending[0]].type != FRAME_ANGLED )
+			if( ent->latched.prevblending[0] >= psprite->numframes || psprite->frames[ent->latched.prevblending[0]].type != SPR_ANGLED )
 			{
 				// this can be happens when rendering switched between single and angled frames
 				// or change model on replace delta-entity
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 1.0f;
 			}
 
-			if( ent->latched.sequencetime < gpGlobals->time )
+			if( ent->latched.sequencetime < gp_cl->time )
 			{
 				if( frame != ent->latched.prevblending[1] )
 				{
 					ent->latched.prevblending[0] = ent->latched.prevblending[1];
 					ent->latched.prevblending[1] = frame;
-					ent->latched.sequencetime = gpGlobals->time;
+					ent->latched.sequencetime = gp_cl->time;
 					lerpFrac = 0.0f;
 				}
-				else lerpFrac = (gpGlobals->time - ent->latched.sequencetime) * ent->curstate.framerate;
+				else lerpFrac = (gp_cl->time - ent->latched.sequencetime) * ent->curstate.framerate;
 			}
 			else
 			{
 				ent->latched.prevblending[0] = ent->latched.prevblending[1] = frame;
-				ent->latched.sequencetime = gpGlobals->time;
+				ent->latched.sequencetime = gp_cl->time;
 				lerpFrac = 0.0f;
 			}
 		}
@@ -561,10 +555,10 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 			lerpFrac = 1.0f;
 		}
 
-		pspritegroup = (mspritegroup_t *)psprite->frames[ent->latched.prevblending[0]].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[ent->latched.prevblending[0]].frameptr);
 		if( oldframe ) *oldframe = pspritegroup->frames[angleframe];
 
-		pspritegroup = (mspritegroup_t *)psprite->frames[frame].frameptr;
+		pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[frame].frameptr);
 		if( curframe ) *curframe = pspritegroup->frames[angleframe];
 	}
 
@@ -641,7 +635,7 @@ static qboolean spriteIsOccluded( const cl_entity_t *e, vec3_t origin, float *ps
 		if( v[1] < g_camera.viewport[1] || v[1] > g_camera.viewport[1] + g_camera.viewport[3] )
 			return true; // do scissor
 
-		*blend = R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
+		*blend *= R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
 
 		if( *blend <= 0.01f )
 			return true; // faded
@@ -669,84 +663,37 @@ static vk_render_type_e spriteRenderModeToRenderType( int render_mode ) {
 	return kVkRenderTypeSolid;
 }
 
-static void R_DrawSpriteQuad( const char *debug_name, mspriteframe_t *frame, vec3_t org, vec3_t v_right, vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
-	r_geometry_buffer_lock_t buffer;
-	if (!R_GeometryBufferAllocAndLock( &buffer, 4, 6, LifetimeSingleFrame )) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate geometry for sprite quad\n");
-		return;
-	}
-
-	vec3_t point;
-	vk_vertex_t *dst_vtx;
-	uint16_t *dst_idx;
-
-	dst_vtx = buffer.vertices.ptr;
-	dst_idx = buffer.indices.ptr;
-
+static void R_DrawSpriteQuad( const char *debug_name, const mspriteframe_t *frame, const vec3_t org, const vec3_t v_right, const vec3_t v_up, float scale, int texture, int render_mode, const vec4_t color ) {
 	vec3_t v_normal;
 	CrossProduct(v_right, v_up, v_normal);
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[0].pos );
-	dst_vtx[0].gl_tc[0] = 0.f;
-	dst_vtx[0].gl_tc[1] = 1.f;
-	dst_vtx[0].lm_tc[0] = dst_vtx[0].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[0].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[0].normal);
+	// TODO can frame->right/left and frame->up/down be asymmetric?
+	vec3_t right, up;
+	VectorScale(v_right, frame->right * scale, right);
+	VectorScale(v_up, frame->up * scale, up);
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->left * scale, v_right, dst_vtx[1].pos );
-	dst_vtx[1].gl_tc[0] = 0.f;
-	dst_vtx[1].gl_tc[1] = 0.f;
-	dst_vtx[1].lm_tc[0] = dst_vtx[1].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[1].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[1].normal);
+	matrix4x4 transform;
+	Matrix4x4_CreateFromVectors(transform, right, up, v_normal, org);
 
-	VectorMA( org, frame->up * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[2].pos );
-	dst_vtx[2].gl_tc[0] = 1.f;
-	dst_vtx[2].gl_tc[1] = 0.f;
-	dst_vtx[2].lm_tc[0] = dst_vtx[2].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[2].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[2].normal);
+	const vk_render_type_e render_type = spriteRenderModeToRenderType(render_mode);
+	const r_vk_material_t material_override = R_VkMaterialGetForTexture(texture);
+	const material_mode_e material_mode = R_VkMaterialModeFromRenderType(render_type);
 
-	VectorMA( org, frame->down * scale, v_up, point );
-	VectorMA( point, frame->right * scale, v_right, dst_vtx[3].pos );
-	dst_vtx[3].gl_tc[0] = 1.f;
-	dst_vtx[3].gl_tc[1] = 1.f;
-	dst_vtx[3].lm_tc[0] = dst_vtx[3].lm_tc[1] = 0.f;
-	Vector4Set(dst_vtx[3].color, 255, 255, 255, 255);
-	VectorCopy(v_normal, dst_vtx[3].normal);
-
-	dst_idx[0] = 0;
-	dst_idx[1] = 1;
-	dst_idx[2] = 2;
-	dst_idx[3] = 0;
-	dst_idx[4] = 2;
-	dst_idx[5] = 3;
-
-	R_GeometryBufferUnlock( &buffer );
-
-	{
-		const vk_render_geometry_t geometry = {
-			.texture = texture,
-			.material = render_mode == kRenderGlow ? kXVkMaterialEmissiveGlow : kXVkMaterialEmissive,
-
-			.max_vertex = 4,
-			.vertex_offset = buffer.vertices.unit_offset,
-
-			.element_count = 6,
-			.index_offset = buffer.indices.unit_offset,
-
-			.emissive = {color[0], color[1], color[2]},
-		};
-
-		VK_RenderModelDynamicBegin( spriteRenderModeToRenderType(render_mode), color, "%s", debug_name );
-		VK_RenderModelDynamicAddGeometry( &geometry );
-		VK_RenderModelDynamicCommit();
-	}
+	R_RenderModelDraw(&g_sprite.quad.model, (r_model_draw_t){
+		.render_type = render_type,
+		.material_mode = material_mode,
+		.material_flags = kMaterialFlag_None,
+		.color = (const vec4_t*)color,
+		.transform = &transform,
+		.prev_transform = &transform,
+		.override = {
+			.material = &material_override,
+			.old_texture = texture,
+		},
+	});
 }
 
+#if 0
 static qboolean R_SpriteHasLightmap( cl_entity_t *e, int texFormat )
 {
 	/* FIXME VK
@@ -775,6 +722,7 @@ static qboolean R_SpriteHasLightmap( cl_entity_t *e, int texFormat )
 
 	return true;
 }
+#endif
 
 static qboolean R_SpriteAllowLerping( const cl_entity_t *e, msprite_t *psprite )
 {
@@ -782,10 +730,6 @@ static qboolean R_SpriteAllowLerping( const cl_entity_t *e, msprite_t *psprite )
 	if( !r_sprite_lerping->value )
 		return false;
 	*/
-
-	// FIXME: lerping means drawing 2 coplanar quads blended on top of each other, which is not something ray tracing can do easily
-	if (vk_core.rtx)
-		return false;
 
 	if( psprite->numframes <= 1 )
 		return false;
@@ -808,7 +752,7 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 	float		angle, dot, sr, cr;
 	float		lerp = 1.0f, ilerp, scale;
 	vec3_t		v_forward, v_right, v_up;
-	vec3_t		origin, color, color2 = { 0.0f };
+	vec3_t		origin, color;
 
 	/* FIXME VK
 	if( RI.params & RP_ENVVIEW )
@@ -824,7 +768,7 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 	{
 		cl_entity_t	*parent;
 
-		parent = gEngine.GetEntityByIndex( e->curstate.aiment );
+		parent = globals.entities + e->curstate.aiment;
 
 		if( parent && parent->model )
 		{
@@ -1008,4 +952,37 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 		pglDepthFunc( GL_LEQUAL );
 	}
 	*/
+}
+
+void Mod_SpriteUnloadTextures( void *data )
+{
+	msprite_t		*psprite;
+	mspritegroup_t	*pspritegroup;
+	mspriteframe_t	*pspriteframe;
+	int		i, j;
+
+	psprite = data;
+
+	if( psprite )
+	{
+		// release all textures
+		for( i = 0; i < psprite->numframes; i++ )
+		{
+			if( psprite->frames[i].type == SPR_SINGLE )
+			{
+				pspriteframe = psprite->frames[i].frameptr;
+				R_TextureFree( pspriteframe->gl_texturenum );
+			}
+			else
+			{
+				pspritegroup = PTR_CAST(mspritegroup_t, psprite->frames[i].frameptr);
+
+				for( j = 0; j < pspritegroup->numframes; j++ )
+				{
+					pspriteframe = pspritegroup->frames[i];
+					R_TextureFree( pspriteframe->gl_texturenum );
+				}
+			}
+		}
+	}
 }

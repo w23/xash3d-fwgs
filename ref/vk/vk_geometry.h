@@ -1,5 +1,7 @@
 #pragma once
 #include "vk_common.h"
+#include "r_block.h"
+#include "vulkan/VBuffer.h" // FIXME vk_buffer_locked_t should not be exposed
 #include "vk_core.h"
 
 #include <stdint.h>
@@ -26,6 +28,39 @@ typedef struct vk_vertex_s {
 
 typedef struct {
 	struct {
+		int count, unit_offset;
+	} vertices;
+
+	struct {
+		int count, unit_offset;
+	} indices;
+
+	r_block_t block_handle;
+} r_geometry_range_t;
+
+// Allocates a range in geometry buffer with a long lifetime
+r_geometry_range_t R_GeometryRangeAlloc(int vertices, int indices);
+void R_GeometryRangeFree(const r_geometry_range_t*);
+
+// TODO combine with r_geometry_buffer_lock_t
+typedef struct {
+	vk_vertex_t *vertices;
+	uint16_t *indices;
+
+	struct {
+		// FIXME hide behind some index in geometry buffer
+		// Think: what's the max simultaneously locked regions count
+		vk_buffer_locked_t staging_handle;
+	} impl_;
+} r_geometry_range_lock_t;
+
+// Lock staging memory for uploading
+r_geometry_range_lock_t R_GeometryRangeLock(const r_geometry_range_t *range);
+r_geometry_range_lock_t R_GeometryRangeLockSubrange(const r_geometry_range_t *range, int vertices_offset, int vertices_count );
+void R_GeometryRangeUnlock(const r_geometry_range_lock_t *lock);
+
+typedef struct {
+	struct {
 		vk_vertex_t *ptr;
 		int count;
 		int unit_offset;
@@ -38,7 +73,9 @@ typedef struct {
 	} indices;
 
 	struct {
-		int staging_handle;
+		// FIXME hide behind some index in geometry buffer
+		// Think: what's the max simultaneously locked regions count
+		vk_buffer_locked_t handle_;
 	} impl_;
 } r_geometry_buffer_lock_t;
 
@@ -47,9 +84,8 @@ typedef enum {
 	LifetimeSingleFrame
 } r_geometry_lifetime_t;
 
-qboolean R_GeometryBufferAllocAndLock( r_geometry_buffer_lock_t *lock, int vertex_count, int index_count, r_geometry_lifetime_t lifetime );
+qboolean R_GeometryBufferAllocOnceAndLock(r_geometry_buffer_lock_t *lock, int vertex_count, int index_count);
 void R_GeometryBufferUnlock( const r_geometry_buffer_lock_t *lock );
-//void R_VkGeometryBufferFree( int handle );
 
 void R_GeometryBuffer_MapClear( void ); // Free the entire buffer for a new map
 
@@ -57,7 +93,3 @@ qboolean R_GeometryBuffer_Init(void);
 void R_GeometryBuffer_Shutdown(void);
 
 void R_GeometryBuffer_Flip(void);
-
-// FIXME is there a better way?
-VkBuffer R_GeometryBuffer_Get(void);
-

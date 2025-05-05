@@ -4,10 +4,6 @@
 
 #include "ray_kusochki.glsl"
 
-#ifndef TEXTURES_INCLUDED_ALREADY_FIXME
-layout(set = 0, binding = 6) uniform sampler2D textures[MAX_TEXTURES];
-#endif
-
 #ifdef RAY_TRACE2
 #include "ray_shadow_interface.glsl"
 layout(location = PAYLOAD_LOCATION_SHADOW) rayPayloadEXT RayPayloadShadow payload_shadow;
@@ -18,7 +14,7 @@ uint traceShadowRay(vec3 pos, vec3 dir, float dist, uint flags) {
 	payload_shadow.hit_type = SHADOW_HIT;
 	traceRayEXT(tlas,
 		flags,
-		GEOMETRY_BIT_OPAQUE,
+		GEOMETRY_BIT_CASTS_SHADOW,
 		SHADER_OFFSET_HIT_SHADOW_BASE, SBT_RECORD_SIZE, SHADER_OFFSET_MISS_SHADOW,
 		pos, 0., dir, dist - shadow_offset_fudge, PAYLOAD_LOCATION_SHADOW);
 	return payload_shadow.hit_type;
@@ -29,6 +25,10 @@ uint traceShadowRay(vec3 pos, vec3 dir, float dist, uint flags) {
 bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 	rayQueryEXT rq;
 	const uint flags =  0
+		// TODO figure out whether to turn off culling for alpha-tested geometry.
+		// Alpha tested geometry usually comes as thick double-sided brushes.
+		// Turning culling on makes shadows disappear from one side, which makes it look rather weird from one side.
+		// Turning culling off makes such geometry cast "double shadow", which looks a bit weird from both sides.
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
 		//| gl_RayFlagsNoOpaqueEXT
 		| gl_RayFlagsTerminateOnFirstHitEXT
@@ -59,7 +59,7 @@ bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 		};
 		const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, false);
 		const vec2 uv = baryMix(uvs[0], uvs[1], uvs[2], bary);
-		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.tex_base_color)], uv);
+		const vec4 texture_color = texture(textures[nonuniformEXT(kusok.material.tex_base_color)], uv);
 
 		const float alpha_mask_threshold = .1f;
 		if (texture_color.a >= alpha_mask_threshold) {
@@ -72,6 +72,10 @@ bool shadowTestAlphaMask(vec3 pos, vec3 dir, float dist) {
 #endif
 
 bool shadowed(vec3 pos, vec3 dir, float dist) {
+	// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
+	if (isnan(dist))
+		return true;
+
 #ifdef RAY_TRACE
 	const uint flags =  0
 		//| gl_RayFlagsCullFrontFacingTrianglesEXT
@@ -83,13 +87,18 @@ bool shadowed(vec3 pos, vec3 dir, float dist) {
 	return payload_shadow.hit_type == SHADOW_HIT;
 #elif defined(RAY_QUERY)
 	{
+		dist -= shadow_offset_fudge;
+		if (dist <= 0.)
+			return false;
+
 		const uint flags =  0
+			// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
 			//| gl_RayFlagsCullFrontFacingTrianglesEXT
 			| gl_RayFlagsOpaqueEXT
 			| gl_RayFlagsTerminateOnFirstHitEXT
 			;
 		rayQueryEXT rq;
-		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, dist - shadow_offset_fudge);
+		rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_CASTS_SHADOW, pos, 0., dir, dist);
 		while (rayQueryProceedEXT(rq)) {}
 
 		if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
@@ -117,13 +126,14 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 
 	rayQueryEXT rq;
 	const uint flags = 0
-		| gl_RayFlagsCullFrontFacingTrianglesEXT
+		// Culling for shadows breaks more things (e.g. de_cbble slightly off the ground boxes) than it probably fixes. Keep it turned off.
+		//| gl_RayFlagsCullFrontFacingTrianglesEXT
 		| gl_RayFlagsOpaqueEXT
 		//| gl_RayFlagsTerminateOnFirstHitEXT
 		//| gl_RayFlagsSkipClosestHitShaderEXT
 		;
 	const float L = 10000.; // TODO Why 10k?
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE, pos, 0., dir, L);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_CASTS_SHADOW, pos, 0., dir, L);
 
 	// Find closest intersection, and then check whether that was a skybox
 	while (rayQueryProceedEXT(rq)) {}
@@ -133,7 +143,8 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 		const uint geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 		const uint kusok_index = instance_kusochki_offset + geometry_index;
 		const Kusok kusok = getKusok(kusok_index);
-		if ((kusok.flags & KUSOK_MATERIAL_FLAG_SKYBOX) == 0)
+
+		if (kusok.material.tex_base_color != TEX_BASE_SKYBOX)
 			return true;
 	}
 
@@ -143,25 +154,6 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 
 #else
 #error RAY_TRACE or RAY_QUERY
-#endif
-}
-
-// This is an entry point for evaluation of all other BRDFs based on selected configuration (for direct light)
-void evalSplitBRDF(vec3 N, vec3 L, vec3 V, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
-	// Prepare data needed for BRDF evaluation - unpack material properties and evaluate commonly used terms (e.g. Fresnel, NdotL, ...)
-	const BrdfData data = prepareBRDFData(N, L, V, material);
-
-	// Ignore V and L rays "below" the hemisphere
-	//if (data.Vbackfacing || data.Lbackfacing) return vec3(0.0f, 0.0f, 0.0f);
-
-	// Eval specular and diffuse BRDFs
-	specular = evalSpecular(data);
-	diffuse = evalDiffuse(data);
-
-	// Combine specular and diffuse layers
-#if COMBINE_BRDFS_WITH_FRESNEL
-	// Specular is already multiplied by F, just attenuate diffuse
-	diffuse *= vec3(1.) - data.F;
 #endif
 }
 

@@ -4,10 +4,16 @@
 #include "xash3d_types.h"
 #include "com_strings.h" // S_ERROR
 
-#include "vk_nv_aftermath.h" // TODO remove explicit usage in XVK_CHECK
+#include "vulkan/VNvAftermath.h" // TODO remove explicit usage in XVK_CHECK
+#include "vulkan/VDevice.h"
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
+
+#define XVK_PARSE_VERSION(v) \
+	VK_VERSION_MAJOR(v), \
+	VK_VERSION_MINOR(v), \
+	VK_VERSION_PATCH(v)
 
 qboolean R_VkInit( void );
 void R_VkShutdown( void );
@@ -17,19 +23,6 @@ void R_VkSemaphoreDestroy(VkSemaphore sema);
 
 VkFence R_VkFenceCreate( qboolean signaled );
 void R_VkFenceDestroy(VkFence fence);
-
-// TODO move all these to vk_device.{h,c} or something
-typedef struct physical_device_s {
-	VkPhysicalDevice device;
-	VkPhysicalDeviceMemoryProperties2 memory_properties2;
-	VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget;
-	VkPhysicalDeviceProperties properties;
-	VkPhysicalDeviceProperties2 properties2;
-	VkPhysicalDeviceAccelerationStructurePropertiesKHR properties_accel;
-	VkPhysicalDeviceRayTracingPipelinePropertiesKHR properties_ray_tracing_pipeline;
-	qboolean anisotropy_enabled;
-	uint32_t sbt_record_size;
-} physical_device_t;
 
 typedef struct vulkan_core_s {
 	uint32_t vulkan_version;
@@ -50,7 +43,6 @@ typedef struct vulkan_core_s {
 		VkPresentModeKHR *present_modes;
 	} surface;
 
-	physical_device_t physical_device;
 	VkDevice device;
 	VkQueue queue;
 
@@ -64,6 +56,8 @@ const char *R_VkResultName(VkResult result);
 const char *R_VkPresentModeName(VkPresentModeKHR present_mode);
 const char *R_VkFormatName(VkFormat format);
 const char *R_VkColorSpaceName(VkColorSpaceKHR colorspace);
+const char *R_VkImageLayoutName(VkImageLayout);
+const char *R_VkDescriptorTypeName(VkDescriptorType);
 
 #define SET_DEBUG_NAME(object, type, name) \
 do { \
@@ -199,6 +193,7 @@ do { \
 	X(vkQueueSubmit) \
 	X(vkQueuePresentKHR) \
 	X(vkWaitForFences) \
+	X(vkWaitSemaphores) \
 	X(vkResetFences) \
 	X(vkCreateSemaphore) \
 	X(vkDestroySemaphore) \
@@ -219,6 +214,7 @@ do { \
 	X(vkGetImageMemoryRequirements) \
 	X(vkBindImageMemory) \
 	X(vkCmdPipelineBarrier) \
+	X(vkCmdPipelineBarrier2) \
 	X(vkCmdCopyBufferToImage) \
 	X(vkCmdCopyBuffer) \
 	X(vkQueueWaitIdle) \
@@ -271,3 +267,9 @@ do { \
 	INSTANCE_FUNCS(X)
 	INSTANCE_DEBUG_FUNCS(X)
 #undef X
+
+// TODO is there a better place for this, vk_utils.h?
+typedef struct {
+	VkAccessFlags2 access;
+	VkPipelineStageFlagBits2 stage;
+} r_vksync_scope_t;

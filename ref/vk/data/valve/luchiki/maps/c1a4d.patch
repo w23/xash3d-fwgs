@@ -1,0 +1,27 @@
+
+// remove hack spot lights
+{
+"_xvk_ent_id" "43 44 45"
+}
+// remove hack light
+{
+"_xvk_ent_id" "148"
+}
+
+{
+"_xvk_surface_id" "378 320 381" // ~LIGHT3C         220 210 150  14000
+"_light" "220 210 150  15000"
+}
+
+{
+"_xvk_surface_id" "414 411 416 415 413" // +0~drkmtls1 ???
+"_light" "255 0 0  20000" // RED              255 0   0    1000
+}
+{
+"_xvk_surface_id" "330 331 332 328 329" // +0~drkmtls1 ???
+"_light" "255 0 0  20000" // RED              255 0   0    1000
+}
+{
+"_xvk_surface_id" "398 392 399 394 397" // +0~drkmtls1 ???
+"_light" "255 0 0  20000" // RED              255 0   0    1000
+}

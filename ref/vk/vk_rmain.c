@@ -1,7 +1,7 @@
 #include "vk_core.h"
 #include "vk_cvar.h"
 #include "vk_common.h"
-#include "vk_textures.h"
+#include "r_textures.h"
 #include "vk_renderstate.h"
 #include "vk_overlay.h"
 #include "vk_scene.h"
@@ -14,14 +14,20 @@
 #include "vk_rpart.h"
 #include "vk_triapi.h"
 #include "r_speeds.h"
+#include "vk_logs.h"
 
 #include "xash3d_types.h"
 #include "com_strings.h"
 
 #include <memory.h>
 
+#define LOG_MODULE rmain
+
+r_globals_t globals = {0};
 ref_api_t gEngine = {0};
 ref_globals_t *gpGlobals = NULL;
+ref_client_t  *gp_cl = NULL;
+ref_host_t    *gp_host = NULL;
 
 static const char *R_GetConfigName( void )
 {
@@ -35,14 +41,13 @@ static qboolean R_SetDisplayTransform( ref_screen_rotation_t rotate, int x, int 
 	return true;
 }
 
-// only called for GL contexts
 static void GL_SetupAttributes( int safegl )
 {
-	PRINT_NOT_IMPLEMENTED();
+	// Nothing to do for Vulkan
 }
 static void GL_ClearExtensions( void )
 {
-	PRINT_NOT_IMPLEMENTED();
+	// Nothing to do for Vulkan
 }
 static void GL_BackendStartFrame_UNUSED( void )
 {
@@ -54,20 +59,19 @@ static void GL_BackendEndFrame_UNUSED( void )
 }
 
 // debug
-static void R_ShowTextures( void )
+static void R_ShowTextures_UNUSED( void )
 {
-	PRINT_NOT_IMPLEMENTED();
-	//PRINT_NOT_IMPLEMENTED();
+	/* Unused in Vulkan renderer. No need to debug textures this way */
 }
 
 // texture management
-static const byte *R_GetTextureOriginalBuffer( unsigned int idx )
+static const byte *R_GetTextureOriginalBuffer_UNUSED( unsigned int idx )
 {
 	PRINT_NOT_IMPLEMENTED();
 	return NULL;
 }
 
-static void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor )
+static void GL_ProcessTexture_UNUSED( int texnum, float gamma, int topColor, int bottomColor )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
@@ -105,35 +109,37 @@ static void R_ClearAllDecals( void )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-// studio interface
-static float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc )
+extern void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa );
+
+static void Mod_UnloadTextures( model_t *mod )
 {
-	PRINT_NOT_IMPLEMENTED();
-	return 1.f;
-}
+	ASSERT( mod != NULL );
 
-static void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-
-// bmodel
-static void R_InitSkyClouds( struct mip_s *mt, struct texture_s *tx, qboolean custom_palette )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-
-extern void GL_SubdivideSurface( msurface_t *fa );
-
-
-static void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded )
-{
-	PRINT_NOT_IMPLEMENTED_ARGS("(%p, %s), %p, %d", mod, mod->name, buffer, *loaded);
+	switch( mod->type )
+	{
+	case mod_studio:
+		Mod_StudioUnloadTextures( mod->cache.data );
+		break;
+	case mod_alias:
+		// FIXME Mod_AliasUnloadTextures( mod->cache.data );
+		break;
+	case mod_brush:
+		R_BrushUnloadTextures( mod );
+		break;
+	case mod_sprite:
+		Mod_SpriteUnloadTextures( mod->cache.data );
+		break;
+	default:
+		ASSERT( 0 );
+		break;
+	}
 }
 
 static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
 {
 	qboolean loaded = true;
+
+	DEBUG("%s(%s, create=%d)", __FUNCTION__, mod->name, create);
 
 	// TODO does this ever happen?
 	if (!create && mod->type == mod_brush)
@@ -144,19 +150,24 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		switch( mod->type )
 		{
 			case mod_studio:
-				Mod_LoadStudioModel( mod, buffer, &loaded );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
+				// TODO we might benefit a tiny bit (a few ms loading time) from reusing studio models from previous map
 				break;
 			case mod_sprite:
 				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
 				break;
 			case mod_alias:
-				Mod_LoadAliasModel( mod, buffer, &loaded );
+				// TODO what ARE mod_alias? We just don't know.
+				loaded = false;
 				break;
 			case mod_brush:
-				// FIXME this happens before we get R_NewMap, which frees all current buffers
-				// loaded = VK_LoadBrushModel( mod, buffer );
+				// This call happens before we get R_NewMap, which frees all current buffers
+				// So we can't really load anything here
 				break;
-			default: gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
+			default:
+				gEngine.Host_Error( "Mod_LoadModel: unsupported type %d\n", mod->type );
+				loaded = false;
 		}
 	}
 
@@ -164,10 +175,15 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 		gEngine.drawFuncs->Mod_ProcessUserData( mod, create, buffer );
 
 	if( !create ) {
-		switch( mod->type )
-		{
+		Mod_UnloadTextures( mod );
+		switch( mod->type ) {
 			case mod_brush:
-				VK_BrushModelDestroy( mod );
+				// Empirically, this function only attempts to destroy the worldmodel before loading the next map.
+				// However, all brush models need to be destroyed. Use this as a signal to destroy them too.
+				// Assert that this observation is correct.
+				// ASSERT(mod == gEngine.pfnGetModelByIndex(1)); not correct when closing the game. At this point model count is zero.
+
+				R_SceneMapDestroy();
 				break;
 			default:
 				PRINT_NOT_IMPLEMENTED_ARGS("destroy (%p, %d, %s)", mod, mod->type, mod->name);
@@ -223,31 +239,47 @@ static const char *getParmName(int parm)
 	case PARM_DELUXEDATA: return "PARM_DELUXEDATA";
 	case PARM_SHADOWDATA: return "PARM_SHADOWDATA";
 	case PARM_MODERNFLASHLIGHT: return "PARM_MODERNFLASHLIGHT";
+	case PARM_TEX_FILTERING: return "PARM_TEX_FILTERING";
 	default: return "UNKNOWN";
 	}
 }
 
 static int VK_RefGetParm( int parm, int arg )
 {
-	vk_texture_t *tex = NULL;
-
+	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
 	case PARM_TEX_WIDTH:
-	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
-		tex = findTexture(arg);
-		return tex->width;
 	case PARM_TEX_HEIGHT:
+	case PARM_TEX_SRC_WIDTH: // TODO why is this separate?
 	case PARM_TEX_SRC_HEIGHT:
-		tex = findTexture(arg);
-		return tex->height;
 	case PARM_TEX_FLAGS:
-		tex = findTexture(arg);
-		return tex->flags;
+	case PARM_TEX_FILTERING:
+	/* TODO
+	case PARM_TEX_SKYBOX:
+	case PARM_TEX_SKYTEXNUM:
+	case PARM_TEX_LIGHTMAP:
+	case PARM_TEX_TARGET:
+	case PARM_TEX_TEXNUM:
+	case PARM_TEX_DEPTH:
+	case PARM_TEX_GLFORMAT:
+	case PARM_TEX_ENCODE:
+	case PARM_TEX_MIPCOUNT:
+	case PARM_TEX_MEMORY:
+	*/
+		return R_TexturesGetParm( parm, arg );
 	case PARM_MODERNFLASHLIGHT:
-		if (CVAR_TO_BOOL( vk_rtx )) {
+		if (CVAR_TO_BOOL( rt_enable )) {
 			return true;
 		}
 		return false;
+	case PARM_WIDESCREEN:
+		return gpGlobals->wideScreen;
+	case PARM_FULLSCREEN:
+		return gpGlobals->fullScreen;
+	case PARM_SCREEN_WIDTH:
+		return gpGlobals->width;
+	case PARM_SCREEN_HEIGHT:
+		return gpGlobals->height;
 	}
 
 	PRINT_NOT_IMPLEMENTED_ARGS("(%s(%d), %d)", getParmName(parm), parm, arg);
@@ -264,6 +296,13 @@ static void		GetExtraParmsForTexture( int texture, byte *red, byte *green, byte 
 }
 static float		GetFrameTime( void )
 {
+	/* TODO as in gl R_RenderScene()
+	// frametime is valid only for normal pass
+	if( RP_NORMALPASS( ))
+		tr.frametime = gp_cl->time -   gp_cl->oldtime;
+	else tr.frametime = 0.0;
+	*/
+
 	PRINT_NOT_IMPLEMENTED();
 	return 1.f;
 }
@@ -334,22 +373,22 @@ static void		GL_TextureTarget( unsigned int target )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
-static void		GL_TexCoordArrayMode( unsigned int texmode )
+static void GL_TexCoordArrayMode( unsigned int texmode )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
-static void		GL_UpdateTexSize( int texnum, int width, int height, int depth )
+static void GL_UpdateTexSize( int texnum, int width, int height, int depth )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
 
 // Misc renderer functions
-static void		GL_DrawParticles( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime )
+static void GL_DrawParticles( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
 
-colorVec		R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
+colorVec R_LightVec( const float *start, const float *end, float *lightspot, float *lightvec );
 
 static struct mstudiotex_s *R_StudioGetTexture( struct cl_entity_s *e )
 {
@@ -364,9 +403,15 @@ static void		GL_OrthoBounds( const float *mins, const float *maxs )
 }
 
 // get visdata for current frame from custom renderer
-static byte*		Mod_GetCurrentVis( void )
-{
-	PRINT_NOT_IMPLEMENTED();
+static byte* Mod_GetCurrentVis( void ) {
+	// ref_soft just returns NULL here
+	// Not sure if we need to copy what ref_gl does. What it does is:
+	// - Setup camera and call R_MarkLeaves() in R_RenderScene()
+	// - R_MarkLeaves() sets RI.visbytes
+	//   will be eventually needed for culling in traditional renderer, see:
+	//   - https://github.com/w23/xash3d-fwgs/pull/96
+	//   - https://github.com/w23/xash3d-fwgs/issues/93
+	// - Return RI.visbytes here (if not using custom rendering)
 	return NULL;
 }
 
@@ -399,58 +444,29 @@ static void	TriCullFace( TRICULLSTYLE mode )
 	PRINT_NOT_IMPLEMENTED();
 }
 
-// vgui drawing implementation
-static void	VGUI_DrawInit( void )
+static const byte* R_TextureData_UNUSED( unsigned int texnum )
 {
-	PRINT_NOT_IMPLEMENTED();
+	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%d", texnum);
+	// We don't store original texture data
+	// TODO do we need to?
+	return NULL;
 }
-static void	VGUI_DrawShutdown( void )
+
+static int R_CreateTexture_UNUSED( const char *name, int width, int height, const void *buffer, texFlags_t flags )
 {
-	PRINT_NOT_IMPLEMENTED();
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
+	return 0;
 }
-static void	VGUI_SetupDrawingText( int *pColor )
+
+static int R_LoadTextureArray_UNUSED( const char **names, int flags )
 {
 	PRINT_NOT_IMPLEMENTED();
+	return 0;
 }
-static void	VGUI_SetupDrawingRect( int *pColor )
+
+static int R_CreateTextureArray_UNUSED( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
 {
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_SetupDrawingImage( int *pColor )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_BindTexture( int id )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_EnableTexture( qboolean enable )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_CreateTexture( int id, int width, int height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_UploadTexture( int id, const char *buffer, int width, int height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_UploadTextureBlock( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	VGUI_GetTextureSizes( int *width, int *height )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static int		VGUI_GenerateTexture( void )
-{
-	PRINT_NOT_IMPLEMENTED();
+	PRINT_NOT_IMPLEMENTED_ARGS("name=%s width=%d height=%d buffer=%p flags=%08x", name, width, height, buffer, flags);
 	return 0;
 }
 
@@ -462,156 +478,194 @@ static const ref_device_t *pfnGetRenderDevice( unsigned int idx )
 	return &vk_core.devices[idx];
 }
 
+static void R_GammaChanged( qboolean do_reset_gamma )
+{
+	PRINT_NOT_IMPLEMENTED_ARGS("do_reset_gamma=%d", do_reset_gamma);
+}
+
+static qboolean R_Init(void) {
+	globals.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
+	globals.movevars = (struct movevars_s *)ENGINE_GET_PARM( PARM_GET_MOVEVARS_PTR );
+	globals.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );
+	globals.viewent = (cl_entity_t *)ENGINE_GET_PARM( PARM_GET_VIEWENT_PTR );
+	globals.texgammatable = (byte *)ENGINE_GET_PARM( PARM_GET_TEXGAMMATABLE_PTR );
+	globals.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
+	globals.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
+	globals.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
+	globals.dlights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_DLIGHTS_PTR );
+	globals.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
+
+	return R_VkInit();
+}
+
+static void R_SetSkyCloudsTextures( int solidskyTexture, int alphaskyTexture ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("solidskyTexture=%d alphaskyTexture=%d", solidskyTexture, alphaskyTexture);
+}
+
+static void R_OverrideTextureSourceSize( unsigned int texnum, unsigned int srcWidth, unsigned int srcHeight ) { // used to override decal size for texture replacement
+	PRINT_NOT_IMPLEMENTED_ARGS("texnum=%u srcWidth=%u srcHeight=%u", texnum, srcWidth, srcHeight);
+}
+
+static void VGUI_SetupDrawing( qboolean rect ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("rect=%d", rect);
+}
+
+static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight ) {
+	PRINT_NOT_IMPLEMENTED_ARGS("drawX=%d drawY=%d rgba=%p blockWidth=%d blockHeight=%d",
+		drawX, drawY, rgba, blockWidth, blockHeight);
+}
+
 static const ref_interface_t gReffuncs =
 {
-	.R_Init = R_VkInit,
+	.R_Init = R_Init,
 	.R_Shutdown = R_VkShutdown,
-	R_GetConfigName,
-	R_SetDisplayTransform,
 
-	GL_SetupAttributes,
+	.R_GetConfigName = R_GetConfigName,
+	.R_SetDisplayTransform = R_SetDisplayTransform,
+
+	// only called for GL contexts
+	.GL_SetupAttributes = GL_SetupAttributes,
 	.GL_InitExtensions = NULL, // Unused in Vulkan renderer
-	GL_ClearExtensions,
+	.GL_ClearExtensions = GL_ClearExtensions,
 
-	R_BeginFrame,
-	R_RenderScene, // Not called ever?
-	R_EndFrame,
-	R_PushScene,
-	R_PopScene,
+	.R_GammaChanged = R_GammaChanged,
+
+	.R_BeginFrame = R_BeginFrame,
+	.R_RenderScene = R_RenderScene, // Not called ever?
+	.R_EndFrame = R_EndFrame,
+	.R_PushScene = R_PushScene,
+	.R_PopScene = R_PopScene,
 	.GL_BackendStartFrame = GL_BackendStartFrame_UNUSED,
 	.GL_BackendEndFrame = GL_BackendEndFrame_UNUSED,
 
-	R_ClearScreen,
-	R_AllowFog,
-	GL_SetRenderMode,
+	.R_ClearScreen = R_ClearScreen,
+	.R_AllowFog = R_AllowFog,
+	.GL_SetRenderMode = GL_SetRenderMode,
 
-	R_AddEntity,
-	CL_AddCustomBeam,
-	R_ProcessEntData,
+	.R_AddEntity = R_AddEntity,
+	.CL_AddCustomBeam = CL_AddCustomBeam,
+	.R_ProcessEntData = R_ProcessEntData,
+	.R_Flush = NULL,
 
-	R_ShowTextures,
+	// debug
+	.R_ShowTextures = R_ShowTextures_UNUSED,
 
-	R_GetTextureOriginalBuffer,
-	VK_LoadTextureFromBuffer,
-	GL_ProcessTexture,
-	XVK_SetupSky,
+	// texture management
+	.R_GetTextureOriginalBuffer = R_GetTextureOriginalBuffer_UNUSED,
+	.GL_LoadTextureFromBuffer = R_TextureUploadFromBuffer,
+	.GL_ProcessTexture = GL_ProcessTexture_UNUSED,
+	.R_SetupSky = R_TextureSetupCustomSky,
 
-	R_Set2DMode,
-	R_DrawStretchRaw,
-	R_DrawStretchPic,
-	R_DrawTileClear,
-	CL_FillRGBA,
-	CL_FillRGBABlend,
-	R_WorldToScreen,
+	// 2D
+	.R_Set2DMode = R_Set2DMode,
+	.R_DrawStretchRaw = R_DrawStretchRaw,
+	.R_DrawStretchPic = R_DrawStretchPic,
+	.FillRGBA = CL_FillRGBA,
+	.WorldToScreen = R_WorldToScreen,
 
-	VID_ScreenShot,
-	VID_CubemapShot,
+	// screenshot, cubemapshot
+	.VID_ScreenShot = VID_ScreenShot,
+	.VID_CubemapShot = VID_CubemapShot,
 
-	R_LightPoint,
+	// light
+	.R_LightPoint = R_LightPoint,
 
-	R_DecalShoot,
-	R_DecalRemoveAll,
-	R_CreateDecalList,
-	R_ClearAllDecals,
+	// decals
+	.R_DecalShoot = R_DecalShoot,
+	.R_DecalRemoveAll = R_DecalRemoveAll,
+	.R_CreateDecalList = R_CreateDecalList,
+	.R_ClearAllDecals = R_ClearAllDecals,
 
-	R_StudioEstimateFrame,
-	R_StudioLerpMovement,
-	CL_InitStudioAPI,
+	.R_StudioEstimateFrame = R_StudioEstimateFrame,
+	.R_StudioLerpMovement = R_StudioLerpMovement,
+	.CL_InitStudioAPI = CL_InitStudioAPI,
 
-	R_InitSkyClouds,
-	GL_SubdivideSurface,
-	VK_RunLightStyles,
+	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
+	.GL_SubdivideSurface = GL_SubdivideSurface,
+	.CL_RunLightStyles = VK_RunLightStyles,
 
-	R_GetSpriteParms,
-	R_GetSpriteTexture,
+	.R_GetSpriteParms = R_GetSpriteParms,
+	.R_GetSpriteTexture = R_GetSpriteTexture,
 
-	Mod_LoadMapSprite,
-	Mod_ProcessRenderData,
-	Mod_StudioLoadTextures,
+	.Mod_ProcessRenderData = Mod_ProcessRenderData,
+	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
 
-	CL_DrawParticles,
-	CL_DrawTracers,
-	CL_DrawBeams,
-	R_BeamCull,
+	.CL_DrawParticles = CL_DrawParticles,
+	.CL_DrawTracers = CL_DrawTracers,
+	.CL_DrawBeams = CL_DrawBeams,
+	.R_BeamCull = R_BeamCull,
 
-	VK_RefGetParm,
-	GetDetailScaleForTexture,
-	GetExtraParmsForTexture,
-	GetFrameTime,
+	.RefGetParm = VK_RefGetParm,
+	.GetDetailScaleForTexture = GetDetailScaleForTexture,
+	.GetExtraParmsForTexture = GetExtraParmsForTexture,
+	.GetFrameTime = GetFrameTime,
 
-	R_SetCurrentEntity,
-	R_SetCurrentModel,
+	.R_SetCurrentEntity = R_SetCurrentEntity,
+	.R_SetCurrentModel = R_SetCurrentModel,
 
-	VK_FindTexture,
-	VK_TextureName,
-	VK_TextureData,
-	VK_LoadTexture,
-	VK_CreateTexture,
-	VK_LoadTextureArray,
-	VK_CreateTextureArray,
-	VK_FreeTexture,
+	// Texture tools
+	.GL_FindTexture = R_TextureFindByName,
+	.GL_TextureName = R_TextureGetNameByIndex,
+	.GL_TextureData = R_TextureData_UNUSED,
+	.GL_LoadTexture = R_TextureUploadFromFile,
+	.GL_CreateTexture = R_CreateTexture_UNUSED,
+	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
+	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
+	.GL_FreeTexture = R_TextureFree,
+	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
-	DrawSingleDecal,
-	R_DecalSetupVerts,
-	R_EntityRemoveDecals,
+	// Decals manipulating (draw & remove)
+	.DrawSingleDecal = DrawSingleDecal,
+	.R_DecalSetupVerts = R_DecalSetupVerts,
+	.R_EntityRemoveDecals = R_EntityRemoveDecals,
 
-	AVI_UploadRawFrame,
+	.AVI_UploadRawFrame = AVI_UploadRawFrame,
 
-	GL_Bind,
-	GL_SelectTexture,
-	GL_LoadTextureMatrix,
-	GL_TexMatrixIdentity,
-	GL_CleanUpTextureUnits,
-	GL_TexGen,
-	GL_TextureTarget,
-	GL_TexCoordArrayMode,
-	GL_UpdateTexSize,
+	.GL_Bind = GL_Bind,
+	.GL_SelectTexture = GL_SelectTexture,
+	.GL_LoadTextureMatrix = GL_LoadTextureMatrix,
+	.GL_TexMatrixIdentity = GL_TexMatrixIdentity,
+	.GL_CleanUpTextureUnits = GL_CleanUpTextureUnits,
+	.GL_TexGen = GL_TexGen,
+	.GL_TextureTarget = GL_TextureTarget,
+	.GL_TexCoordArrayMode = GL_TexCoordArrayMode,
+	.GL_UpdateTexSize = GL_UpdateTexSize,
 	NULL, // Reserved0
 	NULL, // Reserved1
 
-	GL_DrawParticles,
-	R_LightVec,
-	R_StudioGetTexture,
+	.GL_DrawParticles = GL_DrawParticles,
+	.LightVec = R_LightVec,
+	.StudioGetTexture = R_StudioGetTexture,
 
-	VK_RenderFrame,
-	GL_OrthoBounds,
+	.GL_RenderFrame = VK_RenderFrame,
+	.GL_OrthoBounds = GL_OrthoBounds,
 	.R_SpeedsMessage = R_SpeedsMessage,
-	Mod_GetCurrentVis,
-	R_NewMap,
-	R_ClearScene,
-	R_GetProcAddress,
+	.Mod_GetCurrentVis = Mod_GetCurrentVis,
+	.R_NewMap = R_NewMap,
+	.R_ClearScene = R_ClearScene,
+	.R_GetProcAddress = R_GetProcAddress,
 
-	TriRenderMode,
-	TriBegin,
-	TriEnd,
-	TriColor4f,
-	TriColor4ub,
-	TriTexCoord2f,
-	TriVertex3fv,
-	TriVertex3f,
-	TriFog,
-	R_ScreenToWorld,
-	TriGetMatrix,
-	TriFogParams,
-	TriCullFace,
+	.TriRenderMode = TriRenderMode,
+	.Begin = TriBegin,
+	.End = TriEnd,
+	.Color4f = TriColor4f,
+	.Color4ub = TriColor4ub,
+	.TexCoord2f = TriTexCoord2f,
+	.Vertex3fv = TriVertex3fv,
+	.Vertex3f = TriVertex3f,
+	.Fog = TriFog,
+	.ScreenToWorld = R_ScreenToWorld,
+	.GetMatrix = TriGetMatrix,
+	.FogParams= TriFogParams,
+	.CullFace = TriCullFace,
 
-	VGUI_DrawInit,
-	VGUI_DrawShutdown,
-	VGUI_SetupDrawingText,
-	VGUI_SetupDrawingRect,
-	VGUI_SetupDrawingImage,
-	VGUI_BindTexture,
-	VGUI_EnableTexture,
-	VGUI_CreateTexture,
-	VGUI_UploadTexture,
-	VGUI_UploadTextureBlock,
-	VGUI_DrawQuad,
-	VGUI_GetTextureSizes,
-	VGUI_GenerateTexture,
+	.VGUI_SetupDrawing = VGUI_SetupDrawing,
+	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
 
-	pfnGetRenderDevice,
+	.pfnGetVulkanRenderDevice = pfnGetRenderDevice,
 };
 
+int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
 int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals )
 {
 	if( version != REF_API_VERSION )
@@ -621,11 +675,11 @@ int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, 
 	memcpy( funcs, &gReffuncs, sizeof( ref_interface_t ));
 	memcpy( &gEngine, engfuncs, sizeof( ref_api_t ));
 	gpGlobals = globals;
+	gp_cl = (ref_client_t *)ENGINE_GET_PARM( PARM_GET_CLIENT_PTR );
+	gp_host = (ref_host_t *)ENGINE_GET_PARM( PARM_GET_HOST_PTR );
+
+	INFO("GetRefAPI version=%d (REF_API_VERSION=%d) funcs=%p engfuncs=%p globals=%p",
+		version, REF_API_VERSION, funcs, engfuncs, globals);
 
 	return REF_API_VERSION;
-}
-
-void EXPORT GetRefHumanReadableName( char *out, size_t size )
-{
-	Q_strncpy( out, "Vulkan", size );
 }

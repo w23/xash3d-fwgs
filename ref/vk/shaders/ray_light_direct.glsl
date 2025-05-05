@@ -1,36 +1,9 @@
 #include "utils.glsl"
 #include "noise.glsl"
 
-#define GLSL
-#include "ray_interop.h"
-#undef GLSL
-
-#define RAY_LIGHT_DIRECT_INPUTS(X) \
-	X(10, position_t, rgba32f) \
-	X(11, normals_gs, rgba16f) \
-	X(12, material_rmxx, rgba8) \
-
-#define X(index, name, format) layout(set=0,binding=index,format) uniform readonly image2D name;
-RAY_LIGHT_DIRECT_INPUTS(X)
-#undef X
-#define X(index, name, format) layout(set=0,binding=index,format) uniform writeonly image2D out_##name;
-OUTPUTS(X)
-#undef X
-
-layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
-layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
-
 #include "ray_kusochki.glsl"
+#include "color_spaces.glsl"
 
-#undef SHADER_OFFSET_HIT_SHADOW_BASE
-#define SHADER_OFFSET_HIT_SHADOW_BASE 0
-#undef SHADER_OFFSET_MISS_SHADOW
-#define SHADER_OFFSET_MISS_SHADOW 0
-#undef PAYLOAD_LOCATION_SHADOW
-#define PAYLOAD_LOCATION_SHADOW 0
-
-#define BINDING_LIGHTS 7
-#define BINDING_LIGHT_CLUSTERS 8
 #include "light.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
@@ -45,7 +18,7 @@ void main() {
 	const ivec2 pix = ivec2(gl_LaunchIDEXT.xy);
 #elif defined(RAY_QUERY)
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
-	const ivec2 res = ivec2(imageSize(material_rmxx));
+	const ivec2 res = ubo.ubo.res;
 	if (any(greaterThanEqual(pix, res))) {
 		return;
 	}
@@ -63,19 +36,33 @@ void main() {
 	const vec4 material_data = imageLoad(material_rmxx, pix);
 
 	MaterialProperties material;
-	material.baseColor = vec3(1.);
-	material.emissive = vec3(0.f);
+	material.base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
 	material.metalness = material_data.g;
 	material.roughness = material_data.r;
 
-	const vec3 pos = imageLoad(position_t, pix).xyz;
+#ifdef BRDF_COMPARE
+	g_mat_gltf2 = pix.x > ubo.ubo.res.x / 2.;
+#endif
 
-	vec3 geometry_normal, shading_normal;
-	readNormals(pix, geometry_normal, shading_normal);
+	const vec4 pos_t = imageLoad(position_t, pix);
 
-	const vec3 throughput = vec3(1.);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
-	computeLighting(pos + geometry_normal * .001, shading_normal, throughput, -direction, material, diffuse, specular);
+
+	if (pos_t.w > 0.) {
+		const vec4 packed_normal = imageLoad(normals_gs, pix);
+		const vec3 geometry_normal = normalDecode(packed_normal.xy);
+		const vec3 shading_normal = normalDecode(packed_normal.zw);
+#ifdef DEBUG_VALIDATE_EXTRA
+		if (IS_INVALIDV(pos_t.xyz) || IS_INVALIDV(geometry_normal)) {
+			debugPrintfEXT("ray_light_direct.glsl:%d INVALID pos_t.xyz=(%f,%f,%f) geometry_normal=(%f,%f,%f) packed_normal=(%f,%f,%f,%f)",
+				__LINE__, PRIVEC3(pos_t.xyz), PRIVEC3(geometry_normal), PRIVEC4(packed_normal));
+		} else
+#endif
+		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
+	}
+
+	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
+	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
