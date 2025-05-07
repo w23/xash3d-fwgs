@@ -297,7 +297,7 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 		INFO("\t\tCalibrated timestamps supported: %d", info->calibrated_timestamps);
 
 		info->perf_query = perf_query_extension_supported && perf_query_features.performanceCounterQueryPools;
-		INFO("\t\tPerformance query support: extension: %d, pool: %d", perf_query_extension_supported, info->perf_query);
+		INFO("\t\tPerformance query supported: %d", info->perf_query);
 	}
 
 	if (perf_query_extension_supported)

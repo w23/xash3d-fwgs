@@ -153,6 +153,7 @@ do { \
 	X(vkDestroySurfaceKHR) \
 	X(vkEnumerateDeviceExtensionProperties) \
 	X(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR) \
+	X(vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR) \
 
 #define INSTANCE_DEBUG_FUNCS(X) \
 	X(vkCreateDebugUtilsMessengerEXT) \
@@ -246,6 +247,8 @@ do { \
 	X(vkCreateQueryPool) \
 	X(vkDestroyQueryPool) \
 	X(vkCmdResetQueryPool) \
+	X(vkCmdBeginQuery) \
+	X(vkCmdEndQuery) \
 	X(vkCmdWriteTimestamp) \
 	X(vkGetQueryPoolResults) \
 	X(vkGetCalibratedTimestampsEXT) \

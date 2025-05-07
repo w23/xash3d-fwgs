@@ -1,5 +1,23 @@
+# Current
+
+## 2025-05-05 E401 VK_KHR_performance_query
+- [x] detect perf query availability and enable it
+- [x] enumerate counters
+- [x] scaffold the query pool code
+
+# Next
+- [ ] add command to enable/disable profiling counters
+- [ ] measure counters for the entire command buffer
+- [ ] convert and pass named results to r_speeds.c
+    - [ ] alt/TODO: universal metrics
+        - [ ] refactor metrics code, allow registering and de-registering metrics
+        - [ ] unify gpu and cpu scopes with timestamps
+        - [ ] add universal counters, attachable to both cpu and gpu scopes
+- [ ] visualize counters in r_speeds display
+
 # Upcoming
 - [ ] Figure out naming, code style, make clang-format
+- [ ] performance profiling and comparison
 - [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
@@ -27,17 +45,9 @@
 	- why: explicit barriers are more clear, better perf possible too
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
-- [ ] performance profiling and comparison
-
-# Next
-## Resograf agenda
-- [ ] Explicit dependency graph
-	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
-	- [ ] Build it from meatpipe and resources
-	- [ ] Linearize it into metapass program
-- [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Log
+
 ## 2025-03-21 EN/A offline
 - [ ] Make producers
     - [x] Builtin producers
@@ -679,15 +689,22 @@ Longer-term agenda for current season:
 
 # Programmable render
 - [ ] implicit dependency tracking. pass defines:
-	- [ ] imports: list of things it needs
+	- [x] imports: list of things it needs
 	- [ ] exports: list of things it produces. those get created and registered with this pass as a producer
-- [ ] resource management refactoring:
-	- [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
-	- [ ] resource automatic resolution: prducing, barriers, etc
-	- [ ] resource destruction
-- [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
+- [x] resource management refactoring:
+	- [x] register existing resources (tlas, buffers, temp images, ...) in their producers
+	- [x] resource automatic resolution: prducing, barriers, etc
+	- [x] resource destruction
+- [x] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
 
-# Multipass + Sampling
+# Postponed
+## Resograf agenda
+- [ ] Explicit dependency graph
+	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
+	- [ ] Build it from meatpipe and resources
+	- [ ] Linearize it into metapass program
+- [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
+## Multipass + Sampling
 - [ ] better simple sampling
 	- [x] all triangles
 	- [x] area based on triangles
@@ -700,8 +717,7 @@ Longer-term agenda for current season:
 			- vec4(v0xyz, e_r)
 			- vec4(v1xyz, e_g)
 			- vec4(v2xyz, e_b)
-
-# Next
+## Old Next
 - [ ] remove surface visibility cache
 - [ ] rtx: rename point lights to lampochki
 - [ ] rtx: rename emissive surface to surface lights
