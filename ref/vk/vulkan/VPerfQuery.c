@@ -56,10 +56,10 @@ VPerfQuery *vPerfQueryCreate(const uint32_t *counters, uint32_t counters_count, 
 	const size_t queries_size = sizeof(QueryState) * max_queries;
 	const size_t total_size = sizeof(VPerfQuery) + queries_size + results_size;
 
-	VPerfQuery *ret = Mem_Malloc(vk_core.pool, total_size);
+	VPerfQuery *const ret = Mem_Malloc(vk_core.pool, total_size);
 	*ret = pq;
-	ret->queries.states = (void*)ret + sizeof(VPerfQuery);
-	ret->results = (void*)ret->queries.states + queries_size;
+	ret->queries.states = (QueryState*)((char*)ret + sizeof(VPerfQuery));
+	ret->results = (VkPerformanceCounterResultKHR*)((char*)ret->queries.states + queries_size);
 	for (uint32_t i = 0; i < ret->queries.max; ++i) {
 		ret->queries.states[i] = QueryState_Available;
 	}
