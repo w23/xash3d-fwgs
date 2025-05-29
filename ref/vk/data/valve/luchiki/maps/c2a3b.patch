@@ -1,0 +1,57 @@
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "3018 1836 669"
+"_light" "120 220 150 20"
+"_xvk_radius" "40"
+}
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "2561 2059 -3399"
+"_light" "120 220 150 15"
+"_xvk_radius" "70"
+}
+
+
+{
+"_xvk_ent_id" "66"
+//"origin" "3024 1694 1011"
+"_xvk_radius" "10"
+//"_light" "255 230 125 200
+"_light" "255 230 125 70"
+}
+{
+"_xvk_ent_id" "99"
+//"origin" "-386 2332 1175"
+//"_light" "255 230 125 200
+"_light" "255 230 125 70"
+"_xvk_radius" "10"
+//"_cone" "16"
+//"_cone2" "24"
+}
+{
+"_xvk_ent_id" "107"
+//"_light" "255 230 125 200"
+"_light" "255 230 125 70"
+"_xvk_radius" "10"
+}
+{
+"_xvk_ent_id" "417"
+//"_light" "255 230 125 200"
+"_light" "255 230 125 70"
+"_xvk_radius" "10"
+}
+{
+"_xvk_ent_id" "208"
+//"origin" "-496 2514 1174"
+//"_light" "255 230 125 200"
+"_light" "255 230 125 70"
+"_xvk_radius" "10"
+}
+{
+"_xvk_ent_id" "209"
+//"_light" "255 230 125 200"
+"_light" "255 230 125 70"
+"_xvk_radius" "10"
+}
