@@ -1,0 +1,50 @@
+{
+"_xvk_ent_id" "28" // correct gman light
+//"origin" "-3376 3412 -3444"
+"_xvk_radius" "10"
+//"_light" "0 255 0 200"
+"_light" "0 255 0 40"
+}
+//{
+//"_xvk_ent_id" "29" // correct gman light
+//"origin" "-3545 3477 -3464"
+//"_xvk_radius" "2"
+////"_light" "0 255 0 200"
+//"_light" "50 255 255 400"
+//}
+//{
+//"classname" "light" // TODO: remove after add light from invisible brush support
+//"origin" "-3649 3486 -3464"
+//"_light" "50 255 255 1000"
+//"_xvk_radius" "2"
+//}
+{
+"_xvk_ent_id" "29" // correct gman light
+"origin" "-3760 3542 -3464"
+"_xvk_radius" "40"
+//"_light" "0 255 0 200"
+"_light" "50 255 255 200"
+}
+
+
+
+
+//{
+//"_xvk_ent_id" "44" // correct gman light
+//"origin" "-1743 -2592 -2733"
+//"_xvk_radius" "10"
+////"_light" "128 255 0 50"
+////"_light" "128 255 0 20"
+//}
+
+{
+"_xvk_ent_id" "44" // correct gman light
+//"origin" "-1743 -2592 -2690"
+"origin" "-3115 -1862 -2661"
+"_xvk_radius" "80"
+"_light" "25 255 255 150"
+}
+
+{
+"_xvk_ent_id" "262 260" // remove hack light entity
+}

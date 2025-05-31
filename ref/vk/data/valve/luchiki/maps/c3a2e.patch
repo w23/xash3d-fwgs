@@ -1,0 +1,38 @@
+{
+"_xvk_ent_id" "352" // correct spotlight
+"origin" "1944 2072 2343"
+"_xvk_radius" "10"
+//"_light" "255 255 255 260"
+"_light" "255 255 255 92"
+}
+{
+"_xvk_ent_id" "353" // correct spotlight
+"origin" "1768 2072 2343"
+"_xvk_radius" "10"
+//"_light" "255 255 255 260"
+"_light" "255 255 255 92"
+}
+
+{ // correct light
+"_xvk_surface_id" "57 59" // +0~LIGHT3A       255 255 255  25000
+"_light" "255 255 255 200" // for better visual a spotlight
+}
+
+{ // better platform light
+"_xvk_surface_id" "2971 2973" // +0~LIGHT6A       150 5   5    25000
+"_light" "150 5 5 225000" // FIXME: correct after fix entity light bug
+}
+
+// hack for better UX (elevator shaft)
+{
+"classname" "light" // TODO: better solution
+"origin" "1960 288 449"
+"_light" "200 190 130 10"
+"_xvk_radius" "40"
+}
+//{
+//"classname" "light" // TODO: better solution
+//"origin" "1950 288 172"
+//"_light" "200 190 130 10"
+//"_xvk_radius" "40"
+//}

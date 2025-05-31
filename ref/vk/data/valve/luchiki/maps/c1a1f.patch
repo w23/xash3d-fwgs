@@ -205,3 +205,9 @@
 {
 "_xvk_smoothing_excluded" "989 988" // wall // TODO: bad autosmooth
 }
+
+
+// bottom tunnel gate light
+{
+"_xvk_ent_id" "485" // remove hack lights entity
+}

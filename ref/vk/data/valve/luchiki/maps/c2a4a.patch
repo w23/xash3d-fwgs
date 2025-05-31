@@ -1,0 +1,7 @@
+{ // correct hack light
+"_xvk_ent_id" "62"
+"origin" "-120 -696 254"
+"_xvk_radius" "10"
+//"_light" "170 90 40 700"
+"_light" "170 90 40 250"
+}
