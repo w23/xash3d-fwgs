@@ -239,7 +239,7 @@ static void fillLightFromProps( vk_light_entity_t *le, const entity_props_t *pro
 		le->style = props->style;
 	}
 
-	if (le->type != LightEnvironment && (!patch || (have_fields & Field__light))) {
+	if (le->type != LightTypeEnvironment && (!patch || (have_fields & Field__light))) {
 		weirdGoldsrcLightScaling(le->color);
 	}
 
@@ -798,7 +798,7 @@ static void orientSpotlights( void ) {
 		vk_light_entity_t *const light = g_map_entities.lights + i;
 		const xvk_mapent_target_t *target;
 
-		if (light->type != LightSpot && light->type != LightTypeEnvironment)
+		if (light->type != LightTypeSpot && light->type != LightTypeEnvironment)
 			continue;
 
 		if (light->target_entity[0] == '\0')
