@@ -28,11 +28,20 @@ typedef struct {
 	const char *name;
 } vk_combuf_scope_t;
 
+typedef struct {
+	uint32_t counter; // Index into VK_KHR_performance_query counters
+	uint64_t value; // raw value for everything, except %. % are in hundredths, i.e. 10000 is 100%, 2523 is 25.23%
+} VPerfCounter;
+
 typedef struct vk_combuf_scopes_s {
 	const uint64_t *timestamps;
 	const vk_combuf_scope_t *scopes;
 	const int *entries; // index into scopes; each entry consumes 2 values from timestamps array sequentially
 	int entries_count;
+
+	// FIXME how to expose this properly
+	int perf_counters_count;
+	const VPerfCounter *perf_counters;
 } vk_combuf_scopes_t;
 
 // Reads all the scope timing data (timestamp queries) and returns a list of things happened this frame.

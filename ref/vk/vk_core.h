@@ -252,6 +252,9 @@ do { \
 	X(vkCmdWriteTimestamp) \
 	X(vkGetQueryPoolResults) \
 	X(vkGetCalibratedTimestampsEXT) \
+	X(vkAcquireProfilingLockKHR) \
+	X(vkReleaseProfilingLockKHR) \
+	X(vkResetQueryPool) \
 
 #define DEVICE_FUNCS_RTX(X) \
 	X(vkGetAccelerationStructureBuildSizesKHR) \

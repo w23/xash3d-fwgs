@@ -1,7 +1,9 @@
 #include "VCombuf.h"
 #include "VCommandPool.h"
+#include "VPerfQuery.h"
 #include "vk_logs.h"
 
+#include "std/arrays.h"
 #include "std/profiler.h"
 
 #define LOG_MODULE combuf
@@ -18,6 +20,7 @@ typedef struct {
 		int timestamps_offset;
 		int scopes[MAX_GPU_SCOPES];
 		int scopes_count;
+		int perf_query;
 	} profiler;
 } vk_combuf_impl_t;
 
@@ -34,6 +37,9 @@ static struct {
 	int scopes_count;
 
 	int entire_combuf_scope_id;
+
+	VPerfQuery *perf_query;
+	ARRAY_DYNAMIC_DECLARE(uint32_t, perf_query_counters);
 } g_combuf;
 
 qboolean R_VkCombuf_Init( void ) {
@@ -62,10 +68,43 @@ qboolean R_VkCombuf_Init( void ) {
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
 
+
+	if (v_device_info.perf_query) {
+		arrayDynamicInitT(&g_combuf.perf_query_counters);
+
+		arrayDynamicResizeT(&g_combuf.perf_query_counters, v_device_info.perf_counters.count);
+		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i)
+			g_combuf.perf_query_counters.items[i] = i;
+
+		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i) {
+			const uint32_t count = g_combuf.perf_query_counters.count - i;
+			g_combuf.perf_query = vPerfQueryCreate(g_combuf.perf_query_counters.items, count, MAX_COMMANDBUFFERS);
+			if (g_combuf.perf_query) {
+				INFO("Created performance query for %u of %u counters", count, (uint32_t)g_combuf.perf_query_counters.count);
+				arrayDynamicResizeT(&g_combuf.perf_query_counters, count);
+				break;
+			}
+		}
+
+		if (g_combuf.perf_query) {
+			const VkAcquireProfilingLockInfoKHR apli = {
+				.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
+				.timeout = UINT64_MAX,
+			};
+			XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
+		}
+	}
+
 	return true;
 }
 
 void R_VkCombuf_Destroy( void ) {
+	if (g_combuf.perf_query) {
+		vkReleaseProfilingLockKHR(v_device);
+		vPerfQueryDestroy(g_combuf.perf_query);
+		arrayDynamicDestroyT(&g_combuf.perf_query_counters);
+	}
+
 	vkDestroyQueryPool(vk_core.device, g_combuf.timestamp.pool, NULL);
 	R_VkCommandPoolDestroy(&g_combuf.pool);
 
@@ -79,6 +118,7 @@ vk_combuf_t* R_VkCombufOpen( void ) {
 		vk_combuf_impl_t *const cb = g_combuf.combufs + i;
 		if (!cb->used) {
 			cb->used = 1;
+			cb->profiler.perf_query = -1;
 			return &cb->public;
 		}
 	}
@@ -107,10 +147,23 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 
 	vkCmdResetQueryPool(cb->public.cmdbuf, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, MAX_QUERY_COUNT);
 	R_VkCombufScopeBegin(pub, g_combuf.entire_combuf_scope_id);
+
+	if (g_combuf.perf_query) {
+		cb->profiler.perf_query = vPerfQueryBegin(g_combuf.perf_query, &cb->public);
+		DEBUG("Begin perf_query id=%d", cb->profiler.perf_query);
+	} else {
+		cb->profiler.perf_query = -1;
+	}
 }
 
 void R_VkCombufEnd( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
+
+	if (g_combuf.perf_query && cb->profiler.perf_query >= 0) {
+		DEBUG("End perf_query id=%d", cb->profiler.perf_query);
+		vPerfQueryEnd(g_combuf.perf_query, &cb->public, cb->profiler.perf_query);
+	}
+
 	R_VkCombufScopeEnd(pub, 0 | BEGIN_INDEX_TAG, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 	XVK_CHECK(vkEndCommandBuffer(cb->public.cmdbuf));
 }
@@ -231,6 +284,14 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 			const uint64_t gpu_ns = timestamps[i] * timestamp_period;
 			timestamps[i] = timestamp_offset_ns + gpu_ns;
 		}
+	}
+
+	if (g_combuf.perf_query && cb->profiler.perf_query >= 0) {
+		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf_query, &cb->public, cb->profiler.perf_query);
+		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i) {
+			INFO("PerfQueryCounter[%u] = %f", i, results[i].float64);
+		}
+		cb->profiler.perf_query = -1;
 	}
 
 	APROF_SCOPE_END(function);

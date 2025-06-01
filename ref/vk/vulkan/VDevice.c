@@ -426,6 +426,9 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		.storageBuffer8BitAccess = VK_TRUE,
 		.uniformAndStorageBuffer8BitAccess = VK_TRUE,
 		.bufferDeviceAddress = VK_TRUE,
+
+		// VK_KHR_performance_query requires host-side query reset, cause it doesn't like query reset cmd in the same cmdbuf
+		.hostQueryReset = info->perf_query ? VK_TRUE : VK_FALSE,
 	};
 	head = &vk12_features;
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_feature = {
@@ -492,6 +495,8 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 	if (info->calibrated_timestamps)
 		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_extra, COUNTOF(device_extensions_extra));
+	if (info->perf_query)
+		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
 
 	VkDeviceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,

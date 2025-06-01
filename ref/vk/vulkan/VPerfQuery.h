@@ -10,10 +10,10 @@ VPerfQuery *vPerfQueryCreate(const uint32_t *counters, uint32_t counters_count, 
 void vPerfQueryDestroy(VPerfQuery *pq);
 
 int vPerfQueryBegin(VPerfQuery *pq, struct vk_combuf_s *cb);
-void vPerfQueryEnd(VPerfQuery *pq, struct vk_combuf_s *cb, int index);
+void vPerfQueryEnd(VPerfQuery *pq, struct vk_combuf_s *cb, uint32_t query_index);
 
 // TODO profile, and possibly optimize?
 // Returns:
 // - pointer to `counters_count` array of values
 // - contents is valid only until the next vPerfQueryRead() call
-VkPerformanceCounterResultKHR* vPerfQueryRead(VPerfQuery *pq, struct vk_combuf_s *cb, int index);
+const VkPerformanceCounterResultKHR* vPerfQueryRead(VPerfQuery *pq, struct vk_combuf_s *cb, uint32_t query_index);

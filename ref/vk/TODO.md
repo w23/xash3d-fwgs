@@ -6,8 +6,10 @@
 - [x] scaffold the query pool code
 
 # Next
+- [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
-- [ ] measure counters for the entire command buffer
+- [ ] add command/variable to select enabled counters
+- [x] measure counters for the entire command buffer
 - [ ] convert and pass named results to r_speeds.c
     - [ ] alt/TODO: universal metrics
         - [ ] refactor metrics code, allow registering and de-registering metrics
