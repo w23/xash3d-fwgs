@@ -1,0 +1,12 @@
+// hack for better UX (elevator shaft)
+{
+"classname" "light" // TODO: better solution
+"origin" "1949 289 199"
+"_light" "200 190 130 10"
+"_xvk_radius" "40"
+}
+
+{ // barrels: fix normal smooth
+"_xvk_ent_id" "122 123 114 115 116 112 111"
+"_xvk_smooth_entire_model" "1"
+}

@@ -17,3 +17,8 @@
 "_xvk_ent_id" "2"
 "_light" "200 180 100 1500"
 }
+
+{ // correct hack light
+"_xvk_ent_id" "64"
+"origin" "-2834 120 444"
+}

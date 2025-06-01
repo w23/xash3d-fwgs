@@ -432,11 +432,11 @@ static float R_GetSpriteFrameInterpolant( cl_entity_t *ent, mspriteframe_t **old
 		frame = psprite->numframes - 1;
 	}
 
-	if( psprite->frames[frame].type == FRAME_SINGLE )
+	if( psprite->frames[frame].type == SPR_SINGLE )
 	{
 		if( m_fDoInterp )
 		{
-			if( ent->latched.prevblending[0] >= psprite->numframes || psprite->frames[ent->latched.prevblending[0]].type != FRAME_SINGLE )
+			if( ent->latched.prevblending[0] >= psprite->numframes || psprite->frames[ent->latched.prevblending[0]].type != SPR_SINGLE )
 			{
 				// this can be happens when rendering switched between single and angled frames
 				// or change model on replace delta-entity

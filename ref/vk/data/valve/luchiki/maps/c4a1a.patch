@@ -1,0 +1,6 @@
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-306 187 -198"
+"_light" "20  160 120 30"
+"_xvk_radius" "20"
+}

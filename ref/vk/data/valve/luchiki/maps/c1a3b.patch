@@ -1,5 +1,5 @@
 // section 1
-// remova hack spot lights
+// remove hack spot lights
 {
 "_xvk_ent_id" "146"
 }
@@ -8,3 +8,10 @@
 "_light" "180 180 230 105000"
 }
 
+// correct sunlight (shadows angle from the skybox)
+{
+"_xvk_ent_id" "5"
+"_light" "120 64 105 80"
+"angle" "-70"
+"pitch" "-45" // copy because the angle resets the pitch
+}
