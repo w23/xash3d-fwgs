@@ -31,10 +31,10 @@
 	((array_).items[(array_).count++])
 
 #define BOUNDED_ARRAY_APPEND_ITEM(var, item) \
-		do { \
-			ASSERT(BOUNDED_ARRAY_HAS_SPACE(var, 1)); \
-			var.items[var.count++] = item; \
-		} while(0)
+	do { \
+		ASSERT(BOUNDED_ARRAY_HAS_SPACE(var, 1)); \
+		var.items[var.count++] = item; \
+	} while(0)
 
 
 // Dynamically-sized array
