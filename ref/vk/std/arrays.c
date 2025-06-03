@@ -15,6 +15,9 @@ void arrayDynamicInit(array_dynamic_t *array, int item_size) {
 void arrayDynamicDestroy(array_dynamic_t *array) {
 	if (array->items)
 		Mem_Free(array->items);
+	array->items = NULL;
+	array->count = 0;
+	array->capacity = 0;
 }
 
 static void arrayDynamicEnsureCapacity(array_dynamic_t *array, int min_capacity) {

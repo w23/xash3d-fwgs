@@ -6,6 +6,12 @@
 - [x] scaffold the query pool code
 
 # Next
+- [ ] per-scope perf query counters
+  - [ ] return counters tied to scopes
+    - [ ] refactor how this data is returned
+    - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
+          this will also move us closer to explicit after-combuf cleanup handling
+      - [ ] combuf state machine: what states is it in?
 - [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
 - [ ] add command/variable to select enabled counters

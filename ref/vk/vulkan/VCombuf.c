@@ -21,6 +21,7 @@ typedef struct {
 		int scopes[MAX_GPU_SCOPES];
 		int scopes_count;
 		int perf_query;
+		//TODO int perf_query_indices[MAX_GPU_SCOPES];
 	} profiler;
 } vk_combuf_impl_t;
 
@@ -38,8 +39,10 @@ static struct {
 
 	int entire_combuf_scope_id;
 
-	VPerfQuery *perf_query;
-	ARRAY_DYNAMIC_DECLARE(uint32_t, perf_query_counters);
+	struct {
+		VPerfQuery *query;
+		ARRAY_DYNAMIC_DECLARE(uint32_t, counters);
+	} perf;
 } g_combuf;
 
 qboolean R_VkCombuf_Init( void ) {
@@ -68,42 +71,25 @@ qboolean R_VkCombuf_Init( void ) {
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
 
-
-	if (v_device_info.perf_query) {
-		arrayDynamicInitT(&g_combuf.perf_query_counters);
-
-		arrayDynamicResizeT(&g_combuf.perf_query_counters, v_device_info.perf_counters.count);
-		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i)
-			g_combuf.perf_query_counters.items[i] = i;
-
-		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i) {
-			const uint32_t count = g_combuf.perf_query_counters.count - i;
-			g_combuf.perf_query = vPerfQueryCreate(g_combuf.perf_query_counters.items, count, MAX_COMMANDBUFFERS);
-			if (g_combuf.perf_query) {
-				INFO("Created performance query for %u of %u counters", count, (uint32_t)g_combuf.perf_query_counters.count);
-				arrayDynamicResizeT(&g_combuf.perf_query_counters, count);
-				break;
-			}
-		}
-
-		if (g_combuf.perf_query) {
-			const VkAcquireProfilingLockInfoKHR apli = {
-				.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
-				.timeout = UINT64_MAX,
-			};
-			XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
-		}
-	}
-
 	return true;
 }
 
+static void perfQueryCleanup(void) {
+	if (!g_combuf.perf.query)
+		return;
+
+	// FIXME reset all combufs query refs
+
+	vkReleaseProfilingLockKHR(v_device);
+
+	vPerfQueryDestroy(g_combuf.perf.query);
+	g_combuf.perf.query = NULL;
+
+	arrayDynamicDestroyT(&g_combuf.perf.counters);
+}
+
 void R_VkCombuf_Destroy( void ) {
-	if (g_combuf.perf_query) {
-		vkReleaseProfilingLockKHR(v_device);
-		vPerfQueryDestroy(g_combuf.perf_query);
-		arrayDynamicDestroyT(&g_combuf.perf_query_counters);
-	}
+	perfQueryCleanup();
 
 	vkDestroyQueryPool(vk_core.device, g_combuf.timestamp.pool, NULL);
 	R_VkCommandPoolDestroy(&g_combuf.pool);
@@ -148,8 +134,8 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 	vkCmdResetQueryPool(cb->public.cmdbuf, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, MAX_QUERY_COUNT);
 	R_VkCombufScopeBegin(pub, g_combuf.entire_combuf_scope_id);
 
-	if (g_combuf.perf_query) {
-		cb->profiler.perf_query = vPerfQueryBegin(g_combuf.perf_query, &cb->public);
+	if (g_combuf.perf.query) {
+		cb->profiler.perf_query = vPerfQueryBegin(g_combuf.perf.query, &cb->public);
 		DEBUG("Begin perf_query id=%d", cb->profiler.perf_query);
 	} else {
 		cb->profiler.perf_query = -1;
@@ -159,9 +145,9 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 void R_VkCombufEnd( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
 
-	if (g_combuf.perf_query && cb->profiler.perf_query >= 0) {
+	if (g_combuf.perf.query && cb->profiler.perf_query >= 0) {
 		DEBUG("End perf_query id=%d", cb->profiler.perf_query);
-		vPerfQueryEnd(g_combuf.perf_query, &cb->public, cb->profiler.perf_query);
+		vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.perf_query);
 	}
 
 	R_VkCombufScopeEnd(pub, 0 | BEGIN_INDEX_TAG, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
@@ -231,6 +217,55 @@ void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFla
 	vkCmdWriteTimestamp(cb->public.cmdbuf, pipeline_stage, g_combuf.timestamp.pool, cb->profiler.timestamps_offset + begin_index * 2 + 1);
 }
 
+int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count) {
+	if (!v_device_info.perf_query) {
+		ERR("Cannot enable perf query counters, as VK_KHR_performance_query is not available");
+		return 0;
+	}
+
+	// Validate counters
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		const uint32_t counter = counters[i];
+		if (counter > v_device_info.perf_counters.count) {
+			ERR("Counter %u is invalid, max %u counters are available", counter, v_device_info.perf_counters.count);
+			return 0;
+		}
+
+		for (uint32_t j = 0; j < i; ++j) {
+			if (counters[j] == counter) {
+				ERR("Duplicate counter %u", counter);
+				return 0;
+			}
+		}
+	}
+
+	VPerfQuery *const new_query = vPerfQueryCreate(counters, counters_count, MAX_COMMANDBUFFERS * MAX_QUERY_COUNT);
+	if (!new_query) {
+		ERR("Couldn't create performance query with %u counters", counters_count);
+		return 0;
+	}
+
+	// Further operations affect the entire device, so make sure everything is stopped
+	vkDeviceWaitIdle(v_device);
+
+	perfQueryCleanup();
+
+	arrayDynamicResizeT(&g_combuf.perf.counters, counters_count);
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		g_combuf.perf.counters.items[i] = counters[i];
+	}
+
+	g_combuf.perf.query = new_query;
+
+	const VkAcquireProfilingLockInfoKHR apli = {
+		.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
+		.timeout = UINT64_MAX,
+	};
+	XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
+
+	return 1;
+}
+
 static uint64_t getGpuTimestampOffsetNs( uint64_t latest_gpu_timestamp, uint64_t latest_cpu_timestamp_ns ) {
 	// FIXME this is an incorrect check, we need to carry per-device extensions availability somehow. vk_core-vs-device refactoring pending
 	if (!vkGetCalibratedTimestampsEXT) {
@@ -286,9 +321,9 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 		}
 	}
 
-	if (g_combuf.perf_query && cb->profiler.perf_query >= 0) {
-		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf_query, &cb->public, cb->profiler.perf_query);
-		for (uint32_t i = 0; i < g_combuf.perf_query_counters.count; ++i) {
+	if (g_combuf.perf.query && cb->profiler.perf_query >= 0) {
+		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf.query, &cb->public, cb->profiler.perf_query);
+		for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
 			INFO("PerfQueryCounter[%u] = %f", i, results[i].float64);
 		}
 		cb->profiler.perf_query = -1;

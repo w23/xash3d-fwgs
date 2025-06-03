@@ -24,6 +24,11 @@ int R_VkGpuScope_Register(const char *name);
 int R_VkCombufScopeBegin(vk_combuf_t*, int scope_id);
 void R_VkCombufScopeEnd(vk_combuf_t*, int begin_index, VkPipelineStageFlagBits pipeline_stage);
 
+// Non-null counters enable perf query for the set of counters, NULL+0 -- disable.
+// returns 0 if failed, 1 on success
+// Counters then are reported for each gpu scope
+int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count);
+
 typedef struct {
 	const char *name;
 } vk_combuf_scope_t;
