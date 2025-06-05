@@ -1,8 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <assert.h>
-#include <string.h>
 
 // Note: this module initializes itself on the first scope initialization.
 // I.e. it is invalid to call any of the functions before the first of aprof_scope_init/APROF_SCOPE_INIT/APROF_SCOPE_DECLARE_BEGIN is called.
@@ -119,6 +117,8 @@ typedef struct {
 extern aprof_state_t g_aprof;
 
 #if defined(APROF_IMPLEMENT)
+
+#include <string.h>
 
 #ifdef __linux__
 #include <time.h>

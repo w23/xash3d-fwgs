@@ -7,6 +7,11 @@
 
 # Next
 - [ ] per-scope perf query counters
+  - [x] .... `VUID-vkCmdBeginQuery-queryPool-01922` seemingly prohibits overlapping queries.
+    - [x] Cannot do hierarchical scopes, and likely must do a full barrier at each scope end in this mode.
+          No idea how to expose this.
+      - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
+      - [x] Cover single-command scopes explicitly (by flag)
   - [ ] return counters tied to scopes
     - [ ] refactor how this data is returned
     - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.

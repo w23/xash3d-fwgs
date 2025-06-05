@@ -258,7 +258,7 @@ static void performCompute( vk_combuf_t *combuf, int set_slot, const ray_pass_co
 	vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, compute->pipeline);
 	vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE, compute->header.desc.riptors.pipeline_layout, 0, 1, compute->header.desc.riptors.desc_sets + set_slot, 0, NULL);
 
-	const int begin_id = R_VkCombufScopeBegin(combuf, scope_id);
+	const int begin_id = R_VkCombufScopeBegin(combuf, scope_id, VCombufScopeFlag_PerfQuery);
 	vkCmdDispatch(cmdbuf, (width + WG_W - 1) / WG_W, (height + WG_H - 1) / WG_H, 1);
 	R_VkCombufScopeEnd(combuf, begin_id, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 }

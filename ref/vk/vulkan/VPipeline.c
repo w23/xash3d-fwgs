@@ -372,7 +372,7 @@ void VK_PipelineRayTracingDestroy(vk_pipeline_ray_t* pipeline) {
 
 void VK_PipelineRayTracingTrace(vk_combuf_t *combuf, const vk_pipeline_ray_t *pipeline, uint32_t width, uint32_t height, int scope_id) {
 		// TODO bind this and accepts descriptors as args? vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline->pipeline);
-		const int begin_id = R_VkCombufScopeBegin(combuf, scope_id);
+		const int begin_id = R_VkCombufScopeBegin(combuf, scope_id, VCombufScopeFlag_PerfQuery);
 		vkCmdTraceRaysKHR(combuf->cmdbuf, &pipeline->sbt.raygen, &pipeline->sbt.miss, &pipeline->sbt.hit, &pipeline->sbt.callable, width, height, 1 );
 		R_VkCombufScopeEnd(combuf, begin_id, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 }

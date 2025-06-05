@@ -21,7 +21,11 @@ void R_VkCombufEnd( vk_combuf_t* );
 // TODO rename consistently
 int R_VkGpuScope_Register(const char *name);
 
-int R_VkCombufScopeBegin(vk_combuf_t*, int scope_id);
+enum {
+	VCombufScopeFlag_None = 0,
+	VCombufScopeFlag_PerfQuery = (1<<0),
+};
+int R_VkCombufScopeBegin(vk_combuf_t*, int scope_id, uint32_t flags);
 void R_VkCombufScopeEnd(vk_combuf_t*, int begin_index, VkPipelineStageFlagBits pipeline_stage);
 
 // Non-null counters enable perf query for the set of counters, NULL+0 -- disable.

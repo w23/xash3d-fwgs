@@ -13,15 +13,23 @@
 
 #define BEGIN_INDEX_TAG 0x10000000
 
+/* TODO
+typedef struct {
+	int scope_id;
+	int perf_query_index;
+} CombufProfilerScope;
+*/
+
 typedef struct {
 	vk_combuf_t public;
 	int used;
 	struct {
 		int timestamps_offset;
 		int scopes[MAX_GPU_SCOPES];
+		int scopes_perf_query_indices[MAX_GPU_SCOPES];
 		int scopes_count;
-		int perf_query;
-		//TODO int perf_query_indices[MAX_GPU_SCOPES];
+
+		int active_perf_query;
 	} profiler;
 } vk_combuf_impl_t;
 
@@ -71,6 +79,12 @@ qboolean R_VkCombuf_Init( void ) {
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
 
+	arrayDynamicInitT(&g_combuf.perf.counters);
+
+	// FIXME test-only! This should be a command!
+	const uint32_t counters[] = {0, 1, 2, 10, 11};
+	R_VkCombufPerfQueryEnable(counters, COUNTOF(counters));
+
 	return true;
 }
 
@@ -104,7 +118,7 @@ vk_combuf_t* R_VkCombufOpen( void ) {
 		vk_combuf_impl_t *const cb = g_combuf.combufs + i;
 		if (!cb->used) {
 			cb->used = 1;
-			cb->profiler.perf_query = -1;
+			cb->profiler.active_perf_query = -1;
 			return &cb->public;
 		}
 	}
@@ -132,23 +146,11 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 	XVK_CHECK(vkBeginCommandBuffer(cb->public.cmdbuf, &beginfo));
 
 	vkCmdResetQueryPool(cb->public.cmdbuf, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, MAX_QUERY_COUNT);
-	R_VkCombufScopeBegin(pub, g_combuf.entire_combuf_scope_id);
-
-	if (g_combuf.perf.query) {
-		cb->profiler.perf_query = vPerfQueryBegin(g_combuf.perf.query, &cb->public);
-		DEBUG("Begin perf_query id=%d", cb->profiler.perf_query);
-	} else {
-		cb->profiler.perf_query = -1;
-	}
+	R_VkCombufScopeBegin(pub, g_combuf.entire_combuf_scope_id, VCombufScopeFlag_None);
 }
 
 void R_VkCombufEnd( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
-
-	if (g_combuf.perf.query && cb->profiler.perf_query >= 0) {
-		DEBUG("End perf_query id=%d", cb->profiler.perf_query);
-		vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.perf_query);
-	}
 
 	R_VkCombufScopeEnd(pub, 0 | BEGIN_INDEX_TAG, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 	XVK_CHECK(vkEndCommandBuffer(cb->public.cmdbuf));
@@ -179,14 +181,50 @@ int R_VkGpuScope_Register(const char *name) {
 	return g_combuf.scopes_count++;
 }
 
-int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id) {
+static void scopePerfQueryBegin(vk_combuf_impl_t *cb, uint32_t flags, int scope_index) {
+	// There should be no active query
+	ASSERT(cb->profiler.active_perf_query == -1);
+
+	if ((flags & VCombufScopeFlag_PerfQuery) == 0)
+		return;
+
+	if (!g_combuf.perf.query)
+		return;
+
+	const int perf_query_index = vPerfQueryBegin(g_combuf.perf.query, &cb->public);
+
+	if (LOG_VERBOSE)
+		DEBUG("Begin perf_query id=%d", perf_query_index);
+
+	if (perf_query_index < 0)
+		return;
+
+	cb->profiler.active_perf_query = perf_query_index;
+}
+
+static void scopePerfQueryEnd(vk_combuf_impl_t *cb, int scope_index) {
+	if (cb->profiler.active_perf_query < 0)
+		return;
+
+	ASSERT(g_combuf.perf.query);
+
+	if (LOG_VERBOSE)
+		DEBUG("End perf_query id=%d", cb->profiler.active_perf_query);
+
+	vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.active_perf_query);
+
+	cb->profiler.scopes_perf_query_indices[scope_index] = cb->profiler.active_perf_query;
+	cb->profiler.active_perf_query = -1;
+}
+
+int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id, uint32_t flags) {
 	if (scope_id < 0)
 		return -1;
 
 	ASSERT(scope_id < g_combuf.scopes_count);
 
 	if (LOG_VERBOSE) {
-		DEBUG("Begin scope id=%d (%s)", scope_id, g_combuf.scopes[scope_id].name);
+		DEBUG("Begin scope id=%d (%s) flags=%#x", scope_id, g_combuf.scopes[scope_id].name, flags);
 	}
 
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)cumbuf;
@@ -194,8 +232,12 @@ int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id) {
 		return -1;
 
 	cb->profiler.scopes[cb->profiler.scopes_count] = scope_id;
+	cb->profiler.scopes_perf_query_indices[cb->profiler.scopes_count] = -1;
 
-	vkCmdWriteTimestamp(cb->public.cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_combuf.timestamp.pool, cb->profiler.timestamps_offset + cb->profiler.scopes_count * 2);
+	const uint32_t timestamp_query_index = cb->profiler.timestamps_offset + cb->profiler.scopes_count * 2;
+	vkCmdWriteTimestamp(cb->public.cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_combuf.timestamp.pool, timestamp_query_index);
+
+	scopePerfQueryBegin(cb, flags, cb->profiler.scopes_count);
 
 	return (cb->profiler.scopes_count++) | BEGIN_INDEX_TAG;
 }
@@ -213,6 +255,8 @@ void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFla
 		const int scope_id = cb->profiler.scopes[begin_index];
 		DEBUG("End scope id=%d (%s)", scope_id, g_combuf.scopes[scope_id].name);
 	}
+
+	scopePerfQueryEnd(cb, begin_index);
 
 	vkCmdWriteTimestamp(cb->public.cmdbuf, pipeline_stage, g_combuf.timestamp.pool, cb->profiler.timestamps_offset + begin_index * 2 + 1);
 }
@@ -302,6 +346,29 @@ static uint64_t getGpuTimestampOffsetNs( uint64_t latest_gpu_timestamp, uint64_t
 	return cpu - gpu;
 }
 
+static void readPerfQuery(vk_combuf_impl_t *cb) {
+	ASSERT(cb->profiler.active_perf_query < 0);
+
+	if (!g_combuf.perf.query)
+		return;
+
+	for (int i = 0; i < cb->profiler.scopes_count; ++i) {
+		const int perf_query_index = cb->profiler.scopes_perf_query_indices[i];
+
+		if (perf_query_index < 0)
+			continue;
+
+		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf.query, &cb->public, perf_query_index);
+
+		const int scope_id = cb->profiler.scopes[i];
+		INFO("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
+		for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
+			const uint32_t counter = g_combuf.perf.counters.items[i];
+			INFO("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
+		}
+	}
+}
+
 vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
@@ -321,13 +388,7 @@ vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
 		}
 	}
 
-	if (g_combuf.perf.query && cb->profiler.perf_query >= 0) {
-		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf.query, &cb->public, cb->profiler.perf_query);
-		for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
-			INFO("PerfQueryCounter[%u] = %f", i, results[i].float64);
-		}
-		cb->profiler.perf_query = -1;
-	}
+	readPerfQuery(cb);
 
 	APROF_SCOPE_END(function);
 

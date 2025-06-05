@@ -227,7 +227,7 @@ static void tlasBuild(vk_combuf_t *combuf, VkDeviceAddress instances_addr) {
 	static int scope_id = -2;
 	if (scope_id == -2)
 		scope_id = R_VkGpuScope_Register("build_tlas");
-	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
+	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id, VCombufScopeFlag_PerfQuery);
 	const VkAccelerationStructureBuildRangeInfoKHR *p_build_ranges = &g_accel.tlas.range_info;
 	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, 1, &g_accel.tlas.geometry_info, &p_build_ranges);
 	R_VkCombufScopeEnd(combuf, begin_index, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
@@ -314,7 +314,7 @@ static void blasBuildPerform(vk_combuf_t *combuf, vk_resource_buffer_t *geometry
 	if (scope_id == -2)
 		scope_id = R_VkGpuScope_Register("build_blases");
 
-	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id);
+	const int begin_index = R_VkCombufScopeBegin(combuf, scope_id, VCombufScopeFlag_PerfQuery);
 	vkCmdBuildAccelerationStructuresKHR(combuf->cmdbuf, count,
 		g_accel.build.geometry_infos.items,
 		(const VkAccelerationStructureBuildRangeInfoKHR* const *)g_accel.build.range_infos.items);
