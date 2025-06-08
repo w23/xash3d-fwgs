@@ -45,7 +45,7 @@ static struct {
 		uint64_t values[MAX_TIMESTAMP_QUERIES * MAX_COMMANDBUFFERS];
 	} timestamp;
 
-	vk_combuf_scope_t scopes[MAX_GPU_SCOPES];
+	aprof_scope_t scopes[MAX_GPU_SCOPES];
 	int scopes_count;
 
 	int entire_combuf_scope_id;
@@ -182,7 +182,12 @@ int R_VkGpuScope_Register(const char *name) {
 		return -1;
 	}
 
-	g_combuf.scopes[g_combuf.scopes_count].name = myStrdup(name);
+	g_combuf.scopes[g_combuf.scopes_count] = (aprof_scope_t) {
+		.name = myStrdup(name),
+		.flags = 0,
+		.source_file = __FILE__, // TODO
+		.source_line = __LINE__, // TODO
+	};
 
 	return g_combuf.scopes_count++;
 }
@@ -378,12 +383,13 @@ static void patchTimestampQueryEvents(vk_combuf_impl_t *cb) {
 	ASSERT(timestamps_count <= MAX_TIMESTAMP_QUERIES);
 	uint64_t timestamps[MAX_TIMESTAMP_QUERIES];
 
-	vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset,
+	XVK_CHECK(vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset,
 		timestamps_count, timestamps_count * sizeof(uint64_t),
-		timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+		timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
 
 	const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs(timestamps[1], aprof_time_now_ns());
-	const float timestamp_period = v_device_info.properties.limits.timestampPeriod;
+	// `double` is necessary here for 64 bit precision
+	const double timestamp_period = v_device_info.properties.limits.timestampPeriod;
 
 	// Patch timestamp events with timestamp indexes with real timestamp values
 	for (int i = 0; i < cb->profiler.events_count; ++i) {
@@ -396,8 +402,9 @@ static void patchTimestampQueryEvents(vk_combuf_impl_t *cb) {
 					const uint64_t scope_id = APROF_EVENT_SCOPE_ID(*event);
 					const uint64_t timestamp_index = APROF_EVENT_TIMESTAMP(*event);
 					ASSERT(timestamp_index < timestamps_count);
-					const uint64_t timestamp = timestamps[timestamp_index] * timestamp_period + timestamp_offset_ns;
-					*event = APROF_EVENT_MAKE(event_type, scope_id, timestamp);
+					const uint64_t timestamp = (uint64_t)(timestamps[timestamp_index] * timestamp_period) + timestamp_offset_ns;
+					const aprof_event_t new_event = APROF_EVENT_MAKE(event_type, scope_id, timestamp);
+					*event = new_event;
 					break;
 				}
 		}

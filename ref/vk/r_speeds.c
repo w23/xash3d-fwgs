@@ -183,7 +183,7 @@ typedef struct {
 	uint32_t end;
 	int y;
 	Metascope *scopes;
-	aprof_scope_t *aprof_scopes;
+	const aprof_scope_t *aprof_scopes;
 } ProcessAndDrawAprofEvents;
 
 static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
@@ -253,12 +253,12 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
-					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /* reset */ true, scope->name, scope->source_file, scope->source_line);
-						g_speeds.frame.scopes[scope_id].initialized = 1;
+					if (!args.scopes[scope_id].initialized) {
+						R_SpeedsRegisterMetric(&args.scopes[scope_id].time_us, "scope" /* FIXME prefix */, scope->name, kSpeedsMetricMicroseconds, /* reset */ true, scope->name, scope->source_file, scope->source_line);
+						args.scopes[scope_id].initialized = 1;
 					}
 
-					g_speeds.frame.scopes[scope_id].time_us += delta_ns / 1000;
+					args.scopes[scope_id].time_us += delta_ns / 1000;
 
 					// This is a top level scope that should be counted towards cpu usage
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
@@ -295,6 +295,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 		}
 	}
 
+	// FIXME GPU time
 	g_speeds.frame.cpu_time_us = ref_cpu_time / 1000;
 	g_speeds.frame.cpu_wait_time_us = ref_cpu_wait_time / 1000;
 
@@ -545,6 +546,22 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 		.scopes = g_speeds.frame.scopes,
 		.aprof_scopes = g_aprof.scopes,
 	});
+
+	for (int i = 0; i < gpurofls_count; ++i) {
+		const VCombufProfilingResult *const gpurofl = &gpurofls[i];
+		y += g_speeds.font_metrics.glyph_height * 6;
+		processAndDrawAprofEvents((ProcessAndDrawAprofEvents){
+			.draw = draw,
+			.events = gpurofl->events.items,
+			.begin_time = frame_begin_time,
+			.time_scale_ms = time_scale_ms,
+			.begin = 0,
+			.end = gpurofl->events.count,
+			.y = y,
+			.scopes = g_speeds.frame.gpu_scopes,
+			.aprof_scopes = gpurofl->scopes.items,
+		});
+	}
 
 	// FIXME restore with new format
 	//drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);

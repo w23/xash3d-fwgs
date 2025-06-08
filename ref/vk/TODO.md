@@ -14,7 +14,10 @@
       - [x] Cover single-command scopes explicitly (by flag)
   - [ ] return counters tied to scopes
     - [x] refactor how this data is returned
-	- [ ] fixup r_speeds to display the new format for GPU
+	- [x] fixup r_speeds to display the new format for GPU
+	- [ ] register new GPU scopes properly
+	- [ ] restore concurrent scopes overlap stacking
+	- [ ] track Y offset for scopes blocks properly
 - [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
 - [ ] add command/variable to select enabled counters

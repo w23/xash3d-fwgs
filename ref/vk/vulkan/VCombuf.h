@@ -67,7 +67,7 @@ typedef struct VCombufProfilingResult {
 
 	// All registered scopes
 	// FIXME aprof_scope_t
-	VIEW_DECLARE_CONST(vk_combuf_scope_t, scopes);
+	VIEW_DECLARE_CONST(aprof_scope_t, scopes);
 
 	// A list of enabled performance query counters
 	// Each entry is an index into `v_device_info.perf_counters` arrays
