@@ -71,14 +71,28 @@ typedef struct {
 
 #define APROF_MAX_SCOPES 256
 
+// Event bits usage
+// Scope begin/end events:
+// 63                   47                   31                   15                0
+// TTTT TTTT TTTT TTTT  TTTT TTTT TTTT TTTT  TTTT TTTT TTTT TTTT  SSSS SSSS .... EEEE
+// T -- timestamp value, ns (48 bits)
+// S -- scope id (16 bits)
+// . -- unused (8 bits)
+// E -- event type (8 bits)
+
+// 4 bits, 0-15
 #define APROF_EVENT_TYPE_MASK 0x0full
 #define APROF_EVENT_TYPE_SHIFT 0
 #define APROF_EVENT_TYPE(event) (((event)&APROF_EVENT_TYPE_MASK) >> APROF_EVENT_TYPE_SHIFT)
 
+// 4 bits hole
+
+// 8 bits, 255
 #define APROF_EVENT_SCOPE_ID_MASK 0xff00ull
 #define APROF_EVENT_SCOPE_ID_SHIFT 8
 #define APROF_EVENT_SCOPE_ID(event) (((event)&APROF_EVENT_SCOPE_ID_MASK) >> APROF_EVENT_SCOPE_ID_SHIFT)
 
+// 48 bits, (a plethora)
 #define APROF_EVENT_TIMESTAMP_SHIFT 16
 #define APROF_EVENT_TIMESTAMP(event) ((event) >> APROF_EVENT_TIMESTAMP_SHIFT)
 
@@ -91,6 +105,7 @@ enum {
 	APROF_EVENT_FRAME_BOUNDARY = 0,
 	APROF_EVENT_SCOPE_BEGIN = 1,
 	APROF_EVENT_SCOPE_END = 2,
+	APROF_EVENT_TYPE_MAX = 15,
 };
 
 // MUST be power of 2

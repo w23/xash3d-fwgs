@@ -11,6 +11,8 @@
 #include "xash3d_mathlib.h" // Q_min
 #include <limits.h>
 
+#define MAX_GPU_SCOPES 64
+
 #define MAX_SPEEDS_MESSAGE (1024)
 #define MAX_SPEEDS_METRICS (512)
 #define TARGET_FRAME_TIME (1000.f / 60.f)
@@ -60,6 +62,11 @@ typedef enum {
 	kSpeedsMprintTable
 } r_speeds_mprint_mode_t;
 
+typedef struct {
+	int initialized;
+	int time_us; // automatically zeroed by metrics each frame
+} Metascope;
+
 static struct {
 	cvar_t *r_speeds_graphs;
 	cvar_t *r_speeds_graphs_width;
@@ -81,14 +88,8 @@ static struct {
 
 	struct {
 		int frame_time_us, cpu_time_us, cpu_wait_time_us, gpu_time_us;
-		struct {
-			int initialized;
-			int time_us; // automatically zeroed by metrics each frame
-		} scopes[APROF_MAX_SCOPES];
-		struct {
-			int initialized;
-			int time_us; // automatically zeroed by metrics each frame
-		} gpu_scopes[MAX_GPU_SCOPES];
+		Metascope scopes[APROF_MAX_SCOPES];
+		Metascope gpu_scopes[MAX_GPU_SCOPES];
 		char message[MAX_SPEEDS_MESSAGE];
 
 		r_speeds_mprint_mode_t metrics_print_mode;
@@ -173,7 +174,19 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	}
 }
 
-static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_t begin_time, float time_scale_ms, uint32_t begin, uint32_t end, int y) {
+typedef struct {
+	int draw;
+	const aprof_event_t *events;
+	uint64_t begin_time;
+	float time_scale_ms;
+	uint32_t begin;
+	uint32_t end;
+	int y;
+	Metascope *scopes;
+	aprof_scope_t *aprof_scopes;
+} ProcessAndDrawAprofEvents;
+
+static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 #define MAX_STACK_DEPTH 16
 	struct {
 		int scope_id;
@@ -181,13 +194,14 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 	} stack[MAX_STACK_DEPTH];
 	int depth = 0;
 	int max_depth = 0;
+	int y = args.y;
 
 	int under_waiting = 0;
 	uint64_t ref_cpu_time = 0;
 	uint64_t ref_cpu_wait_time = 0;
 
-	for (; begin != end; begin = (begin + 1) % APROF_EVENT_BUFFER_SIZE) {
-		const aprof_event_t event = events[begin];
+	for (uint32_t begin = args.begin; begin != args.end; begin = (begin + 1) % APROF_EVENT_BUFFER_SIZE) {
+		const aprof_event_t event = args.events[begin];
 		const int event_type = APROF_EVENT_TYPE(event);
 		const uint64_t timestamp_ns = APROF_EVENT_TIMESTAMP(event);
 		const int scope_id = APROF_EVENT_SCOPE_ID(event);
@@ -207,7 +221,7 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					if (max_depth < depth)
 						max_depth = depth;
 
-					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
+					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					if (scope->flags & APROF_SCOPE_FLAG_WAIT)
 						under_waiting++;
 
@@ -224,19 +238,19 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					if (stack[depth].scope_id != scope_id) {
 						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
 							depth,
-							scope_id, g_aprof.scopes[scope_id].name,
-							stack[depth].scope_id, g_aprof.scopes[stack[depth].scope_id].name);
+							scope_id, args.aprof_scopes[scope_id].name,
+							stack[depth].scope_id, args.aprof_scopes[stack[depth].scope_id].name);
 
 						gEngine.Con_Printf(S_ERROR "Full stack:\n");
 						for (int i = depth; i >= 0; --i) {
 							gEngine.Con_Printf(S_ERROR "  %d: scope_id=%d(%s)\n", i,
-								stack[i].scope_id, g_aprof.scopes[stack[i].scope_id].name);
+								stack[i].scope_id, args.aprof_scopes[stack[i].scope_id].name);
 						}
 
 						return;
 					}
 
-					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
+					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
 					if (!g_speeds.frame.scopes[scope_id].initialized) {
@@ -246,8 +260,8 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 
 					g_speeds.frame.scopes[scope_id].time_us += delta_ns / 1000;
 
-					// This is a top level scope that should be counter towards cpu usage
-					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (g_aprof.scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
+					// This is a top level scope that should be counted towards cpu usage
+					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
 
 					// Only count top level scopes towards CPU time, and only if it's not waiting
 					if (is_top_level && under_waiting == 0)
@@ -267,11 +281,11 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					if (scope->flags & APROF_SCOPE_FLAG_WAIT)
 						under_waiting--;
 
-					if (draw) {
+					if (args.draw) {
 						rgba_t color = {0, 0, 0, 127};
 						getColorForString(scope->name, color);
 						const int bar_height = g_speeds.font_metrics.glyph_height;
-						drawTimeBar(begin_time, time_scale_ms, stack[depth].begin_ns, timestamp_ns, y + depth * bar_height, bar_height, scope->name, color);
+						drawTimeBar(args.begin_time, args.time_scale_ms, stack[depth].begin_ns, timestamp_ns, y + depth * bar_height, bar_height, scope->name, color);
 					}
 					break;
 				}
@@ -424,14 +438,15 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	return frame_bar_y;
 }
 
-static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_time_ns, float time_scale_ms, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+#if 0
+static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_time_ns, float time_scale_ms, const VCombufProfilingResult *gpurofls, int gpurofls_count) {
 	y += g_speeds.font_metrics.glyph_height * 6;
 	const int bar_height = g_speeds.font_metrics.glyph_height;
 
 #define MAX_ROWS 4
 	int rows_x[MAX_ROWS] = {0};
 	for (int j = 0; j < gpurofls_count; ++j) {
-		const vk_combuf_scopes_t *const gpurofl = gpurofls + j;
+		const VCombufProfilingResult *const gpurofl = gpurofls + j;
 		for (int i = 0; i < gpurofl->entries_count; ++i) {
 			const int scope_index = gpurofl->entries[i];
 			const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
@@ -489,8 +504,9 @@ static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_tim
 		}
 	}
 }
+#endif
 
-static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const VCombufProfilingResult *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
 	const int max_frames_to_draw = 2;
@@ -518,9 +534,20 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 	const float time_scale_ms = (double)vk_frame.width / (delta_ns / 1e6);
 
 	// TODO? manage y based on depths
-	drawCPUProfilerScopes(draw, events, frame_begin_time, time_scale_ms, event_begin, event_end, y);
+	processAndDrawAprofEvents((ProcessAndDrawAprofEvents){
+		.draw = draw,
+		.events = events,
+		.begin_time = frame_begin_time,
+		.time_scale_ms = time_scale_ms,
+		.begin = event_begin,
+		.end = event_end,
+		.y = y,
+		.scopes = g_speeds.frame.scopes,
+		.aprof_scopes = g_aprof.scopes,
+	});
 
-	drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
+	// FIXME restore with new format
+	//drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
 
 	return y + g_speeds.font_metrics.glyph_height * 6;
 }
@@ -926,13 +953,13 @@ void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, 
 	}
 }
 
-void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scopes_s *gpurofl, int gpurofl_count) {
+void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct VCombufProfilingResult *gpurofl, int gpurofl_count) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
 	uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
 	for (int i = 0; i < gpurofl_count; ++i) {
-		gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].timestamps[0]);
-		gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].timestamps[1]);
+		gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].begin_ns);
+		gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].end_ns);
 	}
 
 	// Reads current font/DPI scale, many functions below use it

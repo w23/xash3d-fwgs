@@ -8,28 +8,31 @@
 
 #define LOG_MODULE combuf
 
+#define MAX_GPU_SCOPES 64
 #define MAX_COMMANDBUFFERS 6
-#define MAX_QUERY_COUNT 128
+#define MAX_TIMESTAMP_QUERIES 128
+#define MAX_PERFORMANCE_QUERIES 64
+#define MAX_PERFORMANCE_QUERY_COUNTERS 16
 
-#define BEGIN_INDEX_TAG 0x10000000
-
-/* TODO
-typedef struct {
-	int scope_id;
-	int perf_query_index;
-} CombufProfilerScope;
-*/
+// Rough theoretical max is (((MAX_TIMESTAMP_QUERIES) + (MAX_PERFORMANCE_QUERIES) * (MAX_PERFORMANCE_QUERY_COUNTERS))
+#define MAX_PROF_EVENTS 1024
 
 typedef struct {
 	vk_combuf_t public;
 	int used;
 	struct {
+		// Offset into timestamp query results array
 		int timestamps_offset;
-		int scopes[MAX_GPU_SCOPES];
-		int scopes_perf_query_indices[MAX_GPU_SCOPES];
-		int scopes_count;
+		int timestamp_queries;
+
+		aprof_event_t events[MAX_PROF_EVENTS];
+		int events_count;
 
 		int active_perf_query;
+
+		// Performance query object that was used for the last submission.
+		// If it is not the *current* performance query object from `g_combuf`, then the counters are ignored.
+		//const VPerfQuery *perf_query_used;
 	} profiler;
 } vk_combuf_impl_t;
 
@@ -39,7 +42,7 @@ static struct {
 	vk_combuf_impl_t combufs[MAX_COMMANDBUFFERS];
 	struct {
 		VkQueryPool pool;
-		uint64_t values[MAX_QUERY_COUNT * MAX_COMMANDBUFFERS];
+		uint64_t values[MAX_TIMESTAMP_QUERIES * MAX_COMMANDBUFFERS];
 	} timestamp;
 
 	vk_combuf_scope_t scopes[MAX_GPU_SCOPES];
@@ -52,6 +55,7 @@ static struct {
 		ARRAY_DYNAMIC_DECLARE(uint32_t, counters);
 	} perf;
 } g_combuf;
+
 
 qboolean R_VkCombuf_Init( void ) {
 	g_combuf.pool = R_VkCommandPoolCreate(MAX_COMMANDBUFFERS);
@@ -74,7 +78,7 @@ qboolean R_VkCombuf_Init( void ) {
 		cb->public.cmdbuf = g_combuf.pool.buffers[i];
 		SET_DEBUG_NAMEF(cb->public.cmdbuf, VK_OBJECT_TYPE_COMMAND_BUFFER, "cmdbuf[%d]", i);
 
-		cb->profiler.timestamps_offset = i * MAX_QUERY_COUNT;
+		cb->profiler.timestamps_offset = i * MAX_TIMESTAMP_QUERIES;
 	}
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
@@ -137,7 +141,9 @@ void R_VkCombufClose( vk_combuf_t* pub ) {
 void R_VkCombufBegin( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
 
-	cb->profiler.scopes_count = 0;
+	cb->profiler.events_count = 0;
+	cb->profiler.timestamp_queries = 0;
+	cb->profiler.active_perf_query = -1;
 
 	const VkCommandBufferBeginInfo beginfo = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -145,14 +151,14 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 	};
 	XVK_CHECK(vkBeginCommandBuffer(cb->public.cmdbuf, &beginfo));
 
-	vkCmdResetQueryPool(cb->public.cmdbuf, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, MAX_QUERY_COUNT);
+	vkCmdResetQueryPool(cb->public.cmdbuf, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, MAX_TIMESTAMP_QUERIES);
 	R_VkCombufScopeBegin(pub, g_combuf.entire_combuf_scope_id, VCombufScopeFlag_None);
 }
 
 void R_VkCombufEnd( vk_combuf_t* pub ) {
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
 
-	R_VkCombufScopeEnd(pub, 0 | BEGIN_INDEX_TAG, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+	R_VkCombufScopeEnd(pub, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 	XVK_CHECK(vkEndCommandBuffer(cb->public.cmdbuf));
 }
 
@@ -181,7 +187,19 @@ int R_VkGpuScope_Register(const char *name) {
 	return g_combuf.scopes_count++;
 }
 
-static void scopePerfQueryBegin(vk_combuf_impl_t *cb, uint32_t flags, int scope_index) {
+static int combufAppendPerfEvent(vk_combuf_impl_t *cb, aprof_event_t event) {
+	if (cb->profiler.events_count >= COUNTOF(cb->profiler.events)) {
+		ERROR_THROTTLED(10, "Command buffer %p ran out of profiler event slots (max %d) trying to write event %#08llx",
+			cb, (int)COUNTOF(cb->profiler.events), (unsigned long long)event);
+		return -1;
+	}
+
+	const int event_index = cb->profiler.events_count++;
+	cb->profiler.events[event_index] = event;
+	return event_index;
+}
+
+static void scopePerfQueryBegin(vk_combuf_impl_t *cb, uint32_t flags) {
 	// There should be no active query
 	ASSERT(cb->profiler.active_perf_query == -1);
 
@@ -202,7 +220,7 @@ static void scopePerfQueryBegin(vk_combuf_impl_t *cb, uint32_t flags, int scope_
 	cb->profiler.active_perf_query = perf_query_index;
 }
 
-static void scopePerfQueryEnd(vk_combuf_impl_t *cb, int scope_index) {
+static void scopePerfQueryEnd(vk_combuf_impl_t *cb) {
 	if (cb->profiler.active_perf_query < 0)
 		return;
 
@@ -213,8 +231,24 @@ static void scopePerfQueryEnd(vk_combuf_impl_t *cb, int scope_index) {
 
 	vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.active_perf_query);
 
-	cb->profiler.scopes_perf_query_indices[scope_index] = cb->profiler.active_perf_query;
+	for (size_t i = 0; i < g_combuf.perf.counters.count; ++i) {
+		combufAppendPerfEvent(cb, COMBUF_EVENT_MAKE_COUNTER(i, cb->profiler.active_perf_query));
+	}
+
 	cb->profiler.active_perf_query = -1;
+}
+
+static int writeTimestamp(vk_combuf_impl_t *cb, int scope_id, int event_type) {
+	if (cb->profiler.timestamp_queries >= MAX_TIMESTAMP_QUERIES) {
+		ERROR_THROTTLED(10, "Command buffer %p ran out of max timestamp query slots (%d) with scope \"%s\" (%d)",
+			cb, MAX_TIMESTAMP_QUERIES, g_combuf.scopes[scope_id].name, scope_id);
+		return -1;
+	}
+
+	const uint32_t timestamp_index = cb->profiler.timestamp_queries++;
+	const uint32_t timestamp_query_index = cb->profiler.timestamps_offset + timestamp_index;
+	vkCmdWriteTimestamp(cb->public.cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_combuf.timestamp.pool, timestamp_query_index);
+	return combufAppendPerfEvent(cb, APROF_EVENT_MAKE(event_type, scope_id, timestamp_index));
 }
 
 int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id, uint32_t flags) {
@@ -228,37 +262,27 @@ int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id, uint32_t flags) {
 	}
 
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)cumbuf;
-	if (cb->profiler.scopes_count == MAX_GPU_SCOPES)
-		return -1;
+	const int event_index = writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_BEGIN);
 
-	cb->profiler.scopes[cb->profiler.scopes_count] = scope_id;
-	cb->profiler.scopes_perf_query_indices[cb->profiler.scopes_count] = -1;
+	scopePerfQueryBegin(cb, flags);
 
-	const uint32_t timestamp_query_index = cb->profiler.timestamps_offset + cb->profiler.scopes_count * 2;
-	vkCmdWriteTimestamp(cb->public.cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_combuf.timestamp.pool, timestamp_query_index);
-
-	scopePerfQueryBegin(cb, flags, cb->profiler.scopes_count);
-
-	return (cb->profiler.scopes_count++) | BEGIN_INDEX_TAG;
+	return event_index;
 }
 
 void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFlagBits pipeline_stage) {
 	if (begin_index < 0)
 		return;
 
-	ASSERT(begin_index & BEGIN_INDEX_TAG);
-	begin_index ^= BEGIN_INDEX_TAG;
-
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)combuf;
+	// TODO: ASSERT that this is the right scope
+	const int scope_id = APROF_EVENT_SCOPE_ID(cb->profiler.events[begin_index]);
 
 	if (LOG_VERBOSE) {
-		const int scope_id = cb->profiler.scopes[begin_index];
 		DEBUG("End scope id=%d (%s)", scope_id, g_combuf.scopes[scope_id].name);
 	}
 
-	scopePerfQueryEnd(cb, begin_index);
-
-	vkCmdWriteTimestamp(cb->public.cmdbuf, pipeline_stage, g_combuf.timestamp.pool, cb->profiler.timestamps_offset + begin_index * 2 + 1);
+	scopePerfQueryEnd(cb);
+	writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_END);
 }
 
 int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count) {
@@ -283,7 +307,7 @@ int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count)
 		}
 	}
 
-	VPerfQuery *const new_query = vPerfQueryCreate(counters, counters_count, MAX_COMMANDBUFFERS * MAX_QUERY_COUNT);
+	VPerfQuery *const new_query = vPerfQueryCreate(counters, counters_count, MAX_COMMANDBUFFERS * MAX_TIMESTAMP_QUERIES);
 	if (!new_query) {
 		ERR("Couldn't create performance query with %u counters", counters_count);
 		return 0;
@@ -346,56 +370,147 @@ static uint64_t getGpuTimestampOffsetNs( uint64_t latest_gpu_timestamp, uint64_t
 	return cpu - gpu;
 }
 
-static void readPerfQuery(vk_combuf_impl_t *cb) {
+static void patchTimestampQueryEvents(vk_combuf_impl_t *cb) {
+	const int timestamps_count = cb->profiler.timestamp_queries;
+	if (timestamps_count <= 0)
+		return;
+
+	ASSERT(timestamps_count <= MAX_TIMESTAMP_QUERIES);
+	uint64_t timestamps[MAX_TIMESTAMP_QUERIES];
+
+	vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset,
+		timestamps_count, timestamps_count * sizeof(uint64_t),
+		timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+
+	const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs(timestamps[1], aprof_time_now_ns());
+	const float timestamp_period = v_device_info.properties.limits.timestampPeriod;
+
+	// Patch timestamp events with timestamp indexes with real timestamp values
+	for (int i = 0; i < cb->profiler.events_count; ++i) {
+		aprof_event_t *const event = &cb->profiler.events[i];
+		const int event_type = APROF_EVENT_TYPE(*event);
+		switch (event_type) {
+			case APROF_EVENT_SCOPE_BEGIN:
+			case APROF_EVENT_SCOPE_END:
+				{
+					const uint64_t scope_id = APROF_EVENT_SCOPE_ID(*event);
+					const uint64_t timestamp_index = APROF_EVENT_TIMESTAMP(*event);
+					ASSERT(timestamp_index < timestamps_count);
+					const uint64_t timestamp = timestamps[timestamp_index] * timestamp_period + timestamp_offset_ns;
+					*event = APROF_EVENT_MAKE(event_type, scope_id, timestamp);
+					break;
+				}
+		}
+	}
+}
+
+static uint64_t scaledCounter(VkPerformanceCounterStorageKHR storage, VkPerformanceCounterResultKHR result, int scale) {
+	switch (storage) {
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT32_KHR: return result.int32 * scale; break;
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT64_KHR: return result.int64 * scale; break;
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT32_KHR: return result.uint32 * scale; break;
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT64_KHR: return result.uint64 * scale; break;
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT32_KHR: return result.float32 * scale; break;
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT64_KHR: return result.float64 * scale; break;
+		default:
+			ERR("Invalud performance counter storage %08x", storage);
+			return 0;
+	}
+}
+
+static uint64_t computeCounterValue(uint32_t counter_index, VkPerformanceCounterResultKHR result) {
+	const VkPerformanceCounterKHR *const cnt = &v_device_info.perf_counters.counters[counter_index];
+	switch (cnt->unit) {
+		case VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR:
+			// Percentage is always in permyriad, i.e. hundredth-percent: 10000 is 100%, 2317 is 23.17%
+			return scaledCounter(cnt->storage, result, 100);
+			break;
+		default:
+			return scaledCounter(cnt->storage, result, 1);
+			break;
+	}
+}
+
+static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 	ASSERT(cb->profiler.active_perf_query < 0);
 
 	if (!g_combuf.perf.query)
 		return;
 
-	for (int i = 0; i < cb->profiler.scopes_count; ++i) {
-		const int perf_query_index = cb->profiler.scopes_perf_query_indices[i];
-
-		if (perf_query_index < 0)
+	for (int i = 0; i < cb->profiler.events_count; ++i) {
+		aprof_event_t *const event = &cb->profiler.events[i];
+		const int event_type = APROF_EVENT_TYPE(*event);
+		if (event_type != COMBUF_PROF_EVENT_PERF_COUNTER)
 			continue;
 
-		const VkPerformanceCounterResultKHR* results = vPerfQueryRead(g_combuf.perf.query, &cb->public, perf_query_index);
+		const uint64_t query_index = COMBUF_EVENT_COUNTER_VALUE(*event);
+		const VkPerformanceCounterResultKHR* const results = vPerfQueryRead(g_combuf.perf.query, &cb->public, query_index);
 
-		const int scope_id = cb->profiler.scopes[i];
-		INFO("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
-		for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
-			const uint32_t counter = g_combuf.perf.counters.items[i];
-			INFO("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
-		}
-	}
-}
+		for (uint32_t j = 0; j < g_combuf.perf.counters.count; ++j) {
+			aprof_event_t *const event = &cb->profiler.events[i + j];
 
-vk_combuf_scopes_t R_VkCombufScopesGet( vk_combuf_t *pub ) {
+			// Make sure that the right slot is reserved
+			const int event_type = APROF_EVENT_TYPE(*event);
+			ASSERT(event_type == COMBUF_PROF_EVENT_PERF_COUNTER);
+
+			// Make sure we're writing into the correct slot
+			const uint64_t counter_index = COMBUF_EVENT_COUNTER_INDEX(*event);
+			ASSERT(counter_index == j);
+
+			*event = COMBUF_EVENT_MAKE_COUNTER(j, computeCounterValue(j, results[j]));
+		} // for events in counters reserved block
+
+		// Skip the entire reserved block
+		i += g_combuf.perf.counters.count;
+
+		// After the perf counters block there should always be a scope_end event by design
+		{
+			ASSERT(i < cb->profiler.events_count);
+			const aprof_event_t next_event = cb->profiler.events[i];
+			const int next_event_type = APROF_EVENT_TYPE(next_event);
+			ASSERT(next_event_type == APROF_EVENT_SCOPE_END);
+
+			const uint64_t scope_id = APROF_EVENT_SCOPE_ID(next_event);
+			ASSERT(scope_id < g_combuf.scopes_count);
+
+			INFO("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
+			for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
+				const uint32_t counter = g_combuf.perf.counters.items[i];
+				INFO("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
+			}
+		} // next_event block
+	} // for all events
+} // patchTimestampQueryEvents()
+
+VCombufProfilingResult R_VkCombufProfilingGetResult(vk_combuf_t *pub) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)pub;
 
-	uint64_t *const timestamps = g_combuf.timestamp.values + cb->profiler.timestamps_offset;
-	const int timestamps_count = cb->profiler.scopes_count * 2;
+	patchTimestampQueryEvents(cb);
+	patchPeformanceQueryEvents(cb);
 
-	if (timestamps_count) {
-		vkGetQueryPoolResults(vk_core.device, g_combuf.timestamp.pool, cb->profiler.timestamps_offset, timestamps_count, timestamps_count * sizeof(uint64_t), timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-
-		const uint64_t timestamp_offset_ns = getGpuTimestampOffsetNs( timestamps[1], aprof_time_now_ns() );
-		const double timestamp_period = v_device_info.properties.limits.timestampPeriod;
-
-		for (int i = 0; i < timestamps_count; ++i) {
-			const uint64_t gpu_ns = timestamps[i] * timestamp_period;
-			timestamps[i] = timestamp_offset_ns + gpu_ns;
-		}
+	uint64_t begin_ns = 0, end_ns = 0;
+	if (cb->profiler.events_count > 1) {
+		begin_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[0]);
+		end_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[cb->profiler.events_count-1]);
 	}
-
-	readPerfQuery(cb);
 
 	APROF_SCOPE_END(function);
 
-	return (vk_combuf_scopes_t){
-		.timestamps = g_combuf.timestamp.values + cb->profiler.timestamps_offset,
-		.scopes = g_combuf.scopes,
-		.entries = cb->profiler.scopes,
-		.entries_count = cb->profiler.scopes_count,
+	return (VCombufProfilingResult) {
+		.begin_ns = begin_ns,
+		.end_ns = end_ns,
+		.scopes = {
+			.items = g_combuf.scopes,
+			.count = g_combuf.scopes_count,
+		},
+		.enabled_perf_counters = {
+			.items = g_combuf.perf.counters.items,
+			.count = g_combuf.perf.counters.count,
+		},
+		.events = {
+			.items = cb->profiler.events,
+			.count = cb->profiler.events_count,
+		},
 	};
 }

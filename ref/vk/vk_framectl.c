@@ -283,7 +283,7 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_BEGIN(begin_frame);
 
 	{
-		const vk_combuf_scopes_t gpurofl[] = { R_VkCombufScopesGet(frame->combuf) };
+		const VCombufProfilingResult gpurofl[] = { R_VkCombufProfilingGetResult(frame->combuf) };
 		R_SpeedsDisplayMore(prev_frame_event_index, gpurofl, COUNTOF(gpurofl));
 	}
 

@@ -4,8 +4,9 @@
 
 void R_SpeedsInit( void );
 
-struct vk_combuf_scopes_s;
-void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scopes_s *gpurofl, int gpurofl_count);
+// TODO consolidate with regular CPU profiler; Their data is almost the same now
+struct VCombufProfilingResult;
+void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct VCombufProfilingResult *gpurofl, int gpurofl_count);
 
 // Called from the engine into ref_api to get the latest speeds info
 qboolean R_SpeedsMessage( char *out, size_t size );
@@ -14,6 +15,7 @@ typedef enum {
 	kSpeedsMetricCount,
 	kSpeedsMetricBytes,
 	kSpeedsMetricMicroseconds,
+	// TODO? kSpeedsMetricPermyriad, /* ‱, 1/100 of 1% */
 } r_speeds_metric_type_t;
 
 // TODO upper limit argument

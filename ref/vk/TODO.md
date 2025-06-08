@@ -6,27 +6,29 @@
 - [x] scaffold the query pool code
 
 # Next
-- [ ] per-scope perf query counters
+- [x] per-scope perf query counters
   - [x] .... `VUID-vkCmdBeginQuery-queryPool-01922` seemingly prohibits overlapping queries.
     - [x] Cannot do hierarchical scopes, and likely must do a full barrier at each scope end in this mode.
           No idea how to expose this.
       - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
       - [x] Cover single-command scopes explicitly (by flag)
   - [ ] return counters tied to scopes
-    - [ ] refactor how this data is returned
-    - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
-          this will also move us closer to explicit after-combuf cleanup handling
-      - [ ] combuf state machine: what states is it in?
+    - [x] refactor how this data is returned
+	- [ ] fixup r_speeds to display the new format for GPU
 - [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
 - [ ] add command/variable to select enabled counters
 - [x] measure counters for the entire command buffer
+- [ ] keep track of current perf query object, gracefully handle when it changes
 - [ ] convert and pass named results to r_speeds.c
     - [ ] alt/TODO: universal metrics
         - [ ] refactor metrics code, allow registering and de-registering metrics
         - [ ] unify gpu and cpu scopes with timestamps
         - [ ] add universal counters, attachable to both cpu and gpu scopes
 - [ ] visualize counters in r_speeds display
+- [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
+  this will also move us closer to explicit after-combuf cleanup handling
+	- [ ] combuf state machine: what states is it in?
 
 # Upcoming
 - [ ] Figure out naming, code style, make clang-format
