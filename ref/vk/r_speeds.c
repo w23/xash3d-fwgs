@@ -174,6 +174,17 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	}
 }
 
+static void updateMetascope(Metascope *metascope, const char* prefix, const aprof_scope_t* scope, uint64_t delta_ns) {
+	if (!metascope->initialized) {
+		const qboolean reset = true;
+		R_SpeedsRegisterMetric(&metascope->time_us, prefix, scope->name, kSpeedsMetricMicroseconds, reset,
+			scope->name, scope->source_file, scope->source_line);
+		metascope->initialized = 1;
+	}
+
+	metascope->time_us += delta_ns / 1000;
+}
+
 typedef struct {
 	int draw;
 	const aprof_event_t *events;
@@ -184,6 +195,7 @@ typedef struct {
 	int y;
 	Metascope *scopes;
 	const aprof_scope_t *aprof_scopes;
+	const char *scope_name_prefix;
 } ProcessAndDrawAprofEvents;
 
 static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
@@ -253,12 +265,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
 
-					if (!args.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&args.scopes[scope_id].time_us, "scope" /* FIXME prefix */, scope->name, kSpeedsMetricMicroseconds, /* reset */ true, scope->name, scope->source_file, scope->source_line);
-						args.scopes[scope_id].initialized = 1;
-					}
-
-					args.scopes[scope_id].time_us += delta_ns / 1000;
+					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns / 1000);
 
 					// This is a top level scope that should be counted towards cpu usage
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
@@ -545,6 +552,7 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 		.y = y,
 		.scopes = g_speeds.frame.scopes,
 		.aprof_scopes = g_aprof.scopes,
+		.scope_name_prefix = "scope",
 	});
 
 	for (int i = 0; i < gpurofls_count; ++i) {
@@ -560,6 +568,7 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 			.y = y,
 			.scopes = g_speeds.frame.gpu_scopes,
 			.aprof_scopes = gpurofl->scopes.items,
+			.scope_name_prefix = "gpuscope",
 		});
 	}
 

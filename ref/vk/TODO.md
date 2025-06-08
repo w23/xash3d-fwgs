@@ -15,7 +15,7 @@
   - [ ] return counters tied to scopes
     - [x] refactor how this data is returned
 	- [x] fixup r_speeds to display the new format for GPU
-	- [ ] register new GPU scopes properly
+	- [x] register new GPU scopes properly
 	- [ ] restore concurrent scopes overlap stacking
 	- [ ] track Y offset for scopes blocks properly
 - [ ] add command line argument to enable performance query
