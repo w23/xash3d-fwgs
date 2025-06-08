@@ -202,13 +202,15 @@ typedef struct {
 
 static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 #define MAX_STACK_DEPTH 16
-	struct {
+	struct StackFrame {
 		int scope_id;
 		uint64_t begin_ns;
+		uint64_t latest_child_end_ns;
 	} stack[MAX_STACK_DEPTH];
 	int depth = 0;
 	int max_depth = 0;
-	int y = args.y;
+
+	const int bar_height = g_speeds.font_metrics.glyph_height;
 
 	int under_waiting = 0;
 	uint64_t active_time_ns = 0;
@@ -228,8 +230,11 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 
 			case APROF_EVENT_SCOPE_BEGIN: {
 					if (depth < MAX_STACK_DEPTH) {
-						stack[depth].begin_ns = timestamp_ns;
-						stack[depth].scope_id = scope_id;
+						stack[depth] = (struct StackFrame) {
+							.scope_id = scope_id,
+							.begin_ns = timestamp_ns,
+							.latest_child_end_ns = timestamp_ns,
+						};
 					}
 					++depth;
 					if (max_depth < depth)
@@ -249,11 +254,13 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					ASSERT(scope_id >= 0);
 					ASSERT(scope_id < APROF_MAX_SCOPES);
 
-					if (stack[depth].scope_id != scope_id) {
+					struct StackFrame *const stack_frame = stack + depth;
+
+					if (stack_frame->scope_id != scope_id) {
 						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
 							depth,
 							scope_id, args.aprof_scopes[scope_id].name,
-							stack[depth].scope_id, args.aprof_scopes[stack[depth].scope_id].name);
+							stack_frame->scope_id, args.aprof_scopes[stack_frame->scope_id].name);
 
 						gEngine.Con_Printf(S_ERROR "Full stack:\n");
 						for (int i = depth; i >= 0; --i) {
@@ -265,12 +272,25 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					}
 
 					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
-					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
+					const uint64_t delta_ns = timestamp_ns - stack_frame->begin_ns;
 
 					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns / 1000);
 
 					// This is a top level scope that should be counted towards active usage
-					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
+					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0)
+						&& (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
+
+					const int overlaps_with_siblings = (depth > 0)
+						&& (stack[depth-1].latest_child_end_ns > stack_frame->begin_ns);
+
+					const int y_overlap_offset = overlaps_with_siblings
+						? bar_height / 2
+						: 0;
+
+					// Updated parent's latest child end timestamp
+					if (depth > 0) {
+						stack[depth-1].latest_child_end_ns = Q_max(stack[depth-1].latest_child_end_ns, timestamp_ns);
+					}
 
 					// Only count top level scopes towards active time, and only if it's not waiting
 					if (is_top_level && under_waiting == 0)
@@ -293,8 +313,8 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					if (args.draw) {
 						rgba_t color = {0, 0, 0, 127};
 						getColorForString(scope->name, color);
-						const int bar_height = g_speeds.font_metrics.glyph_height;
-						drawTimeBar(args.begin_time, args.time_scale_ms, stack[depth].begin_ns, timestamp_ns, y + depth * bar_height, bar_height, scope->name, color);
+						drawTimeBar(args.begin_time, args.time_scale_ms, stack_frame->begin_ns, timestamp_ns,
+							args.y + y_overlap_offset + depth * bar_height, bar_height, scope->name, color);
 					}
 					break;
 				}
