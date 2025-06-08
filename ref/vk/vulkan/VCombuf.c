@@ -243,7 +243,7 @@ static void scopePerfQueryEnd(vk_combuf_impl_t *cb) {
 	cb->profiler.active_perf_query = -1;
 }
 
-static int writeTimestamp(vk_combuf_impl_t *cb, int scope_id, int event_type) {
+static int writeTimestamp(vk_combuf_impl_t *cb, int scope_id, int event_type, VkPipelineStageFlagBits pipeline_stage) {
 	if (cb->profiler.timestamp_queries >= MAX_TIMESTAMP_QUERIES) {
 		ERROR_THROTTLED(10, "Command buffer %p ran out of max timestamp query slots (%d) with scope \"%s\" (%d)",
 			cb, MAX_TIMESTAMP_QUERIES, g_combuf.scopes[scope_id].name, scope_id);
@@ -252,7 +252,7 @@ static int writeTimestamp(vk_combuf_impl_t *cb, int scope_id, int event_type) {
 
 	const uint32_t timestamp_index = cb->profiler.timestamp_queries++;
 	const uint32_t timestamp_query_index = cb->profiler.timestamps_offset + timestamp_index;
-	vkCmdWriteTimestamp(cb->public.cmdbuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_combuf.timestamp.pool, timestamp_query_index);
+	vkCmdWriteTimestamp(cb->public.cmdbuf, pipeline_stage, g_combuf.timestamp.pool, timestamp_query_index);
 	return combufAppendPerfEvent(cb, APROF_EVENT_MAKE(event_type, scope_id, timestamp_index));
 }
 
@@ -267,7 +267,7 @@ int R_VkCombufScopeBegin(vk_combuf_t* cumbuf, int scope_id, uint32_t flags) {
 	}
 
 	vk_combuf_impl_t *const cb = (vk_combuf_impl_t*)cumbuf;
-	const int event_index = writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_BEGIN);
+	const int event_index = writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_BEGIN, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
 	scopePerfQueryBegin(cb, flags);
 
@@ -287,7 +287,7 @@ void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFla
 	}
 
 	scopePerfQueryEnd(cb);
-	writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_END);
+	writeTimestamp(cb, scope_id, APROF_EVENT_SCOPE_END, pipeline_stage);
 }
 
 int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count) {

@@ -269,7 +269,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 
 					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns / 1000);
 
-					// This is a top level scope that should be counted towards cpu usage
+					// This is a top level scope that should be counted towards active usage
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
 
 					// Only count top level scopes towards active time, and only if it's not waiting
