@@ -196,6 +196,8 @@ typedef struct {
 	Metascope *scopes;
 	const aprof_scope_t *aprof_scopes;
 	const char *scope_name_prefix;
+	int *out_active_time_us;
+	int *out_wait_time_us;
 } ProcessAndDrawAprofEvents;
 
 static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
@@ -209,8 +211,8 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 	int y = args.y;
 
 	int under_waiting = 0;
-	uint64_t ref_cpu_time = 0;
-	uint64_t ref_cpu_wait_time = 0;
+	uint64_t active_time_ns = 0;
+	uint64_t wait_time_ns = 0;
 
 	for (uint32_t begin = args.begin; begin != args.end; begin = (begin + 1) % APROF_EVENT_BUFFER_SIZE) {
 		const aprof_event_t event = args.events[begin];
@@ -219,8 +221,8 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 		const int scope_id = APROF_EVENT_SCOPE_ID(event);
 		switch (event_type) {
 			case APROF_EVENT_FRAME_BOUNDARY:
-				ref_cpu_time = 0;
-				ref_cpu_wait_time = 0;
+				active_time_ns = 0;
+				wait_time_ns = 0;
 				under_waiting = 0;
 				break;
 
@@ -270,19 +272,19 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					// This is a top level scope that should be counted towards cpu usage
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
 
-					// Only count top level scopes towards CPU time, and only if it's not waiting
+					// Only count top level scopes towards active time, and only if it's not waiting
 					if (is_top_level && under_waiting == 0)
-						ref_cpu_time += delta_ns;
+						active_time_ns += delta_ns;
 
 					// If this is a top level waiting scope (under any depth)
 					if (under_waiting == 1) {
 						// Count it towards waiting time
-						ref_cpu_wait_time += delta_ns;
+						wait_time_ns += delta_ns;
 
 						// If this is not a top level scope, then we might count its top level parent
 						// towards cpu usage time, which is not correct. Subtract this waiting time from it.
 						if (!is_top_level)
-							ref_cpu_time -= delta_ns;
+							active_time_ns -= delta_ns;
 					}
 
 					if (scope->flags & APROF_SCOPE_FLAG_WAIT)
@@ -302,9 +304,11 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 		}
 	}
 
-	// FIXME GPU time
-	g_speeds.frame.cpu_time_us = ref_cpu_time / 1000;
-	g_speeds.frame.cpu_wait_time_us = ref_cpu_wait_time / 1000;
+	if (args.out_wait_time_us)
+		*args.out_wait_time_us += wait_time_ns / 1000;
+
+	if (args.out_active_time_us)
+		*args.out_active_time_us += active_time_ns / 1000;
 
 	if (max_depth > MAX_STACK_DEPTH)
 		gEngine.Con_NPrintf(4, S_ERROR "Profiler stack overflow: reached %d, max available %d\n", max_depth, MAX_STACK_DEPTH);
@@ -553,6 +557,8 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 		.scopes = g_speeds.frame.scopes,
 		.aprof_scopes = g_aprof.scopes,
 		.scope_name_prefix = "scope",
+		.out_active_time_us = &g_speeds.frame.cpu_time_us,
+		.out_wait_time_us = &g_speeds.frame.cpu_wait_time_us,
 	});
 
 	for (int i = 0; i < gpurofls_count; ++i) {
@@ -569,6 +575,8 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 			.scopes = g_speeds.frame.gpu_scopes,
 			.aprof_scopes = gpurofl->scopes.items,
 			.scope_name_prefix = "gpuscope",
+			.out_active_time_us = NULL, // GPU time is handled elsewhere for now
+			.out_wait_time_us = NULL,
 		});
 	}
 
@@ -982,12 +990,6 @@ void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, 
 void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct VCombufProfilingResult *gpurofl, int gpurofl_count) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
 
-	uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
-	for (int i = 0; i < gpurofl_count; ++i) {
-		gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].begin_ns);
-		gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].end_ns);
-	}
-
 	// Reads current font/DPI scale, many functions below use it
 	getCurrentFontMetrics();
 
@@ -1015,7 +1017,17 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct VCombufProfilin
 	const unsigned long long delta_ns = APROF_EVENT_TIMESTAMP(g_aprof.events[g_aprof.events_last_frame]) - frame_begin_time;
 
 	g_speeds.frame.frame_time_us = delta_ns / 1000;
-	g_speeds.frame.gpu_time_us = (gpu_frame_end_ns - gpu_frame_begin_ns) / 1000;
+
+	{
+		// TODO this is not strictly correct, just and approximation
+		// E.g. it won't give correct result for multiple combufs with gaps between them.
+		uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
+		for (int i = 0; i < gpurofl_count; ++i) {
+			gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].begin_ns);
+			gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].end_ns);
+		}
+		g_speeds.frame.gpu_time_us = (gpu_frame_end_ns - gpu_frame_begin_ns) / 1000;
+	}
 
 	handlePause( prev_frame_index );
 
