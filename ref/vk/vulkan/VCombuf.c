@@ -237,7 +237,7 @@ static void scopePerfQueryEnd(vk_combuf_impl_t *cb) {
 	vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.active_perf_query);
 
 	for (size_t i = 0; i < g_combuf.perf.counters.count; ++i) {
-		combufAppendPerfEvent(cb, COMBUF_EVENT_MAKE_COUNTER(i, cb->profiler.active_perf_query));
+		combufAppendPerfEvent(cb, APROF_EVENT_MAKE_COUNTER(i, cb->profiler.active_perf_query));
 	}
 
 	cb->profiler.active_perf_query = -1;
@@ -447,10 +447,10 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 	for (int i = 0; i < cb->profiler.events_count; ++i) {
 		aprof_event_t *const event = &cb->profiler.events[i];
 		const int event_type = APROF_EVENT_TYPE(*event);
-		if (event_type != COMBUF_PROF_EVENT_PERF_COUNTER)
+		if (event_type != APROF_EVENT_COUNTER)
 			continue;
 
-		const uint64_t query_index = COMBUF_EVENT_COUNTER_VALUE(*event);
+		const uint64_t query_index = APROF_EVENT_COUNTER_VALUE(*event);
 		const VkPerformanceCounterResultKHR* const results = vPerfQueryRead(g_combuf.perf.query, &cb->public, query_index);
 
 		for (uint32_t j = 0; j < g_combuf.perf.counters.count; ++j) {
@@ -458,20 +458,20 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 
 			// Make sure that the right slot is reserved
 			const int event_type = APROF_EVENT_TYPE(*event);
-			ASSERT(event_type == COMBUF_PROF_EVENT_PERF_COUNTER);
+			ASSERT(event_type == APROF_EVENT_COUNTER);
 
 			// Make sure we're writing into the correct slot
-			const uint64_t counter_index = COMBUF_EVENT_COUNTER_INDEX(*event);
+			const uint64_t counter_index = APROF_EVENT_COUNTER_INDEX(*event);
 			ASSERT(counter_index == j);
 
-			*event = COMBUF_EVENT_MAKE_COUNTER(j, computeCounterValue(j, results[j]));
+			*event = APROF_EVENT_MAKE_COUNTER(j, computeCounterValue(j, results[j]));
 		} // for events in counters reserved block
 
 		// Skip the entire reserved block
 		i += g_combuf.perf.counters.count;
 
 		// After the perf counters block there should always be a scope_end event by design
-		{
+		if (LOG_VERBOSE) {
 			ASSERT(i < cb->profiler.events_count);
 			const aprof_event_t next_event = cb->profiler.events[i];
 			const int next_event_type = APROF_EVENT_TYPE(next_event);
@@ -480,10 +480,10 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 			const uint64_t scope_id = APROF_EVENT_SCOPE_ID(next_event);
 			ASSERT(scope_id < g_combuf.scopes_count);
 
-			INFO("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
+			DEBUG("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
 			for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
 				const uint32_t counter = g_combuf.perf.counters.items[i];
-				INFO("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
+				DEBUG("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
 			}
 		} // next_event block
 	} // for all events

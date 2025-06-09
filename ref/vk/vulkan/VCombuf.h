@@ -33,34 +33,6 @@ void R_VkCombufScopeEnd(vk_combuf_t*, int begin_index, VkPipelineStageFlagBits p
 // Counters then are reported for each GPU scope with VCombufScopeFlag_PerfQuery flag.
 int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count);
 
-typedef struct {
-	const char *name;
-} vk_combuf_scope_t;
-
-// TODO move this to profiler?
-enum {
-	COMBUF_PROF_EVENT_PERF_COUNTER = 15,
-// 63                   47                   31                   15                0
-// VVVV VVVV VVVV VVVV  VVVV VVVV VVVV VVVV  VVVV VVVV VVVV VVVV  CCCC CCCC .... EEEE
-// V -- counter value (48 bits)
-// C -- counter index (16 bits)
-// . -- unused (8 bits)
-// E -- event type (8 bits)
-};
-
-#define COMBUF_EVENT_COUNTER_INDEX_MASK 0xff00ull
-#define COMBUF_EVENT_COUNTER_INDEX_SHIFT 8
-#define COMBUF_EVENT_COUNTER_INDEX(event) (((event)&COMBUF_EVENT_COUNTER_INDEX_MASK) >> COMBUF_EVENT_COUNTER_INDEX_SHIFT)
-
-#define COMBUF_EVENT_COUNTER_VALUE_SHIFT 16
-#define COMBUF_EVENT_COUNTER_VALUE(event) ((event) >> COMBUF_EVENT_COUNTER_VALUE_SHIFT)
-
-#define COMBUF_EVENT_MAKE_COUNTER(counter, value) \
-	((((uint64_t)(COMBUF_PROF_EVENT_PERF_COUNTER)) << APROF_EVENT_TYPE_SHIFT) & APROF_EVENT_TYPE_MASK) | \
-	((((uint64_t)(counter) << COMBUF_EVENT_COUNTER_INDEX_SHIFT)) & COMBUF_EVENT_COUNTER_INDEX_MASK) | \
-	(((uint64_t)(value)) << COMBUF_EVENT_COUNTER_VALUE_SHIFT)
-
-
 typedef struct VCombufProfilingResult {
 	// Command buffer execution lifetime
 	uint64_t begin_ns, end_ns;
