@@ -160,7 +160,7 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	const int width = delta_ms  * time_scale_ms;
 	const int x = (begin_ns - begin_time_ns) * 1e-6 * time_scale_ms;
 
-	rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
+	rgba_t text_color = {191 + color[0]/4, 191 + color[1]/4, 191 + color[2]/4, 255};
 	CL_FillRGBA(kRenderTransAdd, x, y, width, height, color[0], color[1], color[2], color[3]);
 
 	// Tweak this if scope names escape the block boundaries
@@ -201,11 +201,12 @@ typedef struct {
 } ProcessAndDrawAprofEvents;
 
 static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
-#define MAX_STACK_DEPTH 16
+#define MAX_STACK_DEPTH 8
 	struct StackFrame {
 		int scope_id;
 		uint64_t begin_ns;
 		uint64_t latest_child_end_ns;
+		int overlaps;
 	} stack[MAX_STACK_DEPTH];
 	int depth = 0;
 	int max_depth = 0;
@@ -234,6 +235,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 							.scope_id = scope_id,
 							.begin_ns = timestamp_ns,
 							.latest_child_end_ns = timestamp_ns,
+							.overlaps = 0,
 						};
 					}
 					++depth;
@@ -255,6 +257,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					ASSERT(scope_id < APROF_MAX_SCOPES);
 
 					struct StackFrame *const stack_frame = stack + depth;
+					struct StackFrame *const parent_frame = depth > 0 ? stack + depth - 1 : NULL;
 
 					if (stack_frame->scope_id != scope_id) {
 						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
@@ -280,16 +283,24 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0)
 						&& (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
 
-					const int overlaps_with_siblings = (depth > 0)
-						&& (stack[depth-1].latest_child_end_ns > stack_frame->begin_ns);
+					const int64_t latest_end_delta_ns = parent_frame
+						? (int64_t)parent_frame->latest_child_end_ns - (int64_t)stack_frame->begin_ns
+						: 0ll;
+					const int overlap_pixels = (float)(latest_end_delta_ns / 1000000) * args.time_scale_ms;
+					const int OVERLAP_PIXELS_THRESHOLD = 2;
+					const int overlaps_with_siblings = overlap_pixels > OVERLAP_PIXELS_THRESHOLD;
 
-					const int y_overlap_offset = overlaps_with_siblings
-						? bar_height / 2
-						: 0;
+					int y_overlap_offset = 0;
+					if (overlaps_with_siblings) {
+						parent_frame->overlaps += 1;
+						y_overlap_offset = parent_frame->overlaps * bar_height / 2;
+					} else if (parent_frame) {
+						parent_frame->overlaps = 0;
+					}
 
 					// Updated parent's latest child end timestamp
-					if (depth > 0) {
-						stack[depth-1].latest_child_end_ns = Q_max(stack[depth-1].latest_child_end_ns, timestamp_ns);
+					if (parent_frame) {
+						parent_frame->latest_child_end_ns = Q_max(parent_frame->latest_child_end_ns, timestamp_ns);
 					}
 
 					// Only count top level scopes towards active time, and only if it's not waiting
@@ -583,7 +594,9 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 
 	for (int i = 0; i < gpurofls_count; ++i) {
 		const VCombufProfilingResult *const gpurofl = &gpurofls[i];
-		y += g_speeds.font_metrics.glyph_height * 6;
+
+		y += g_speeds.font_metrics.glyph_height * (MAX_STACK_DEPTH + 1);
+
 		processAndDrawAprofEvents((ProcessAndDrawAprofEvents){
 			.draw = draw,
 			.events = gpurofl->events.items,
@@ -634,7 +647,7 @@ static void getCurrentFontMetrics(void) {
 
 	// TODO these numbers are mostly fine for the "default" font. Unfortunately
 	// we don't have any access to real font metrics from here, ref_api_t doesn't give us anything about fonts. ;_;
-	g_speeds.font_metrics.glyph_width = 8 * scale;
+	g_speeds.font_metrics.glyph_width = 7 * scale;
 	g_speeds.font_metrics.glyph_height = 20 * scale;
 	g_speeds.font_metrics.scale = scale;
 }
