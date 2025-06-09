@@ -195,6 +195,7 @@ typedef struct {
 	int y;
 	Metascope *scopes;
 	const aprof_scope_t *aprof_scopes;
+	VIEW_DECLARE_CONST(aprof_counter_desc_t, aprof_counters);
 	const char *scope_name_prefix;
 	int *out_active_time_us;
 	int *out_wait_time_us;
@@ -329,6 +330,26 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					}
 					break;
 				}
+
+			case APROF_EVENT_COUNTER: {
+					struct StackFrame *const frame = depth > 0 ? stack + depth - 1 : NULL;
+					if (!frame || !args.aprof_counters.items)
+						break;
+
+					const uint32_t counter_index = APROF_EVENT_COUNTER_INDEX(event);
+					const uint64_t counter_value = APROF_EVENT_COUNTER_VALUE(event);
+
+					ASSERT(counter_index < args.aprof_counters.count);
+
+					gEngine.Con_Reportf("%s.%s (%d) = %d\n",
+						args.aprof_scopes[frame->scope_id].name,
+						args.aprof_counters.items[counter_index].name,
+						args.aprof_counters.items[counter_index].unit,
+						(int)counter_value);
+
+					break;
+				}
+
 
 			default:
 				break;
@@ -607,6 +628,10 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 			.y = y,
 			.scopes = g_speeds.frame.gpu_scopes,
 			.aprof_scopes = gpurofl->scopes.items,
+			.aprof_counters = {
+				.items = gpurofl->counters.items,
+				.count = gpurofl->counters.count,
+			},
 			.scope_name_prefix = "gpuscope",
 			.out_active_time_us = NULL, // GPU time is handled elsewhere for now
 			.out_wait_time_us = NULL,

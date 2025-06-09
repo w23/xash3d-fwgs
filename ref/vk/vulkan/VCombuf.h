@@ -37,13 +37,11 @@ typedef struct VCombufProfilingResult {
 	// Command buffer execution lifetime
 	uint64_t begin_ns, end_ns;
 
-	// All registered scopes
-	// FIXME aprof_scope_t
+	// All registered GPU profiler scopes and counters
 	VIEW_DECLARE_CONST(aprof_scope_t, scopes);
 
-	// A list of enabled performance query counters
-	// Each entry is an index into `v_device_info.perf_counters` arrays
-	VIEW_DECLARE_CONST(uint32_t, enabled_perf_counters);
+	// Same indexes as into `v_device_info.perf_counters` arrays
+	VIEW_DECLARE_CONST(aprof_counter_desc_t, counters);
 
 	// All events during this command buffer submission
 	VIEW_DECLARE_CONST(aprof_event_t, events);

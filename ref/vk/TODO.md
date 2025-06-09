@@ -12,22 +12,22 @@
           No idea how to expose this.
       - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
       - [x] Cover single-command scopes explicitly (by flag)
-  - [ ] return counters tied to scopes
+  - [x] return counters tied to scopes
     - [x] refactor how this data is returned
 	- [x] fixup r_speeds to display the new format for GPU
 	- [x] register new GPU scopes properly
-	- [ ] restore concurrent scopes overlap stacking
+	- [x] restore concurrent scopes overlap stacking
 	- [ ] track Y offset for scopes blocks properly
 - [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
 - [ ] add command/variable to select enabled counters
 - [x] measure counters for the entire command buffer
 - [ ] keep track of current perf query object, gracefully handle when it changes
-- [ ] convert and pass named results to r_speeds.c
+- [x] convert and pass named results to r_speeds.c
     - [ ] alt/TODO: universal metrics
         - [ ] refactor metrics code, allow registering and de-registering metrics
-        - [ ] unify gpu and cpu scopes with timestamps
-        - [ ] add universal counters, attachable to both cpu and gpu scopes
+        - [x] unify gpu and cpu scopes with timestamps
+        - [x] add universal counters, attachable to both cpu and gpu scopes
 - [ ] visualize counters in r_speeds display
 - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
   this will also move us closer to explicit after-combuf cleanup handling

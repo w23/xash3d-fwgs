@@ -17,6 +17,14 @@
 // Rough theoretical max is (((MAX_TIMESTAMP_QUERIES) + (MAX_PERFORMANCE_QUERIES) * (MAX_PERFORMANCE_QUERY_COUNTERS))
 #define MAX_PROF_EVENTS 1024
 
+static const char* myStrdup(const char *src) {
+	const int len = strlen(src);
+	char *ret = Mem_Malloc(vk_core.pool, len + 1);
+	memcpy(ret, src, len);
+	ret[len] = '\0';
+	return ret;
+}
+
 typedef struct {
 	vk_combuf_t public;
 	int used;
@@ -53,9 +61,26 @@ static struct {
 	struct {
 		VPerfQuery *query;
 		ARRAY_DYNAMIC_DECLARE(uint32_t, counters);
+		ARRAY_DYNAMIC_DECLARE(aprof_counter_desc_t, aprof_counters);
 	} perf;
 } g_combuf;
 
+static aprof_counter_unit_t counterUnit(VkPerformanceCounterUnitKHR unit) {
+	switch (unit) {
+		case VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR:
+			return AprofCounterUnit_Permyriad;
+
+		case VK_PERFORMANCE_COUNTER_UNIT_NANOSECONDS_KHR:
+			return AprofCounterUnit_Nanoseconds;
+
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_KHR:
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_PER_SECOND_KHR:
+			return AprofCounterUnit_Bytes;
+
+		default:
+			return AprofCounterUnit_Generic;
+	}
+}
 
 qboolean R_VkCombuf_Init( void ) {
 	g_combuf.pool = R_VkCommandPoolCreate(MAX_COMMANDBUFFERS);
@@ -84,6 +109,17 @@ qboolean R_VkCombuf_Init( void ) {
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
 
 	arrayDynamicInitT(&g_combuf.perf.counters);
+	arrayDynamicInitT(&g_combuf.perf.aprof_counters);
+
+	// Initialize global-lifetime counters descriptors
+	if (v_device_info.perf_counters.count > 0) {
+		arrayDynamicResizeT(&g_combuf.perf.aprof_counters, v_device_info.perf_counters.count);
+		for (uint32_t i = 0; i < v_device_info.perf_counters.count; ++i) {
+			aprof_counter_desc_t *const cdesc = g_combuf.perf.aprof_counters.items + i;
+			cdesc->name = myStrdup(v_device_info.perf_counters.desc[i].name);
+			cdesc->unit = counterUnit(v_device_info.perf_counters.counters[i].unit);
+		}
+	}
 
 	// FIXME test-only! This should be a command!
 	const uint32_t counters[] = {0, 1, 2, 10, 11};
@@ -108,6 +144,12 @@ static void perfQueryCleanup(void) {
 
 void R_VkCombuf_Destroy( void ) {
 	perfQueryCleanup();
+
+	for (uint32_t i = 0; i < g_combuf.perf.aprof_counters.count; ++i) {
+		const aprof_counter_desc_t *const cdesc = g_combuf.perf.aprof_counters.items + i;
+		Mem_Free((char*)cdesc->name);
+	}
+	arrayDynamicDestroyT(&g_combuf.perf.aprof_counters);
 
 	vkDestroyQueryPool(vk_core.device, g_combuf.timestamp.pool, NULL);
 	R_VkCommandPoolDestroy(&g_combuf.pool);
@@ -160,14 +202,6 @@ void R_VkCombufEnd( vk_combuf_t* pub ) {
 
 	R_VkCombufScopeEnd(pub, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 	XVK_CHECK(vkEndCommandBuffer(cb->public.cmdbuf));
-}
-
-static const char* myStrdup(const char *src) {
-	const int len = strlen(src);
-	char *ret = Mem_Malloc(vk_core.pool, len + 1);
-	memcpy(ret, src, len);
-	ret[len] = '\0';
-	return ret;
 }
 
 int R_VkGpuScope_Register(const char *name) {
@@ -464,7 +498,9 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 			const uint64_t counter_index = APROF_EVENT_COUNTER_INDEX(*event);
 			ASSERT(counter_index == j);
 
-			*event = APROF_EVENT_MAKE_COUNTER(j, computeCounterValue(j, results[j]));
+			const uint32_t vk_perf_counter_index = g_combuf.perf.counters.items[j];
+
+			*event = APROF_EVENT_MAKE_COUNTER(vk_perf_counter_index, computeCounterValue(vk_perf_counter_index, results[j]));
 		} // for events in counters reserved block
 
 		// Skip the entire reserved block
@@ -511,9 +547,9 @@ VCombufProfilingResult R_VkCombufProfilingGetResult(vk_combuf_t *pub) {
 			.items = g_combuf.scopes,
 			.count = g_combuf.scopes_count,
 		},
-		.enabled_perf_counters = {
-			.items = g_combuf.perf.counters.items,
-			.count = g_combuf.perf.counters.count,
+		.counters = {
+			.items = g_combuf.perf.aprof_counters.items,
+			.count = g_combuf.perf.aprof_counters.count,
 		},
 		.events = {
 			.items = cb->profiler.events,

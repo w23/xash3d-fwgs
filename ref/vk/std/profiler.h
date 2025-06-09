@@ -128,6 +128,17 @@ enum {
 	((((uint64_t)(counter) << APROF_EVENT_COUNTER_INDEX_SHIFT)) & APROF_EVENT_COUNTER_INDEX_MASK) | \
 	(((uint64_t)(value)) << APROF_EVENT_COUNTER_VALUE_SHIFT)
 
+typedef enum {
+	AprofCounterUnit_Generic,
+	AprofCounterUnit_Nanoseconds,
+	AprofCounterUnit_Bytes,
+	AprofCounterUnit_Permyriad,
+} aprof_counter_unit_t;
+
+typedef struct {
+	const char* name;
+	aprof_counter_unit_t unit;
+} aprof_counter_desc_t;
 
 // MUST be power of 2
 #define APROF_EVENT_BUFFER_SIZE (1<<20)
