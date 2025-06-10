@@ -341,11 +341,11 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 
 					ASSERT(counter_index < args.aprof_counters.count);
 
-					gEngine.Con_Reportf("%s.%s (%d) = %d\n",
+					gEngine.Con_Reportf("%s.%s (%d) = %llu\n",
 						args.aprof_scopes[frame->scope_id].name,
 						args.aprof_counters.items[counter_index].name,
 						args.aprof_counters.items[counter_index].unit,
-						(int)counter_value);
+						(unsigned long long)counter_value);
 
 					break;
 				}
@@ -502,74 +502,6 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	return frame_bar_y;
 }
 
-#if 0
-static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_time_ns, float time_scale_ms, const VCombufProfilingResult *gpurofls, int gpurofls_count) {
-	y += g_speeds.font_metrics.glyph_height * 6;
-	const int bar_height = g_speeds.font_metrics.glyph_height;
-
-#define MAX_ROWS 4
-	int rows_x[MAX_ROWS] = {0};
-	for (int j = 0; j < gpurofls_count; ++j) {
-		const VCombufProfilingResult *const gpurofl = gpurofls + j;
-		for (int i = 0; i < gpurofl->entries_count; ++i) {
-			const int scope_index = gpurofl->entries[i];
-			const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
-			const uint64_t end_ns = gpurofl->timestamps[i*2 + 1];
-			const char *name = gpurofl->scopes[scope_index].name;
-
-			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us,"gpuscope", name, kSpeedsMetricMicroseconds, /* reset */ true, name, __FILE__, __LINE__);
-				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
-			}
-
-			g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
-
-			rgba_t color = {255, 255, 0, 127};
-			getColorForString(name, color);
-
-			if (draw) {
-				const int height = bar_height;
-				const float delta_ms = (end_ns - begin_ns) * 1e-6;
-				const int width = delta_ms  * time_scale_ms;
-				const int x0 = (begin_ns - frame_begin_time_ns) * 1e-6 * time_scale_ms;
-				const int x1 = x0 + width;
-
-				int bar_y = -1;
-				for (int row_i = 0; row_i < MAX_ROWS; ++row_i) {
-					if (rows_x[row_i] <= x0) {
-						bar_y = row_i;
-						rows_x[row_i] = x1;
-						break;
-					}
-				}
-
-				if (bar_y == -1) {
-					// TODO how? increase MAX_ROWS
-					bar_y = MAX_ROWS;
-				}
-
-				bar_y = bar_y * bar_height + y;
-
-				rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
-				CL_FillRGBA(kRenderTransAdd, x0, bar_y, width, height, color[0], color[1], color[2], color[3]);
-
-				// Tweak this if scope names escape the block boundaries
-				char tmp[64];
-				tmp[0] = '\0';
-				const int glyph_width = g_speeds.font_metrics.glyph_width;
-				const int box_capped_length = Q_min(sizeof(tmp), width / glyph_width);
-				if (box_capped_length > 0) {
-					Q_snprintf(tmp, box_capped_length, "%s %.3fms", name, delta_ms);
-					gEngine.Con_DrawString(x0, bar_y, tmp, text_color);
-				}
-
-				//drawTimeBar(frame_begin_time_ns, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
-			}
-		}
-	}
-}
-#endif
-
 static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const VCombufProfilingResult *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
@@ -637,9 +569,6 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 			.out_wait_time_us = NULL,
 		});
 	}
-
-	// FIXME restore with new format
-	//drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
 
 	return y + g_speeds.font_metrics.glyph_height * 6;
 }

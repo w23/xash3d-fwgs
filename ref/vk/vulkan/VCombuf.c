@@ -505,23 +505,6 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 
 		// Skip the entire reserved block
 		i += g_combuf.perf.counters.count;
-
-		// After the perf counters block there should always be a scope_end event by design
-		if (LOG_VERBOSE) {
-			ASSERT(i < cb->profiler.events_count);
-			const aprof_event_t next_event = cb->profiler.events[i];
-			const int next_event_type = APROF_EVENT_TYPE(next_event);
-			ASSERT(next_event_type == APROF_EVENT_SCOPE_END);
-
-			const uint64_t scope_id = APROF_EVENT_SCOPE_ID(next_event);
-			ASSERT(scope_id < g_combuf.scopes_count);
-
-			DEBUG("Scope [%s] perf counters:", g_combuf.scopes[scope_id].name);
-			for (uint32_t i = 0; i < g_combuf.perf.counters.count; ++i) {
-				const uint32_t counter = g_combuf.perf.counters.items[i];
-				DEBUG("\t%s (%d) = %f", v_device_info.perf_counters.desc[counter].name, i, results[i].float64);
-			}
-		} // next_event block
 	} // for all events
 } // patchTimestampQueryEvents()
 
