@@ -21,6 +21,7 @@
 - [ ] add command line argument to enable performance query
 - [ ] add command to enable/disable profiling counters
 - [ ] add command/variable to select enabled counters
+- [ ] address r_speeds metrics/graphs by index number instead of full text name
 - [x] measure counters for the entire command buffer
 - [ ] keep track of current perf query object, gracefully handle when it changes
 - [x] convert and pass named results to r_speeds.c
@@ -29,6 +30,9 @@
         - [x] unify gpu and cpu scopes with timestamps
         - [x] add universal counters, attachable to both cpu and gpu scopes
 - [ ] visualize counters in r_speeds display
+- [ ] r_speeds
+    - [ ] logging proper
+    - [ ] s/metric/unit/
 - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
   this will also move us closer to explicit after-combuf cleanup handling
 	- [ ] combuf state machine: what states is it in?

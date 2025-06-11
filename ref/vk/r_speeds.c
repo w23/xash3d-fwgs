@@ -17,6 +17,7 @@
 #define MAX_SPEEDS_METRICS (512)
 #define TARGET_FRAME_TIME (1000.f / 60.f)
 #define MAX_GRAPHS 8
+#define MAX_COUNTERS_PER_SCOPE (32)
 
 #define MODULE_NAME "speeds"
 
@@ -64,7 +65,13 @@ typedef enum {
 
 typedef struct {
 	int initialized;
+	int value;
+} Metacounter;
+
+typedef struct {
+	int initialized;
 	int time_us; // automatically zeroed by metrics each frame
+	Metacounter counters[MAX_COUNTERS_PER_SCOPE];
 } Metascope;
 
 static struct {
@@ -341,11 +348,46 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 
 					ASSERT(counter_index < args.aprof_counters.count);
 
-					gEngine.Con_Reportf("%s.%s (%d) = %llu\n",
-						args.aprof_scopes[frame->scope_id].name,
-						args.aprof_counters.items[counter_index].name,
-						args.aprof_counters.items[counter_index].unit,
-						(unsigned long long)counter_value);
+					if (counter_index >= MAX_COUNTERS_PER_SCOPE) {
+						// TODO throttled error
+						break;
+					}
+
+					const aprof_counter_desc_t *const counter_desc = &args.aprof_counters.items[counter_index];
+					Metascope *const metascope = &args.scopes[frame->scope_id];
+					Metacounter *const metacounter = &metascope->counters[counter_index];
+
+					metacounter->value = counter_value;
+
+					r_speeds_metric_type_t metric = kSpeedsMetricCount;
+					switch (counter_desc->unit) {
+						case AprofCounterUnit_Bytes:
+							metric = kSpeedsMetricBytes;
+							break;
+						case AprofCounterUnit_Nanoseconds:
+							metacounter->value = counter_value / 1000;
+							metric = kSpeedsMetricMicroseconds;
+							break;
+						case AprofCounterUnit_Permyriad:
+							//metric = kSpeedsMetricPermyriad;
+							//break;
+						case AprofCounterUnit_Generic:
+							break;
+					}
+
+					if (!metacounter->initialized) {
+						const qboolean reset = true;
+						R_SpeedsRegisterMetric(&metacounter->value,
+							args.aprof_scopes[frame->scope_id].name, counter_desc->name,
+							metric, reset, counter_desc->name, __FILE__, __LINE__);
+						metacounter->initialized = 1;
+					}
+
+					// gEngine.Con_Reportf("%s.%s (%d) = %llu\n",
+					// 	args.aprof_scopes[frame->scope_id].name,
+					// 	args.aprof_counters.items[counter_index].name,
+					// 	args.aprof_counters.items[counter_index].unit,
+					// 	(unsigned long long)counter_value);
 
 					break;
 				}
