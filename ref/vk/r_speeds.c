@@ -285,7 +285,7 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					const uint64_t delta_ns = timestamp_ns - stack_frame->begin_ns;
 
-					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns / 1000);
+					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns);
 
 					// This is a top level scope that should be counted towards active usage
 					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0)
