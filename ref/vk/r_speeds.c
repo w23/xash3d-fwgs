@@ -830,17 +830,17 @@ static void doPrintMetrics( void ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
-		header_format = "  | %-38s | %-10s | %-46s | %21s\n";
-		line_format   = "  | %.38s | %.10s | %.46s | %.21s\n";
-		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-46s^7 | ^6%s:%d^7\n";
+		header_format = "  | %-3s | %-38s | %-10s | %-46s | %21s\n";
+		line_format   = "  | %.3s | %.38s | %.10s | %.46s | %.21s\n";
+		row_format    = "  | ^2%-3d^7 | ^2%-38s^7 | ^3%-10s^7 | ^5%-46s^7 | ^6%s:%d^7\n";
 
 		size_t line_size = sizeof ( line );
 		memset( line, '-', line_size - 1 );
 		line[line_size - 1] = '\0';
 	} else {
-		header_format = "  %s = %s  -->  (%s, %s)\n";
+		header_format = " [%s] %s = %s  -->  (%s, %s)\n";
 		line_format   = NULL;
-		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
+		row_format    = " [^2%d^7] ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
 
 		line[0] = '\0';
 	}
@@ -848,8 +848,8 @@ static void doPrintMetrics( void ) {
 	// Reset mode to print only this frame.
 	g_speeds.frame.metrics_print_mode = kSpeedsMprintNone;
 
-	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
-	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
+	gEngine.Con_Printf( header_format, "index", "module.metric_name", "value", "variable", "registration_location" );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line, line );
 	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
@@ -858,10 +858,10 @@ static void doPrintMetrics( void ) {
 
 		char value_with_unit[16];
 		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
-		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, COM_FileWithoutPath( metric->src_file ), metric->src_line );
+		gEngine.Con_Printf( row_format, i, metric->name, value_with_unit, metric->var_name, COM_FileWithoutPath( metric->src_file ), metric->src_line );
 	}
-	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
-	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line, line );
+	gEngine.Con_Printf( header_format, "index", "module.metric_name", "value", "variable", "registration_location" );
 }
 
 // Handles optional filter argument for `r_speeds_mlist` and `r_speeds_mtable` commands.
