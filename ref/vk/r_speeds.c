@@ -432,11 +432,24 @@ static int findMetricIndexByName( const_string_view_t name) {
 		if (svCmp(name, g_speeds.metrics[i].name) == 0)
 			return i;
 	}
-
 	return -1;
 }
 
+static int findMetricIndexByIndexOrName( const_string_view_t name) {
+	// try to read it as metric index first
+	const SVParseLongResult parsed = svParseLong(name);
+	if (parsed.chars_converted == name.len) {
+		if (parsed.value < 0 || parsed.value > g_speeds.metrics_count) {
+			return -1;
+		}
+		return parsed.value;
+	}
+
+	return findMetricIndexByName(name);
+}
+
 static int findGraphIndexByName( const_string_view_t name) {
+	// TODO also delete by index. But need to have the active graph list first
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		if (svCmp(name, g_speeds.graphs[i].name) == 0)
 			return i;
@@ -706,7 +719,7 @@ static void speedsGraphAdd(const_string_view_t name, int metric_index) {
 }
 
 static void speedsGraphAddByMetricName( const_string_view_t name ) {
-	const int metric_index = findMetricIndexByName(name);
+	const int metric_index = findMetricIndexByIndexOrName(name);
 	if (metric_index < 0) {
 		gEngine.Con_Printf(S_ERROR "Metric \"%.*s\" not found\n", name.len, name.s);
 		return;
@@ -718,7 +731,7 @@ static void speedsGraphAddByMetricName( const_string_view_t name ) {
 		return;
 	}
 
-	speedsGraphAdd( name, metric_index );
+	speedsGraphAdd( svFromNullTerminated(metric->name), metric_index );
 }
 
 static void speedsGraphDelete( r_speeds_graph_t *graph ) {
