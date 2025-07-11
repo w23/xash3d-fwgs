@@ -4,9 +4,12 @@
 - [x] add commmand to list performance query counters
 - [x] add command/variable to select enabled counters
 	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
+- [x] issue: misaligned perf query lock
 
 # Next
+- [ ] issue: query pool is not destroyed
 - [ ] add command line argument to enable performance query
+- [ ] issue: something something validation swapchain semaphore
 - [ ] display percent/promille properly
 - [ ] alt/TODO: universal metrics
 	- [ ] refactor metrics code, allow registering and de-registering metrics

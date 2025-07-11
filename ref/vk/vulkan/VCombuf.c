@@ -557,6 +557,7 @@ VCombufProfilingResult R_VkCombufProfilingGetResult(vk_combuf_t *pub) {
 	}
 
 	releasePerfQuery(cb->profiler.perf_query);
+	cb->profiler.perf_query = NULL;
 
 	APROF_SCOPE_END(function);
 
