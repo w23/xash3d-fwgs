@@ -43,7 +43,7 @@ void arrayDynamicResize(array_dynamic_t *array, int count) {
 	array->count = count;
 }
 
-void arrayDynamicAppend(array_dynamic_t *array, void *item) {
+void arrayDynamicAppend(array_dynamic_t *array, const void *item) {
 	const int new_count = array->count + 1;
 	arrayDynamicEnsureCapacity(array, new_count);
 

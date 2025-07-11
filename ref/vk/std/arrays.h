@@ -50,7 +50,7 @@ void arrayDynamicInit(array_dynamic_t *array, int item_size);
 void arrayDynamicDestroy(array_dynamic_t *array);
 
 void arrayDynamicReserve(array_dynamic_t *array, int capacity);
-void arrayDynamicAppend(array_dynamic_t *array, void *item);
+void arrayDynamicAppend(array_dynamic_t *array, const void *item);
 #define arrayDynamicAppendItem(array, item) \
 	do { \
 		ASSERT((array)->item_size == sizeof(&(item))); \
