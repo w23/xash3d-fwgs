@@ -1,34 +1,17 @@
 # Current
 
-## 2025-05-05 E401 VK_KHR_performance_query
-- [x] detect perf query availability and enable it
-- [x] enumerate counters
-- [x] scaffold the query pool code
+## 2025-07-11 E402 Payment Required
+- [x] add commmand to list performance query counters
+- [x] add command/variable to select enabled counters
+	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
 
 # Next
-- [x] per-scope perf query counters
-  - [x] .... `VUID-vkCmdBeginQuery-queryPool-01922` seemingly prohibits overlapping queries.
-    - [x] Cannot do hierarchical scopes, and likely must do a full barrier at each scope end in this mode.
-          No idea how to expose this.
-      - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
-      - [x] Cover single-command scopes explicitly (by flag)
-  - [x] return counters tied to scopes
-    - [x] refactor how this data is returned
-	- [x] fixup r_speeds to display the new format for GPU
-	- [x] register new GPU scopes properly
-	- [x] restore concurrent scopes overlap stacking
-	- [ ] track Y offset for scopes blocks properly
 - [ ] add command line argument to enable performance query
-- [ ] add command to enable/disable profiling counters
-- [ ] add command/variable to select enabled counters
-- [ ] address r_speeds metrics/graphs by index number instead of full text name
-- [x] measure counters for the entire command buffer
+- [ ] display percent/promille properly
+- [ ] alt/TODO: universal metrics
+	- [ ] refactor metrics code, allow registering and de-registering metrics
+- [ ] track Y offset for scopes blocks properly
 - [ ] keep track of current perf query object, gracefully handle when it changes
-- [x] convert and pass named results to r_speeds.c
-    - [ ] alt/TODO: universal metrics
-        - [ ] refactor metrics code, allow registering and de-registering metrics
-        - [x] unify gpu and cpu scopes with timestamps
-        - [x] add universal counters, attachable to both cpu and gpu scopes
 - [ ] visualize counters in r_speeds display
 - [ ] r_speeds
     - [ ] logging proper
@@ -69,6 +52,29 @@
 - [ ] Render graph
 
 # Log
+
+## 2025-06-XX EN/A offline
+- [x] per-scope perf query counters
+  - [x] .... `VUID-vkCmdBeginQuery-queryPool-01922` seemingly prohibits overlapping queries.
+    - [x] Cannot do hierarchical scopes, and likely must do a full barrier at each scope end in this mode.
+          No idea how to expose this.
+      - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
+      - [x] Cover single-command scopes explicitly (by flag)
+  - [x] return counters tied to scopes
+    - [x] refactor how this data is returned
+	- [x] fixup r_speeds to display the new format for GPU
+	- [x] register new GPU scopes properly
+	- [x] restore concurrent scopes overlap stacking
+- [x] measure counters for the entire command buffer
+- [x] convert and pass named results to r_speeds.c
+        - [x] unify gpu and cpu scopes with timestamps
+        - [x] add universal counters, attachable to both cpu and gpu scopes
+- [x] address r_speeds metrics/graphs by index number instead of full text name
+
+## 2025-05-05 E401 VK_KHR_performance_query
+- [x] detect perf query availability and enable it
+- [x] enumerate counters
+- [x] scaffold the query pool code
 
 ## 2025-03-21 EN/A offline
 - [ ] Make producers

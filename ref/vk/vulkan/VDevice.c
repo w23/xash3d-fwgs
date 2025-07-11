@@ -224,6 +224,19 @@ static const char *perfCounterStorageName(VkPerformanceCounterStorageKHR storage
 	}
 }
 
+void vDevicePrintPerformanceCounters(const VDeviceInfo *info) {
+	INFO("Got %d counters:", info->perf_counters.count);
+	for (uint32_t i = 0; i < info->perf_counters.count; ++i) {
+		const VkPerformanceCounterKHR *const cnt = info->perf_counters.counters + i;
+		const VkPerformanceCounterDescriptionKHR *const desc = info->perf_counters.desc + i;
+		INFO("  %d: %s %s/%s, %s@%s (%s)",
+			i, perfCounterScopeName(cnt->scope),
+			desc->category, desc->name,
+			perfCounterUnitName(cnt->unit), perfCounterStorageName(cnt->storage),
+			desc->description);
+	}
+}
+
 static void queryPerformanceCounters(VDeviceInfo *info) {
 	uint32_t counters_count = 0;
 	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, NULL, NULL));
@@ -238,20 +251,11 @@ static void queryPerformanceCounters(VDeviceInfo *info) {
 
 	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, counters, counters_desc));
 
-	INFO("Got %d counters:", counters_count);
-	for (uint32_t i = 0; i < counters_count; ++i) {
-		const VkPerformanceCounterKHR *const cnt = counters + i;
-		const VkPerformanceCounterDescriptionKHR *const desc = counters_desc + i;
-		INFO("  %d: %s %s/%s, %s@%s (%s)",
-			i, perfCounterScopeName(cnt->scope),
-			desc->category, desc->name,
-			perfCounterUnitName(cnt->unit), perfCounterStorageName(cnt->storage),
-			desc->description);
-	}
-
 	info->perf_counters.count = counters_count;
 	info->perf_counters.counters = counters;
 	info->perf_counters.desc = counters_desc;
+
+	vDevicePrintPerformanceCounters(info);
 }
 
 static void readPhysicalDeviceInfo(VDeviceInfo *info) {

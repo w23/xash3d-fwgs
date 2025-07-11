@@ -26,6 +26,12 @@ static const char* myStrdup(const char *src) {
 }
 
 typedef struct {
+	int refcount;
+	VPerfQuery *query;
+	ARRAY_DYNAMIC_DECLARE(uint32_t, counters);
+} PerfQuery;
+
+typedef struct {
 	vk_combuf_t public;
 	int used;
 	struct {
@@ -36,11 +42,9 @@ typedef struct {
 		aprof_event_t events[MAX_PROF_EVENTS];
 		int events_count;
 
+		PerfQuery *perf_query;
 		int active_perf_query;
 
-		// Performance query object that was used for the last submission.
-		// If it is not the *current* performance query object from `g_combuf`, then the counters are ignored.
-		//const VPerfQuery *perf_query_used;
 	} profiler;
 } vk_combuf_impl_t;
 
@@ -59,11 +63,93 @@ static struct {
 	int entire_combuf_scope_id;
 
 	struct {
-		VPerfQuery *query;
-		ARRAY_DYNAMIC_DECLARE(uint32_t, counters);
+		// Current performance query, for the next command buffer to acquire
+		PerfQuery *pquery;
+
+		// Global set of gpu perf query counters
 		ARRAY_DYNAMIC_DECLARE(aprof_counter_desc_t, aprof_counters);
+
+		int locks_acquired;
 	} perf;
 } g_combuf;
+
+static PerfQuery *makePerfQuery(const uint32_t *counters, uint32_t counters_count) {
+	if (counters_count == 0)
+		return NULL;
+
+	// Validate counters
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		const uint32_t counter = counters[i];
+		if (counter > v_device_info.perf_counters.count) {
+			ERR("Counter %u is invalid, max %u counters are available", counter, v_device_info.perf_counters.count);
+			return NULL;
+		}
+
+		for (uint32_t j = 0; j < i; ++j) {
+			if (counters[j] == counter) {
+				ERR("Duplicate counter %u", counter);
+				return NULL;
+			}
+		}
+	}
+
+	VPerfQuery *const query = vPerfQueryCreate(counters, counters_count, MAX_COMMANDBUFFERS * MAX_TIMESTAMP_QUERIES);
+	if (!query) {
+		ERR("Couldn't create performance query with %u counters", counters_count);
+		return NULL;
+	}
+
+	PerfQuery *pq = Mem_Malloc(vk_core.pool, sizeof(*pq));
+	pq->refcount = 0; // Start not acquired
+	pq->query = query;
+
+	arrayDynamicInitT(&pq->counters);
+	arrayDynamicResizeT(&pq->counters, counters_count);
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		pq->counters.items[i] = counters[i];
+	}
+
+	return pq;
+}
+
+static PerfQuery *acquirePerfQuery(void) {
+	if (!g_combuf.perf.pquery)
+		return NULL;
+
+	if (!g_combuf.perf.locks_acquired) {
+		const VkAcquireProfilingLockInfoKHR apli = {
+			.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
+			.timeout = UINT64_MAX,
+		};
+		XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
+	}
+
+	g_combuf.perf.locks_acquired++;
+
+	g_combuf.perf.pquery->refcount++;
+	return g_combuf.perf.pquery;
+}
+
+static void releasePerfQuery(PerfQuery *pq) {
+	if (!pq)
+		return;
+
+	ASSERT(g_combuf.perf.locks_acquired > 0);
+	g_combuf.perf.locks_acquired--;
+	if (g_combuf.perf.locks_acquired == 0) {
+		ASSERT(pq->refcount == 1);
+		vkReleaseProfilingLockKHR(v_device);
+	}
+
+	ASSERT(pq->refcount > 0);
+	pq->refcount--;
+	if (pq->refcount > 0)
+		return;
+
+	vPerfQueryDestroy(pq->query);
+	arrayDynamicDestroyT(&pq->counters);
+	Mem_Free(pq);
+}
 
 static aprof_counter_unit_t counterUnit(VkPerformanceCounterUnitKHR unit) {
 	switch (unit) {
@@ -108,10 +194,8 @@ qboolean R_VkCombuf_Init( void ) {
 
 	g_combuf.entire_combuf_scope_id = R_VkGpuScope_Register("GPU");
 
-	arrayDynamicInitT(&g_combuf.perf.counters);
-	arrayDynamicInitT(&g_combuf.perf.aprof_counters);
-
 	// Initialize global-lifetime counters descriptors
+	arrayDynamicInitT(&g_combuf.perf.aprof_counters);
 	if (v_device_info.perf_counters.count > 0) {
 		arrayDynamicResizeT(&g_combuf.perf.aprof_counters, v_device_info.perf_counters.count);
 		for (uint32_t i = 0; i < v_device_info.perf_counters.count; ++i) {
@@ -121,29 +205,11 @@ qboolean R_VkCombuf_Init( void ) {
 		}
 	}
 
-	// FIXME test-only! This should be a command!
-	const uint32_t counters[] = {0, 1, 2, 10, 11};
-	R_VkCombufPerfQueryEnable(counters, COUNTOF(counters));
-
 	return true;
 }
 
-static void perfQueryCleanup(void) {
-	if (!g_combuf.perf.query)
-		return;
-
-	// FIXME reset all combufs query refs
-
-	vkReleaseProfilingLockKHR(v_device);
-
-	vPerfQueryDestroy(g_combuf.perf.query);
-	g_combuf.perf.query = NULL;
-
-	arrayDynamicDestroyT(&g_combuf.perf.counters);
-}
-
 void R_VkCombuf_Destroy( void ) {
-	perfQueryCleanup();
+	releasePerfQuery(g_combuf.perf.pquery);
 
 	for (uint32_t i = 0; i < g_combuf.perf.aprof_counters.count; ++i) {
 		const aprof_counter_desc_t *const cdesc = g_combuf.perf.aprof_counters.items + i;
@@ -186,6 +252,7 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 	cb->profiler.events_count = 0;
 	cb->profiler.timestamp_queries = 0;
 	cb->profiler.active_perf_query = -1;
+	cb->profiler.perf_query = acquirePerfQuery();
 
 	const VkCommandBufferBeginInfo beginfo = {
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -245,10 +312,10 @@ static void scopePerfQueryBegin(vk_combuf_impl_t *cb, uint32_t flags) {
 	if ((flags & VCombufScopeFlag_PerfQuery) == 0)
 		return;
 
-	if (!g_combuf.perf.query)
+	if (!cb->profiler.perf_query)
 		return;
 
-	const int perf_query_index = vPerfQueryBegin(g_combuf.perf.query, &cb->public);
+	const int perf_query_index = vPerfQueryBegin(cb->profiler.perf_query->query, &cb->public);
 
 	if (LOG_VERBOSE)
 		DEBUG("Begin perf_query id=%d", perf_query_index);
@@ -263,14 +330,14 @@ static void scopePerfQueryEnd(vk_combuf_impl_t *cb) {
 	if (cb->profiler.active_perf_query < 0)
 		return;
 
-	ASSERT(g_combuf.perf.query);
+	ASSERT(cb->profiler.perf_query);
 
 	if (LOG_VERBOSE)
 		DEBUG("End perf_query id=%d", cb->profiler.active_perf_query);
 
-	vPerfQueryEnd(g_combuf.perf.query, &cb->public, cb->profiler.active_perf_query);
+	vPerfQueryEnd(cb->profiler.perf_query->query, &cb->public, cb->profiler.active_perf_query);
 
-	for (size_t i = 0; i < g_combuf.perf.counters.count; ++i) {
+	for (size_t i = 0; i < cb->profiler.perf_query->counters.count; ++i) {
 		combufAppendPerfEvent(cb, APROF_EVENT_MAKE_COUNTER(i, cb->profiler.active_perf_query));
 	}
 
@@ -330,45 +397,13 @@ int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count)
 		return 0;
 	}
 
-	// Validate counters
-	for (uint32_t i = 0; i < counters_count; ++i) {
-		const uint32_t counter = counters[i];
-		if (counter > v_device_info.perf_counters.count) {
-			ERR("Counter %u is invalid, max %u counters are available", counter, v_device_info.perf_counters.count);
-			return 0;
-		}
+	PerfQuery *const new_query = makePerfQuery(counters, counters_count);
 
-		for (uint32_t j = 0; j < i; ++j) {
-			if (counters[j] == counter) {
-				ERR("Duplicate counter %u", counter);
-				return 0;
-			}
-		}
-	}
+	releasePerfQuery(g_combuf.perf.pquery);
+	g_combuf.perf.pquery = new_query;
 
-	VPerfQuery *const new_query = vPerfQueryCreate(counters, counters_count, MAX_COMMANDBUFFERS * MAX_TIMESTAMP_QUERIES);
-	if (!new_query) {
-		ERR("Couldn't create performance query with %u counters", counters_count);
-		return 0;
-	}
-
-	// Further operations affect the entire device, so make sure everything is stopped
-	vkDeviceWaitIdle(v_device);
-
-	perfQueryCleanup();
-
-	arrayDynamicResizeT(&g_combuf.perf.counters, counters_count);
-	for (uint32_t i = 0; i < counters_count; ++i) {
-		g_combuf.perf.counters.items[i] = counters[i];
-	}
-
-	g_combuf.perf.query = new_query;
-
-	const VkAcquireProfilingLockInfoKHR apli = {
-		.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
-		.timeout = UINT64_MAX,
-	};
-	XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
+	// Make sure that it's properly acquired
+	acquirePerfQuery();
 
 	return 1;
 }
@@ -475,7 +510,7 @@ static uint64_t computeCounterValue(uint32_t counter_index, VkPerformanceCounter
 static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 	ASSERT(cb->profiler.active_perf_query < 0);
 
-	if (!g_combuf.perf.query)
+	if (!cb->profiler.perf_query)
 		return;
 
 	for (int i = 0; i < cb->profiler.events_count; ++i) {
@@ -485,9 +520,9 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 			continue;
 
 		const uint64_t query_index = APROF_EVENT_COUNTER_VALUE(*event);
-		const VkPerformanceCounterResultKHR* const results = vPerfQueryRead(g_combuf.perf.query, &cb->public, query_index);
+		const VkPerformanceCounterResultKHR* const results = vPerfQueryRead(cb->profiler.perf_query->query, &cb->public, query_index);
 
-		for (uint32_t j = 0; j < g_combuf.perf.counters.count; ++j) {
+		for (uint32_t j = 0; j < cb->profiler.perf_query->counters.count; ++j) {
 			aprof_event_t *const event = &cb->profiler.events[i + j];
 
 			// Make sure that the right slot is reserved
@@ -498,13 +533,13 @@ static void patchPeformanceQueryEvents(vk_combuf_impl_t *cb) {
 			const uint64_t counter_index = APROF_EVENT_COUNTER_INDEX(*event);
 			ASSERT(counter_index == j);
 
-			const uint32_t vk_perf_counter_index = g_combuf.perf.counters.items[j];
+			const uint32_t vk_perf_counter_index = cb->profiler.perf_query->counters.items[j];
 
 			*event = APROF_EVENT_MAKE_COUNTER(vk_perf_counter_index, computeCounterValue(vk_perf_counter_index, results[j]));
 		} // for events in counters reserved block
 
 		// Skip the entire reserved block
-		i += g_combuf.perf.counters.count;
+		i += cb->profiler.perf_query->counters.count;
 	} // for all events
 } // patchTimestampQueryEvents()
 
@@ -520,6 +555,8 @@ VCombufProfilingResult R_VkCombufProfilingGetResult(vk_combuf_t *pub) {
 		begin_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[0]);
 		end_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[cb->profiler.events_count-1]);
 	}
+
+	releasePerfQuery(cb->profiler.perf_query);
 
 	APROF_SCOPE_END(function);
 

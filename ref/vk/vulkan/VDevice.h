@@ -36,3 +36,5 @@ extern VkDevice v_device;
 
 int vDeviceInit(int force_disable_rt);
 void vDeviceShutdown(void);
+
+void vDevicePrintPerformanceCounters(const VDeviceInfo *info);
