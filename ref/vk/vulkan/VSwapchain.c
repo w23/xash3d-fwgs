@@ -17,6 +17,7 @@ static struct {
 	VkImage *images;
 	VkImageView *image_views;
 	VkFramebuffer *framebuffers;
+	VkSemaphore *present_sema;
 
 	r_vk_image_t depth;
 
@@ -54,6 +55,7 @@ static void destroySwapchainAndFramebuffers( VkSwapchainKHR swapchain ) {
 	for (uint32_t i = 0; i < g_swapchain.num_images; ++i) {
 		vkDestroyImageView(vk_core.device, g_swapchain.image_views[i], NULL);
 		vkDestroyFramebuffer(vk_core.device, g_swapchain.framebuffers[i], NULL);
+		vkDestroySemaphore(vk_core.device, g_swapchain.present_sema[i], NULL);
 	}
 
 	R_VkImageDestroy( &g_swapchain.depth );
@@ -135,11 +137,13 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 			Mem_Free(g_swapchain.images);
 			Mem_Free(g_swapchain.image_views);
 			Mem_Free(g_swapchain.framebuffers);
+			Mem_Free(g_swapchain.present_sema);
 		}
 
 		g_swapchain.images = Mem_Malloc(vk_core.pool, sizeof(*g_swapchain.images) * g_swapchain.num_images);
 		g_swapchain.image_views = Mem_Malloc(vk_core.pool, sizeof(*g_swapchain.image_views) * g_swapchain.num_images);
 		g_swapchain.framebuffers = Mem_Malloc(vk_core.pool, sizeof(*g_swapchain.framebuffers) * g_swapchain.num_images);
+		g_swapchain.present_sema = Mem_Malloc(vk_core.pool, sizeof(*g_swapchain.present_sema) * g_swapchain.num_images);
 	}
 
 	XVK_CHECK(vkGetSwapchainImagesKHR(vk_core.device, g_swapchain.swapchain, &g_swapchain.num_images, g_swapchain.images));
@@ -173,6 +177,9 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 				.layers = 1,
 			};
 			XVK_CHECK(vkCreateFramebuffer(vk_core.device, &fbci, NULL, g_swapchain.framebuffers + i));
+
+			g_swapchain.present_sema[i] = R_VkSemaphoreCreate();
+			SET_DEBUG_NAMEF(g_swapchain.present_sema[i], VK_OBJECT_TYPE_SEMAPHORE, "swapchain done[%d]", i);
 		}
 
 		SET_DEBUG_NAMEF(g_swapchain.images[i], VK_OBJECT_TYPE_IMAGE, "swapchain image[%d]", i);
@@ -287,19 +294,20 @@ r_vk_swapchain_framebuffer_t R_VkSwapchainAcquire(  VkSemaphore sem_image_availa
 	};
 	snprintf(ret.image.name, sizeof(ret.image.name), "framebuffer[%u]", ret.index);
 	ret.framebuffer = g_swapchain.framebuffers[ret.index];
+	ret.done = g_swapchain.present_sema[ret.index];
 
 finalize:
 	APROF_SCOPE_END(function);
 	return ret;
 }
 
-void R_VkSwapchainPresent( uint32_t index, VkSemaphore done ) {
+void R_VkSwapchainPresent(uint32_t index) {
 	const VkPresentInfoKHR presinfo = {
 		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 		.pSwapchains = &g_swapchain.swapchain,
 		.pImageIndices = &index,
 		.swapchainCount = 1,
-		.pWaitSemaphores = &done,
+		.pWaitSemaphores = &g_swapchain.present_sema[index],
 		.waitSemaphoreCount = 1,
 	};
 
