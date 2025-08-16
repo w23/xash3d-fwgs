@@ -132,8 +132,13 @@ static void metricTypeSnprintf(char *buf, int buf_size, int value, r_speeds_metr
 			Q_strncpy( buf, Q_memprint( (float) value ), buf_size );
 			break;
 		case kSpeedsMetricMicroseconds: {
-			float msecs = value * 1e-3f; // us -> ms
-			Q_snprintf( buf, buf_size, "%.03f ms", msecs );
+			const float msecs = value * 1e-3f; // us -> ms
+			Q_snprintf( buf, buf_size, "%.03fms", msecs );
+			break;
+		}
+		case kSpeedsMetricPermyriad: {
+			const float percent = value * 1e-2f;
+			Q_snprintf( buf, buf_size, "%.02f%%", percent );
 			break;
 		}
 	}
@@ -369,8 +374,8 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 							metric = kSpeedsMetricMicroseconds;
 							break;
 						case AprofCounterUnit_Permyriad:
-							//metric = kSpeedsMetricPermyriad;
-							//break;
+							metric = kSpeedsMetricPermyriad;
+							break;
 						case AprofCounterUnit_Generic:
 							break;
 					}

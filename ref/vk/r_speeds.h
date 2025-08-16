@@ -15,7 +15,7 @@ typedef enum {
 	kSpeedsMetricCount,
 	kSpeedsMetricBytes,
 	kSpeedsMetricMicroseconds,
-	// TODO? kSpeedsMetricPermyriad, /* ‱, 1/100 of 1% */
+	kSpeedsMetricPermyriad, /* ‱, 1/100 of 1% */
 } r_speeds_metric_type_t;
 
 // TODO upper limit argument

@@ -9,9 +9,9 @@
 	- unnatural to maintain, so:
 	- [x] add `-vkperfquery` cli arg to explicitly enable performance query and acquire profiling lock immediately
 - [x] keep track of current perf query object, gracefully handle when it changes
+- [x] display percent/permyriad properly
 
 # Next
-- [ ] display percent/promille properly
 - [ ] alt/TODO: universal metrics
 	- [ ] refactor metrics code, allow registering and de-registering metrics
 - [ ] track Y offset for scopes blocks properly
