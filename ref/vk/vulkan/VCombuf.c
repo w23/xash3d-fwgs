@@ -209,6 +209,11 @@ qboolean R_VkCombuf_Init( void ) {
 }
 
 void R_VkCombuf_Destroy( void ) {
+	for (int i = 0; i < MAX_COMMANDBUFFERS; ++i) {
+		vk_combuf_impl_t *const cb = g_combuf.combufs + i;
+		releasePerfQuery(cb->profiler.perf_query);
+		cb->profiler.perf_query = NULL;
+	}
 	releasePerfQuery(g_combuf.perf.pquery);
 
 	for (uint32_t i = 0; i < g_combuf.perf.aprof_counters.count; ++i) {
@@ -252,6 +257,10 @@ void R_VkCombufBegin( vk_combuf_t* pub ) {
 	cb->profiler.events_count = 0;
 	cb->profiler.timestamp_queries = 0;
 	cb->profiler.active_perf_query = -1;
+
+	// Release previous perf query (if any), and acquire a new one
+	releasePerfQuery(cb->profiler.perf_query);
+	cb->profiler.perf_query = NULL;
 	cb->profiler.perf_query = acquirePerfQuery();
 
 	const VkCommandBufferBeginInfo beginfo = {
@@ -555,9 +564,6 @@ VCombufProfilingResult R_VkCombufProfilingGetResult(vk_combuf_t *pub) {
 		begin_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[0]);
 		end_ns = APROF_EVENT_TIMESTAMP(cb->profiler.events[cb->profiler.events_count-1]);
 	}
-
-	releasePerfQuery(cb->profiler.perf_query);
-	cb->profiler.perf_query = NULL;
 
 	APROF_SCOPE_END(function);
 

@@ -1,15 +1,17 @@
 # Current
 
-## 2025-07-11 E402 Payment Required
-- [x] add commmand to list performance query counters
-- [x] add command/variable to select enabled counters
-	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
-- [x] issue: misaligned perf query lock
+## 2025-08-XX EN/A offline
+- [x] issue: something something validation swapchain semaphore
+- [x] issue: query pool is not destroyed
+	- acquire-release mismatch: acquired at combuf begin, released at get-profiling-data
+	- to do: release at begin and destroy, not get-profiling-data
+- [ ] validation about profiling lock being held incorrectly
+	- https://docs.vulkan.org/spec/latest/chapters/cmdbuffers.html#VUID-vkQueueSubmit-pCommandBuffers-03220 says:
+	- needs to hold profiling lock for all command buffers in submission, if ANY of them are using perf query.
+	- unnatural to maintain, so:
+	- [ ] add command line argument to enable performance query and acquire profiling lock immediately
 
 # Next
-- [ ] issue: query pool is not destroyed
-- [ ] add command line argument to enable performance query
-- [ ] issue: something something validation swapchain semaphore
 - [ ] display percent/promille properly
 - [ ] alt/TODO: universal metrics
 	- [ ] refactor metrics code, allow registering and de-registering metrics
@@ -55,6 +57,12 @@
 - [ ] Render graph
 
 # Log
+
+## 2025-07-11 E402 Payment Required
+- [x] add commmand to list performance query counters
+- [x] add command/variable to select enabled counters
+	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
+- [x] issue: misaligned perf query lock
 
 ## 2025-06-XX EN/A offline
 - [x] per-scope perf query counters
