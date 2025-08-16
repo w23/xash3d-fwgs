@@ -3,20 +3,18 @@
 ## 2025-08-XX EN/A offline
 - [x] issue: something something validation swapchain semaphore
 - [x] issue: query pool is not destroyed
-	- acquire-release mismatch: acquired at combuf begin, released at get-profiling-data
-	- to do: release at begin and destroy, not get-profiling-data
-- [ ] validation about profiling lock being held incorrectly
+- [x] validation about profiling lock being held incorrectly
 	- https://docs.vulkan.org/spec/latest/chapters/cmdbuffers.html#VUID-vkQueueSubmit-pCommandBuffers-03220 says:
 	- needs to hold profiling lock for all command buffers in submission, if ANY of them are using perf query.
 	- unnatural to maintain, so:
-	- [ ] add command line argument to enable performance query and acquire profiling lock immediately
+	- [x] add `-vkperfquery` cli arg to explicitly enable performance query and acquire profiling lock immediately
+- [x] keep track of current perf query object, gracefully handle when it changes
 
 # Next
 - [ ] display percent/promille properly
 - [ ] alt/TODO: universal metrics
 	- [ ] refactor metrics code, allow registering and de-registering metrics
 - [ ] track Y offset for scopes blocks properly
-- [ ] keep track of current perf query object, gracefully handle when it changes
 - [ ] visualize counters in r_speeds display
 - [ ] r_speeds
     - [ ] logging proper

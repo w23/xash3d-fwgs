@@ -68,8 +68,6 @@ static struct {
 
 		// Global set of gpu perf query counters
 		ARRAY_DYNAMIC_DECLARE(aprof_counter_desc_t, aprof_counters);
-
-		int locks_acquired;
 	} perf;
 } g_combuf;
 
@@ -116,16 +114,6 @@ static PerfQuery *acquirePerfQuery(void) {
 	if (!g_combuf.perf.pquery)
 		return NULL;
 
-	if (!g_combuf.perf.locks_acquired) {
-		const VkAcquireProfilingLockInfoKHR apli = {
-			.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
-			.timeout = UINT64_MAX,
-		};
-		XVK_CHECK(vkAcquireProfilingLockKHR(v_device, &apli));
-	}
-
-	g_combuf.perf.locks_acquired++;
-
 	g_combuf.perf.pquery->refcount++;
 	return g_combuf.perf.pquery;
 }
@@ -133,13 +121,6 @@ static PerfQuery *acquirePerfQuery(void) {
 static void releasePerfQuery(PerfQuery *pq) {
 	if (!pq)
 		return;
-
-	ASSERT(g_combuf.perf.locks_acquired > 0);
-	g_combuf.perf.locks_acquired--;
-	if (g_combuf.perf.locks_acquired == 0) {
-		ASSERT(pq->refcount == 1);
-		vkReleaseProfilingLockKHR(v_device);
-	}
 
 	ASSERT(pq->refcount > 0);
 	pq->refcount--;
@@ -402,7 +383,7 @@ void R_VkCombufScopeEnd(vk_combuf_t* combuf, int begin_index, VkPipelineStageFla
 
 int R_VkCombufPerfQueryEnable(const uint32_t *counters, uint32_t counters_count) {
 	if (!v_device_info.perf_query) {
-		ERR("Cannot enable perf query counters, as VK_KHR_performance_query is not available");
+		ERR("Cannot enable perf query counters, as VK_KHR_performance_query is not available, or -vkperfquery was not supplied");
 		return 0;
 	}
 

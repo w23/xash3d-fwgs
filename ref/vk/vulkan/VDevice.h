@@ -34,7 +34,12 @@ typedef struct VDeviceInfo {
 extern VDeviceInfo v_device_info;
 extern VkDevice v_device;
 
-int vDeviceInit(int force_disable_rt);
+typedef struct {
+	int force_disable_rt;
+	int enable_perf_query;
+} VDeviceInitArgs;
+
+int vDeviceInit(VDeviceInitArgs);
 void vDeviceShutdown(void);
 
 void vDevicePrintPerformanceCounters(const VDeviceInfo *info);

@@ -344,7 +344,10 @@ qboolean R_VkInit( void )
 	}
 #endif
 
-	if (!vDeviceInit(CVAR_TO_BOOL(rt_force_disable)))
+	if (!vDeviceInit((VDeviceInitArgs){
+				.force_disable_rt = CVAR_TO_BOOL(rt_force_disable),
+				.enable_perf_query = gEngine.Sys_CheckParm("-vkperfquery"),
+			}))
 		return false;
 
 	VK_LoadCvarsAfterInit();

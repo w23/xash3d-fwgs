@@ -534,10 +534,23 @@ static qboolean createDevice(const VDeviceInfo* info) {
 
 	v_device_info = *info;
 
+	if (info->perf_query) {
+		const VkAcquireProfilingLockInfoKHR apli = {
+			.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
+			.timeout = UINT64_MAX,
+		};
+		const VkResult result = vkAcquireProfilingLockKHR(v_device, &apli);
+		if (result != VK_SUCCESS) {
+			ERR("Failed to acquire profiling lock: %#x: %s. Disabling performance query.\n",
+				result, R_VkResultName(result));
+			v_device_info.perf_query = false;
+		}
+	}
+
 	return 1;
 }
 
-int vDeviceInit(int force_disable_rt) {
+int vDeviceInit(VDeviceInitArgs args) {
 	ASSERT(v_device == VK_NULL_HANDLE);
 	VDeviceInfos physical_devices = enumerateDevices();
 
@@ -565,9 +578,14 @@ int vDeviceInit(int force_disable_rt) {
 		}
 #endif
 
-		if (force_disable_rt && devinfo->ray_tracing) {
-			WARN("Device[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support", i);
+		if (args.force_disable_rt && devinfo->ray_tracing) {
+			WARN("Device[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support.", i);
 			devinfo->ray_tracing = 0;
+		}
+
+		if (devinfo->perf_query && !args.enable_perf_query) {
+			INFO("Device[%d] supports performance query, but -vkperfquery wasn't supplied. Peformance query support will not be enabled.", i);
+			devinfo->perf_query = 0;
 		}
 
 		INFO("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u",
@@ -589,6 +607,10 @@ int vDeviceInit(int force_disable_rt) {
 }
 
 void vDeviceShutdown(void) {
+	if (v_device_info.perf_query) {
+		vkReleaseProfilingLockKHR(v_device);
+	}
+
 	vkDestroyDevice(v_device, NULL);
 	v_device = VK_NULL_HANDLE;
 
