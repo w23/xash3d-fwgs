@@ -2,6 +2,7 @@
 #include "vk_overlay.h"
 #include "vk_framectl.h"
 #include "vk_cvar.h"
+#include "vk_logs.h"
 #include "vulkan/VCombuf.h"
 #include "std/stringview.h"
 
@@ -20,6 +21,7 @@
 #define MAX_COUNTERS_PER_SCOPE (32)
 
 #define MODULE_NAME "speeds"
+#define LOG_MODULE speeds
 
 // Valid bits for `r_speeds` argument:
 enum {
@@ -150,8 +152,6 @@ static float linearstep(float min, float max, float v) {
 	return (v - min) / (max - min);
 }
 
-#define P(fmt, ...) gEngine.Con_Reportf(fmt, ##__VA_ARGS__)
-
 // TODO better "random" colors for scope bars
 static uint32_t getHash(const char *s) {
 	dword crc;
@@ -273,14 +273,14 @@ static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
 					struct StackFrame *const parent_frame = depth > 0 ? stack + depth - 1 : NULL;
 
 					if (stack_frame->scope_id != scope_id) {
-						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
+						ERR("scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)",
 							depth,
 							scope_id, args.aprof_scopes[scope_id].name,
 							stack_frame->scope_id, args.aprof_scopes[stack_frame->scope_id].name);
 
-						gEngine.Con_Printf(S_ERROR "Full stack:\n");
+						ERR("Full stack:");
 						for (int i = depth; i >= 0; --i) {
-							gEngine.Con_Printf(S_ERROR "  %d: scope_id=%d(%s)\n", i,
+							ERR("  %d: scope_id=%d(%s)", i,
 								stack[i].scope_id, args.aprof_scopes[stack[i].scope_id].name);
 						}
 
@@ -692,10 +692,10 @@ static void togglePause( void ) {
 }
 
 static void speedsGraphAdd(const_string_view_t name, int metric_index) {
-	gEngine.Con_Printf("Adding profiler graph for metric %.*s(%d) at graph index %d\n", name.len, name.s, metric_index, g_speeds.graphs_count);
+	INFO("Adding profiler graph for metric %.*s(%d) at graph index %d", name.len, name.s, metric_index, g_speeds.graphs_count);
 
 	if (g_speeds.graphs_count == MAX_GRAPHS) {
-		gEngine.Con_Printf(S_ERROR "Cannot add graph \"%.*s\", no free graphs slots (max=%d)\n", name.len, name.s, MAX_GRAPHS);
+		ERR("Cannot add graph \"%.*s\", no free graphs slots (max=%d)", name.len, name.s, MAX_GRAPHS);
 		return;
 	}
 
@@ -726,13 +726,13 @@ static void speedsGraphAdd(const_string_view_t name, int metric_index) {
 static void speedsGraphAddByMetricName( const_string_view_t name ) {
 	const int metric_index = findMetricIndexByIndexOrName(name);
 	if (metric_index < 0) {
-		gEngine.Con_Printf(S_ERROR "Metric \"%.*s\" not found\n", name.len, name.s);
+		ERR("Metric \"%.*s\" not found", name.len, name.s);
 		return;
 	}
 
 	r_speeds_metric_t *const metric = g_speeds.metrics + metric_index;
 	if (metric->graph_index >= 0) {
-		gEngine.Con_Printf(S_WARN "Metric \"%.*s\" already has graph @%d\n", name.len, name.s, metric->graph_index);
+		WARN("Metric \"%.*s\" already has graph @%d", name.len, name.s, metric->graph_index);
 		return;
 	}
 
@@ -757,14 +757,14 @@ static void speedsGraphDelete( r_speeds_graph_t *graph ) {
 static void speedsGraphRemoveByName( const_string_view_t name ) {
 	const int graph_index = findGraphIndexByName(name);
 	if (graph_index < 0) {
-		gEngine.Con_Printf(S_ERROR "Graph \"%.*s\" not found\n", name.len, name.s);
+		ERR("Graph \"%.*s\" not found", name.len, name.s);
 		return;
 	}
 
 	r_speeds_graph_t *const graph = g_speeds.graphs + graph_index;
 	speedsGraphDelete( graph );
 
-	gEngine.Con_Printf("Removing profiler graph %.*s(%d) at graph index %d\n", name.len, name.s, graph->source_metric, graph_index);
+	INFO("Removing profiler graph %.*s(%d) at graph index %d", name.len, name.s, graph->source_metric, graph_index);
 
 	// Move all further graphs one slot back, also updating their indices
 	for (int i = graph_index + 1; i < g_speeds.graphs_count; ++i) {
@@ -783,7 +783,7 @@ static void speedsGraphRemoveByName( const_string_view_t name ) {
 }
 
 static void speedsGraphsRemoveAll( void ) {
-	gEngine.Con_Printf("Removing all %d profiler graphs\n", g_speeds.graphs_count);
+	INFO("Removing all %d profiler graphs", g_speeds.graphs_count);
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		r_speeds_graph_t *const graph = g_speeds.graphs + i;
 		speedsGraphDelete(graph);
@@ -809,7 +809,7 @@ static void processGraphCvar( void ) {
 
 		const int metric_index = findMetricIndexByName(name);
 		if (metric_index < 0) {
-			gEngine.Con_Printf(S_WARN "Metric \"%.*s\" not found (yet? can be registered later)\n", name.len, name.s);
+			WARN("Metric \"%.*s\" not found (yet? can be registered later)", name.len, name.s);
 		}
 
 		speedsGraphAdd( name, metric_index );
@@ -941,9 +941,9 @@ static void graphCmd( void ) {
 			speedsGraphsRemoveAll();
 			break;
 		case Unknown:
-			gEngine.Con_Printf("Usage:\n%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
-			gEngine.Con_Printf("\t%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
-			gEngine.Con_Printf("\t%s clear\n", gEngine.Cmd_Argv(0));
+			INFO("Usage:\n%s <add/del> metric0 metric1 ...", gEngine.Cmd_Argv(0));
+			INFO("\t%s <add/del> metric0 metric1 ...", gEngine.Cmd_Argv(0));
+			INFO("\t%s clear", gEngine.Cmd_Argv(0));
 			return;
 	}
 

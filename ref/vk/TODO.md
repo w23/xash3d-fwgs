@@ -10,14 +10,14 @@
 	- [x] add `-vkperfquery` cli arg to explicitly enable performance query and acquire profiling lock immediately
 - [x] keep track of current perf query object, gracefully handle when it changes
 - [x] display percent/permyriad properly
+- [x] use logger in r_speeds
 
 # Next
+- [ ] `r_speeds_graphs` w/ numerical args
 - [ ] alt/TODO: universal metrics
 	- [ ] refactor metrics code, allow registering and de-registering metrics
 - [ ] track Y offset for scopes blocks properly
-- [ ] visualize counters in r_speeds display
 - [ ] r_speeds
-    - [ ] logging proper
     - [ ] s/metric/unit/
 - [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
   this will also move us closer to explicit after-combuf cleanup handling
@@ -60,6 +60,7 @@
 - [x] add commmand to list performance query counters
 - [x] add command/variable to select enabled counters
 	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
+- [x] visualize counters in r_speeds display
 - [x] issue: misaligned perf query lock
 
 ## 2025-06-XX EN/A offline
