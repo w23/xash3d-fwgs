@@ -41,7 +41,6 @@ typedef struct {
 	vk_combuf_t *combuf;
 	VkFence fence_done;
 	VkSemaphore sem_framebuffer_ready;
-	VkSemaphore sem_done;
 
 	// This extra semaphore is required because we need to synchronize 2 things on GPU:
 	// 1. swapchain
@@ -283,7 +282,7 @@ void R_BeginFrame( qboolean clearScene ) {
 	APROF_SCOPE_BEGIN(begin_frame);
 
 	{
-		const vk_combuf_scopes_t gpurofl[] = { R_VkCombufScopesGet(frame->combuf) };
+		const VCombufProfilingResult gpurofl[] = { R_VkCombufProfilingGetResult(frame->combuf) };
 		R_SpeedsDisplayMore(prev_frame_event_index, gpurofl, COUNTOF(gpurofl));
 	}
 
@@ -434,7 +433,7 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 			BOUNDED_ARRAY_APPEND_ITEM(waitophores, frame->sem_framebuffer_ready);
 			BOUNDED_ARRAY_APPEND_ITEM(wait_stageflags, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-			BOUNDED_ARRAY_APPEND_ITEM(signalphores, frame->sem_done);
+			BOUNDED_ARRAY_APPEND_ITEM(signalphores, g_frame.current.framebuffer.done);
 		}
 
 		BOUNDED_ARRAY_APPEND_ITEM(waitophores, prev_frame->sem_done2);
@@ -473,7 +472,7 @@ static void submit( vk_combuf_t* combuf, qboolean wait, qboolean draw ) {
 	}
 
 	if (g_frame.current.framebuffer.framebuffer != VK_NULL_HANDLE)
-		R_VkSwapchainPresent(g_frame.current.framebuffer.index, frame->sem_done);
+		R_VkSwapchainPresent(g_frame.current.framebuffer.index);
 
 	g_frame.current.framebuffer = (r_vk_swapchain_framebuffer_t){0};
 
@@ -528,8 +527,6 @@ qboolean VK_FrameCtlInit( void )
 
 		frame->sem_framebuffer_ready = R_VkSemaphoreCreate();
 		SET_DEBUG_NAMEF(frame->sem_framebuffer_ready, VK_OBJECT_TYPE_SEMAPHORE, "framebuffer_ready[%d]", i);
-		frame->sem_done = R_VkSemaphoreCreate();
-		SET_DEBUG_NAMEF(frame->sem_done, VK_OBJECT_TYPE_SEMAPHORE, "done[%d]", i);
 		frame->sem_done2 = R_VkSemaphoreCreate();
 		SET_DEBUG_NAMEF(frame->sem_done2, VK_OBJECT_TYPE_SEMAPHORE, "done2[%d]", i);
 		frame->fence_done = R_VkFenceCreate(true);
@@ -562,7 +559,6 @@ void VK_FrameCtlShutdown( void ) {
 		vk_framectl_frame_t *const frame = g_frame.frames + i;
 		R_VkCombufClose(frame->combuf);
 		R_VkSemaphoreDestroy(frame->sem_framebuffer_ready);
-		R_VkSemaphoreDestroy(frame->sem_done);
 		R_VkSemaphoreDestroy(frame->sem_done2);
 		R_VkFenceDestroy(frame->fence_done);
 	}

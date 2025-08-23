@@ -31,10 +31,10 @@
 	((array_).items[(array_).count++])
 
 #define BOUNDED_ARRAY_APPEND_ITEM(var, item) \
-		do { \
-			ASSERT(BOUNDED_ARRAY_HAS_SPACE(var, 1)); \
-			var.items[var.count++] = item; \
-		} while(0)
+	do { \
+		ASSERT(BOUNDED_ARRAY_HAS_SPACE(var, 1)); \
+		var.items[var.count++] = item; \
+	} while(0)
 
 
 // Dynamically-sized array
@@ -50,7 +50,7 @@ void arrayDynamicInit(array_dynamic_t *array, int item_size);
 void arrayDynamicDestroy(array_dynamic_t *array);
 
 void arrayDynamicReserve(array_dynamic_t *array, int capacity);
-void arrayDynamicAppend(array_dynamic_t *array, void *item);
+void arrayDynamicAppend(array_dynamic_t *array, const void *item);
 #define arrayDynamicAppendItem(array, item) \
 	do { \
 		ASSERT((array)->item_size == sizeof(&(item))); \

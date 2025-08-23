@@ -19,6 +19,7 @@
 #include "vulkan/VNvAftermath.h"
 #include "vulkan/VDevmem.h"
 #include "r_speeds.h"
+#include "vk_speeds.h"
 #include "vk_sprite.h"
 #include "vk_beams.h"
 #include "vulkan/VCombuf.h"
@@ -297,6 +298,7 @@ qboolean R_VkInit( void )
 		g_log_debug_bits = 0xffffffffu;
 
 	R_SpeedsInit();
+	VK_SpeedsInit();
 
 	if( !gEngine.R_Init_Video( REF_VULKAN )) // request Vulkan surface
 	{
@@ -342,7 +344,10 @@ qboolean R_VkInit( void )
 	}
 #endif
 
-	if (!vDeviceInit(CVAR_TO_BOOL(rt_force_disable)))
+	if (!vDeviceInit((VDeviceInitArgs){
+				.force_disable_rt = CVAR_TO_BOOL(rt_force_disable),
+				.enable_perf_query = gEngine.Sys_CheckParm("-vkperfquery"),
+			}))
 		return false;
 
 	VK_LoadCvarsAfterInit();

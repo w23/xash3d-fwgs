@@ -1,5 +1,31 @@
+# Current
+
+## 2025-08-XX EN/A offline
+- [x] issue: something something validation swapchain semaphore
+- [x] issue: query pool is not destroyed
+- [x] validation about profiling lock being held incorrectly
+	- https://docs.vulkan.org/spec/latest/chapters/cmdbuffers.html#VUID-vkQueueSubmit-pCommandBuffers-03220 says:
+	- needs to hold profiling lock for all command buffers in submission, if ANY of them are using perf query.
+	- unnatural to maintain, so:
+	- [x] add `-vkperfquery` cli arg to explicitly enable performance query and acquire profiling lock immediately
+- [x] keep track of current perf query object, gracefully handle when it changes
+- [x] display percent/permyriad properly
+- [x] use logger in r_speeds
+
+# Next
+- [ ] `r_speeds_graphs` w/ numerical args
+- [ ] alt/TODO: universal metrics
+	- [ ] refactor metrics code, allow registering and de-registering metrics
+- [ ] track Y offset for scopes blocks properly
+- [ ] r_speeds
+    - [ ] s/metric/unit/
+- [ ] make a function that "retires" the commmand buffer and reads all the queries, making this data passively available.
+  this will also move us closer to explicit after-combuf cleanup handling
+	- [ ] combuf state machine: what states is it in?
+
 # Upcoming
 - [ ] Figure out naming, code style, make clang-format
+- [ ] performance profiling and comparison
 - [ ] rendertests TODO -- blocked by external infra stuff
   - [ ] script:
     - [ ] prepares installdir in tmpfs (transient docker/podman volume?)
@@ -27,17 +53,39 @@
 	- why: explicit barriers are more clear, better perf possible too
 	- [ ] Do not lose barrier-tracking state between frames
 - [ ] Render graph
-- [ ] performance profiling and comparison
-
-# Next
-## Resograf agenda
-- [ ] Explicit dependency graph
-	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
-	- [ ] Build it from meatpipe and resources
-	- [ ] Linearize it into metapass program
-- [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
 
 # Log
+
+## 2025-07-11 E402 Payment Required
+- [x] add commmand to list performance query counters
+- [x] add command/variable to select enabled counters
+	- [x] add command to enable/disable profiling counters -- enabled when list of counters is not empty
+- [x] visualize counters in r_speeds display
+- [x] issue: misaligned perf query lock
+
+## 2025-06-XX EN/A offline
+- [x] per-scope perf query counters
+  - [x] .... `VUID-vkCmdBeginQuery-queryPool-01922` seemingly prohibits overlapping queries.
+    - [x] Cannot do hierarchical scopes, and likely must do a full barrier at each scope end in this mode.
+          No idea how to expose this.
+      - ~~~[ ] Easiest way is to allow this only for a single scope per frame.~~~
+      - [x] Cover single-command scopes explicitly (by flag)
+  - [x] return counters tied to scopes
+    - [x] refactor how this data is returned
+	- [x] fixup r_speeds to display the new format for GPU
+	- [x] register new GPU scopes properly
+	- [x] restore concurrent scopes overlap stacking
+- [x] measure counters for the entire command buffer
+- [x] convert and pass named results to r_speeds.c
+        - [x] unify gpu and cpu scopes with timestamps
+        - [x] add universal counters, attachable to both cpu and gpu scopes
+- [x] address r_speeds metrics/graphs by index number instead of full text name
+
+## 2025-05-05 E401 VK_KHR_performance_query
+- [x] detect perf query availability and enable it
+- [x] enumerate counters
+- [x] scaffold the query pool code
+
 ## 2025-03-21 EN/A offline
 - [ ] Make producers
     - [x] Builtin producers
@@ -679,15 +727,22 @@ Longer-term agenda for current season:
 
 # Programmable render
 - [ ] implicit dependency tracking. pass defines:
-	- [ ] imports: list of things it needs
+	- [x] imports: list of things it needs
 	- [ ] exports: list of things it produces. those get created and registered with this pass as a producer
-- [ ] resource management refactoring:
-	- [ ] register existing resources (tlas, buffers, temp images, ...) in their producers
-	- [ ] resource automatic resolution: prducing, barriers, etc
-	- [ ] resource destruction
-- [ ] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
+- [x] resource management refactoring:
+	- [x] register existing resources (tlas, buffers, temp images, ...) in their producers
+	- [x] resource automatic resolution: prducing, barriers, etc
+	- [x] resource destruction
+- [x] ? resource object: name, metadata(type, etc.), producer, status (ready, barriers, etc)
 
-# Multipass + Sampling
+# Postponed
+## Resograf agenda
+- [ ] Explicit dependency graph
+	- BLOCKED BY explicit image reuse in denoiser, see https://github.com/w23/xash3d-fwgs/issues/774
+	- [ ] Build it from meatpipe and resources
+	- [ ] Linearize it into metapass program
+- [ ] eventually: meatpipe resolves its graph and linearizes it into linear set of ops and barriers to perform
+## Multipass + Sampling
 - [ ] better simple sampling
 	- [x] all triangles
 	- [x] area based on triangles
@@ -700,8 +755,7 @@ Longer-term agenda for current season:
 			- vec4(v0xyz, e_r)
 			- vec4(v1xyz, e_g)
 			- vec4(v2xyz, e_b)
-
-# Next
+## Old Next
 - [ ] remove surface visibility cache
 - [ ] rtx: rename point lights to lampochki
 - [ ] rtx: rename emissive surface to surface lights

@@ -277,7 +277,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 	static int gpu_scope_id = -2;
 	if (gpu_scope_id == -2)
 		gpu_scope_id = R_VkGpuScope_Register("image_upload");
-	const int gpu_scope_begin = R_VkCombufScopeBegin(combuf, gpu_scope_id);
+	const int gpu_scope_begin = R_VkCombufScopeBegin(combuf, gpu_scope_id, VCombufScopeFlag_None);
 
 	// Pre-allocate temp barriers buffer
 	arrayDynamicResizeT(&g_image_upload.barriers, images_count);

@@ -1,8 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <assert.h>
-#include <string.h>
 
 // Note: this module initializes itself on the first scope initialization.
 // I.e. it is invalid to call any of the functions before the first of aprof_scope_init/APROF_SCOPE_INIT/APROF_SCOPE_DECLARE_BEGIN is called.
@@ -73,14 +71,36 @@ typedef struct {
 
 #define APROF_MAX_SCOPES 256
 
+enum {
+	APROF_EVENT_FRAME_BOUNDARY = 0,
+	APROF_EVENT_SCOPE_BEGIN = 1,
+	APROF_EVENT_SCOPE_END = 2,
+	APROF_EVENT_COUNTER = 3,
+	APROF_EVENT_TYPE_MAX = 15,
+};
+
+// Event bits usage
+// Scope begin/end events:
+// 63                   47                   31                   15                0
+// TTTT TTTT TTTT TTTT  TTTT TTTT TTTT TTTT  TTTT TTTT TTTT TTTT  SSSS SSSS .... EEEE
+// T -- timestamp value, ns (48 bits)
+// S -- scope id (16 bits)
+// . -- unused (8 bits)
+// E -- event type (8 bits)
+
+// 4 bits, 0-15
 #define APROF_EVENT_TYPE_MASK 0x0full
 #define APROF_EVENT_TYPE_SHIFT 0
 #define APROF_EVENT_TYPE(event) (((event)&APROF_EVENT_TYPE_MASK) >> APROF_EVENT_TYPE_SHIFT)
 
+// 4 bits hole
+
+// 8 bits, 255
 #define APROF_EVENT_SCOPE_ID_MASK 0xff00ull
 #define APROF_EVENT_SCOPE_ID_SHIFT 8
 #define APROF_EVENT_SCOPE_ID(event) (((event)&APROF_EVENT_SCOPE_ID_MASK) >> APROF_EVENT_SCOPE_ID_SHIFT)
 
+// 48 bits, (a plethora)
 #define APROF_EVENT_TIMESTAMP_SHIFT 16
 #define APROF_EVENT_TIMESTAMP(event) ((event) >> APROF_EVENT_TIMESTAMP_SHIFT)
 
@@ -89,11 +109,36 @@ typedef struct {
 	(((scope_id) << APROF_EVENT_SCOPE_ID_SHIFT) & APROF_EVENT_SCOPE_ID_MASK) | \
 	((timestamp) << APROF_EVENT_TIMESTAMP_SHIFT)
 
-enum {
-	APROF_EVENT_FRAME_BOUNDARY = 0,
-	APROF_EVENT_SCOPE_BEGIN = 1,
-	APROF_EVENT_SCOPE_END = 2,
-};
+// APROF_EVENT_COUNTER
+// 63                   47                   31                   15                0
+// VVVV VVVV VVVV VVVV  VVVV VVVV VVVV VVVV  VVVV VVVV VVVV VVVV  CCCC CCCC .... EEEE
+// V -- counter value (48 bits)
+// C -- counter index (16 bits)
+// . -- unused (8 bits)
+// E -- event type (8 bits)
+#define APROF_EVENT_COUNTER_INDEX_MASK 0xff00ull
+#define APROF_EVENT_COUNTER_INDEX_SHIFT 8
+#define APROF_EVENT_COUNTER_INDEX(event) (((event)&APROF_EVENT_COUNTER_INDEX_MASK) >> APROF_EVENT_COUNTER_INDEX_SHIFT)
+
+#define APROF_EVENT_COUNTER_VALUE_SHIFT 16
+#define APROF_EVENT_COUNTER_VALUE(event) ((event) >> APROF_EVENT_COUNTER_VALUE_SHIFT)
+
+#define APROF_EVENT_MAKE_COUNTER(counter, value) \
+	((((uint64_t)(APROF_EVENT_COUNTER)) << APROF_EVENT_TYPE_SHIFT) & APROF_EVENT_TYPE_MASK) | \
+	((((uint64_t)(counter) << APROF_EVENT_COUNTER_INDEX_SHIFT)) & APROF_EVENT_COUNTER_INDEX_MASK) | \
+	(((uint64_t)(value)) << APROF_EVENT_COUNTER_VALUE_SHIFT)
+
+typedef enum {
+	AprofCounterUnit_Generic,
+	AprofCounterUnit_Nanoseconds,
+	AprofCounterUnit_Bytes,
+	AprofCounterUnit_Permyriad,
+} aprof_counter_unit_t;
+
+typedef struct {
+	const char* name;
+	aprof_counter_unit_t unit;
+} aprof_counter_desc_t;
 
 // MUST be power of 2
 #define APROF_EVENT_BUFFER_SIZE (1<<20)
@@ -119,6 +164,8 @@ typedef struct {
 extern aprof_state_t g_aprof;
 
 #if defined(APROF_IMPLEMENT)
+
+#include <string.h>
 
 #ifdef __linux__
 #include <time.h>

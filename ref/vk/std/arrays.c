@@ -15,6 +15,9 @@ void arrayDynamicInit(array_dynamic_t *array, int item_size) {
 void arrayDynamicDestroy(array_dynamic_t *array) {
 	if (array->items)
 		Mem_Free(array->items);
+	array->items = NULL;
+	array->count = 0;
+	array->capacity = 0;
 }
 
 static void arrayDynamicEnsureCapacity(array_dynamic_t *array, int min_capacity) {
@@ -40,7 +43,7 @@ void arrayDynamicResize(array_dynamic_t *array, int count) {
 	array->count = count;
 }
 
-void arrayDynamicAppend(array_dynamic_t *array, void *item) {
+void arrayDynamicAppend(array_dynamic_t *array, const void *item) {
 	const int new_count = array->count + 1;
 	arrayDynamicEnsureCapacity(array, new_count);
 

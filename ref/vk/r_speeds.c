@@ -2,6 +2,7 @@
 #include "vk_overlay.h"
 #include "vk_framectl.h"
 #include "vk_cvar.h"
+#include "vk_logs.h"
 #include "vulkan/VCombuf.h"
 #include "std/stringview.h"
 
@@ -11,12 +12,16 @@
 #include "xash3d_mathlib.h" // Q_min
 #include <limits.h>
 
+#define MAX_GPU_SCOPES 64
+
 #define MAX_SPEEDS_MESSAGE (1024)
 #define MAX_SPEEDS_METRICS (512)
 #define TARGET_FRAME_TIME (1000.f / 60.f)
 #define MAX_GRAPHS 8
+#define MAX_COUNTERS_PER_SCOPE (32)
 
 #define MODULE_NAME "speeds"
+#define LOG_MODULE speeds
 
 // Valid bits for `r_speeds` argument:
 enum {
@@ -60,6 +65,17 @@ typedef enum {
 	kSpeedsMprintTable
 } r_speeds_mprint_mode_t;
 
+typedef struct {
+	int initialized;
+	int value;
+} Metacounter;
+
+typedef struct {
+	int initialized;
+	int time_us; // automatically zeroed by metrics each frame
+	Metacounter counters[MAX_COUNTERS_PER_SCOPE];
+} Metascope;
+
 static struct {
 	cvar_t *r_speeds_graphs;
 	cvar_t *r_speeds_graphs_width;
@@ -81,14 +97,8 @@ static struct {
 
 	struct {
 		int frame_time_us, cpu_time_us, cpu_wait_time_us, gpu_time_us;
-		struct {
-			int initialized;
-			int time_us; // automatically zeroed by metrics each frame
-		} scopes[APROF_MAX_SCOPES];
-		struct {
-			int initialized;
-			int time_us; // automatically zeroed by metrics each frame
-		} gpu_scopes[MAX_GPU_SCOPES];
+		Metascope scopes[APROF_MAX_SCOPES];
+		Metascope gpu_scopes[MAX_GPU_SCOPES];
 		char message[MAX_SPEEDS_MESSAGE];
 
 		r_speeds_mprint_mode_t metrics_print_mode;
@@ -124,8 +134,13 @@ static void metricTypeSnprintf(char *buf, int buf_size, int value, r_speeds_metr
 			Q_strncpy( buf, Q_memprint( (float) value ), buf_size );
 			break;
 		case kSpeedsMetricMicroseconds: {
-			float msecs = value * 1e-3f; // us -> ms
-			Q_snprintf( buf, buf_size, "%.03f ms", msecs );
+			const float msecs = value * 1e-3f; // us -> ms
+			Q_snprintf( buf, buf_size, "%.03fms", msecs );
+			break;
+		}
+		case kSpeedsMetricPermyriad: {
+			const float percent = value * 1e-2f;
+			Q_snprintf( buf, buf_size, "%.02f%%", percent );
 			break;
 		}
 	}
@@ -136,8 +151,6 @@ static float linearstep(float min, float max, float v) {
 	if (v >= max) return 1;
 	return (v - min) / (max - min);
 }
-
-#define P(fmt, ...) gEngine.Con_Reportf(fmt, ##__VA_ARGS__)
 
 // TODO better "random" colors for scope bars
 static uint32_t getHash(const char *s) {
@@ -159,7 +172,7 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	const int width = delta_ms  * time_scale_ms;
 	const int x = (begin_ns - begin_time_ns) * 1e-6 * time_scale_ms;
 
-	rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
+	rgba_t text_color = {191 + color[0]/4, 191 + color[1]/4, 191 + color[2]/4, 255};
 	CL_FillRGBA(kRenderTransAdd, x, y, width, height, color[0], color[1], color[2], color[3]);
 
 	// Tweak this if scope names escape the block boundaries
@@ -173,41 +186,76 @@ static void drawTimeBar(uint64_t begin_time_ns, float time_scale_ms, int64_t beg
 	}
 }
 
-static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_t begin_time, float time_scale_ms, uint32_t begin, uint32_t end, int y) {
-#define MAX_STACK_DEPTH 16
-	struct {
+static void updateMetascope(Metascope *metascope, const char* prefix, const aprof_scope_t* scope, uint64_t delta_ns) {
+	if (!metascope->initialized) {
+		const qboolean reset = true;
+		R_SpeedsRegisterMetric(&metascope->time_us, prefix, scope->name, kSpeedsMetricMicroseconds, reset,
+			scope->name, scope->source_file, scope->source_line);
+		metascope->initialized = 1;
+	}
+
+	metascope->time_us += delta_ns / 1000;
+}
+
+typedef struct {
+	int draw;
+	const aprof_event_t *events;
+	uint64_t begin_time;
+	float time_scale_ms;
+	uint32_t begin;
+	uint32_t end;
+	int y;
+	Metascope *scopes;
+	const aprof_scope_t *aprof_scopes;
+	VIEW_DECLARE_CONST(aprof_counter_desc_t, aprof_counters);
+	const char *scope_name_prefix;
+	int *out_active_time_us;
+	int *out_wait_time_us;
+} ProcessAndDrawAprofEvents;
+
+static void processAndDrawAprofEvents(ProcessAndDrawAprofEvents args) {
+#define MAX_STACK_DEPTH 8
+	struct StackFrame {
 		int scope_id;
 		uint64_t begin_ns;
+		uint64_t latest_child_end_ns;
+		int overlaps;
 	} stack[MAX_STACK_DEPTH];
 	int depth = 0;
 	int max_depth = 0;
 
-	int under_waiting = 0;
-	uint64_t ref_cpu_time = 0;
-	uint64_t ref_cpu_wait_time = 0;
+	const int bar_height = g_speeds.font_metrics.glyph_height;
 
-	for (; begin != end; begin = (begin + 1) % APROF_EVENT_BUFFER_SIZE) {
-		const aprof_event_t event = events[begin];
+	int under_waiting = 0;
+	uint64_t active_time_ns = 0;
+	uint64_t wait_time_ns = 0;
+
+	for (uint32_t begin = args.begin; begin != args.end; begin = (begin + 1) % APROF_EVENT_BUFFER_SIZE) {
+		const aprof_event_t event = args.events[begin];
 		const int event_type = APROF_EVENT_TYPE(event);
 		const uint64_t timestamp_ns = APROF_EVENT_TIMESTAMP(event);
 		const int scope_id = APROF_EVENT_SCOPE_ID(event);
 		switch (event_type) {
 			case APROF_EVENT_FRAME_BOUNDARY:
-				ref_cpu_time = 0;
-				ref_cpu_wait_time = 0;
+				active_time_ns = 0;
+				wait_time_ns = 0;
 				under_waiting = 0;
 				break;
 
 			case APROF_EVENT_SCOPE_BEGIN: {
 					if (depth < MAX_STACK_DEPTH) {
-						stack[depth].begin_ns = timestamp_ns;
-						stack[depth].scope_id = scope_id;
+						stack[depth] = (struct StackFrame) {
+							.scope_id = scope_id,
+							.begin_ns = timestamp_ns,
+							.latest_child_end_ns = timestamp_ns,
+							.overlaps = 0,
+						};
 					}
 					++depth;
 					if (max_depth < depth)
 						max_depth = depth;
 
-					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
+					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
 					if (scope->flags & APROF_SCOPE_FLAG_WAIT)
 						under_waiting++;
 
@@ -221,68 +269,145 @@ static void drawCPUProfilerScopes(int draw, const aprof_event_t *events, uint64_
 					ASSERT(scope_id >= 0);
 					ASSERT(scope_id < APROF_MAX_SCOPES);
 
-					if (stack[depth].scope_id != scope_id) {
-						gEngine.Con_Printf(S_ERROR "scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)\n",
-							depth,
-							scope_id, g_aprof.scopes[scope_id].name,
-							stack[depth].scope_id, g_aprof.scopes[stack[depth].scope_id].name);
+					struct StackFrame *const stack_frame = stack + depth;
+					struct StackFrame *const parent_frame = depth > 0 ? stack + depth - 1 : NULL;
 
-						gEngine.Con_Printf(S_ERROR "Full stack:\n");
+					if (stack_frame->scope_id != scope_id) {
+						ERR("scope_id mismatch at stack depth=%d: found %d(%s), expected %d(%s)",
+							depth,
+							scope_id, args.aprof_scopes[scope_id].name,
+							stack_frame->scope_id, args.aprof_scopes[stack_frame->scope_id].name);
+
+						ERR("Full stack:");
 						for (int i = depth; i >= 0; --i) {
-							gEngine.Con_Printf(S_ERROR "  %d: scope_id=%d(%s)\n", i,
-								stack[i].scope_id, g_aprof.scopes[stack[i].scope_id].name);
+							ERR("  %d: scope_id=%d(%s)", i,
+								stack[i].scope_id, args.aprof_scopes[stack[i].scope_id].name);
 						}
 
 						return;
 					}
 
-					const aprof_scope_t *const scope = g_aprof.scopes + scope_id;
-					const uint64_t delta_ns = timestamp_ns - stack[depth].begin_ns;
+					const aprof_scope_t *const scope = args.aprof_scopes + scope_id;
+					const uint64_t delta_ns = timestamp_ns - stack_frame->begin_ns;
 
-					if (!g_speeds.frame.scopes[scope_id].initialized) {
-						R_SpeedsRegisterMetric(&g_speeds.frame.scopes[scope_id].time_us, "scope", scope->name, kSpeedsMetricMicroseconds, /* reset */ true, scope->name, scope->source_file, scope->source_line);
-						g_speeds.frame.scopes[scope_id].initialized = 1;
+					updateMetascope(args.scopes + scope_id, args.scope_name_prefix, scope, delta_ns);
+
+					// This is a top level scope that should be counted towards active usage
+					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0)
+						&& (depth == 0 || (args.aprof_scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
+
+					const int64_t latest_end_delta_ns = parent_frame
+						? (int64_t)parent_frame->latest_child_end_ns - (int64_t)stack_frame->begin_ns
+						: 0ll;
+					const int overlap_pixels = (float)(latest_end_delta_ns / 1000000) * args.time_scale_ms;
+					const int OVERLAP_PIXELS_THRESHOLD = 2;
+					const int overlaps_with_siblings = overlap_pixels > OVERLAP_PIXELS_THRESHOLD;
+
+					int y_overlap_offset = 0;
+					if (overlaps_with_siblings) {
+						parent_frame->overlaps += 1;
+						y_overlap_offset = parent_frame->overlaps * bar_height / 2;
+					} else if (parent_frame) {
+						parent_frame->overlaps = 0;
 					}
 
-					g_speeds.frame.scopes[scope_id].time_us += delta_ns / 1000;
+					// Updated parent's latest child end timestamp
+					if (parent_frame) {
+						parent_frame->latest_child_end_ns = Q_max(parent_frame->latest_child_end_ns, timestamp_ns);
+					}
 
-					// This is a top level scope that should be counter towards cpu usage
-					const int is_top_level = ((scope->flags & APROF_SCOPE_FLAG_DECOR) == 0) && (depth == 0 || (g_aprof.scopes[stack[depth-1].scope_id].flags & APROF_SCOPE_FLAG_DECOR));
-
-					// Only count top level scopes towards CPU time, and only if it's not waiting
+					// Only count top level scopes towards active time, and only if it's not waiting
 					if (is_top_level && under_waiting == 0)
-						ref_cpu_time += delta_ns;
+						active_time_ns += delta_ns;
 
 					// If this is a top level waiting scope (under any depth)
 					if (under_waiting == 1) {
 						// Count it towards waiting time
-						ref_cpu_wait_time += delta_ns;
+						wait_time_ns += delta_ns;
 
 						// If this is not a top level scope, then we might count its top level parent
 						// towards cpu usage time, which is not correct. Subtract this waiting time from it.
 						if (!is_top_level)
-							ref_cpu_time -= delta_ns;
+							active_time_ns -= delta_ns;
 					}
 
 					if (scope->flags & APROF_SCOPE_FLAG_WAIT)
 						under_waiting--;
 
-					if (draw) {
+					if (args.draw) {
 						rgba_t color = {0, 0, 0, 127};
 						getColorForString(scope->name, color);
-						const int bar_height = g_speeds.font_metrics.glyph_height;
-						drawTimeBar(begin_time, time_scale_ms, stack[depth].begin_ns, timestamp_ns, y + depth * bar_height, bar_height, scope->name, color);
+						drawTimeBar(args.begin_time, args.time_scale_ms, stack_frame->begin_ns, timestamp_ns,
+							args.y + y_overlap_offset + depth * bar_height, bar_height, scope->name, color);
 					}
 					break;
 				}
+
+			case APROF_EVENT_COUNTER: {
+					struct StackFrame *const frame = depth > 0 ? stack + depth - 1 : NULL;
+					if (!frame || !args.aprof_counters.items)
+						break;
+
+					const uint32_t counter_index = APROF_EVENT_COUNTER_INDEX(event);
+					const uint64_t counter_value = APROF_EVENT_COUNTER_VALUE(event);
+
+					ASSERT(counter_index < args.aprof_counters.count);
+
+					if (counter_index >= MAX_COUNTERS_PER_SCOPE) {
+						// TODO throttled error
+						break;
+					}
+
+					const aprof_counter_desc_t *const counter_desc = &args.aprof_counters.items[counter_index];
+					Metascope *const metascope = &args.scopes[frame->scope_id];
+					Metacounter *const metacounter = &metascope->counters[counter_index];
+
+					metacounter->value = counter_value;
+
+					r_speeds_metric_type_t metric = kSpeedsMetricCount;
+					switch (counter_desc->unit) {
+						case AprofCounterUnit_Bytes:
+							metric = kSpeedsMetricBytes;
+							break;
+						case AprofCounterUnit_Nanoseconds:
+							metacounter->value = counter_value / 1000;
+							metric = kSpeedsMetricMicroseconds;
+							break;
+						case AprofCounterUnit_Permyriad:
+							metric = kSpeedsMetricPermyriad;
+							break;
+						case AprofCounterUnit_Generic:
+							break;
+					}
+
+					if (!metacounter->initialized) {
+						const qboolean reset = true;
+						R_SpeedsRegisterMetric(&metacounter->value,
+							args.aprof_scopes[frame->scope_id].name, counter_desc->name,
+							metric, reset, counter_desc->name, __FILE__, __LINE__);
+						metacounter->initialized = 1;
+					}
+
+					// gEngine.Con_Reportf("%s.%s (%d) = %llu\n",
+					// 	args.aprof_scopes[frame->scope_id].name,
+					// 	args.aprof_counters.items[counter_index].name,
+					// 	args.aprof_counters.items[counter_index].unit,
+					// 	(unsigned long long)counter_value);
+
+					break;
+				}
+
 
 			default:
 				break;
 		}
 	}
 
-	g_speeds.frame.cpu_time_us = ref_cpu_time / 1000;
-	g_speeds.frame.cpu_wait_time_us = ref_cpu_wait_time / 1000;
+	if (args.out_wait_time_us)
+		*args.out_wait_time_us += wait_time_ns / 1000;
+
+	if (args.out_active_time_us)
+		*args.out_active_time_us += active_time_ns / 1000;
 
 	if (max_depth > MAX_STACK_DEPTH)
 		gEngine.Con_NPrintf(4, S_ERROR "Profiler stack overflow: reached %d, max available %d\n", max_depth, MAX_STACK_DEPTH);
@@ -312,11 +437,24 @@ static int findMetricIndexByName( const_string_view_t name) {
 		if (svCmp(name, g_speeds.metrics[i].name) == 0)
 			return i;
 	}
-
 	return -1;
 }
 
+static int findMetricIndexByIndexOrName( const_string_view_t name) {
+	// try to read it as metric index first
+	const SVParseLongResult parsed = svParseLong(name);
+	if (parsed.chars_converted == name.len) {
+		if (parsed.value < 0 || parsed.value > g_speeds.metrics_count) {
+			return -1;
+		}
+		return parsed.value;
+	}
+
+	return findMetricIndexByName(name);
+}
+
 static int findGraphIndexByName( const_string_view_t name) {
+	// TODO also delete by index. But need to have the active graph list first
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		if (svCmp(name, g_speeds.graphs[i].name) == 0)
 			return i;
@@ -424,73 +562,7 @@ static int drawGraph( r_speeds_graph_t *const graph, int frame_bar_y ) {
 	return frame_bar_y;
 }
 
-static void drawGPUProfilerScopes(qboolean draw, int y, uint64_t frame_begin_time_ns, float time_scale_ms, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
-	y += g_speeds.font_metrics.glyph_height * 6;
-	const int bar_height = g_speeds.font_metrics.glyph_height;
-
-#define MAX_ROWS 4
-	int rows_x[MAX_ROWS] = {0};
-	for (int j = 0; j < gpurofls_count; ++j) {
-		const vk_combuf_scopes_t *const gpurofl = gpurofls + j;
-		for (int i = 0; i < gpurofl->entries_count; ++i) {
-			const int scope_index = gpurofl->entries[i];
-			const uint64_t begin_ns = gpurofl->timestamps[i*2 + 0];
-			const uint64_t end_ns = gpurofl->timestamps[i*2 + 1];
-			const char *name = gpurofl->scopes[scope_index].name;
-
-			if (!g_speeds.frame.gpu_scopes[scope_index].initialized) {
-				R_SpeedsRegisterMetric(&g_speeds.frame.gpu_scopes[scope_index].time_us,"gpuscope", name, kSpeedsMetricMicroseconds, /* reset */ true, name, __FILE__, __LINE__);
-				g_speeds.frame.gpu_scopes[scope_index].initialized = 1;
-			}
-
-			g_speeds.frame.gpu_scopes[scope_index].time_us += (end_ns - begin_ns) / 1000;
-
-			rgba_t color = {255, 255, 0, 127};
-			getColorForString(name, color);
-
-			if (draw) {
-				const int height = bar_height;
-				const float delta_ms = (end_ns - begin_ns) * 1e-6;
-				const int width = delta_ms  * time_scale_ms;
-				const int x0 = (begin_ns - frame_begin_time_ns) * 1e-6 * time_scale_ms;
-				const int x1 = x0 + width;
-
-				int bar_y = -1;
-				for (int row_i = 0; row_i < MAX_ROWS; ++row_i) {
-					if (rows_x[row_i] <= x0) {
-						bar_y = row_i;
-						rows_x[row_i] = x1;
-						break;
-					}
-				}
-
-				if (bar_y == -1) {
-					// TODO how? increase MAX_ROWS
-					bar_y = MAX_ROWS;
-				}
-
-				bar_y = bar_y * bar_height + y;
-
-				rgba_t text_color = {255-color[0], 255-color[1], 255-color[2], 255};
-				CL_FillRGBA(kRenderTransAdd, x0, bar_y, width, height, color[0], color[1], color[2], color[3]);
-
-				// Tweak this if scope names escape the block boundaries
-				char tmp[64];
-				tmp[0] = '\0';
-				const int glyph_width = g_speeds.font_metrics.glyph_width;
-				const int box_capped_length = Q_min(sizeof(tmp), width / glyph_width);
-				if (box_capped_length > 0) {
-					Q_snprintf(tmp, box_capped_length, "%s %.3fms", name, delta_ms);
-					gEngine.Con_DrawString(x0, bar_y, tmp, text_color);
-				}
-
-				//drawTimeBar(frame_begin_time_ns, time_scale_ms, begin_ns, end_ns, y + i * bar_height, bar_height, name, color);
-			}
-		}
-	}
-}
-
-static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const vk_combuf_scopes_t *gpurofls, int gpurofls_count) {
+static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int y, const VCombufProfilingResult *gpurofls, int gpurofls_count) {
 	// Draw latest 2 frames; find their boundaries
 	uint32_t rewind_frame = prev_frame_index;
 	const int max_frames_to_draw = 2;
@@ -518,9 +590,45 @@ static int analyzeScopesAndDrawFrames( int draw, uint32_t prev_frame_index, int 
 	const float time_scale_ms = (double)vk_frame.width / (delta_ns / 1e6);
 
 	// TODO? manage y based on depths
-	drawCPUProfilerScopes(draw, events, frame_begin_time, time_scale_ms, event_begin, event_end, y);
+	processAndDrawAprofEvents((ProcessAndDrawAprofEvents){
+		.draw = draw,
+		.events = events,
+		.begin_time = frame_begin_time,
+		.time_scale_ms = time_scale_ms,
+		.begin = event_begin,
+		.end = event_end,
+		.y = y,
+		.scopes = g_speeds.frame.scopes,
+		.aprof_scopes = g_aprof.scopes,
+		.scope_name_prefix = "scope",
+		.out_active_time_us = &g_speeds.frame.cpu_time_us,
+		.out_wait_time_us = &g_speeds.frame.cpu_wait_time_us,
+	});
 
-	drawGPUProfilerScopes(draw, y, frame_begin_time, time_scale_ms, gpurofls, gpurofls_count);
+	for (int i = 0; i < gpurofls_count; ++i) {
+		const VCombufProfilingResult *const gpurofl = &gpurofls[i];
+
+		y += g_speeds.font_metrics.glyph_height * (MAX_STACK_DEPTH + 1);
+
+		processAndDrawAprofEvents((ProcessAndDrawAprofEvents){
+			.draw = draw,
+			.events = gpurofl->events.items,
+			.begin_time = frame_begin_time,
+			.time_scale_ms = time_scale_ms,
+			.begin = 0,
+			.end = gpurofl->events.count,
+			.y = y,
+			.scopes = g_speeds.frame.gpu_scopes,
+			.aprof_scopes = gpurofl->scopes.items,
+			.aprof_counters = {
+				.items = gpurofl->counters.items,
+				.count = gpurofl->counters.count,
+			},
+			.scope_name_prefix = "gpuscope",
+			.out_active_time_us = NULL, // GPU time is handled elsewhere for now
+			.out_wait_time_us = NULL,
+		});
+	}
 
 	return y + g_speeds.font_metrics.glyph_height * 6;
 }
@@ -553,7 +661,7 @@ static void getCurrentFontMetrics(void) {
 
 	// TODO these numbers are mostly fine for the "default" font. Unfortunately
 	// we don't have any access to real font metrics from here, ref_api_t doesn't give us anything about fonts. ;_;
-	g_speeds.font_metrics.glyph_width = 8 * scale;
+	g_speeds.font_metrics.glyph_width = 7 * scale;
 	g_speeds.font_metrics.glyph_height = 20 * scale;
 	g_speeds.font_metrics.scale = scale;
 }
@@ -584,10 +692,10 @@ static void togglePause( void ) {
 }
 
 static void speedsGraphAdd(const_string_view_t name, int metric_index) {
-	gEngine.Con_Printf("Adding profiler graph for metric %.*s(%d) at graph index %d\n", name.len, name.s, metric_index, g_speeds.graphs_count);
+	INFO("Adding profiler graph for metric %.*s(%d) at graph index %d", name.len, name.s, metric_index, g_speeds.graphs_count);
 
 	if (g_speeds.graphs_count == MAX_GRAPHS) {
-		gEngine.Con_Printf(S_ERROR "Cannot add graph \"%.*s\", no free graphs slots (max=%d)\n", name.len, name.s, MAX_GRAPHS);
+		ERR("Cannot add graph \"%.*s\", no free graphs slots (max=%d)", name.len, name.s, MAX_GRAPHS);
 		return;
 	}
 
@@ -616,19 +724,19 @@ static void speedsGraphAdd(const_string_view_t name, int metric_index) {
 }
 
 static void speedsGraphAddByMetricName( const_string_view_t name ) {
-	const int metric_index = findMetricIndexByName(name);
+	const int metric_index = findMetricIndexByIndexOrName(name);
 	if (metric_index < 0) {
-		gEngine.Con_Printf(S_ERROR "Metric \"%.*s\" not found\n", name.len, name.s);
+		ERR("Metric \"%.*s\" not found", name.len, name.s);
 		return;
 	}
 
 	r_speeds_metric_t *const metric = g_speeds.metrics + metric_index;
 	if (metric->graph_index >= 0) {
-		gEngine.Con_Printf(S_WARN "Metric \"%.*s\" already has graph @%d\n", name.len, name.s, metric->graph_index);
+		WARN("Metric \"%.*s\" already has graph @%d", name.len, name.s, metric->graph_index);
 		return;
 	}
 
-	speedsGraphAdd( name, metric_index );
+	speedsGraphAdd( svFromNullTerminated(metric->name), metric_index );
 }
 
 static void speedsGraphDelete( r_speeds_graph_t *graph ) {
@@ -649,14 +757,14 @@ static void speedsGraphDelete( r_speeds_graph_t *graph ) {
 static void speedsGraphRemoveByName( const_string_view_t name ) {
 	const int graph_index = findGraphIndexByName(name);
 	if (graph_index < 0) {
-		gEngine.Con_Printf(S_ERROR "Graph \"%.*s\" not found\n", name.len, name.s);
+		ERR("Graph \"%.*s\" not found", name.len, name.s);
 		return;
 	}
 
 	r_speeds_graph_t *const graph = g_speeds.graphs + graph_index;
 	speedsGraphDelete( graph );
 
-	gEngine.Con_Printf("Removing profiler graph %.*s(%d) at graph index %d\n", name.len, name.s, graph->source_metric, graph_index);
+	INFO("Removing profiler graph %.*s(%d) at graph index %d", name.len, name.s, graph->source_metric, graph_index);
 
 	// Move all further graphs one slot back, also updating their indices
 	for (int i = graph_index + 1; i < g_speeds.graphs_count; ++i) {
@@ -675,7 +783,7 @@ static void speedsGraphRemoveByName( const_string_view_t name ) {
 }
 
 static void speedsGraphsRemoveAll( void ) {
-	gEngine.Con_Printf("Removing all %d profiler graphs\n", g_speeds.graphs_count);
+	INFO("Removing all %d profiler graphs", g_speeds.graphs_count);
 	for (int i = 0; i < g_speeds.graphs_count; ++i) {
 		r_speeds_graph_t *const graph = g_speeds.graphs + i;
 		speedsGraphDelete(graph);
@@ -701,7 +809,7 @@ static void processGraphCvar( void ) {
 
 		const int metric_index = findMetricIndexByName(name);
 		if (metric_index < 0) {
-			gEngine.Con_Printf(S_WARN "Metric \"%.*s\" not found (yet? can be registered later)\n", name.len, name.s);
+			WARN("Metric \"%.*s\" not found (yet? can be registered later)", name.len, name.s);
 		}
 
 		speedsGraphAdd( name, metric_index );
@@ -740,17 +848,17 @@ static void doPrintMetrics( void ) {
 		// Note:
 		// This table alignment method relies on monospace font
 		// and will have its alignment completly broken without one.
-		header_format = "  | %-38s | %-10s | %-46s | %21s\n";
-		line_format   = "  | %.38s | %.10s | %.46s | %.21s\n";
-		row_format    = "  | ^2%-38s^7 | ^3%-10s^7 | ^5%-46s^7 | ^6%s:%d^7\n";
+		header_format = "  | %-3s | %-38s | %-10s | %-46s | %21s\n";
+		line_format   = "  | %.3s | %.38s | %.10s | %.46s | %.21s\n";
+		row_format    = "  | ^2%-3d^7 | ^2%-38s^7 | ^3%-10s^7 | ^5%-46s^7 | ^6%s:%d^7\n";
 
 		size_t line_size = sizeof ( line );
 		memset( line, '-', line_size - 1 );
 		line[line_size - 1] = '\0';
 	} else {
-		header_format = "  %s = %s  -->  (%s, %s)\n";
+		header_format = " [%s] %s = %s  -->  (%s, %s)\n";
 		line_format   = NULL;
-		row_format    = "  ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
+		row_format    = " [^2%d^7] ^2%s^7 = ^3%s^7  -->  (^5%s^7, ^6%s:%d^7)\n";
 
 		line[0] = '\0';
 	}
@@ -758,8 +866,8 @@ static void doPrintMetrics( void ) {
 	// Reset mode to print only this frame.
 	g_speeds.frame.metrics_print_mode = kSpeedsMprintNone;
 
-	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
-	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
+	gEngine.Con_Printf( header_format, "index", "module.metric_name", "value", "variable", "registration_location" );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line, line );
 	for ( int i = 0; i < g_speeds.metrics_count; ++i ) {
 		const r_speeds_metric_t *metric = g_speeds.metrics + i;
 
@@ -768,10 +876,10 @@ static void doPrintMetrics( void ) {
 
 		char value_with_unit[16];
 		metricTypeSnprintf( value_with_unit, sizeof( value_with_unit ), *metric->p_value, metric->type );
-		gEngine.Con_Printf( row_format, metric->name, value_with_unit, metric->var_name, COM_FileWithoutPath( metric->src_file ), metric->src_line );
+		gEngine.Con_Printf( row_format, i, metric->name, value_with_unit, metric->var_name, COM_FileWithoutPath( metric->src_file ), metric->src_line );
 	}
-	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line );
-	gEngine.Con_Printf( header_format, "module.metric_name", "value", "variable", "registration_location" );
+	if ( line_format )  gEngine.Con_Printf( line_format, line, line, line, line, line );
+	gEngine.Con_Printf( header_format, "index", "module.metric_name", "value", "variable", "registration_location" );
 }
 
 // Handles optional filter argument for `r_speeds_mlist` and `r_speeds_mtable` commands.
@@ -833,9 +941,9 @@ static void graphCmd( void ) {
 			speedsGraphsRemoveAll();
 			break;
 		case Unknown:
-			gEngine.Con_Printf("Usage:\n%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
-			gEngine.Con_Printf("\t%s <add/del> metric0 metric1 ...\n", gEngine.Cmd_Argv(0));
-			gEngine.Con_Printf("\t%s clear\n", gEngine.Cmd_Argv(0));
+			INFO("Usage:\n%s <add/del> metric0 metric1 ...", gEngine.Cmd_Argv(0));
+			INFO("\t%s <add/del> metric0 metric1 ...", gEngine.Cmd_Argv(0));
+			INFO("\t%s clear", gEngine.Cmd_Argv(0));
 			return;
 	}
 
@@ -926,14 +1034,8 @@ void R_SpeedsRegisterMetric(int* p_value, const char *module, const char *name, 
 	}
 }
 
-void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scopes_s *gpurofl, int gpurofl_count) {
+void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct VCombufProfilingResult *gpurofl, int gpurofl_count) {
 	APROF_SCOPE_DECLARE_BEGIN(function, __FUNCTION__);
-
-	uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
-	for (int i = 0; i < gpurofl_count; ++i) {
-		gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].timestamps[0]);
-		gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].timestamps[1]);
-	}
 
 	// Reads current font/DPI scale, many functions below use it
 	getCurrentFontMetrics();
@@ -962,7 +1064,17 @@ void R_SpeedsDisplayMore(uint32_t prev_frame_index, const struct vk_combuf_scope
 	const unsigned long long delta_ns = APROF_EVENT_TIMESTAMP(g_aprof.events[g_aprof.events_last_frame]) - frame_begin_time;
 
 	g_speeds.frame.frame_time_us = delta_ns / 1000;
-	g_speeds.frame.gpu_time_us = (gpu_frame_end_ns - gpu_frame_begin_ns) / 1000;
+
+	{
+		// TODO this is not strictly correct, just and approximation
+		// E.g. it won't give correct result for multiple combufs with gaps between them.
+		uint64_t gpu_frame_begin_ns = UINT64_MAX, gpu_frame_end_ns = 0;
+		for (int i = 0; i < gpurofl_count; ++i) {
+			gpu_frame_begin_ns = Q_min(gpu_frame_begin_ns, gpurofl[i].begin_ns);
+			gpu_frame_end_ns = Q_max(gpu_frame_end_ns, gpurofl[i].end_ns);
+		}
+		g_speeds.frame.gpu_time_us = (gpu_frame_end_ns - gpu_frame_begin_ns) / 1000;
+	}
 
 	handlePause( prev_frame_index );
 

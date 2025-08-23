@@ -49,6 +49,10 @@ static const char* device_extensions_extra[] = {
 	VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME,
 };
 
+static const char* device_extensions_perf_query[] = {
+	VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME,
+};
+
 static const VkExtensionProperties *findExtension( const VkExtensionProperties *exts, uint32_t num_exts, const char *extension ) {
 	for (uint32_t i = 0; i < num_exts; ++i) {
 		if (strncmp(exts[i].extensionName, extension, sizeof(exts[i].extensionName)) == 0)
@@ -182,33 +186,108 @@ static void devicePrintMemoryInfo(const VkPhysicalDeviceMemoryProperties *props,
 	}
 }
 
-static void readPhysicalDeviceInfo(VDeviceInfo *info) {
-	info->features = (VkPhysicalDeviceFeatures2) {
-		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-	};
-	vkGetPhysicalDeviceFeatures2(info->physical_device, &info->features);
+static const char* perfCounterUnitName(VkPerformanceCounterUnitKHR unit) {
+	switch (unit) {
+		case VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR: return "generic";
+		case VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR: return "%";
+		case VK_PERFORMANCE_COUNTER_UNIT_NANOSECONDS_KHR: return "ns";
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_KHR: return "b";
+		case VK_PERFORMANCE_COUNTER_UNIT_BYTES_PER_SECOND_KHR: return "bps";
+		case VK_PERFORMANCE_COUNTER_UNIT_KELVIN_KHR: return "K";
+		case VK_PERFORMANCE_COUNTER_UNIT_WATTS_KHR: return "W";
+		case VK_PERFORMANCE_COUNTER_UNIT_VOLTS_KHR: return "V";
+		case VK_PERFORMANCE_COUNTER_UNIT_AMPS_KHR: return "A";
+		case VK_PERFORMANCE_COUNTER_UNIT_HERTZ_KHR: return "Hz";
+		case VK_PERFORMANCE_COUNTER_UNIT_CYCLES_KHR: return "C";
+		default: return "?";
+	}
+}
 
-	// Get memory properties and budget
-	{
-		info->memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
-		info->memory_properties2.pNext = &info->memory_budget;
-		info->memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
-		info->memory_budget.pNext = NULL;
-		vkGetPhysicalDeviceMemoryProperties2(info->physical_device, &info->memory_properties2);
-		devicePrintMemoryInfo(&info->memory_properties2.memoryProperties, &info->memory_budget);
+static const char *perfCounterScopeName(VkPerformanceCounterScopeKHR scope) {
+	switch(scope) {
+		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_BUFFER_KHR: return "cmdbuf";
+		case VK_PERFORMANCE_COUNTER_SCOPE_RENDER_PASS_KHR: return "renderpass";
+		case VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_KHR: return "command";
+		default: return "unknown";
+	}
+}
+
+static const char *perfCounterStorageName(VkPerformanceCounterStorageKHR storage) {
+	switch (storage) {
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT32_KHR: return "i32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_INT64_KHR: return "i64";
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT32_KHR: return "u32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_UINT64_KHR: return "u64";
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT32_KHR: return "f32";
+		case VK_PERFORMANCE_COUNTER_STORAGE_FLOAT64_KHR: return "f64";
+		default: return "unknown";
+	}
+}
+
+void vDevicePrintPerformanceCounters(const VDeviceInfo *info) {
+	INFO("Got %d counters:", info->perf_counters.count);
+	for (uint32_t i = 0; i < info->perf_counters.count; ++i) {
+		const VkPerformanceCounterKHR *const cnt = info->perf_counters.counters + i;
+		const VkPerformanceCounterDescriptionKHR *const desc = info->perf_counters.desc + i;
+		INFO("  %d: %s %s/%s, %s@%s (%s)",
+			i, perfCounterScopeName(cnt->scope),
+			desc->category, desc->name,
+			perfCounterUnitName(cnt->unit), perfCounterStorageName(cnt->storage),
+			desc->description);
+	}
+}
+
+static void queryPerformanceCounters(VDeviceInfo *info) {
+	uint32_t counters_count = 0;
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, NULL, NULL));
+
+	VkPerformanceCounterKHR *const counters = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters));
+	VkPerformanceCounterDescriptionKHR *const counters_desc = Mem_Malloc(vk_core.pool, counters_count * sizeof(*counters_desc));
+
+	for (uint32_t i = 0; i < counters_count; ++i) {
+		counters[i] = (VkPerformanceCounterKHR) { .sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_KHR, };
+		counters_desc[i] = (VkPerformanceCounterDescriptionKHR) { .sType = VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_DESCRIPTION_KHR, };
 	}
 
-	{
+	XVK_CHECK(vkEnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(info->physical_device, info->queue_index, &counters_count, counters, counters_desc));
+
+	info->perf_counters.count = counters_count;
+	info->perf_counters.counters = counters;
+	info->perf_counters.desc = counters_desc;
+
+	vDevicePrintPerformanceCounters(info);
+}
+
+static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 #define FUNC(COUNT, ITEMS) XVK_CHECK(vkEnumerateDeviceExtensionProperties(info->physical_device, NULL, COUNT, ITEMS))
 		GET_VULKAN_ARRAY(VkExtensionProperties, extensions, FUNC);
 #undef FUNC
-
+	{
 		INFO( "\t\tSupported device extensions: %u", extensions.count);
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_req, COUNTOF(device_extensions_req));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_rt, COUNTOF(device_extensions_rt));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
+		devicePrintExtensionsFromList(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
+	}
 
+	void *features_head = NULL;
+	VkPhysicalDevicePerformanceQueryFeaturesKHR perf_query_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR,
+		.pNext = features_head,
+	};
+
+	const qboolean perf_query_extension_supported = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
+	if (perf_query_extension_supported)
+		features_head = &perf_query_features;
+
+	info->features = (VkPhysicalDeviceFeatures2) {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+		.pNext = features_head,
+	};
+	vkGetPhysicalDeviceFeatures2(info->physical_device, &info->features);
+
+	{
 		info->anisotropy = info->features.features.samplerAnisotropy;
 		INFO("\t\tAnistoropy supported: %d", info->anisotropy);
 
@@ -221,8 +300,23 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 		info->calibrated_timestamps = deviceSupportsExtensions(extensions.items, extensions.count, device_extensions_extra, COUNTOF(device_extensions_extra));
 		INFO("\t\tCalibrated timestamps supported: %d", info->calibrated_timestamps);
 
-		Mem_Free(extensions.items);
+		info->perf_query = perf_query_extension_supported && perf_query_features.performanceCounterQueryPools;
+		INFO("\t\tPerformance query supported: %d", info->perf_query);
 	}
+
+	if (perf_query_extension_supported)
+		queryPerformanceCounters(info);
+
+	// Get memory properties and budget
+	{
+		info->memory_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+		info->memory_properties2.pNext = &info->memory_budget;
+		info->memory_budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+		info->memory_budget.pNext = NULL;
+		vkGetPhysicalDeviceMemoryProperties2(info->physical_device, &info->memory_properties2);
+		devicePrintMemoryInfo(&info->memory_properties2.memoryProperties, &info->memory_budget);
+	}
+
 
 	{
 		// TODO should we check Vk version first?
@@ -241,6 +335,8 @@ static void readPhysicalDeviceInfo(VDeviceInfo *info) {
 			info->sbt_record_size = ALIGN_UP(info->properties_ray_tracing_pipeline.shaderGroupHandleSize, info->properties_ray_tracing_pipeline.shaderGroupBaseAlignment);
 		}
 	}
+
+	Mem_Free(extensions.items);
 }
 
 typedef ARRAY_DYNAMIC_DECLARE(VDeviceInfo, VDeviceInfos);
@@ -263,7 +359,9 @@ static VDeviceInfos enumerateDevices(void) {
 	int devices_having_rt = 0;
 	for (uint32_t i = 0; i < physical_devices.count; ++i) {
 		VDeviceInfo *const info = infos.items + i;
-		info->physical_device = physical_devices.items[i];
+		*info = (VDeviceInfo) {
+			.physical_device = physical_devices.items[i],
+		};
 
 		vkGetPhysicalDeviceProperties(info->physical_device, &info->properties);
 
@@ -332,6 +430,9 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		.storageBuffer8BitAccess = VK_TRUE,
 		.uniformAndStorageBuffer8BitAccess = VK_TRUE,
 		.bufferDeviceAddress = VK_TRUE,
+
+		// VK_KHR_performance_query requires host-side query reset, cause it doesn't like query reset cmd in the same cmdbuf
+		.hostQueryReset = info->perf_query ? VK_TRUE : VK_FALSE,
 	};
 	head = &vk12_features;
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_feature = {
@@ -347,6 +448,14 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		.rayQuery = VK_TRUE,
 	};
 	head = info->ray_tracing ? &ray_query_pipeline_feature : NULL;
+
+	VkPhysicalDevicePerformanceQueryFeaturesKHR perf_query_features = {
+		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR,
+		.pNext = head,
+		.performanceCounterQueryPools = VK_TRUE,
+	};
+	if (info->perf_query)
+		head = &perf_query_features;
 
 	VkPhysicalDeviceVulkan13Features vk13_features = {
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
@@ -390,6 +499,8 @@ static qboolean createDevice(const VDeviceInfo* info) {
 		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_nv_checkpoint, COUNTOF(device_extensions_nv_checkpoint));
 	if (info->calibrated_timestamps)
 		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_extra, COUNTOF(device_extensions_extra));
+	if (info->perf_query)
+		device_extensions_count = appendDeviceExtensions(device_extensions, device_extensions_count, device_extensions_perf_query, COUNTOF(device_extensions_perf_query));
 
 	VkDeviceCreateInfo create_info = {
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -423,10 +534,23 @@ static qboolean createDevice(const VDeviceInfo* info) {
 
 	v_device_info = *info;
 
+	if (info->perf_query) {
+		const VkAcquireProfilingLockInfoKHR apli = {
+			.sType = VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR,
+			.timeout = UINT64_MAX,
+		};
+		const VkResult result = vkAcquireProfilingLockKHR(v_device, &apli);
+		if (result != VK_SUCCESS) {
+			ERR("Failed to acquire profiling lock: %#x: %s. Disabling performance query.\n",
+				result, R_VkResultName(result));
+			v_device_info.perf_query = false;
+		}
+	}
+
 	return 1;
 }
 
-int vDeviceInit(int force_disable_rt) {
+int vDeviceInit(VDeviceInitArgs args) {
 	ASSERT(v_device == VK_NULL_HANDLE);
 	VDeviceInfos physical_devices = enumerateDevices();
 
@@ -454,9 +578,14 @@ int vDeviceInit(int force_disable_rt) {
 		}
 #endif
 
-		if (force_disable_rt && devinfo->ray_tracing) {
-			WARN("Device[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support", i);
+		if (args.force_disable_rt && devinfo->ray_tracing) {
+			WARN("Device[%d] supports ray tracing, but rt_force_disable is set, force-disabling ray tracing support.", i);
 			devinfo->ray_tracing = 0;
+		}
+
+		if (devinfo->perf_query && !args.enable_perf_query) {
+			INFO("Device[%d] supports performance query, but -vkperfquery wasn't supplied. Peformance query support will not be enabled.", i);
+			devinfo->perf_query = 0;
 		}
 
 		INFO("Trying device #%d: %04x:%04x %d %s %u.%u.%u %u.%u.%u",
@@ -478,6 +607,15 @@ int vDeviceInit(int force_disable_rt) {
 }
 
 void vDeviceShutdown(void) {
+	if (v_device_info.perf_query) {
+		vkReleaseProfilingLockKHR(v_device);
+	}
+
 	vkDestroyDevice(v_device, NULL);
 	v_device = VK_NULL_HANDLE;
+
+	if (v_device_info.perf_counters.count) {
+		Mem_Free((void*)v_device_info.perf_counters.counters);
+		Mem_Free((void*)v_device_info.perf_counters.desc);
+	}
 }
