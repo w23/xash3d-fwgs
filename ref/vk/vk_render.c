@@ -1,19 +1,21 @@
 #include "vk_render.h"
 
-#include "vk_core.h"
-#include "vulkan/VBuffer.h"
 #include "vk_geometry.h"
-#include "vulkan/VBarrier.h"
-#include "vulkan/VResource.h"
-#include "vulkan/VCombuf.h"
 #include "vk_common.h"
-#include "vulkan/VPipeline.h"
 #include "vk_math.h"
 #include "vk_rtx.h"
 #include "std/profiler.h"
 #include "r_speeds.h"
 #include "camera.h"
 #include "vk_raster.h"
+#include "vk_render_pass.h"
+#include "vk_overlay.h"
+
+#include "vulkan/VBarrier.h"
+#include "vulkan/VBuffer.h"
+#include "vulkan/VCombuf.h"
+#include "vulkan/VImage.h"
+#include "vulkan/VResource.h"
 
 #include "xash3d_mathlib.h"
 #include "xash3d_types.h"
@@ -49,12 +51,12 @@ qboolean VK_RenderInit( void ) {
 	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
 
-	return VK_RasterInit();
+	return R_VkRasterInit();
 }
 
 void VK_RenderShutdown( void )
 {
-	VK_RasterShutdown();
+	R_VkRasterShutdown();
 }
 
 void VK_RenderBegin( qboolean ray_tracing ) {
@@ -64,7 +66,7 @@ void VK_RenderBegin( qboolean ray_tracing ) {
 
 	R_GeometryBuffer_Flip();
 
-	VK_RasterBegin();
+	R_VkRasterBeginFrame();
 
 	if (ray_tracing)
 		VK_RayFrameBegin();
@@ -85,39 +87,6 @@ void VK_RenderSetupCamera( const struct ref_viewpass_s *rvp ) {
 	R_SetupCamera(rvp);
 	Matrix4x4_Concat(g_render_state.vk_projection, vk_proj_fixup, g_camera.projectionMatrix);
 	Matrix4x4_Concat(g_render_state.projection_view, g_render_state.vk_projection, g_camera.viewMatrix);
-}
-
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst) {
-	ASSERT(vk_core.rtx);
-
-	{
-		const vk_ray_frame_render_args_t args = {
-			.combuf = combuf,
-			.dst = dst,
-
-			.projection = &g_render_state.vk_projection,
-			.view = &g_camera.viewMatrix,
-
-			.fov_angle_y = g_camera.fov_y,
-		};
-
-		VK_RayFrameEnd(&args);
-	}
-}
-
-void VK_RenderEnd( struct vk_combuf_s* combuf, qboolean draw, uint32_t width, uint32_t height, int frame_index ) {
-	if (!draw)
-		return;
-
-	VK_RasterSubmit((vk_raster_submit_t){
-		.combuf = combuf,
-		.width = width,
-		.height = height,
-		.frame_index = frame_index,
-		.projection = &g_render_state.vk_projection,
-		.view = &g_camera.viewMatrix,
-		.projection_view = &g_render_state.projection_view,
-	});
 }
 
 qboolean R_RenderModelCreate( vk_render_model_t *model, vk_render_model_init_t args ) {
@@ -179,7 +148,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			},
 		});
 	} else {
-		VK_RasterAddModel((vk_raster_add_model_t){
+		R_VkRasterAddModel((vk_raster_add_model_t){
 			.debug_name = model->debug_name,
 			.lightmap = model->lightmap,
 			.geometries = model->geometries,
@@ -229,7 +198,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	} else {
 		matrix4x4 identity;
 		Matrix4x4_LoadIdentity(identity);
-		VK_RasterAddModel((vk_raster_add_model_t){
+		R_VkRasterAddModel((vk_raster_add_model_t){
 			.debug_name = args.name,
 			.lightmap = 0,
 			.geometries = &geometry,
@@ -243,4 +212,87 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	}
 
 	g_render.stats.dynamic_model_count++;
+}
+
+void R_VkRenderDrawFrame(vk_render_draw_frame_t args) {
+	// TODO: should be done by rendering when it requests textures
+	R_VkImageUploadCommit(args.combuf,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (args.trace_rays ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
+
+	const VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
+	const qboolean draw = args.framebuffer != VK_NULL_HANDLE;
+
+	if (args.trace_rays) {
+		VK_RayFrameEnd(&(vk_ray_frame_render_args_t){
+			.combuf = args.combuf,
+			.dst = args.framebuffer_image,
+
+			.projection = &g_render_state.vk_projection,
+			.view = &g_camera.viewMatrix,
+
+			.fov_angle_y = g_camera.fov_y,
+		});
+	} else {
+		R_VkRasterPrepareFrame(args.combuf, &(FrameContext){
+			.frame_sequence = args.sequence,
+		});
+	}
+
+	if (draw) {
+		{
+			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+				.image = args.framebuffer_image,
+				.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+			});
+			barrierCommit(&barrier, args.combuf);
+		}
+
+		const VkClearValue clear_value[] = {
+			// *_UNORM is float
+			{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
+			{.depthStencil = {1., 0.}} // TODO reverse-z
+		};
+		const VkRenderPassBeginInfo rpbi = {
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+			.renderPass = args.trace_rays ? vk_render_pass.after_ray_tracing : vk_render_pass.raster,
+			.renderArea.extent.width = args.width,
+			.renderArea.extent.height = args.height,
+			.clearValueCount = COUNTOF(clear_value),
+			.pClearValues = clear_value,
+			.framebuffer = args.framebuffer,
+		};
+		vkCmdBeginRenderPass(cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+
+		{
+			const VkViewport viewport[] = {
+				{0.f, 0.f, (float)args.width, (float)args.height, 0.f, 1.f},
+			};
+			const VkRect2D scissor[] = {{
+				{0, 0},
+				{args.width, args.height},
+			}};
+
+			vkCmdSetViewport(cmdbuf, 0, COUNTOF(viewport), viewport);
+			vkCmdSetScissor(cmdbuf, 0, COUNTOF(scissor), scissor);
+		}
+	}
+
+	if (!args.trace_rays && draw) {
+		R_VkRasterSubmit((vk_raster_submit_t){
+			.combuf = args.combuf,
+			.width = args.width,
+			.height = args.height,
+			.frame_index = args.frame_index,
+			.projection = &g_render_state.vk_projection,
+			.view = &g_camera.viewMatrix,
+			.projection_view = &g_render_state.projection_view,
+		});
+	}
+
+	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
+
+	if (draw)
+		vkCmdEndRenderPass(cmdbuf);
 }

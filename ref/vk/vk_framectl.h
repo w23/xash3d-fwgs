@@ -10,17 +10,7 @@ typedef struct vk_framectl_s {
 	// TODO only used from 2d and r_speeds, remove
 	uint32_t width, height;
 
-	// TODO move these into renderer and 2d
-	struct {
-		// Used when the entire rendering is traditional triangle rasterization
-		// Discards and clears color buffer
-		VkRenderPass raster;
-
-		// Used for 2D overlay rendering after ray tracing pass
-		// Preserves color buffer contents
-		VkRenderPass after_ray_tracing;
-	} render_pass;
-
+	// TODO this is not a reliable way to query whether the next frame will be RT
 	qboolean rtx_enabled;
 } vk_framectl_t;
 

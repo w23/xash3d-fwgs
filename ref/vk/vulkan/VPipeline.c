@@ -1,9 +1,8 @@
 #include "VPipeline.h"
 
-#include "vk_framectl.h" // VkRenderPass
-#include "VCombuf.h"
+#include "vk_render_pass.h"
 
-#include "eiface.h"
+#include "VCombuf.h"
 
 #define MAX_STAGES 2
 
@@ -141,7 +140,7 @@ VkPipeline VK_PipelineGraphicsCreate(const vk_pipeline_graphics_create_info_t *c
 
 	VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-		.dynamicStateCount = ARRAYSIZE(dynamic_states),
+		.dynamicStateCount = COUNTOF(dynamic_states),
 		.pDynamicStates = dynamic_states,
 	};
 
@@ -159,7 +158,7 @@ VkPipeline VK_PipelineGraphicsCreate(const vk_pipeline_graphics_create_info_t *c
 		.pColorBlendState = &color_blend,
 		.pDepthStencilState = &depth,
 		.layout = ci->layout,
-		.renderPass = vk_frame.render_pass.raster,
+		.renderPass = vk_render_pass.raster,
 		.pDynamicState = &dynamic_state_create_info,
 		.subpass = 0,
 	};

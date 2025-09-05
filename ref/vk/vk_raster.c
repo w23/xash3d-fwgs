@@ -384,7 +384,7 @@ static qboolean createPipelines( void )
 	return true;
 }
 
-qboolean VK_RasterInit( void ) {
+qboolean R_VkRasterInit( void ) {
 	g_raster.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
 
 	g_raster.ubo_align = Q_max(4, v_device_info.properties.limits.minUniformBufferOffsetAlignment);
@@ -439,7 +439,7 @@ qboolean VK_RasterInit( void ) {
 	return true;
 }
 
-void VK_RasterShutdown( void )
+void R_VkRasterShutdown( void )
 {
 	for (int i = 0; i < COUNTOF(g_raster.pipelines); ++i)
 		vkDestroyPipeline(vk_core.device, g_raster.pipelines[i], NULL);
@@ -451,7 +451,7 @@ void VK_RasterShutdown( void )
 	VK_BufferDestroy( &g_raster.uniform_buffer );
 }
 
-void VK_RasterBegin(void) {
+void R_VkRasterBeginFrame(void) {
 	g_render_state.uniform_data_set_mask = UNIFORM_UNSET;
 	g_render_state.current_ubo_offset_FIXME = UINT32_MAX;
 	memset(&g_render_state.current_uniform_data, 0, sizeof(g_render_state.current_uniform_data));
@@ -589,9 +589,8 @@ static uint32_t writeDlightsToUBO( void )
 	return ubo_lights_offset;
 }
 
-// FIXME: how to do this properly before render pass?
 // Needed to avoid VUID-vkCmdCopyBuffer-renderpass
-void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
+void R_VkRasterPrepareFrame( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
 	R_VkResourceProduce(&g_raster.geometry->header, combuf, ctx);
 
 	Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
@@ -602,7 +601,7 @@ void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *
 	barrierCommit(&barrier, combuf);
 }
 
-void VK_RasterSubmit(vk_raster_submit_t args) {
+void R_VkRasterSubmit(vk_raster_submit_t args) {
 	VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
 
 	// TODO we can sort collected draw commands for more efficient and correct rendering
@@ -769,7 +768,7 @@ static void uboComputeAndSetMVPFromModel( const matrix4x4 model, const matrix4x4
 	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
 }
 
-void VK_RasterAddModel( vk_raster_add_model_t args ) {
+void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 	int current_texture = args.textures_override;
 	int element_count = 0;
 	int index_offset = -1;

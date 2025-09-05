@@ -3,10 +3,10 @@
 #include "vk_common.h"
 #include "xash3d_types.h" // matrix4x4, vec4_t
 
-qboolean VK_RasterInit(void);
-void VK_RasterShutdown(void);
+qboolean R_VkRasterInit(void);
+void R_VkRasterShutdown(void);
 
-void VK_RasterBegin(void);
+void R_VkRasterBeginFrame(void);
 
 struct vk_render_geometry_s;
 typedef struct {
@@ -21,7 +21,17 @@ typedef struct {
 	int textures_override;
 } vk_raster_add_model_t;
 
-void VK_RasterAddModel( vk_raster_add_model_t args );
+void R_VkRasterAddModel( vk_raster_add_model_t args );
+
+struct vk_combuf_s;
+struct FrameContext;
+void R_VkRasterPrepareFrame( struct vk_combuf_s* combuf, const struct FrameContext *ctx );
+
+// Usage:
+// - VK_RasterBeginFrame
+// - R_VkRasterPrepareFrame
+// - VK_RasterSubmit
+// - VK_RasterBeginFrame ...
 
 typedef struct {
 	struct vk_combuf_s* combuf;
@@ -33,4 +43,4 @@ typedef struct {
 	const matrix4x4 *projection_view;
 } vk_raster_submit_t;
 
-void VK_RasterSubmit(vk_raster_submit_t args);
+void R_VkRasterSubmit(vk_raster_submit_t args);

@@ -2,8 +2,6 @@
 #include "VImage.h"
 #include "std/profiler.h"
 
-#include "eiface.h" // ARRAYSIZE
-
 extern ref_globals_t *gpGlobals;
 
 static struct {
@@ -170,7 +168,7 @@ static qboolean recreateSwapchainIfNeeded( qboolean force ) {
 			const VkFramebufferCreateInfo fbci = {
 				.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 				.renderPass = g_swapchain.render_pass,
-				.attachmentCount = ARRAYSIZE(attachments),
+				.attachmentCount = COUNTOF(attachments),
 				.pAttachments = attachments,
 				.width = g_swapchain.width,
 				.height = g_swapchain.height,

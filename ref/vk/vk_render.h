@@ -167,10 +167,14 @@ void VK_RenderDebugLabelEnd( void );
 
 void VK_RenderBegin( qboolean ray_tracing );
 
-struct vk_combuf_s;
-struct FrameContext;
-void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const struct FrameContext *ctx );
-void VK_RenderEnd( struct vk_combuf_s*, qboolean draw, uint32_t width, uint32_t height, int frame_index );
+typedef struct {
+	struct vk_combuf_s* combuf;
+	uint32_t width, height;
+	VkFramebuffer framebuffer;
+	struct r_vk_image_s* framebuffer_image;
+	uint32_t sequence;
+	uint32_t frame_index;
+	qboolean trace_rays;
+} vk_render_draw_frame_t;
 
-struct r_vk_image_s;
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst);
+void R_VkRenderDrawFrame(vk_render_draw_frame_t args);
