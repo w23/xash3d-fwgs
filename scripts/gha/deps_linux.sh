@@ -94,9 +94,3 @@ wget "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/S
 mv "SDL2-$SDL_VERSION" SDL2_src
 
 rustup target add "${RUST_TARGET[$GH_CPU_ARCH]}"
-
-# ref_vk requires Vulkan SDK
-wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_SDK_VERSION}-jammy.list https://packages.lunarg.com/vulkan/${VULKAN_SDK_VERSION}/lunarg-vulkan-${VULKAN_SDK_VERSION}-jammy.list
-sudo apt update
-sudo apt install -y vulkan-sdk

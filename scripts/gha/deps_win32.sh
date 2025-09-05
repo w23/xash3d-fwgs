@@ -22,7 +22,3 @@ if [ -f ffmpeg.zip ]; then
 	unzip -x ffmpeg.zip
 	mv $FFMPEG_ARCHIVE ffmpeg
 fi
-
-curl -L --show-error --output vulkan_sdk.exe https://vulkan.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}.0/windows/vulkan_sdk.exe
-7z x -ovulkan_sdk vulkan_sdk.exe
-rm -f vulkan_sdk.exe
