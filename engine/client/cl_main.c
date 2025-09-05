@@ -68,11 +68,11 @@ CVAR_DEFINE_AUTO( hud_scale_minimal_width, "640", FCVAR_ARCHIVE|FCVAR_LATCH, "if
 CVAR_DEFINE_AUTO( cl_solid_players, "1", 0, "Make all players not solid (can't traceline them)" );
 CVAR_DEFINE_AUTO( cl_updaterate, "20", FCVAR_USERINFO|FCVAR_ARCHIVE, "refresh rate of server messages" );
 CVAR_DEFINE_AUTO( cl_showevents, "0", FCVAR_ARCHIVE, "show events playback" );
-CVAR_DEFINE_AUTO( cl_cmdrate, "60", FCVAR_ARCHIVE, "Max number of command packets sent to server per second" );
+CVAR_DEFINE_AUTO( cl_cmdrate, "30", FCVAR_ARCHIVE, "Max number of command packets sent to server per second" );
 CVAR_DEFINE( cl_interp, "ex_interp", "0.1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "Interpolate object positions starting this many seconds in past" );
 CVAR_DEFINE_AUTO( cl_nointerp, "0", 0, "disable interpolation of entities and players" );
 static CVAR_DEFINE_AUTO( cl_dlmax, "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "max allowed outcoming fragment size" );
-static CVAR_DEFINE_AUTO( cl_upmax, "1200", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
+static CVAR_DEFINE_AUTO( cl_upmax, "508", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
 
 CVAR_DEFINE_AUTO( cl_lw, "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
 CVAR_DEFINE_AUTO( cl_charset, "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
@@ -94,10 +94,10 @@ static CVAR_DEFINE_AUTO( name, username, FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_PRIN
 static CVAR_DEFINE_AUTO( model, "", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player model ('player' is a singleplayer model)" );
 static CVAR_DEFINE_AUTO( topcolor, "0", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player top color" );
 static CVAR_DEFINE_AUTO( bottomcolor, "0", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player bottom color" );
-CVAR_DEFINE_AUTO( rate, "3500", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player network rate" );
+CVAR_DEFINE_AUTO( rate, "25000", FCVAR_USERINFO|FCVAR_ARCHIVE|FCVAR_FILTERABLE, "player network rate" );
 
 static CVAR_DEFINE_AUTO( cl_ticket_generator, "revemu2013", FCVAR_ARCHIVE, "you wouldn't steal a car" );
-
+static CVAR_DEFINE_AUTO( cl_advertise_engine_in_name, "1", FCVAR_ARCHIVE|FCVAR_PRIVILEGED, "add [Xash3D] to the nickname when connecting to GoldSrc servers" );
 
 client_t		cl;
 client_static_t	cls;
@@ -674,7 +674,7 @@ static void CL_CreateCmd( void )
 	}
 
 	// demo always have commands so don't overwrite them
-	if( !cls.demoplayback ) cl.cmd = &pcmd->cmd;
+	if( !cls.demoplayback ) cl.cmd = pcmd->cmd;
 
 	// predict all unacknowledged movements
 	CL_PredictMovement( false );
@@ -789,6 +789,7 @@ static void CL_WritePacket( void )
 	{
 		int newcmds, numcmds;
 		int from, i, key;
+		int packet_loss = bound( 0, (int)cls.packet_loss, 100 );
 
 		cls.nextcmdtime = host.realtime + ( 1.0f / cl_cmdrate.value );
 
@@ -808,7 +809,10 @@ static void CL_WritePacket( void )
 		key = MSG_GetRealBytesWritten( &buf );
 		MSG_WriteByte( &buf, 0 );
 
-		MSG_WriteByte( &buf, bound( 0, (int)cls.packet_loss, 100 ));
+		if( proto == PROTO_GOLDSRC && voice_loopback.value )
+			SetBits( packet_loss, 7 ); // set 7-th bit to tell server that we want voice loopback
+
+		MSG_WriteByte( &buf, packet_loss );
 		MSG_WriteByte( &buf, numbackup );
 		MSG_WriteByte( &buf, newcmds );
 
@@ -1009,7 +1013,7 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 	const char *s;
 	uint32_t crc;
 	char buf[768] = { 0 }; // setti and steamemu return 768
-	size_t i = sizeof( buf );
+	int i = sizeof( buf );
 
 	if( !Q_strcmp( cl_ticket_generator.string, "null" ))
 	{
@@ -1028,25 +1032,12 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 	CRC32_Init( &crc );
 	CRC32_ProcessBuffer( &crc, s, Q_strlen( s ));
 	crc = CRC32_Final( crc );
-
-	if( !Q_stricmp( cl_ticket_generator.string, "revemu2013" ))
-		i = GenerateRevEmu2013( buf, crc );
-	else if( !Q_stricmp( cl_ticket_generator.string, "sc2009" ))
-		i = GenerateSC2009( buf, crc );
-	else if( !Q_stricmp( cl_ticket_generator.string, "oldrevemu" ))
-		i = GenerateOldRevEmu( buf, crc );
-	else if( !Q_stricmp( cl_ticket_generator.string, "steamemu" ))
-		i = GenerateSteamEmu( buf, crc );
-	else if( !Q_stricmp( cl_ticket_generator.string, "revemu" ))
-		i = GenerateRevEmu( buf, crc );
-	else if( !Q_stricmp( cl_ticket_generator.string, "setti" ))
-		i = GenerateSetti( buf );
-	else if( !Q_stricmp( cl_ticket_generator.string, "avsmp" ))
-		i = GenerateAVSMP( buf, crc, true );
-	else
-		Con_Printf( "%s: unknown generator %s, supported are: null, revemu2003, sc2009, oldrevemu, steamemu, revemu, setti, avsmp\n", __func__, cl_ticket_generator.string );
-
+	i = GenerateRevEmu2013( buf, s, crc );
 	MSG_WriteBytes( send, buf, i );
+
+	// RevEmu2013: pTicket[1] = revHash (low), pTicket[5] = 0x01100001 (high)
+	*(uint32_t*)cls.steamid = LittleLong( ((uint32_t*)buf)[1] );
+	*(uint32_t*)(cls.steamid + 4) = LittleLong( ((uint32_t*)buf)[5] );
 }
 
 /*
@@ -1111,7 +1102,7 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 		Info_RemoveKey( cls.userinfo, "cl_maxpayload" );
 
 		name = Info_ValueForKey( cls.userinfo, "name" );
-		if( Q_strnicmp( name, "[Xash3D]", 8 ))
+		if( cl_advertise_engine_in_name.value && Q_strnicmp( name, "[Xash3D]", 8 ))
 			Info_SetValueForKeyf( cls.userinfo, "name", sizeof( cls.userinfo ), "[Xash3D]%s", name );
 
 		MSG_Init( &send, "GoldSrcConnect", send_buf, sizeof( send_buf ));
@@ -1183,7 +1174,11 @@ Returns bandwidth test fragment size
 */
 static int CL_GetTestFragmentSize( void )
 {
-	const int fragmentSizes[CL_TEST_RETRIES] = { 64000, 32000, 10666, 5200, 1400 };
+	// const int fragmentSizes[CL_TEST_RETRIES] = { 64000, 32000, 10666, 5200, 1400 };
+
+	// it turns out, even if we pass the bandwidth test, it doesn't mean we can use such large fragments
+	// as a temporary solution, use smaller fragment sizes
+	const int fragmentSizes[CL_TEST_RETRIES] = { 1400, 1200, 1000, 800, 508 };
 	if( cls.connect_retry >= 0 && cls.connect_retry < CL_TEST_RETRIES )
 		return bound( FRAGMENT_MIN_SIZE, fragmentSizes[cls.connect_retry], FRAGMENT_MAX_SIZE );
 	else
@@ -1326,18 +1321,15 @@ static void CL_CreateResourceList( void )
 	cl.num_resources = 0;
 	memset( rgucMD5_hash, 0, sizeof( rgucMD5_hash ));
 
+	// sanitize cvar value
+	if( Q_strcmp( cl_logoext.string, "bmp" ) && Q_strcmp( cl_logoext.string, "png" ))
+		Cvar_DirectSet( &cl_logoext, "bmp" );
+
+	Q_snprintf( szFileName, sizeof( szFileName ), "logos/remapped.%s", cl_logoext.string );
 	if( cls.legacymode == PROTO_GOLDSRC )
 	{
-		// TODO: actually repack remapped.bmp into a WAD for GoldSrc servers
+		CL_ConvertImageToWAD3( szFileName );
 		Q_strncpy( szFileName, "tempdecal.wad", sizeof( szFileName ));
-	}
-	else
-	{
-		// sanitize cvar value
-		if( Q_strcmp( cl_logoext.string, "bmp" ) && Q_strcmp( cl_logoext.string, "png" ))
-			Cvar_DirectSet( &cl_logoext, "bmp" );
-
-		Q_snprintf( szFileName, sizeof( szFileName ), "logos/remapped.%s", cl_logoext.string );
 	}
 	fp = FS_Open( szFileName, "rb", true );
 
@@ -1829,7 +1821,7 @@ static void CL_QueryServer_f( void )
 
 	if( Cmd_Argc( ) != 3 )
 	{
-		Con_Printf( S_USAGE "queryserver <adr> <protocol>\n" );
+		Con_Printf( S_USAGE "ui_queryserver <adr> <protocol>\n" );
 		return;
 	}
 
@@ -3052,9 +3044,8 @@ void CL_UpdateInfo( const char *key, const char *value )
 		MSG_WriteString( &cls.netchan.message, cls.userinfo );
 		break;
 	case PROTO_GOLDSRC:
-		if( !Q_stricmp( key, "name" ) && Q_strnicmp( value, "[Xash3D]", 8 ))
+		if( cl_advertise_engine_in_name.value && !Q_stricmp( key, "name" ) && Q_strnicmp( value, "[Xash3D]", 8 ))
 		{
-			// always prepend [Xash3D] on GoldSrc protocol :)
 			CL_ServerCommand( true, "setinfo \"%s\" \"[Xash3D]%s\"\n", key, value );
 			break;
 		}
@@ -3139,9 +3130,6 @@ static qboolean CL_ShouldRescanFilesystem( void )
 			retval = true;
 		}
 	}
-
-	if( FBitSet( fs_mount_lv.flags|fs_mount_hd.flags|fs_mount_addon.flags|fs_mount_l10n.flags|ui_language.flags, FCVAR_CHANGED ))
-		retval = true;
 
 	return retval;
 }
@@ -3369,6 +3357,7 @@ static void CL_InitLocal( void )
 	cl.resourcesonhand.pNext = cl.resourcesonhand.pPrev = &cl.resourcesonhand;
 
 	Cvar_RegisterVariable( &cl_ticket_generator );
+	Cvar_RegisterVariable( &cl_advertise_engine_in_name );
 
 	Cvar_RegisterVariable( &showpause );
 	Cvar_RegisterVariable( &mp_decals );
@@ -3467,7 +3456,7 @@ static void CL_InitLocal( void )
 	Cmd_AddCommand ("pause", NULL, "pause the game (if the server allows pausing)" );
 	Cmd_AddRestrictedCommand( "localservers", CL_LocalServers_f, "collect info about local servers" );
 	Cmd_AddRestrictedCommand( "internetservers", CL_InternetServers_f, "collect info about internet servers" );
-	Cmd_AddRestrictedCommand( "queryserver", CL_QueryServer_f, "query server info from console" );
+	Cmd_AddRestrictedCommand( "ui_queryserver", CL_QueryServer_f, "query server info from console" );
 	Cmd_AddCommand ("cd", CL_PlayCDTrack_f, "Play cd-track (not real cd-player of course)" );
 	Cmd_AddCommand ("mp3", CL_PlayCDTrack_f, "Play mp3-track (based on virtual cd-player)" );
 	Cmd_AddCommand ("waveplaylen", CL_WavePlayLen_f, "Get approximate length of wave file");
@@ -3476,10 +3465,10 @@ static void CL_InitLocal( void )
 	Cmd_AddRestrictedCommand ("userinfo", CL_SetInfo_f, "examine or change the userinfo string (alias of setinfo)" );
 	Cmd_AddCommand ("physinfo", CL_Physinfo_f, "print current client physinfo" );
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f, "disconnect from server" );
-	Cmd_AddCommand ("record", CL_Record_f, "record a demo" );
+	Cmd_AddRestrictedCommand( "record", CL_Record_f, "record a demo" );
 	Cmd_AddCommand ("playdemo", CL_PlayDemo_f, "play a demo" );
 	Cmd_AddCommand ("timedemo", CL_TimeDemo_f, "demo benchmark" );
-	Cmd_AddCommand ("killdemo", CL_DeleteDemo_f, "delete a specified demo file" );
+	Cmd_AddRestrictedCommand( "killdemo", CL_DeleteDemo_f, "delete a specified demo file" );
 	Cmd_AddCommand ("startdemos", CL_StartDemos_f, "start playing back the selected demos sequentially" );
 	Cmd_AddCommand ("demos", CL_Demos_f, "restart looping demos defined by the last startdemos command" );
 	Cmd_AddCommand ("movie", CL_PlayVideo_f, "play a movie" );
@@ -3691,7 +3680,7 @@ void CL_Shutdown( void )
 {
 	Con_Printf( "%s()\n", __func__ );
 
-	if( !host.crashed && cls.initialized )
+	if( host.status != HOST_CRASHED && cls.initialized )
 	{
 		Host_WriteOpenGLConfig ();
 		Host_WriteVideoConfig ();

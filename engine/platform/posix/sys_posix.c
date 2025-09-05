@@ -149,7 +149,7 @@ void Posix_Daemonize( void )
 static void Posix_SigtermCallback( int signal )
 {
 	string reason;
-	Con_Printf( reason, sizeof( reason ), "caught signal %d", signal );
+	Q_snprintf( reason, sizeof( reason ), "caught signal %d", signal );
 	Sys_Quit( reason );
 }
 
@@ -173,6 +173,11 @@ double Platform_DoubleTime( void )
 	clock_gettime( CLOCK_MONOTONIC, &ts );
 #endif
 	return (double) ts.tv_sec + (double) ts.tv_nsec/1000000000.0;
+}
+
+void Platform_Sleep( int msec )
+{
+	usleep( msec * 1000 );
 }
 #endif // XASH_TIMER == TIMER_POSIX
 

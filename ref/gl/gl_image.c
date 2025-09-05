@@ -1031,8 +1031,8 @@ static void GL_BuildMipMap( byte *in, int srcWidth, int srcHeight, int srcDepth,
 static void GL_TextureImageRAW( gl_texture_t *tex, GLint side, GLint level, GLint width, GLint height, GLint depth, GLint type, const void *data )
 {
 	GLuint	cubeTarget = GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB;
-	qboolean	subImage = FBitSet( tex->flags, TF_IMG_UPLOADED );
-	GLenum	inFormat = gEngfuncs.Image_GetPFDesc(type)->glFormat;
+	qboolean	subImage = FBitSet( tex->flags, TF_IMG_UPLOADED ) && data != NULL;
+	GLenum	inFormat = gEngfuncs.Image_GetPFDesc( type )->glFormat;
 	GLint	dataType = GL_UNSIGNED_BYTE;
 	GLsizei	samplesCount = 0;
 
@@ -1064,7 +1064,7 @@ static void GL_TextureImageRAW( gl_texture_t *tex, GLint side, GLint level, GLin
 	else if( tex->target == GL_TEXTURE_2D_MULTISAMPLE )
 	{
 #if !defined( XASH_GL_STATIC ) || (!defined( XASH_GLES ) && !defined( XASH_GL4ES ))
-		samplesCount = (GLsizei)gEngfuncs.pfnGetCvarFloat("gl_msaa_samples");
+		samplesCount = (GLsizei)gEngfuncs.pfnGetCvarFloat( "gl_msaa_samples" );
 		switch (samplesCount)
 		{
 			case 2:
@@ -1392,7 +1392,7 @@ GL_AllocTexture
 */
 static gl_texture_t *GL_AllocTexture( const char *name, texFlags_t flags )
 {
-	const qboolean skyboxhack = FBitSet( flags, TF_SKYSIDE ) && glConfig.context != CONTEXT_TYPE_GL_CORE;
+	const qboolean skyboxhack = FBitSet( flags, TF_SKYSIDE ) && glConfig.context == CONTEXT_TYPE_GL;
 	gl_texture_t *tex = NULL;
 	GLuint texnum = 1;
 
@@ -2026,19 +2026,20 @@ R_InitDlightTexture
 */
 void R_InitDlightTexture( void )
 {
-	rgbdata_t	r_image;
+	rgbdata_t r_image =
+	{
+		.width = BLOCK_SIZE,
+		.height = BLOCK_SIZE,
+		.type = PF_RGBA_32,
+		.flags = IMAGE_HAS_COLOR,
+		.size = r_image.width * r_image.height * 4
+	};
+	qboolean update = false;
 
 	if( tr.dlightTexture != 0 )
-		return; // already initialized
+		update = true;
 
-	memset( &r_image, 0, sizeof( r_image ));
-	r_image.width = BLOCK_SIZE;
-	r_image.height = BLOCK_SIZE;
-	r_image.flags = IMAGE_HAS_COLOR;
-	r_image.type = PF_RGBA_32;
-	r_image.size = r_image.width * r_image.height * 4;
-
-	tr.dlightTexture = GL_LoadTextureInternal( "*dlight", &r_image, TF_NOMIPMAP|TF_CLAMP|TF_ATLAS_PAGE );
+	tr.dlightTexture = GL_LoadTextureFromBuffer( "*dlight", &r_image, TF_NOMIPMAP|TF_CLAMP|TF_ATLAS_PAGE, update );
 }
 
 /*

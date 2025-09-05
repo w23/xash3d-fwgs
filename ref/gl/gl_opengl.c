@@ -38,6 +38,7 @@ CVAR_DEFINE_AUTO( r_ripple, "0", FCVAR_GLCONFIG, "enable software-like water tex
 CVAR_DEFINE_AUTO( r_ripple_updatetime, "0.05", FCVAR_GLCONFIG, "how fast ripple simulation is" );
 CVAR_DEFINE_AUTO( r_ripple_spawntime, "0.1", FCVAR_GLCONFIG, "how fast new ripples spawn" );
 CVAR_DEFINE_AUTO( r_large_lightmaps, "0", FCVAR_GLCONFIG|FCVAR_LATCH, "enable larger lightmap atlas textures (might break custom renderer mods)" );
+CVAR_DEFINE_AUTO( r_dlight_virtual_radius, "3", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount, should help against ugly cut off dlights on highly scaled textures" );
 
 DEFINE_ENGINE_SHARED_CVAR_LIST()
 
@@ -906,13 +907,7 @@ static void GL_InitExtensionsBigGL( void )
 		GL_CheckExtension( "GL_ARB_seamless_cube_map", NULL, 0, "gl_texture_cubemap_seamless", GL_ARB_SEAMLESS_CUBEMAP, 0 );
 	}
 
-	// NPOT textures support
-	if( !GL_CheckExtension( "GL_ARB_texture_non_power_of_two", NULL, 0, "gl_texture_npot", GL_ARB_TEXTURE_NPOT_EXT, 0 ))
-	{
-		// vitaGL exposes OES extension
-		GL_CheckExtension( "GL_OES_texture_npot", NULL, 0, "gl_texture_npot", GL_ARB_TEXTURE_NPOT_EXT, 0 );
-	}
-
+	GL_CheckExtension( "GL_ARB_texture_non_power_of_two", NULL, 0, "gl_texture_npot", GL_ARB_TEXTURE_NPOT_EXT, 0 );
 	GL_CheckExtension( "GL_ARB_texture_compression", texturecompressionfuncs, ARRAYSIZE( texturecompressionfuncs ), "gl_texture_dxt_compression", GL_TEXTURE_COMPRESSION_EXT, 0 );
 	if( !GL_CheckExtension( "GL_EXT_texture_edge_clamp", NULL, 0, "gl_clamp_to_edge", GL_CLAMPTOEDGE_EXT, 2.0 )) // present in ES2
 		GL_CheckExtension( "GL_SGIS_texture_edge_clamp", NULL, 0, "gl_clamp_to_edge", GL_CLAMPTOEDGE_EXT, 0 );
@@ -1155,6 +1150,7 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_overbrightmode );
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_detail );
 	gEngfuncs.Cvar_RegisterVariable( &r_large_lightmaps );
+	gEngfuncs.Cvar_RegisterVariable( &r_dlight_virtual_radius );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
@@ -1494,13 +1490,13 @@ void GL_SetupAttributes( int safegl )
 void wes_init( const char *gles2 );
 int nanoGL_Init( void );
 #if XASH_GL4ES
-static void GL4ES_GetMainFBSize( int *width, int *height )
+static void APIENTRY GL4ES_GetMainFBSize( int *width, int *height )
 {
 	*width = gpGlobals->width;
 	*height = gpGlobals->height;
 }
 
-static void *GL4ES_GetProcAddress( const char *name )
+static void * APIENTRY GL4ES_GetProcAddress( const char *name )
 {
 	if( !Q_strcmp(name, "glShadeModel") )
 		// combined gles/gles2/gl implementation exports this, but it is invalid

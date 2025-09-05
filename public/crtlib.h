@@ -56,7 +56,7 @@ enum
 // build.c
 //
 int Q_buildnum( void );
-int Q_buildnum_date( const char *date );
+int Q_buildnum_iso( const char *date );
 int Q_buildnum_compat( void );
 const char *Q_PlatformStringByID( const int platform );
 const char *Q_buildos( void );
@@ -64,6 +64,8 @@ const char *Q_ArchitectureStringByID( const int arch, const uint abi, const int 
 const char *Q_buildarch( void );
 extern const char *g_buildcommit;
 extern const char *g_buildbranch;
+extern const char *g_build_date;
+extern const char *g_buildcommit_date;
 
 //
 // crtlib.c

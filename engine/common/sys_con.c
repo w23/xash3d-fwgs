@@ -25,21 +25,20 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 
 // do not waste precious CPU cycles on mobiles or low memory devices
-#if !XASH_WIN32 && !XASH_MOBILE_PLATFORM && !XASH_LOW_MEMORY
+#if !XASH_WIN32 && !XASH_MOBILE_PLATFORM && !XASH_LOW_MEMORY && !XASH_EMSCRIPTEN
 #define XASH_COLORIZE_CONSOLE 1
 #else
 #define XASH_COLORIZE_CONSOLE 0
 #endif
 
-typedef struct {
-	char		title[64];
-	qboolean		log_active;
-	char		log_path[MAX_SYSPATH];
-	FILE		*logfile;
-	int 		logfileno;
-} LogData;
-
-static LogData s_ld;
+static struct logdata_s {
+	char     title[64];
+	qboolean log_active;
+	qboolean log_time;
+	char     log_path[MAX_SYSPATH];
+	FILE     *logfile;
+	int      logfileno;
+} s_ld;
 
 void Sys_DestroyConsole( void )
 {
@@ -78,13 +77,18 @@ static void Sys_FlushLogfile( void )
 
 void Sys_InitLog( void )
 {
-	const char	*mode;
+	const char *mode;
 
 	if( Sys_CheckParm( "-log" ))
 	{
+		if( !Sys_GetParmFromCmdLine( "-log", s_ld.log_path ) || !isalnum( s_ld.log_path[0] ))
+			Q_strncpy( s_ld.log_path, "engine.log", sizeof( s_ld.log_path ));
+
+		COM_DefaultExtension( s_ld.log_path, ".log", sizeof( s_ld.log_path ));
 		s_ld.log_active = true;
-		Q_strncpy( s_ld.log_path, "engine.log", sizeof( s_ld.log_path ));
 	}
+
+	s_ld.log_time = Sys_CheckParm( "-logtime" );
 
 	if( host.change_game && host.type != HOST_DEDICATED )
 		mode = "a";
@@ -101,7 +105,7 @@ void Sys_InitLog( void )
 
 		if ( !s_ld.logfile )
 		{
-			Con_Reportf( S_ERROR  "Sys_InitLog: can't create log file %s: %s\n", s_ld.log_path, strerror( errno ));
+			Con_Reportf( S_ERROR "%s: can't create log file %s: %s\n", __func__, s_ld.log_path, strerror( errno ));
 			return;
 		}
 
@@ -234,7 +238,7 @@ static void Sys_PrintStdout( const char *logtime, size_t logtime_len, const char
 
 	// platform-specific output
 #if XASH_ANDROID && !XASH_DEDICATED
-	__android_log_write( ANDROID_LOG_DEBUG, "Xash", buf );
+	__android_log_write( ANDROID_LOG_INFO, "Xash", buf );
 #endif // XASH_ANDROID && !XASH_DEDICATED
 
 #if TARGET_OS_IOS
@@ -267,7 +271,7 @@ void Sys_PrintLog( const char *pMsg )
 	const struct tm	*crt_tm;
 	char logtime[32] = "";
 	static char lastchar;
-	qboolean print_time = true;
+	qboolean print_time = false;
 	size_t len, logtime_len = 0;
 
 	if( !lastchar || lastchar == '\n' )
@@ -275,11 +279,9 @@ void Sys_PrintLog( const char *pMsg )
 		if( time( &crt_time ) >= 0 )
 		{
 			crt_tm = localtime( &crt_time );
-			if( crt_tm == NULL )
-				print_time = false;
+			print_time = crt_tm != NULL;
 		}
 	}
-	else print_time = false;
 
 	if( print_time )
 	{
@@ -295,17 +297,23 @@ void Sys_PrintLog( const char *pMsg )
 	// save last char to detect when line was not ended
 	lastchar = len > 0 ? pMsg[len - 1] : 0;
 
-	if( !s_ld.logfile )
-		return;
-
-	if( print_time )
+	// spew to engine.log
+	if( s_ld.logfile )
 	{
-		logtime_len = strftime( logtime, sizeof( logtime ), "[%Y:%m:%d|%H:%M:%S] ", crt_tm ); //full time
-		logtime_len = Q_min( logtime_len, sizeof( logtime ) - 1 ); // just in case
+		if( s_ld.log_time && print_time )
+		{
+			logtime_len = strftime( logtime, sizeof( logtime ), "[%Y:%m:%d|%H:%M:%S] ", crt_tm ); //full time
+			logtime_len = Q_min( logtime_len, sizeof( logtime ) - 1 ); // just in case
+		}
+		else
+		{
+			logtime[0] = '\0';
+			logtime_len = 0;
+		}
+
+		Sys_PrintLogfile( s_ld.logfileno, logtime, logtime_len, pMsg, false );
+		Sys_FlushLogfile();
 	}
-	
-	Sys_PrintLogfile( s_ld.logfileno, logtime, logtime_len, pMsg, false );
-	Sys_FlushLogfile();
 }
 
 /*

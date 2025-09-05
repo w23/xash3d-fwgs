@@ -618,7 +618,7 @@ qboolean MSG_ReadBits( sizebuf_t *sb, void *pOutData, int nBits )
 	int	nBitsLeft = nBits;
 
 	// get output dword-aligned.
-	while((( uint32_t )pOut & 3) != 0 && nBitsLeft >= 8 )
+	while((( uintptr_t )pOut & 3) != 0 && nBitsLeft >= 8 )
 	{
 		*pOut = (byte)MSG_ReadUBitLong( sb, 8 );
 		++pOut;
@@ -873,7 +873,7 @@ static void Test_Buffer_Write( void )
 	MSG_Init( &sb, __func__, testdata, sizeof( testdata ));
 	TASSERT_EQi( sb.iCurBit, 0 );
 	TASSERT_EQi( sb.nDataBits, sizeof( testdata ) << 3 );
-	TASSERT_EQi( sb.pData, testdata );
+	TASSERT_EQp( sb.pData, (void *)testdata );
 	TASSERT_EQi( sb.bOverflow, false );
 
 	MSG_WriteBytes( &sb, "asdf", 4 );
@@ -929,7 +929,7 @@ static void Test_Buffer_Read( void )
 	MSG_StartReading( &sb, (void *)g_testbuf, -1, 0, g_testbuf_bits );
 	TASSERT_EQi( sb.iCurBit, 0 );
 	TASSERT_EQi( sb.nDataBits, g_testbuf_bits );
-	TASSERT_EQi( sb.pData, g_testbuf );
+	TASSERT_EQp( sb.pData, (void *)g_testbuf );
 	TASSERT_EQi( sb.bOverflow, false );
 
 	MSG_ReadBytes( &sb, buf, 4 );

@@ -2379,7 +2379,7 @@ void GAME_EXPORT pfnClientCommand( edict_t* pEdict, char* szFmt, ... )
 	if( sv.state != ss_active )
 		return; // early out
 
-	if(( cl = SV_ClientFromEdict( pEdict, true )) == NULL )
+	if(( cl = SV_ClientFromEdict( pEdict, false )) == NULL )
 	{
 		Con_Printf( S_ERROR "stuffcmd: client is not spawned!\n" );
 		return;
@@ -3125,7 +3125,6 @@ static void SV_AllocStringPool( void )
 		if( ptr )
 		{
 			Con_Reportf( "%s: Allocated string array near the server library: %p %p\n", __func__, base, ptr );
-
 		}
 		else
 		{
@@ -3253,9 +3252,14 @@ string_t GAME_EXPORT SV_AllocString( const char *szValue )
 #if XASH_64BIT
 	if( !str64.allowdup )
 	{
-		for( dupe_string = str64.poldstringbase + 1;
-			dupe_string < str64.plast && ( found_dupe = !Q_strcmp( dupe_string, processed_string ));
-			dupe_string += Q_strlen( dupe_string ) + 1 );
+		for( dupe_string = str64.poldstringbase + 1; dupe_string < str64.plast; dupe_string += Q_strlen( dupe_string ) + 1 )
+		{
+			if( !Q_strcmp( dupe_string, processed_string ))
+			{
+				found_dupe = true;
+				break;
+			}
+		}
 	}
 
 	if( !found_dupe )
@@ -4600,7 +4604,7 @@ static void GAME_EXPORT pfnQueryClientCvarValue( const edict_t *player, const ch
 	if( !COM_CheckString( cvarName ))
 		return;
 
-	if(( cl = SV_ClientFromEdict( player, true )) != NULL )
+	if(( cl = SV_ClientFromEdict( player, false )) != NULL )
 	{
 		MSG_BeginServerCmd( &cl->netchan.message, svc_querycvarvalue );
 		MSG_WriteString( &cl->netchan.message, cvarName );
@@ -4627,7 +4631,7 @@ static void GAME_EXPORT pfnQueryClientCvarValue2( const edict_t *player, const c
 	if( !COM_CheckString( cvarName ))
 		return;
 
-	if(( cl = SV_ClientFromEdict( player, true )) != NULL )
+	if(( cl = SV_ClientFromEdict( player, false )) != NULL )
 	{
 		MSG_BeginServerCmd( &cl->netchan.message, svc_querycvarvalue2 );
 		MSG_WriteLong( &cl->netchan.message, requestID );
