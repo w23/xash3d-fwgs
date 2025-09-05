@@ -601,7 +601,7 @@ static void SV_FindTouchedLeafs( edict_t *ent, model_t *mod, mnode_t *node, int 
 	// add an efrag if the node is a leaf
 	if( node->contents < 0 )
 	{
-		if( ent->num_leafs > MAX_ENT_LEAFS( FBitSet( mod->flags, MODEL_QBSP2 )))
+		if( ent->num_leafs >= MAX_ENT_LEAFS( FBitSet( mod->flags, MODEL_QBSP2 )))
 		{
 			// continue counting leafs,
 			// so we know how many it's overrun
@@ -1313,17 +1313,16 @@ SV_Move
 */
 trace_t SV_Move( const vec3_t start, vec3_t mins, vec3_t maxs, const vec3_t end, int type, edict_t *e, qboolean monsterclip )
 {
-	moveclip_t	clip;
-	vec3_t		trace_endpos;
-	float		trace_fraction;
+	moveclip_t clip = { 0 };
 
-	memset( &clip, 0, sizeof( moveclip_t ));
 	SV_ClipMoveToEntity( EDICT_NUM( 0 ), start, mins, maxs, end, &clip.trace );
 
 	if( clip.trace.fraction != 0.0f )
 	{
+		const float trace_fraction = clip.trace.fraction;
+		vec3_t trace_endpos;
 		VectorCopy( clip.trace.endpos, trace_endpos );
-		trace_fraction = clip.trace.fraction;
+
 		clip.trace.fraction = 1.0f;
 		clip.start = start;
 		clip.end = trace_endpos;

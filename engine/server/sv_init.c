@@ -636,6 +636,9 @@ void SV_ActivateServer( int runPhysics )
 
 		Netchan_Clear( &cl->netchan );
 		cl->delta_sequence = -1;
+
+		// bump connect timeout
+		cl->connection_started = host.realtime;
 	}
 
 	// invoke to refresh all movevars
@@ -1026,6 +1029,9 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	svs.timestart = Sys_DoubleTime();
 	svs.spawncount++; // any partially connected client will be restarted
+
+	for( i = 0; i < ARRAYSIZE( svs.challenge_salt ); i++ )
+		svs.challenge_salt[i] = COM_RandomLong( 0, 0x7FFFFFFE );
 
 	cycle = Cvar_VariableString( "mapchangecfgfile" );
 

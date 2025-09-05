@@ -13,34 +13,31 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include <stdio.h>
 #include "crtlib.h"
 #include "buildenums.h"
 
-static const char *mon[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 static const char mond[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 
-int Q_buildnum_date( const char *date )
+int Q_buildnum_iso( const char *date )
 {
-	int b;
-	int m = 0;
-	int d = 0;
-	int y = 0;
+	int y, m, d, b, i;
 
-	for( m = 0; m < 11; m++ )
-	{
-		if( !Q_strnicmp( &date[0], mon[m], 3 ))
-			break;
-		d += mond[m];
-	}
+	if( sscanf( date, "%d-%d-%d", &y, &m, &d ) != 3 || y <= 1900 || m <= 0 || d <= 0 )
+		return -1;
 
-	d += Q_atoi( &date[4] ) - 1;
-	y = Q_atoi( &date[7] ) - 1900;
+	// fixup day and month
+	m--;
+	d--;
+
+	for( i = 0; i < m; i++ )
+		d += mond[i];
+
+	y -= 1900;
 	b = d + (int)((y - 1) * 365.25f );
 
 	if((( y % 4 ) == 0 ) && m > 1 )
-	{
 		b += 1;
-	}
 	b -= 41728; // Apr 1 2015
 
 	return b;
@@ -57,8 +54,9 @@ int Q_buildnum( void )
 {
 	static int b = 0;
 
-	if( !b )
-		b = Q_buildnum_date( __DATE__ );
+	if( b ) return b;
+
+	b = Q_buildnum_iso( g_buildcommit_date );
 
 	return b;
 }
@@ -123,6 +121,8 @@ const char *Q_PlatformStringByID( const int platform )
 		return "wasi";
 	case PLATFORM_SUNOS:
 		return "sunos";
+	case PLATFORM_HURD:
+		return "hurd";
 	}
 
 	assert( 0 );

@@ -434,6 +434,8 @@ static const ref_api_t gEngfuncs =
 
 	&g_fsapi,
 
+	R_GetWindowHandle,
+
 	XVK_GetInstanceExtensions,
 	XVK_GetVkGetInstanceProcAddr,
 	XVK_CreateSurface,
@@ -576,7 +578,7 @@ static void R_GetRendererName( char *dest, size_t size, const char *opt )
 	}
 }
 
-static qboolean R_LoadRenderer( const char *refopt )
+static qboolean R_LoadRenderer( const char *refopt, qboolean quiet )
 {
 	string refdll;
 
@@ -587,7 +589,8 @@ static qboolean R_LoadRenderer( const char *refopt )
 	if( !R_LoadProgs( refdll ))
 	{
 		R_Shutdown();
-		Sys_Warn( S_ERROR "Can't initialize %s renderer!\n", refdll );
+		if( !quiet )
+			Sys_Warn( S_ERROR "Can't initialize %s renderer!\n", refdll );
 		return false;
 	}
 
@@ -626,7 +629,7 @@ static void SetFullscreenModeFromCommandLine( void )
 static void R_CollectRendererNames( void )
 {
 	// ordering is important!
-	static const char *shortNames[] =
+	static const char *short_names[] =
 	{
 #if XASH_REF_GL_ENABLED
 		"gl",
@@ -652,7 +655,7 @@ static void R_CollectRendererNames( void )
 	};
 
 	// ordering is important here too!
-	static const char *readableNames[ARRAYSIZE( shortNames )] =
+	static const char *long_names[ARRAYSIZE( short_names )] =
 	{
 #if XASH_REF_GL_ENABLED
 		"OpenGL",
@@ -677,9 +680,9 @@ static void R_CollectRendererNames( void )
 #endif
 	};
 
-	ref.numRenderers = ARRAYSIZE( shortNames );
-	ref.shortNames = shortNames;
-	ref.readableNames = readableNames;
+	ref.num_renderers = ARRAYSIZE( short_names );
+	ref.short_names = short_names;
+	ref.long_names = long_names;
 }
 
 const ref_device_t *R_GetRenderDevice( unsigned int idx )
@@ -801,28 +804,44 @@ qboolean R_Init( void )
 	requested_cvar[0] = 0;
 
 	if( Sys_GetParmFromCmdLine( "-ref", requested_cmdline ))
-		success = R_LoadRenderer( requested_cmdline );
+		success = R_LoadRenderer( requested_cmdline, false );
 
 	if( !success && COM_CheckString( r_refdll.string ) && Q_stricmp( requested_cmdline, r_refdll.string ))
 	{
 		Q_strncpy( requested_cvar, r_refdll.string, sizeof( requested_cvar ));
-		success = R_LoadRenderer( requested_cvar );
+
+		// do not show scary messages to user if renderer set in config cannot be loaded
+		// as game data could be copied from one platform to another, where this renderer
+		// might not be supported (ref_gl on Android for example)
+		success = R_LoadRenderer( requested_cvar, !host_developer.value );
 	}
 
 	if( !success )
 	{
 		int i;
 
-		for( i = 0; i < ref.numRenderers && !success; i++ )
+		for( i = 0; i < ref.num_renderers; i++ )
 		{
 			// skip renderer that was requested but failed to load
-			if( !Q_strcmp( requested_cmdline, ref.shortNames[i] ))
+			if( !Q_strcmp( requested_cmdline, ref.short_names[i] ))
 				continue;
 
-			if( !Q_strcmp( requested_cvar, ref.shortNames[i] ))
+			if( !Q_strcmp( requested_cvar, ref.short_names[i] ))
 				continue;
 
-			success = R_LoadRenderer( ref.shortNames[i] );
+			// do not show bruteforcing attempts, however, warn user about falling back
+			// to software mode
+			if( !Q_strcmp( "soft", ref.short_names[i] ) && !host_developer.value )
+				Sys_Warn( "Can't initialize any hardware accelerated renderer. Falling back to software rendering...\n" );
+
+			success = R_LoadRenderer( ref.short_names[i], !host_developer.value );
+
+			if( success )
+			{
+				// remember last valid renderer
+				Cvar_DirectSet( &r_refdll, ref.short_names[i] );
+				break;
+			}
 		}
 	}
 

@@ -42,6 +42,7 @@ CVAR_DEFINE_AUTO( sv_maxrate, "50000", FCVAR_SERVER, "max bandwidth rate allowed
 CVAR_DEFINE_AUTO( sv_newunit, "0", 0, "clear level-saves from previous SP game chapter to help keep .sav file size as minimum" );
 CVAR_DEFINE_AUTO( sv_clienttrace, "1", FCVAR_SERVER, "0 = big box(Quake), 0.5 = halfsize, 1 = normal (100%), otherwise it's a scaling factor" );
 static CVAR_DEFINE_AUTO( sv_timeout, "65", 0, "after this many seconds without a message from a client, the client is dropped" );
+static CVAR_DEFINE_AUTO( sv_connect_timeout, "15", 0, "after this many seconds without a message from a client, the client is dropped" );
 CVAR_DEFINE_AUTO( sv_failuretime, "0.5", 0, "after this long without a packet from client, don't send any more until client starts sending again" );
 CVAR_DEFINE_AUTO( sv_password, "", FCVAR_SERVER|FCVAR_PROTECTED, "server password for entry into multiplayer games" );
 // TODO: CVAR_DEFINE_AUTO( sv_proxies, "1", FCVAR_SERVER, "maximum count of allowed proxies for HLTV spectating" );
@@ -106,7 +107,7 @@ CVAR_DEFINE_AUTO( sv_skyvec_y, "0", FCVAR_MOVEVARS|FCVAR_UNLOGGED, "skylight dir
 CVAR_DEFINE_AUTO( sv_skyvec_z, "0", FCVAR_MOVEVARS|FCVAR_UNLOGGED, "skylight direction by z-axis" );
 CVAR_DEFINE_AUTO( sv_wateralpha, "1", FCVAR_MOVEVARS|FCVAR_UNLOGGED, "world surfaces water transparency factor. 1.0 - solid, 0.0 - fully transparent" );
 CVAR_DEFINE_AUTO( sv_background_freeze, "1", FCVAR_ARCHIVE, "freeze player movement on background maps (e.g. to prevent falling)" );
-static CVAR_DEFINE_AUTO( showtriggers, "0", FCVAR_LATCH, "debug cvar shows triggers" );
+static CVAR_DEFINE_AUTO( showtriggers, "0", FCVAR_LATCH|FCVAR_TEMPORARY, "debug cvar shows triggers" );
 static CVAR_DEFINE_AUTO( sv_airmove, "1", FCVAR_SERVER, "obsolete, compatibility issues" );
 static CVAR_DEFINE_AUTO( sv_version, "", FCVAR_READ_ONLY, "engine version string" );
 CVAR_DEFINE_AUTO( hostname, "", FCVAR_PRINTABLEONLY, "name of current host" );
@@ -189,24 +190,15 @@ void SV_UpdateMovevars( qboolean initialize )
 	if( !initialize && !host.movevars_changed )
 		return;
 
-	// NOTE: this breaks Natural Selection mod on ns_machina map that uses model as sky
-	// it sets the value to 4000000 that even exceeds the coord limit
-#if 0
-	// check range
-	if( sv_zmax.value < 256.0f ) Cvar_SetValue( "sv_zmax", 256.0f );
-
-	// clamp it right
-	if( FBitSet( host.features, ENGINE_WRITE_LARGE_COORD ))
-	{
-		if( sv_zmax.value > 131070.0f )
-			Cvar_SetValue( "sv_zmax", 131070.0f );
-	}
-	else
-	{
-		if( sv_zmax.value > 32767.0f )
-			Cvar_SetValue( "sv_zmax", 32767.0f );
-	}
-#endif
+	// NOTE: Natural Selection mod on ns_machina map that uses model as sky
+	// it sets the value to 4000000 that even exceeds the coord limit, but
+	// it's fine until the value fits in "zmax" delta field
+	// However, some stupid mappers set an insane value like 999999999 which
+	// overflows delta. In this case, just clamp it to something bigger
+	if( sv_zmax.value < 256.0f )
+		Cvar_DirectSet( &sv_zmax, "256" );
+	else if( sv_zmax.value > 16777216.0f ) // 2^24
+		Cvar_DirectSet( &sv_zmax, "16777216" );
 
 	svgame.movevars.gravity = sv_gravity.value;
 	svgame.movevars.stopspeed = sv_stopspeed.value;
@@ -465,6 +457,18 @@ static void SV_ReadPackets( void )
 	sv.current_client = NULL;
 }
 
+static void SV_DropTimedOutClient( sv_client_t *cl, qboolean ban )
+{
+	SV_BroadcastPrintf( NULL, "%s timed out\n", cl->name );
+	SV_DropClient( cl, false );
+	cl->state = cs_free; // don't bother with zombie state
+
+	if( ban )
+	{
+		Cbuf_AddTextf( "addip 30 %s\n", NET_BaseAdrToString( cl->netchan.remote_address ));
+	}
+}
+
 /*
 ==================
 SV_CheckTimeouts
@@ -480,14 +484,14 @@ if necessary
 */
 static void SV_CheckTimeouts( void )
 {
-	sv_client_t	*cl;
-	double		droppoint;
-	int		i, numclients = 0;
+	int i, numclients = 0;
+	const double spawned_droppoint = host.realtime - sv_timeout.value;
+	const double connected_droppoint = host.realtime - sv_connect_timeout.value;
 
-	droppoint = host.realtime - sv_timeout.value;
-
-	for( i = 0, cl = svs.clients; i < svs.maxclients; i++, cl++ )
+	for( i = 0; i < svs.maxclients; i++ )
 	{
+		sv_client_t *cl = &svs.clients[i];
+
 		if( cl->state >= cs_connected )
 		{
 			if( cl->edict && !FBitSet( cl->edict->v.flags, FL_SPECTATOR|FL_FAKECLIENT ))
@@ -498,21 +502,29 @@ static void SV_CheckTimeouts( void )
 		if( FBitSet( cl->flags, FCL_FAKECLIENT ))
 			continue;
 
-		// FIXME: get rid of the zombie state
-		if( cl->state == cs_zombie )
+		switch( cl->state )
 		{
+		case cs_zombie:
+			// FIXME: get rid of the zombie state
 			cl->state = cs_free; // can now be reused
-			continue;
-		}
-
-		if(( cl->state == cs_connected || cl->state == cs_spawned ) && cl->netchan.last_received < droppoint )
-		{
+			break;
+		case cs_connected:
+		case cs_spawning:
 			if( !NET_IsLocalAddress( cl->netchan.remote_address ))
 			{
-				SV_BroadcastPrintf( NULL, "%s timed out\n", cl->name );
-				SV_DropClient( cl, false );
-				cl->state = cs_free; // don't bother with zombie state
+				if( cl->connection_started < connected_droppoint )
+					SV_DropTimedOutClient( cl, true );
 			}
+			break;
+		case cs_spawned:
+			if( !NET_IsLocalAddress( cl->netchan.remote_address ))
+			{
+				if( cl->netchan.last_received < spawned_droppoint )
+					SV_DropTimedOutClient( cl, false );
+			}
+			break;
+		default:
+			break;
 		}
 	}
 
@@ -721,13 +733,7 @@ void SV_AddToMaster( netadr_t from, sizebuf_t *msg )
 
 	if( !NET_GetMaster( from, &heartbeat_challenge, &last_heartbeat ))
 	{
-		Con_Printf( S_WARN "unexpected master server info query packet from %s\n", NET_AdrToString( from ));
-		return;
-	}
-
-	if( last_heartbeat + sv_master_response_timeout.value < host.realtime )
-	{
-		Con_Printf( S_WARN "unexpected master server info query packet (too late? try increasing sv_master_response_timeout value)\n");
+		Con_Reportf( S_WARN "unexpected master server info query packet from %s\n", NET_AdrToString( from ));
 		return;
 	}
 
@@ -736,7 +742,13 @@ void SV_AddToMaster( netadr_t from, sizebuf_t *msg )
 
 	if( challenge2 != heartbeat_challenge )
 	{
-		Con_Printf( S_WARN "unexpected master server info query packet (wrong challenge!)\n" );
+		Con_Reportf( S_WARN "unexpected master server info query packet (wrong challenge!)\n" );
+		return;
+	}
+
+	if( last_heartbeat + sv_master_response_timeout.value < host.realtime )
+	{
+		Con_Printf( S_WARN "unexpected master server info query packet (too late? try increasing sv_master_response_timeout value)\n");
 		return;
 	}
 
@@ -772,6 +784,31 @@ qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent )
 {
 	const char *input_devices_str = Info_ValueForKey( useragent, "d" );
 	const char *id = Info_ValueForKey( useragent, "uuid" );
+	size_t len, i;
+
+	len = Q_strlen( id );
+	if( len != 32 )
+	{
+		SV_RejectConnection( from, "invalid authentication certificate\n" );
+		return false;
+	}
+
+	for( i = 0; i < len; i++ )
+	{
+		char c = id[i];
+
+		if( !isdigit( id[i] ) && !( c >= 'a' && c <= 'f' ))
+		{
+			SV_RejectConnection( from, "invalid authentication certificate\n" );
+			return false;
+		}
+	}
+
+	if( SV_CheckID( id ))
+	{
+		SV_RejectConnection( from, "You are banned!\n" );
+		return false;
+	}
 
 	if( !sv_allow_noinputdevices.value && ( !input_devices_str || !input_devices_str[0] ) )
 	{
@@ -801,17 +838,6 @@ qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent )
 		if( !sv_allow_vr.value && ( input_devices & INPUT_DEVICE_VR) )
 		{
 			SV_RejectConnection( from, "This server does not allow VR\n" );
-			return false;
-		}
-	}
-
-	if( id )
-	{
-		qboolean banned = SV_CheckID( id );
-
-		if( banned )
-		{
-			SV_RejectConnection( from, "You are banned!\n" );
 			return false;
 		}
 	}
@@ -877,6 +903,7 @@ void SV_Init( void )
 	Cvar_RegisterVariable( &sv_newunit );
 	Cvar_RegisterVariable( &hostname );
 	Cvar_RegisterVariable( &sv_timeout );
+	Cvar_RegisterVariable( &sv_connect_timeout );
 	Cvar_RegisterVariable( &sv_pausable );
 	Cvar_RegisterVariable( &sv_validate_changelevel );
 	Cvar_RegisterVariable( &sv_clienttrace );

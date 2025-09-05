@@ -121,7 +121,7 @@ static CVAR_DEFINE_AUTO( net_resolve_debug, "0", FCVAR_PRIVILEGED, "print resolv
 CVAR_DEFINE( net_clockwindow, "clockwindow", "0.5", FCVAR_PRIVILEGED, "timewindow to execute client moves" );
 
 netadr_t			net_local;
-netadr_t			net6_local;
+static netadr_t		net6_local;
 
 // cvars equivalents for IPv6
 static CVAR_DEFINE( net_ip6name, "ip6", "localhost", FCVAR_PRIVILEGED, "network ip6 address" );
@@ -717,39 +717,6 @@ qboolean NET_CompareBaseAdr( const netadr_t a, const netadr_t b )
 		if( !NET_NetadrIP6Compare( &a, &b ))
 		    return true;
 	}
-
-	return false;
-}
-
-/*
-====================
-NET_CompareClassBAdr
-
-Compare local masks
-====================
-*/
-qboolean NET_CompareClassBAdr( const netadr_t a, const netadr_t b )
-{
-	netadrtype_t type_a = NET_NetadrType( &a );
-	netadrtype_t type_b = NET_NetadrType( &b );
-
-	if( type_a != type_b )
-		return false;
-
-	if( type_a == NA_LOOPBACK )
-		return true;
-
-	if( type_a == NA_IP )
-	{
-		if( a.ip[0] == b.ip[0] && a.ip[1] == b.ip[1] )
-			return true;
-	}
-
-	// NOTE: we don't check for IPv6 here
-	// this check is very dumb and only used for LAN restriction
-	// Actual check is in IsReservedAdr
-
-	// for real mask compare use NET_CompareAdrByMask
 
 	return false;
 }
@@ -1545,7 +1512,7 @@ static int NET_SendLong( netsrc_t sock, int net_socket, const char *buf, size_t 
 				total_sent += size;
 			len -= size;
 			packet_number++;
-			Platform_Sleep( 1 );
+			Platform_NanoSleep( 100 * 1000 );
 		}
 
 		return total_sent;
@@ -1824,12 +1791,12 @@ static void NET_OpenIP( qboolean change_port, int *sockets, const char *net_ifac
 
 /*
 ================
-NET_GetLocalAddress
+NET_DetermineLocalAddress
 
 Returns the servers' ip address as a string.
 ================
 */
-static void NET_GetLocalAddress( void )
+static void NET_DetermineLocalAddress( void )
 {
 	char		hostname[512];
 	char		buff[512];
@@ -1943,7 +1910,7 @@ void NET_Config( qboolean multiplayer, qboolean changeport )
 		// get our local address, if possible
 		if( bFirst )
 		{
-			NET_GetLocalAddress();
+			NET_DetermineLocalAddress();
 			bFirst = false;
 		}
 	}
@@ -2041,6 +2008,32 @@ static void NET_ClearLagData( qboolean bClient, qboolean bServer )
 
 /*
 ====================
+NET_GetLocalAddress
+
+get local server addresses
+====================
+*/
+void NET_GetLocalAddress( netadr_t *ip4, netadr_t *ip6 )
+{
+	if( ip4 )
+	{
+		if( net.allow_ip )
+			*ip4 = net_local;
+		else
+			memset( ip4, 0, sizeof( *ip4 ));
+	}
+
+	if( ip6 )
+	{
+		if( net.allow_ip6 )
+			*ip6 = net6_local;
+		else
+			memset( ip6, 0, sizeof( *ip6 ));
+	}
+}
+
+/*
+====================
 NET_Init
 ====================
 */
@@ -2060,6 +2053,7 @@ void NET_Init( void )
 	Cvar_RegisterVariable( &net_fakelag );
 	Cvar_RegisterVariable( &net_fakeloss );
 	Cvar_RegisterVariable( &net_resolve_debug );
+	Cvar_RegisterVariable( &net_clockwindow );
 
 	Q_snprintf( cmd, sizeof( cmd ), "%i", PORT_SERVER );
 	Cvar_FullSet( "hostport", cmd, FCVAR_READ_ONLY );

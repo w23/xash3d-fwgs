@@ -52,35 +52,70 @@ GNU General Public License for more details.
 #define SAVE_AGED_COUNT 2 // the default count of quick and auto saves
 
 fs_globals_t FI;
-qboolean      fs_ext_path = false;	// attempt to read\write from ./ or ../ pathes
 poolhandle_t  fs_mempool;
-char          fs_rodir[MAX_SYSPATH];
 char          fs_rootdir[MAX_SYSPATH];
 searchpath_t *fs_writepath;
 
 static searchpath_t *fs_searchpaths = NULL;	// chain
 static char fs_basedir[MAX_SYSPATH];	// base game directory
 static char fs_gamedir[MAX_SYSPATH];	// game current directory
+static char fs_rodir[MAX_SYSPATH];
 static string fs_language;
+static qboolean fs_ext_path = false;	// attempt to read\write from ./ or ../ pathes
+
+typedef struct fs_archive_s
+{
+	const char *ext;
+	int type;
+	FS_ADDARCHIVE_FULLPATH pfnAddArchive_Fullpath;
+	qboolean load_wads; // load wads from this archive
+	qboolean real_archive;
+} fs_archive_t;
 
 // add archives in specific order PAK -> PK3 -> WAD
 // so raw WADs takes precedence over WADs included into PAKs and PK3s
-const fs_archive_t g_archives[] =
+static const fs_archive_t g_archives[] =
 {
-{ "pak",    SEARCHPATH_PAK,    FS_AddPak_Fullpath, true, true },
-{ "pk3",    SEARCHPATH_ZIP,    FS_AddZip_Fullpath, true, true },
-{ "pk3dir", SEARCHPATH_PK3DIR, FS_AddDir_Fullpath, true, false },
-{ "wad",    SEARCHPATH_WAD,    FS_AddWad_Fullpath, false, true },
-{ NULL }, // end marker
+	{
+		.ext = "pak",
+		.type = SEARCHPATH_PAK,
+		.pfnAddArchive_Fullpath = FS_AddPak_Fullpath,
+		.load_wads = true,
+		.real_archive = true,
+	}, {
+		.ext = "pk3",
+		.type = SEARCHPATH_ZIP,
+		.pfnAddArchive_Fullpath = FS_AddZip_Fullpath,
+		.load_wads = true,
+		.real_archive = true,
+	}, {
+		.ext = "pk3dir",
+		.type = SEARCHPATH_PK3DIR,
+		.pfnAddArchive_Fullpath = FS_AddDir_Fullpath,
+		.load_wads = true,
+		.real_archive = false,
+	}, {
+		.ext = "wad",
+		.type = SEARCHPATH_WAD,
+		.pfnAddArchive_Fullpath = FS_AddWad_Fullpath,
+		.load_wads = false,
+		.real_archive = true,
+	},
 };
 
 // special fs_archive_t for plain directories
 static const fs_archive_t g_directory_archive =
-{ NULL, SEARCHPATH_PLAIN, FS_AddDir_Fullpath, false };
+{
+	.type = SEARCHPATH_PLAIN,
+	.pfnAddArchive_Fullpath = FS_AddDir_Fullpath,
+};
 
 #if XASH_ANDROID
 static const fs_archive_t g_android_archive =
-{ NULL, SEARCHPATH_ANDROID_ASSETS, FS_AddAndroidAssets_Fullpath, false };
+{
+	.type = SEARCHPATH_ANDROID_ASSETS,
+	.pfnAddArchive_Fullpath = FS_AddAndroidAssets_Fullpath
+};
 #endif
 
 #ifdef XASH_REDUCE_FD
@@ -328,9 +363,30 @@ void FS_CreatePath( char *path )
 	}
 }
 
-searchpath_t *FS_AddArchive_Fullpath( const fs_archive_t *archive, const char *file, int flags )
+static searchpath_t *FS_AddArchive_Fullpath( const fs_archive_t *archive, const char *file, int flags )
 {
 	searchpath_t *search;
+
+	if( !archive )
+	{
+		int i;
+		const char *ext = COM_FileExtension( file );
+
+		for( i = 0; i < sizeof( g_archives ) / sizeof( g_archives[0] ); i++ )
+		{
+			if( !Q_stricmp( g_archives[i].ext, ext ))
+			{
+				archive = &g_archives[i];
+				break;
+			}
+		}
+
+		if( !archive )
+		{
+			Con_Printf( S_ERROR "%s: unknown archive format %s, not mounted\n", __func__, file );
+			return NULL;
+		}
+	}
 
 	for( search = fs_searchpaths; search; search = search->next )
 	{
@@ -380,18 +436,9 @@ searchpath_t *FS_AddArchive_Fullpath( const fs_archive_t *archive, const char *f
 FS_AddArchive_Fullpath
 ================
 */
-static searchpath_t *FS_MountArchive_Fullpath( const char *file, int flags )
+searchpath_t *FS_MountArchive_Fullpath( const char *file, int flags )
 {
-	const fs_archive_t *archive;
-	const char *ext = COM_FileExtension( file );
-
-	for( archive = g_archives; archive->ext; archive++ )
-	{
-		if( !Q_stricmp( ext, archive->ext ))
-			return FS_AddArchive_Fullpath( archive, file, flags );
-	}
-
-	return NULL;
+	return FS_AddArchive_Fullpath( NULL, file, flags );
 }
 
 /*
@@ -404,27 +451,26 @@ then loads and adds pak1.pak pak2.pak ...
 */
 void FS_AddGameDirectory( const char *dir, uint flags )
 {
-	const fs_archive_t *archive;
 	stringlist_t list;
 	searchpath_t *search;
-	char fullpath[MAX_SYSPATH];
-	int i;
+	int i, j;
 
 	stringlistinit( &list );
 	listdirectory( &list, dir, false );
 	stringlistsort( &list );
 
-	for( archive = g_archives; archive->ext; archive++ )
+	for( j = 0; j < sizeof( g_archives ) / sizeof( g_archives[0] ); j++ )
 	{
+		char fullpath[MAX_SYSPATH];
+		int i;
+
 		for( i = 0; i < list.numstrings; i++ )
 		{
-			const char *ext = COM_FileExtension( list.strings[i] );
-
-			if( Q_stricmp( ext, archive->ext ))
+			if( Q_stricmp( COM_FileExtension( list.strings[i] ), g_archives[j].ext ))
 				continue;
 
 			Q_snprintf( fullpath, sizeof( fullpath ), "%s%s", dir, list.strings[i] );
-			FS_AddArchive_Fullpath( archive, fullpath, flags );
+			FS_AddArchive_Fullpath( &g_archives[j], fullpath, flags );
 		}
 	}
 
@@ -1323,23 +1369,35 @@ void FS_Rescan( uint32_t flags, const char *language )
 }
 
 /*
+===============
+FS_Gamedir
+
+Allows engine to know game directory before gameinfo is initialized
+===============
+*/
+static const char *FS_Gamedir( void )
+{
+	if( GI )
+		return GI->gamefolder;
+
+	return fs_gamedir;
+}
+
+/*
 ================
 FS_LoadGameInfo
 
 can be passed null arg
 ================
 */
-void FS_LoadGameInfo( const char *rootfolder )
+static void FS_LoadGameInfo( uint32_t flags, const char *language )
 {
 	int	i;
 
 	// lock uplevel of gamedir for read\write
 	FS_AllowDirectPaths( false );
 
-	if( rootfolder )
-		Q_strncpy( fs_gamedir, rootfolder, sizeof( fs_gamedir ));
-
-	Con_Reportf( "%s( %s )\n", __func__, fs_gamedir );
+	Con_Reportf( "%s( %s, 0x%x, %s )\n", __func__, fs_gamedir, flags, language );
 
 	// clear any old paths
 	FS_ClearSearchPath();
@@ -1364,7 +1422,7 @@ void FS_LoadGameInfo( const char *rootfolder )
 		FS_CreatePath( buf );
 	}
 
-	FS_Rescan( 0, NULL ); // create new filesystem
+	FS_Rescan( flags, language ); // create new filesystem
 }
 
 /*
@@ -1659,7 +1717,8 @@ qboolean FS_InitStdio( qboolean unused_set_to_true, const char *rootdir, const c
 
 		for( i = 0; i < dirs.numstrings; i++ )
 		{
-			if( !FS_SysFolderExists( dirs.strings[i] ))
+			Q_snprintf( buf, sizeof( buf ), "%s/%s", fs_rodir, dirs.strings[i] );
+			if( !FS_SysFolderExists( buf ))
 				continue;
 
 			if( FI.games[FI.numgames] == NULL )
@@ -3119,6 +3178,10 @@ qboolean FS_Rename( const char *oldname, const char *newname )
 	char oldname2[MAX_SYSPATH], newname2[MAX_SYSPATH], oldpath[MAX_SYSPATH], newpath[MAX_SYSPATH];
 	int ret;
 
+	// a1ba: disallow path traversal
+	if( FS_CheckNastyPath( oldname ) || FS_CheckNastyPath( newname ))
+		return false;
+
 	if( !fs_writepath )
 		return false;
 
@@ -3166,6 +3229,10 @@ qboolean GAME_EXPORT FS_Delete( const char *path )
 {
 	char path2[MAX_SYSPATH], real_path[MAX_SYSPATH];
 	int ret;
+
+	// a1ba: disallow path traversal
+	if( FS_CheckNastyPath( path ))
+		return false;
 
 	if( !fs_writepath || !COM_CheckString( path ))
 		return false;
@@ -3286,7 +3353,7 @@ static qboolean FS_IsArchiveExtensionSupported( const char *ext, uint flags )
 	if( ext == NULL )
 		return false;
 
-	for( i = 0; i < ( sizeof( g_archives ) / sizeof( g_archives[0] )) - 1; i++ )
+	for( i = 0; i < sizeof( g_archives ) / sizeof( g_archives[0] ); i++ )
 	{
 		if( FBitSet( flags, IAES_ONLY_REAL_ARCHIVES ) && !g_archives[i].real_archive )
 			continue;
@@ -3406,6 +3473,7 @@ const fs_api_t g_api =
 	FS_Path_f,
 
 	// gameinfo utils
+	FS_Gamedir,
 	FS_LoadGameInfo,
 
 	// file ops

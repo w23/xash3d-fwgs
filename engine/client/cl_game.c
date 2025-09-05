@@ -13,6 +13,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#if XASH_SDL == 2
+#include <SDL.h> // SDL_GetWindowPosition
+#elif XASH_SDL == 3
+#include <SDL3/SDL.h> // SDL_GetWindowPosition
+#endif // XASH_SDL
+
 #include "common.h"
 #include "client.h"
 #include "const.h"
@@ -430,12 +436,15 @@ void CL_DrawCenterPrint( void )
 
 		while( *pText && *pText != '\n' && lineLength < MAX_LINELENGTH )
 		{
-			byte c = *pText;
-			line[lineLength] = c;
-			CL_DrawCharacterLen( font, c, &charWidth, NULL );
+			int number = Con_UtfProcessChar(( byte ) * pText );
+			pText++;
+			if( number == 0 )
+				continue;
+
+			line[lineLength] = number;
+			CL_DrawCharacterLen( font, number, &charWidth, NULL );
 			width += charWidth;
 			lineLength++;
-			pText++;
 		}
 
 		if( lineLength == MAX_LINELENGTH )
@@ -449,7 +458,7 @@ void CL_DrawCenterPrint( void )
 		for( j = 0; j < lineLength; j++ )
 		{
 			if( x >= 0 && y >= 0 && x <= refState.width )
-				x += CL_DrawCharacter( x, y, line[j], colorDefault, font, FONT_DRAW_UTF8 | FONT_DRAW_HUD | FONT_DRAW_NORENDERMODE );
+				x += CL_DrawCharacter( x, y, line[j], colorDefault, font, FONT_DRAW_HUD | FONT_DRAW_NORENDERMODE );
 		}
 		y += charHeight;
 	}
@@ -1684,7 +1693,7 @@ get actual screen info
 */
 int GAME_EXPORT CL_GetScreenInfo( SCREENINFO *pscrinfo )
 {
-	qboolean apply_scale_factor = false;
+	qboolean apply_scale_factor = false; // we don't want floating point inaccuracies
 	float scale_factor = hud_scale.value;
 
 	if( FBitSet( hud_fontscale.flags, FCVAR_CHANGED ))
@@ -1702,7 +1711,7 @@ int GAME_EXPORT CL_GetScreenInfo( SCREENINFO *pscrinfo )
 	if( hud_scale.value >= 320.0f && hud_scale.value >= hud_scale_minimal_width.value )
 	{
 		scale_factor = refState.width / hud_scale.value;
-		apply_scale_factor = true;
+		apply_scale_factor = scale_factor > 1.0f;
 	}
 	else if( scale_factor && scale_factor != 1.0f )
 	{
@@ -1766,7 +1775,7 @@ static cvar_t *GAME_EXPORT pfnCvar_RegisterClientVariable( const char *szName, c
 		|| !Q_stricmp( szName, "sensitivity" ))
 		flags |= FCVAR_PRIVILEGED;
 
-	return (cvar_t *)Cvar_Get( szName, szValue, flags|FCVAR_CLIENTDLL, NULL );
+	return (cvar_t *)Cvar_Get( szName, szValue, flags|FCVAR_CLIENTDLL, Cvar_BuildAutoDescription( szName, flags|FCVAR_CLIENTDLL ));
 }
 
 static int GAME_EXPORT Cmd_AddClientCommand( const char *cmd_name, xcommand_t function )
@@ -2079,6 +2088,7 @@ GetWindowCenterX
 static int GAME_EXPORT pfnGetWindowCenterX( void )
 {
 	int x = 0;
+
 #if XASH_WIN32
 	if( m_ignore.value )
 	{
@@ -2088,7 +2098,7 @@ static int GAME_EXPORT pfnGetWindowCenterX( void )
 	}
 #endif
 
-#if XASH_SDL == 2
+#if XASH_SDL >= 2
 	SDL_GetWindowPosition( host.hWnd, &x, NULL );
 #endif
 
@@ -2104,6 +2114,7 @@ GetWindowCenterY
 static int GAME_EXPORT pfnGetWindowCenterY( void )
 {
 	int y = 0;
+
 #if XASH_WIN32
 	if( m_ignore.value )
 	{
@@ -2113,7 +2124,7 @@ static int GAME_EXPORT pfnGetWindowCenterY( void )
 	}
 #endif
 
-#if XASH_SDL == 2
+#if XASH_SDL >= 2
 	SDL_GetWindowPosition( host.hWnd, NULL, &y );
 #endif
 
@@ -3406,7 +3417,7 @@ static void GAME_EXPORT NetAPI_Status( net_status_t *status )
 	status->latency = (connected) ? cl.frames[cl.parsecountmod].latency : 0.0;
 	status->remote_address = cls.netchan.remote_address;
 	status->packet_loss = packet_loss;
-	status->local_address = net_local;
+	NET_GetLocalAddress( &status->local_address, NULL ); // NetAPI doesn't know about IPv6
 	status->rate = rate.value;
 }
 

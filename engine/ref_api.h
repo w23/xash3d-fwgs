@@ -59,7 +59,8 @@ GNU General Public License for more details.
 //    CL_RunLightStyles now accepts lightstyles array.
 //    Removed R_DrawTileClear and Mod_LoadMapSprite, as they're implemented on engine side
 //    Removed FillRGBABlend. Now FillRGBA accepts rendermode parameter.
-#define REF_API_VERSION 9
+// 10. Added R_GetWindowHandle to retrieve platform-specific window object.
+#define REF_API_VERSION 10
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -104,6 +105,16 @@ typedef enum
 	DEMO_XASH3D,
 	DEMO_QUAKE1
 } demo_mode;
+
+typedef enum ref_window_type_e
+{
+	REF_WINDOW_TYPE_NULL = 0,
+	REF_WINDOW_TYPE_WIN32, // HWND
+	REF_WINDOW_TYPE_X11, // Display*
+	REF_WINDOW_TYPE_WAYLAND, // wl_display*
+	REF_WINDOW_TYPE_MACOS, // NSWindow*
+	REF_WINDOW_TYPE_SDL, // SDL_Window*
+} ref_window_type_t;
 
 typedef struct
 {
@@ -351,7 +362,7 @@ typedef struct ref_api_s
 	void	(*Con_NXPrintf)( struct con_nprint_s *info, const char *fmt, ... ) FORMAT_CHECK( 2 );
 	void	(*CL_CenterPrint)( const char *s, float y );
 	void (*Con_DrawStringLen)( const char *pText, int *length, int *height );
-	int (*Con_DrawString)( int x, int y, const char *string, rgba_t setColor );
+	int (*Con_DrawString)( int x, int y, const char *string, const rgba_t setColor );
 	void	(*CL_DrawCenterPrint)( void );
 
 	// entity management
@@ -470,6 +481,9 @@ typedef struct ref_api_s
 
 	// filesystem exports
 	fs_api_t	*fsapi;
+
+	// for abstracting the engine's rendering
+	ref_window_type_t (*R_GetWindowHandle)( void **handle, ref_window_type_t type );
 
 	int (*XVK_GetInstanceExtensions)( unsigned int count, const char **pNames );
 	void *(*XVK_GetVkGetInstanceProcAddr)( void );

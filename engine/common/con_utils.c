@@ -498,7 +498,6 @@ static qboolean Cmd_GetSoundList( const char *s, char *completedname, int length
 	return true;
 }
 
-#if !XASH_DEDICATED
 /*
 =====================================
 Cmd_GetItemsList
@@ -508,6 +507,7 @@ Prints or complete item classname (weapons only)
 */
 static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length )
 {
+#if !XASH_DEDICATED
 	search_t		*t;
 	string		matchbuf;
 	int		i, numitems;
@@ -521,7 +521,7 @@ static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length
 		Q_strncpy( completedname, matchbuf, length );
 	if( t->numfilenames == 1 ) return true;
 
-	for(i = 0, numitems = 0; i < t->numfilenames; i++)
+	for( i = 0, numitems = 0; i < t->numfilenames; i++ )
 	{
 		if( Q_stricmp( COM_FileExtension( t->filenames[i] ), "txt" ))
 			continue;
@@ -544,6 +544,8 @@ static qboolean Cmd_GetItemsList( const char *s, char *completedname, int length
 		}
 	}
 	return true;
+#endif // !XASH_DEDICATED
+	return false;
 }
 
 /*
@@ -555,6 +557,7 @@ Autocomplete for bind command
 */
 static qboolean Cmd_GetKeysList( const char *s, char *completedname, int length )
 {
+#if !XASH_DEDICATED
 	size_t i, numkeys;
 	string keys[256];
 	string matchbuf;
@@ -595,8 +598,9 @@ static qboolean Cmd_GetKeysList( const char *s, char *completedname, int length 
 	}
 
 	return true;
+#endif // !XASH_DEDICATED
+	return false;
 }
-#endif // XASH_DEDICATED
 
 /*
 ===============
@@ -604,12 +608,19 @@ Con_AddCommandToList
 
 ===============
 */
-static void Con_AddCommandToList( const char *s, const char *unused1, const char *unused2, void *_autocompleteList )
+static void Con_AddCommandToList( const char *s, const char *value, const void *ptoggle, void *_autocompleteList )
 {
 	con_autocomplete_t *list = (con_autocomplete_t*)_autocompleteList;
+	qboolean toggle = ptoggle != NULL && *(qboolean *)ptoggle;
 
 	if( *s == '@' ) return; // never show system cvars or cmds
 	if( list->matchCount >= CON_MAXCMDS ) return; // list is full
+
+	if( toggle )
+	{
+		if( Q_strcmp( value, "0" ) && Q_strcmp( value, "1" ))
+			return; // exclude non-toggable cvars
+	}
 
 	if( Q_strnicmp( s, list->completionString, Q_strlen( list->completionString ) ) )
 		return; // no match
@@ -634,13 +645,11 @@ Cmd_GetCommandsList
 Autocomplete for bind command
 =====================================
 */
-static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int length )
+static qboolean Cmd_GetCommandsAndCvarsList( const char *s, char *completedname, int length, qboolean cmds, qboolean cvars, qboolean toggle )
 {
 	size_t i;
 	string matchbuf;
-	con_autocomplete_t list; // local autocomplete list
-
-	memset( &list, 0, sizeof( list ));
+	con_autocomplete_t list = { 0 }; // local autocomplete list
 
 	list.completionString = s;
 
@@ -652,8 +661,16 @@ static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int len
 		return false;
 
 	// find matching commands and variables
-	Cmd_LookupCmds( NULL, &list, (setpair_t)Con_AddCommandToList );
-	Cvar_LookupVars( 0, NULL, &list, (setpair_t)Con_AddCommandToList );
+	if( cvars )
+	{
+		Cvar_LookupVars( 0, &toggle, &list, (setpair_t)Con_AddCommandToList );
+	}
+
+	if( cmds )
+	{
+		toggle = false;
+		Cmd_LookupCmds( &toggle, &list, (setpair_t)Con_AddCommandToList );
+	}
 
 	if( !list.matchCount ) return false;
 	Q_strncpy( matchbuf, list.cmds[0], sizeof( matchbuf ));
@@ -669,7 +686,7 @@ static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int len
 		Con_Printf( "%16s\n", matchbuf );
 	}
 
-	Con_Printf( "\n^3 %i commands found.\n", list.matchCount );
+	Con_Printf( "\n^3 %i %s found.\n", list.matchCount, cmds ? "commands" : "variables" );
 
 	if( completedname && length )
 	{
@@ -691,6 +708,30 @@ static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int len
 	return true;
 }
 
+/*
+=====================================
+Cmd_GetCommandsList
+
+Autocomplete for bind command
+=====================================
+*/
+static qboolean Cmd_GetCommandsList( const char *s, char *completedname, int length )
+{
+	return Cmd_GetCommandsAndCvarsList( s, completedname, length, true, true, false );
+}
+
+/*
+=====================================
+Cmd_GetCvarList
+
+Autocomplete for bind command
+=====================================
+*/
+static qboolean Cmd_GetCvarsList( const char *s, char *completedname, int length )
+{
+	qboolean toggle = !Q_stricmp( Cmd_Argv( 0 ), "toggle" );
+	return Cmd_GetCommandsAndCvarsList( s, completedname, length, false, true, toggle );
+}
 
 /*
 =====================================
@@ -1010,36 +1051,38 @@ int GAME_EXPORT Cmd_CheckMapsList( int fRefresh )
 	return Cmd_CheckMapsList_R( fRefresh, true );
 }
 
+// keep this sorted
 static const autocomplete_list_t cmd_list[] =
 {
-{ "map_background", 1, Cmd_GetMapList },
+{ "bind", 1, Cmd_GetKeysList },
+{ "bind", 2, Cmd_GetCommandsList },
+{ "cd", 1, Cmd_GetCDList },
 { "changelevel2", 1, Cmd_GetMapList },
 { "changelevel", 1, Cmd_GetMapList },
-{ "playdemo", 1, Cmd_GetDemoList, },
-{ "timedemo", 1, Cmd_GetDemoList, },
-{ "listdemo", 1, Cmd_GetDemoList, },
-{ "playvol", 1, Cmd_GetSoundList },
-{ "hpkval", 1, Cmd_GetCustomList },
-{ "hpklist", 1, Cmd_GetCustomList },
-{ "hpkextract", 1, Cmd_GetCustomList },
-{ "entpatch", 1, Cmd_GetMapList },
-{ "music", 1, Cmd_GetMusicList, },
-{ "movie", 1, Cmd_GetMovieList },
-{ "exec", 1, Cmd_GetConfigList },
-#if !XASH_DEDICATED
-{ "give", 1, Cmd_GetItemsList },
 { "drop", 1, Cmd_GetItemsList },
-{ "bind", 1, Cmd_GetKeysList },
-{ "unbind", 1, Cmd_GetKeysList },
-{ "bind", 2, Cmd_GetCommandsList },
-#endif
+{ "entpatch", 1, Cmd_GetMapList },
+{ "exec", 1, Cmd_GetConfigList },
 { "game", 1, Cmd_GetGamesList },
-{ "save", 1, Cmd_GetSavesList },
+{ "give", 1, Cmd_GetItemsList },
+{ "hpkextract", 1, Cmd_GetCustomList },
+{ "hpklist", 1, Cmd_GetCustomList },
+{ "hpkval", 1, Cmd_GetCustomList },
+{ "listdemo", 1, Cmd_GetDemoList, },
 { "load", 1, Cmd_GetSavesList },
-{ "play", 1, Cmd_GetSoundList },
 { "map", 1, Cmd_GetMapList },
-{ "cd", 1, Cmd_GetCDList },
+{ "map_background", 1, Cmd_GetMapList },
+{ "movie", 1, Cmd_GetMovieList },
 { "mp3", 1, Cmd_GetCDList },
+{ "music", 1, Cmd_GetMusicList, },
+{ "play", 1, Cmd_GetSoundList },
+{ "playdemo", 1, Cmd_GetDemoList, },
+{ "playvol", 1, Cmd_GetSoundList },
+{ "reset", 1, Cmd_GetCvarsList },
+{ "save", 1, Cmd_GetSavesList },
+{ "set", 1, Cmd_GetCvarsList },
+{ "timedemo", 1, Cmd_GetDemoList },
+{ "toggle", 1, Cmd_GetCvarsList },
+{ "unbind", 1, Cmd_GetKeysList },
 };
 
 /*
@@ -1160,6 +1203,7 @@ void Con_CompleteCommand( field_t *field )
 {
 	field_t	temp;
 	string	filename;
+	qboolean toggle = false;
 	qboolean	nextcmd;
 	int	i;
 
@@ -1194,8 +1238,8 @@ void Con_CompleteCommand( field_t *field )
 	con.shortestMatch[0] = 0;
 
 	// find matching commands and variables
-	Cmd_LookupCmds( NULL, &con, (setpair_t)Con_AddCommandToList );
-	Cvar_LookupVars( 0, NULL, &con, (setpair_t)Con_AddCommandToList );
+	Cmd_LookupCmds( &toggle, &con, (setpair_t)Con_AddCommandToList );
+	Cvar_LookupVars( 0, &toggle, &con, (setpair_t)Con_AddCommandToList );
 
 	if( !con.matchCount ) return; // no matches
 
@@ -1359,8 +1403,15 @@ static void Cmd_WriteOpenGLVariables( file_t *f )
 	Cvar_LookupVars( FCVAR_GLCONFIG, NULL, f, (setpair_t)Cmd_WriteOpenGLCvar );
 }
 
-#if !XASH_DEDICATED
-static void Host_FinalizeConfig( file_t *f, const char *config )
+void Host_InitializeConfig( file_t *f, const char *config, const char *description )
+{
+	FS_Printf( f, "//=======================================================================\n");
+	FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
+	FS_Printf( f, "//\t\t%s - %s\n", config, description );
+	FS_Printf( f, "//=======================================================================\n" );
+}
+
+void Host_FinalizeConfig( file_t *f, const char *config )
 {
 	string backup, newcfg;
 
@@ -1374,6 +1425,8 @@ static void Host_FinalizeConfig( file_t *f, const char *config )
 	FS_Rename( newcfg, config );
 }
 
+
+#if !XASH_DEDICATED
 /*
 ===============
 Host_WriteConfig
@@ -1394,10 +1447,7 @@ void Host_WriteConfig( void )
 	if( f )
 	{
 		Con_Reportf( "%s()\n", __func__ );
-		FS_Printf( f, "//=======================================================================\n");
-		FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
-		FS_Printf( f, "//\t\tconfig.cfg - archive of cvars\n" );
-		FS_Printf( f, "//=======================================================================\n" );
+		Host_InitializeConfig( f, "config.cfg", "archive of cvars" );
 		Key_WriteBindings( f );
 		Cvar_WriteVariables( f, FCVAR_ARCHIVE );
 		Info_WriteVars( f );
@@ -1421,6 +1471,8 @@ void Host_WriteConfig( void )
 	else Con_DPrintf( S_ERROR "Couldn't write config.cfg.\n" );
 
 	NET_SaveMasters();
+
+	FS_SaveVFSConfig();
 }
 
 /*
@@ -1442,10 +1494,7 @@ void GAME_EXPORT Host_WriteServerConfig( const char *name )
 
 	if(( f = FS_Open( newconfigfile, "w", false )) != NULL )
 	{
-		FS_Printf( f, "//=======================================================================\n" );
-		FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
-		FS_Printf( f, "//\t\tgame.cfg - multiplayer server temporare config\n" );
-		FS_Printf( f, "//=======================================================================\n" );
+		Host_InitializeConfig( f, "game.cfg", "multiplayer server temporary config" );
 
 		Cvar_WriteVariables( f, FCVAR_SERVER );
 		CSCR_WriteGameCVars( f, "settings.scr" );
@@ -1477,11 +1526,7 @@ void Host_WriteOpenGLConfig( void )
 	if( f )
 	{
 		Con_Reportf( "%s()\n", __func__ );
-		FS_Printf( f, "//=======================================================================\n" );
-		FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
-		FS_Printf( f, "//\t\t%s - archive of renderer implementation cvars\n", name );
-		FS_Printf( f, "//=======================================================================\n" );
-		FS_Printf( f, "\n" );
+		Host_InitializeConfig( f, name, "archive of renderer implementation cvars" );
 		Cmd_WriteOpenGLVariables( f );
 
 		Host_FinalizeConfig( f, name );
@@ -1507,10 +1552,7 @@ void Host_WriteVideoConfig( void )
 	if( f )
 	{
 		Con_Reportf( "%s()\n", __func__ );
-		FS_Printf( f, "//=======================================================================\n" );
-		FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
-		FS_Printf( f, "//\t\tvideo.cfg - archive of renderer variables\n");
-		FS_Printf( f, "//=======================================================================\n" );
+		Host_InitializeConfig( f, "video.cfg", "archive of renderer variables" );
 		Cvar_WriteVariables( f, FCVAR_RENDERINFO );
 		Host_FinalizeConfig( f, "video.cfg" );
 	}
@@ -1533,11 +1575,7 @@ void Key_EnumCmds_f( void )
 	f = FS_Open( "../help.txt", "w", false );
 	if( f )
 	{
-		FS_Printf( f, "//=======================================================================\n");
-		FS_Printf( f, "//\tGenerated by "XASH_ENGINE_NAME" (%i, %s, %s, %s-%s)\n", Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch());
-		FS_Printf( f, "//\t\thelp.txt - xash commands and console variables\n");
-		FS_Printf( f, "//=======================================================================\n");
-
+		Host_InitializeConfig( f, "help.txt", "xash commands and console variables" );
 		FS_Printf( f, "\n\n\t\t\tconsole variables\n\n");
 		Cvar_LookupVars( 0, NULL, f, (setpair_t)Cmd_WriteHelp );
 		FS_Printf( f, "\n\n\t\t\tconsole commands\n\n");

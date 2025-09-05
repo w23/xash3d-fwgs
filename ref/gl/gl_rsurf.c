@@ -26,7 +26,6 @@ typedef struct
 	byte		lightmap_buffer[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*4];
 } gllightmapstate_t;
 
-static int		nColinElim; // stats
 static vec2_t		world_orthocenter;
 static vec2_t		world_orthohalf;
 static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3];
@@ -335,16 +334,16 @@ void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa )
 GL_BuildPolygonFromSurface
 ================
 */
-void GL_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
+static int GL_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 {
-	int		i, lnumverts;
+	int		i, lnumverts, nColinElim = 0;
 	float		sample_size;
 	texture_t		*tex;
 	gl_texture_t	*glt;
 	glpoly2_t		*poly;
 
 	if( !mod || !fa->texinfo || !fa->texinfo->texture )
-		return; // bad polygon ?
+		return nColinElim; // bad polygon ?
 
 	if( FBitSet( fa->flags, SURF_CONVEYOR ) && fa->texinfo->texture->gl_texturenum != 0 )
 	{
@@ -417,6 +416,7 @@ void GL_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 	}
 
 	poly->numverts = lnumverts;
+	return nColinElim;
 }
 
 
@@ -1093,6 +1093,14 @@ static void R_RenderFullbrights( void )
 	pglBlendFunc( GL_ONE, GL_ONE );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 
+	// if fullbright textures are drawn in separate pass from VBO they
+	// cause z-fighting, this is noticeable on `slide_waifufu.bsp` map
+	if( R_HasEnabledVBO() && gl_polyoffset.value )
+	{
+		pglEnable( GL_POLYGON_OFFSET_FILL );
+		pglPolygonOffset( -1.0f, -gl_polyoffset.value );
+	}
+
 	for( i = draw_fullbrights.first; i <= draw_fullbrights.last; i++ )
 	{
 		es = fullbright_surfaces[i];
@@ -1107,6 +1115,9 @@ static void R_RenderFullbrights( void )
 		fullbright_surfaces[i] = NULL;
 		es->lumachain = NULL;
 	}
+
+	if( R_HasEnabledVBO() && gl_polyoffset.value )
+		pglDisable( GL_POLYGON_OFFSET_FILL );
 
 	pglDisable( GL_BLEND );
 	pglDepthMask( GL_TRUE );
@@ -2476,10 +2487,14 @@ static void R_SetupVBOArrayDlight( vboarray_t *vbo, texture_t *texture )
 
 static void R_SetupVBOArrayDecalDlight( int decalcount )
 {
-	pglBindBufferARB( GL_ARRAY_BUFFER_ARB, vbos.decal_dlight_vbo );
+	if( vbos.decal_dlight_vbo )
+	{
+		pglBindBufferARB( GL_ARRAY_BUFFER_ARB, vbos.decal_dlight_vbo );
 #if !SPARSE_DECALS_UPLOAD
-	pglBufferDataARB( GL_ARRAY_BUFFER_ARB, sizeof( vbovertex_t ) * DECAL_VERTS_MAX * decalcount, vbos.decal_dlight , GL_STREAM_DRAW_ARB );
+		pglBufferDataARB( GL_ARRAY_BUFFER_ARB, sizeof( vbovertex_t ) * DECAL_VERTS_MAX * decalcount, vbos.decal_dlight, GL_STREAM_DRAW_ARB );
 #endif
+	}
+
 	R_SetDecalMode( true );
 	// hack: fix decal dlights on gl_vbo_details == 2 (wrong state??)
 	/*if( mtst.details_enabled && mtst.tmu_dt != -1 )
@@ -3844,7 +3859,7 @@ with all the surfaces from all brush models
 */
 void GL_BuildLightmaps( void )
 {
-	int	i, j;
+	int	i, j, nColinElim = 0;
 	model_t	*m;
 
 	// release old lightmaps
@@ -3868,7 +3883,6 @@ void GL_BuildLightmaps( void )
 	gl_lms.current_lightmap_texture = 0;
 	tr.modelviewIdentity = false;
 	tr.realframecount = 1;
-	nColinElim = 0;
 
 	// setup the texture for dlights
 	R_InitDlightTexture();
@@ -3897,7 +3911,7 @@ void GL_BuildLightmaps( void )
 			if( m->surfaces[j].flags & SURF_DRAWTURB )
 				continue;
 
-			GL_BuildPolygonFromSurface( m, m->surfaces + j );
+			nColinElim += GL_BuildPolygonFromSurface( m, m->surfaces + j );
 		}
 
 		// clearing visframe
