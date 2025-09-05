@@ -862,7 +862,6 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 }
 
 void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {
-	// Expect all buffers to be bound
 	const model_t *mod = ent->model;
 	vk_brush_model_t *bmodel = mod->cache.data;
 
