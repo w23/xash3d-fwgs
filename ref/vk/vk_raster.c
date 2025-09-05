@@ -72,7 +72,7 @@ static struct {
 		int dynamic_model_count;
 		int models_count;
 	} stats;
-} g_render;
+} g_raster;
 
 typedef struct {
 	uint32_t num_lights;
@@ -173,14 +173,14 @@ static qboolean createSkyboxPipeline( void ) {
 		{.binding = 0, .location = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, pos)},
 	};
 
-	g_render.pipeline_sky.bindings[0] = (VkDescriptorSetLayoutBinding){
+	g_raster.pipeline_sky.bindings[0] = (VkDescriptorSetLayoutBinding){
     .binding = 0,
     .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
     .descriptorCount = 1,
     .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
 		.pImmutableSamplers = NULL,
 	};
-	g_render.pipeline_sky.bindings[1] = (VkDescriptorSetLayoutBinding) {
+	g_raster.pipeline_sky.bindings[1] = (VkDescriptorSetLayoutBinding) {
     .binding = 1,
     .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     .descriptorCount = 1,
@@ -188,22 +188,22 @@ static qboolean createSkyboxPipeline( void ) {
 		.pImmutableSamplers = NULL,
 	};
 
-	g_render.pipeline_sky.descs = (vk_descriptors_t){
-		.num_bindings = COUNTOF(g_render.pipeline_sky.bindings),
-		.bindings = g_render.pipeline_sky.bindings,
+	g_raster.pipeline_sky.descs = (vk_descriptors_t){
+		.num_bindings = COUNTOF(g_raster.pipeline_sky.bindings),
+		.bindings = g_raster.pipeline_sky.bindings,
 
-		.values = g_render.pipeline_sky.values,
+		.values = g_raster.pipeline_sky.values,
 
 		.push_constants = (VkPushConstantRange){0},
 
-		.num_sets = COUNTOF(g_render.pipeline_sky.sets),
-		.desc_sets = g_render.pipeline_sky.sets,
+		.num_sets = COUNTOF(g_raster.pipeline_sky.sets),
+		.desc_sets = g_raster.pipeline_sky.sets,
 	};
 
-	VK_DescriptorsCreate(&g_render.pipeline_sky.descs);
+	VK_DescriptorsCreate(&g_raster.pipeline_sky.descs);
 
 	vk_pipeline_graphics_create_info_t ci = {
-		.layout = g_render.pipeline_sky.descs.pipeline_layout,
+		.layout = g_raster.pipeline_sky.descs.pipeline_layout,
 
 		.attribs = attribs,
 		.num_attribs = COUNTOF(attribs),
@@ -222,7 +222,7 @@ static qboolean createSkyboxPipeline( void ) {
 		.cullMode = VK_CULL_MODE_FRONT_BIT,
 	};
 
-	return createPipeline(&g_render.pipeline_sky.pipeline, "sky", &ci);
+	return createPipeline(&g_raster.pipeline_sky.pipeline, "sky", &ci);
 }
 
 static qboolean createPipelines( void )
@@ -241,7 +241,7 @@ static qboolean createPipelines( void )
 	};
 
 	// FIXME store layout separately
-	XVK_CHECK(vkCreatePipelineLayout(vk_core.device, &plci, NULL, &g_render.pipeline_layout));
+	XVK_CHECK(vkCreatePipelineLayout(vk_core.device, &plci, NULL, &g_raster.pipeline_layout));
 
 	{
 		struct ShaderSpec {
@@ -281,7 +281,7 @@ static qboolean createPipelines( void )
 		}};
 
 		vk_pipeline_graphics_create_info_t ci = {
-			.layout = g_render.pipeline_layout,
+			.layout = g_raster.pipeline_layout,
 			.attribs = attribs,
 			.num_attribs = COUNTOF(attribs),
 
@@ -304,7 +304,7 @@ static qboolean createPipelines( void )
 			ci.blendEnable = VK_FALSE;
 			ci.depthWriteEnable = VK_TRUE;
 			ci.depthTestEnable = VK_TRUE;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_Solid, "solid", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_Solid, "solid", &ci))
 				return false;
 		}
 
@@ -316,7 +316,7 @@ static qboolean createPipelines( void )
 			ci.colorBlendOp = VK_BLEND_OP_ADD;
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1mA_RW, "A_1ma_RW", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_A_1mA_RW, "A_1ma_RW", &ci))
 				return false;
 		}
 
@@ -328,7 +328,7 @@ static qboolean createPipelines( void )
 			ci.colorBlendOp = VK_BLEND_OP_ADD;
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1mA_R, "A_1ma_R", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_A_1mA_R, "A_1ma_R", &ci))
 				return false;
 		}
 
@@ -340,7 +340,7 @@ static qboolean createPipelines( void )
 			ci.colorBlendOp = VK_BLEND_OP_ADD;
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1, "A_1", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_A_1, "A_1", &ci))
 				return false;
 		}
 
@@ -352,7 +352,7 @@ static qboolean createPipelines( void )
 			ci.colorBlendOp = VK_BLEND_OP_ADD;
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_A_1_R, "A_1_R", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_A_1_R, "A_1_R", &ci))
 				return false;
 		}
 
@@ -361,7 +361,7 @@ static qboolean createPipelines( void )
 			ci.depthWriteEnable = VK_TRUE;
 			ci.depthTestEnable = VK_TRUE;
 			ci.blendEnable = VK_FALSE;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_AT, "AT", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_AT, "AT", &ci))
 				return false;
 		}
 
@@ -373,7 +373,7 @@ static qboolean createPipelines( void )
 			ci.colorBlendOp = VK_BLEND_OP_ADD;
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
-			if (!createPipeline(g_render.pipelines + kVkPipeline_1_1_R, "1_1_R", &ci))
+			if (!createPipeline(g_raster.pipelines + kVkPipeline_1_1_R, "1_1_R", &ci))
 				return false;
 		}
 	}
@@ -385,27 +385,27 @@ static qboolean createPipelines( void )
 }
 
 qboolean VK_RasterInit( void ) {
-	g_render.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
+	g_raster.use_material_textures = gEngine.Cvar_Get( "vk_use_material_textures", "0", FCVAR_GLCONFIG, "Use PBR material textures for traditional rendering too" );
 
-	g_render.ubo_align = Q_max(4, v_device_info.properties.limits.minUniformBufferOffsetAlignment);
+	g_raster.ubo_align = Q_max(4, v_device_info.properties.limits.minUniformBufferOffsetAlignment);
 
-	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_render.ubo_align - 1) / g_render.ubo_align) * g_render.ubo_align;
+	const uint32_t uniform_unit_size = ((sizeof(uniform_data_t) + g_raster.ubo_align - 1) / g_raster.ubo_align) * g_raster.ubo_align;
 	const uint32_t uniform_buffer_size = uniform_unit_size * MAX_UNIFORM_SLOTS;
 	R_FlippingBuffer_Init(&g_render_state.uniform_alloc, uniform_buffer_size);
 
-	if (!VK_BufferCreate("render uniform_buffer", &g_render.uniform_buffer, uniform_buffer_size,
+	if (!VK_BufferCreate("render uniform_buffer", &g_raster.uniform_buffer, uniform_buffer_size,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | (vk_core.rtx ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0)))
 		return false;
 
 	{
 		VkDescriptorBufferInfo dbi_uniform_data = {
-			.buffer = g_render.uniform_buffer.buffer,
+			.buffer = g_raster.uniform_buffer.buffer,
 			.offset = 0,
 			.range = sizeof(uniform_data_t),
 		};
 		VkDescriptorBufferInfo dbi_uniform_lights = {
-			.buffer = g_render.uniform_buffer.buffer,
+			.buffer = g_raster.uniform_buffer.buffer,
 			.offset = 0,
 			.range = sizeof(vk_ubo_lights_t),
 		};
@@ -433,22 +433,22 @@ qboolean VK_RasterInit( void ) {
 		return false;
 
 	// TODO type safety
-	g_render.geometry = (void*)R_VkResourceFindByName("geometry");
-	ASSERT(g_render.geometry);
+	g_raster.geometry = (void*)R_VkResourceFindByName("geometry");
+	ASSERT(g_raster.geometry);
 
 	return true;
 }
 
 void VK_RasterShutdown( void )
 {
-	for (int i = 0; i < COUNTOF(g_render.pipelines); ++i)
-		vkDestroyPipeline(vk_core.device, g_render.pipelines[i], NULL);
-	vkDestroyPipelineLayout( vk_core.device, g_render.pipeline_layout, NULL );
+	for (int i = 0; i < COUNTOF(g_raster.pipelines); ++i)
+		vkDestroyPipeline(vk_core.device, g_raster.pipelines[i], NULL);
+	vkDestroyPipelineLayout( vk_core.device, g_raster.pipeline_layout, NULL );
 
-	vkDestroyPipeline(vk_core.device, g_render.pipeline_sky.pipeline, NULL);
-	VK_DescriptorsDestroy(&g_render.pipeline_sky.descs);
+	vkDestroyPipeline(vk_core.device, g_raster.pipeline_sky.pipeline, NULL);
+	VK_DescriptorsDestroy(&g_raster.pipeline_sky.descs);
 
-	VK_BufferDestroy( &g_render.uniform_buffer );
+	VK_BufferDestroy( &g_raster.uniform_buffer );
 }
 
 void VK_RasterBegin(void) {
@@ -463,7 +463,7 @@ void VK_RasterBegin(void) {
 
 static uint32_t allocUniform( uint32_t size, uint32_t alignment ) {
 	// FIXME Q_max is not correct, we need NAIMENSCHEEE OBSCHEEE KRATNOE
-	const uint32_t align = Q_max(alignment, g_render.ubo_align);
+	const uint32_t align = Q_max(alignment, g_raster.ubo_align);
 	const uint32_t offset = R_FlippingBuffer_Alloc(&g_render_state.uniform_alloc, size, align);
 	return offset;
 }
@@ -500,7 +500,7 @@ static uint32_t getUboOffset_FIXME( void ) {
 		if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
 			return UINT32_MAX;
 
-		uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_render.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
+		uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
 		memcpy(&g_render_state.current_uniform_data, &g_render_state.dirty_uniform_data, sizeof(g_render_state.dirty_uniform_data));
 		memcpy(ubo, &g_render_state.current_uniform_data, sizeof(*ubo));
 		g_render_state.uniform_data_set_mask |= UNIFORM_UPLOADED;
@@ -514,7 +514,7 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	draw_command_t *draw_command;
 
 	ASSERT(draw->pipeline_index >= 0);
-	ASSERT(draw->pipeline_index < COUNTOF(g_render.pipelines));
+	ASSERT(draw->pipeline_index < COUNTOF(g_raster.pipelines));
 	ASSERT(draw->lightmap >= 0);
 	ASSERT(draw->texture >= 0);
 	ASSERT(draw->texture < MAX_TEXTURES);
@@ -561,7 +561,7 @@ static uint32_t writeDlightsToUBO( void )
 		gEngine.Con_Printf(S_ERROR "Cannot allocate UBO for DLights\n");
 		return UINT32_MAX;
 	}
-	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
+	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_raster.uniform_buffer.mapped) + ubo_lights_offset);
 
 	// TODO this should not be here (where? vk_scene?)
 	for (int i = 0; i < MAX_DLIGHTS && num_lights < COUNTOF(ubo_lights->light); ++i) {
@@ -592,11 +592,11 @@ static uint32_t writeDlightsToUBO( void )
 // FIXME: how to do this properly before render pass?
 // Needed to avoid VUID-vkCmdCopyBuffer-renderpass
 void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
-	R_VkResourceProduce(&g_render.geometry->header, combuf, ctx);
+	R_VkResourceProduce(&g_raster.geometry->header, combuf, ctx);
 
 	Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
 	barrierAddBuffer(&barrier, (r_vkcombuf_barrier_buffer_t){
-		.buffer = g_render.geometry->buffer,
+		.buffer = g_raster.geometry->buffer,
 		.access = VK_ACCESS_2_INDEX_READ_BIT | VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT,
 	});
 	barrierCommit(&barrier, combuf);
@@ -625,7 +625,7 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 		return;
 
 	{
-		vk_buffer_t* const geom = g_render.geometry->buffer;
+		vk_buffer_t* const geom = g_raster.geometry->buffer;
 		ASSERT(geom->sync.read.stage & VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
 		ASSERT(geom->sync.read.access & VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
 		ASSERT(geom->sync.read.access & VK_ACCESS_2_INDEX_READ_BIT);
@@ -656,14 +656,14 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 			{
 				const render_draw_sky_t *draw_sky = &draw->draw_sky;
 
-				if (cur.pipeline != g_render.pipeline_sky.pipeline) {
+				if (cur.pipeline != g_raster.pipeline_sky.pipeline) {
 					const uint32_t ubo_offset = allocUniform(sizeof(sky_uniform_data_t), 16 /*?*/);
 					if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
 						continue;
 
 					// Compute and upload UBO stuff
 					{
-						sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_render.uniform_buffer.mapped + ubo_offset);
+						sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + ubo_offset);
 
 						// FIXME model matrix
 						Matrix4x4_ToArrayFloatGL(*args.projection_view, (float*)sky_ubo->mvp);
@@ -682,19 +682,19 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 						Matrix4x4_ToArrayFloatGL(view_inv, (float*)sky_ubo->inv_view);
 					}
 
-					cur.pipeline = g_render.pipeline_sky.pipeline;
+					cur.pipeline = g_raster.pipeline_sky.pipeline;
 					vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
 
-					g_render.pipeline_sky.values[0].buffer = (VkDescriptorBufferInfo){
-						.buffer = g_render.uniform_buffer.buffer,
+					g_raster.pipeline_sky.values[0].buffer = (VkDescriptorBufferInfo){
+						.buffer = g_raster.uniform_buffer.buffer,
 						.offset = 0,
 						.range = sizeof(sky_uniform_data_t),
 					};
-					g_render.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxOriginal );
-					VK_DescriptorsWrite(&g_render.pipeline_sky.descs, args.frame_index);
+					g_raster.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxOriginal );
+					VK_DescriptorsWrite(&g_raster.pipeline_sky.descs, args.frame_index);
 
 					vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-						g_render.pipeline_sky.descs.pipeline_layout, 0, 1, g_render.pipeline_sky.sets + args.frame_index, 1, &ubo_offset);
+						g_raster.pipeline_sky.descs.pipeline_layout, 0, 1, g_raster.pipeline_sky.sets + args.frame_index, 1, &ubo_offset);
 				}
 
 				ASSERT(draw_sky->index_offset >= 0);
@@ -714,8 +714,8 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 		}
 
 		ASSERT(draw->draw.pipeline_index >= 0);
-		ASSERT(draw->draw.pipeline_index < COUNTOF(g_render.pipelines));
-		const VkPipeline pipeline = g_render.pipelines[draw->draw.pipeline_index];
+		ASSERT(draw->draw.pipeline_index < COUNTOF(g_raster.pipelines));
+		const VkPipeline pipeline = g_raster.pipelines[draw->draw.pipeline_index];
 
 		if (cur.pipeline != pipeline) {
 			cur.pipeline = pipeline;
@@ -724,19 +724,19 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 			// Make sure that after pipeline change we have this bound correctly
 			// Pipeline change might be due to previous pipeline being skybox, which has
 			// incompatible layout
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
 		}
 
 		if (cur.ubo_offset != draw->draw.ubo_offset)
 		{
 			cur.ubo_offset = draw->draw.ubo_offset;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &cur.ubo_offset);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &cur.ubo_offset);
 		}
 
 		if (cur.lightmap != draw->draw.lightmap) {
 			cur.lightmap = draw->draw.lightmap;
 			const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(cur.lightmap);
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
 		}
 
 		if (cur.texture != draw->draw.texture)
@@ -744,7 +744,7 @@ void VK_RasterSubmit(vk_raster_submit_t args) {
 			cur.texture = draw->draw.texture;
 			const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(cur.texture);
 			// TODO names/enums for binding points
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
+			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
 		}
 
 		// Only indexed mode is supported
@@ -787,7 +787,7 @@ void VK_RasterAddModel( vk_raster_add_model_t args ) {
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
 		const int tex_mat = geom->material.tex_base_color;
-		const int geom_tex = g_render.use_material_textures->value && (tex_mat > 0 && tex_mat < MAX_TEXTURES) ? tex_mat : geom->ye_olde_texture;
+		const int geom_tex = g_raster.use_material_textures->value && (tex_mat > 0 && tex_mat < MAX_TEXTURES) ? tex_mat : geom->ye_olde_texture;
 		const int tex = args.textures_override > 0 ? args.textures_override : geom_tex;
 		const qboolean split =
 			   current_texture != tex
