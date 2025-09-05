@@ -17,24 +17,31 @@ def options(opt):
 		help = 'path to Nvidia Nsight Aftermath SDK (optional) [default: %(default)s]')
 
 def configure(conf):
-	# check for dedicated server build
 	if conf.options.DEDICATED:
 		return
 
-	conf.env.VK = conf.options.VK
-
-	if not conf.env.VK:
+	if not conf.options.VK:
 		return
 
-	if conf.env.DEST_OS == 'win32':
-		conf.start_msg('Vulkan SDK available?')
-		if not 'VULKAN_SDK' in conf.environ:
-			conf.fatal('VULKAN_SDK environment variable is not available, ref_vk will not be built')
-			conf.end_msg('no')
+	if conf.env.DEST_OS != 'win32' and conf.env.DEST_OS != 'linux':
+		Logs.warn('Vulkan renderer is only supported on Windows and Linux for now')
+		return
+
+	conf.env.VK = True
+
+	conf.start_msg('Vulkan SDK available?')
+	if 'VULKAN_SDK' in conf.environ:
 		conf.env.VULKAN_SDK = conf.environ['VULKAN_SDK']
 		if not os.path.isdir(conf.env.VULKAN_SDK):
 			conf.fatal(conf.env.VULKAN_SDK + ' is not a valid directory')
-		conf.end_msg('found at ' + conf.env.VULKAN_SDK)
+		conf.end_msg('using ' + conf.env.VULKAN_SDK)
+	else:
+		if conf.env.DEST_OS == 'win32':
+			conf.fatal('VULKAN_SDK environment variable is not available, ref_vk will not be built')
+			conf.end_msg('no')
+		else:
+			# FIXME check for valid vulkan/vulkan.h
+			conf.end_msg('assuming installed')
 
 	conf.load('glslc')
 	conf.load('sebastian')
@@ -107,9 +114,8 @@ def build(bld):
 		'../common',
 		'../pm_shared' ]
 
-	if bld.env.DEST_OS == 'win32':
-		includes.append(bld.env.VULKAN_SDK + '\\Include')
-	elif bld.env.DEST_OS == 'linux' and bld.env.VULKAN_SDK:
+	# Use include from VULKAN_SDK explicitly, if specified
+	if bld.env.VULKAN_SDK:
 		includes.append(bld.env.VULKAN_SDK + '\\include')
 
 	if bld.env.HAVE_AFTERMATH:
