@@ -29,8 +29,6 @@ jobs:
           - os: ubuntu-22.04
             targetos: linux
             targetarch: i386
-
-# FIXME currently vulkan build fails for these, as Vulkan SDK is not easily available.
           - os: ubuntu-22.04
             targetos: linux
             targetarch: arm64
@@ -39,6 +37,7 @@ jobs:
             targetos: linux
             targetarch: armhf
             cross: true
+# FIXME currently vulkan build fails for these, as Vulkan SDK is not easily available.
 #          - os: ubuntu-24.04 # riscv64 would benefit from having latest compilers
 #            targetos: linux
 #            targetarch: riscv64
