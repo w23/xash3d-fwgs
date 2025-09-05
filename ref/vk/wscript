@@ -116,7 +116,7 @@ def build(bld):
 
 	# Use include from VULKAN_SDK explicitly, if specified
 	if bld.env.VULKAN_SDK:
-		includes.append(bld.env.VULKAN_SDK + '\\include')
+		includes.append(os.path.join(bld.env.VULKAN_SDK, 'include'))
 
 	if bld.env.HAVE_AFTERMATH:
 		defines.append('USE_AFTERMATH')
