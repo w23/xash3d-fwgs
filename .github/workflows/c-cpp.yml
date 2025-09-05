@@ -29,22 +29,25 @@ jobs:
           - os: ubuntu-22.04
             targetos: linux
             targetarch: i386
-          - os: ubuntu-22.04
-            targetos: linux
-            targetarch: arm64
-            cross: true
-          - os: ubuntu-22.04
-            targetos: linux
-            targetarch: armhf
-            cross: true
-          - os: ubuntu-24.04 # riscv64 would benefit from having latest compilers
-            targetos: linux
-            targetarch: riscv64
-            cross: true
-          - os: ubuntu-22.04
-            targetos: linux
-            targetarch: ppc64el
-            cross: true
+
+# FIXME currently vulkan build fails for these, as Vulkan SDK is not easily available.
+#          - os: ubuntu-22.04
+#            targetos: linux
+#            targetarch: arm64
+#            cross: true
+#          - os: ubuntu-22.04
+#            targetos: linux
+#            targetarch: armhf
+#            cross: true
+#          - os: ubuntu-24.04 # riscv64 would benefit from having latest compilers
+#            targetos: linux
+#            targetarch: riscv64
+#            cross: true
+#          - os: ubuntu-22.04
+#            targetos: linux
+#            targetarch: ppc64el
+#            cross: true
+
 #          - os: ubuntu-aarch64-22.04
 #            targetos: linux
 #            targetarch: aarch64
@@ -52,9 +55,12 @@ jobs:
 #            targetos: linux
 #            targetarch: e2k-8c
 #            cross: true
-          - os: ubuntu-latest
-            targetos: android
-            targetarch: multiarch
+
+# FIXME Enable Vulkan for Android too
+#          - os: ubuntu-latest
+#            targetos: android
+#            targetarch: multiarch
+
 #          - os: ubuntu-22.04
 #            targetos: motomagx
 #            targetarch: armv6
@@ -70,12 +76,14 @@ jobs:
           - os: windows-2022 # always use the oldest possible for 32-bit because of older compilers, and better support of certain legacy OSes
             targetos: win32
             targetarch: i386
-          - os: macos-14 # arm64 as per github documentation
-            targetos: apple
-            targetarch: arm64
-          - os: macos-13 # x86 as per github documentation (will they fix it before they deprecate this version?..)
-            targetos: apple
-            targetarch: amd64
+
+# FIXME Vulkan doesn't care about these for now
+#          - os: macos-14 # arm64 as per github documentation
+#            targetos: apple
+#            targetarch: arm64
+#          - os: macos-13 # x86 as per github documentation (will they fix it before they deprecate this version?..)
+#            targetos: apple
+#            targetarch: amd64
     env:
       SDL_VERSION: 2.32.8
       FFMPEG_VERSION: 7.1
