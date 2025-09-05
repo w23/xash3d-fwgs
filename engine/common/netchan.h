@@ -69,7 +69,6 @@ GNU General Public License for more details.
 //  bytes will be stripped by the networking channel layer
 #define NET_MAX_MESSAGE		PAD_NUMBER(( NET_MAX_PAYLOAD + HEADER_BYTES ), 16 )
 
-#define MASTERSERVER_ADR		"mentality.rip:27010"
 #define MS_SCAN_REQUEST		"1\xFF" "0.0.0.0:0\0"
 
 #define PORT_MASTER			27010
@@ -291,8 +290,6 @@ typedef struct netchan_s
 } netchan_t;
 
 extern netadr_t		net_from;
-extern netadr_t		net_local;
-extern netadr_t		net6_local;
 extern sizebuf_t		net_message;
 extern byte		net_message_buffer[NET_MAX_MESSAGE];
 extern convar_t		sv_lan;

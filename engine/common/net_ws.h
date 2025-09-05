@@ -64,7 +64,6 @@ void NET_Config( qboolean net_enable, qboolean changeport );
 const char *NET_AdrToString( const netadr_t a ) RETURNS_NONNULL;
 const char *NET_BaseAdrToString( const netadr_t a ) RETURNS_NONNULL;
 qboolean NET_IsReservedAdr( netadr_t a );
-qboolean NET_CompareClassBAdr( const netadr_t a, const netadr_t b );
 qboolean NET_StringToAdr( const char *string, netadr_t *adr );
 qboolean NET_StringToFilterAdr( const char *s, netadr_t *adr, uint *prefixlen );
 net_gai_state_t NET_StringToAdrNB( const char *string, netadr_t *adr, qboolean v6only );
@@ -82,6 +81,8 @@ static inline qboolean NET_IsLocalAddress( netadr_t adr )
 {
 	return NET_NetadrType( &adr ) == NA_LOOPBACK;
 }
+
+void NET_GetLocalAddress( netadr_t *ip4, netadr_t *ip6 );
 
 #if !XASH_DEDICATED
 int CL_GetSplitSize( void );

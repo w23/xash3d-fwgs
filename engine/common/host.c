@@ -14,9 +14,6 @@ GNU General Public License for more details.
 */
 
 #include "build.h"
-#ifdef XASH_SDL
-#include <SDL.h>
-#endif // XASH_SDL
 #include <stdarg.h>  // va_args
 #if !XASH_WIN32
 #include <unistd.h> // fork
@@ -77,7 +74,7 @@ static CVAR_DEFINE_AUTO( host_gameloaded, "0", FCVAR_READ_ONLY, "inidcates a loa
 static CVAR_DEFINE_AUTO( host_clientloaded, "0", FCVAR_READ_ONLY, "inidcates a loaded client.dll" );
 CVAR_DEFINE_AUTO( host_limitlocal, "0", 0, "apply cl_cmdrate and rate to loopback connection" );
 CVAR_DEFINE( host_maxfps, "fps_max", "72", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "host fps upper limit" );
-CVAR_DEFINE_AUTO( fps_override, "1", FCVAR_FILTERABLE, "unlock higher framerate values, not supported" );
+CVAR_DEFINE_AUTO( fps_override, "0", FCVAR_FILTERABLE, "unlock higher framerate values, not supported" );
 static CVAR_DEFINE_AUTO( host_framerate, "0", FCVAR_FILTERABLE, "locks frame timing to this value in seconds" );
 static CVAR_DEFINE( host_sleeptime, "sleeptime", "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "milliseconds to sleep for each frame. higher values reduce fps accuracy" );
 static CVAR_DEFINE_AUTO( host_sleeptime_debug, "0", 0, "print sleeps between frames" );
@@ -140,7 +137,8 @@ static void Sys_PrintUsage( const char *exename )
 
 "\nCommon options:\n"
 	O("-dev [level]       ", "set log verbosity 0-2")
-	O("-log               ", "write log to \"engine.log\"")
+	O("-log [file name]   ", "write log to \"engine.log\" or [file name] if specified")
+	O("-logtime           ", "enable writing timestamps to the log file")
 	O("-nowriteconfig     ", "disable config save")
 	O("-noch              ", "disable crashhandler")
 #if XASH_WIN32 // !!!!
@@ -150,6 +148,7 @@ static void Sys_PrintUsage( const char *exename )
 	O("-bugcomp [opts]    ", "enable precise bug compatibility")
 	O("                   ", "will break games that don't require it")
 	O("                   ", "refer to engine documentation for more info")
+	O("-language <lang>   ", "mount localization game directory")
 	O("-disablehelp       ", "disable this message")
 #if !XASH_DEDICATED
 	O("-dedicated         ", "run engine in dedicated mode")
@@ -176,6 +175,7 @@ static void Sys_PrintUsage( const char *exename )
 	O("-dll <path>        ", "override server DLL path")
 #if !XASH_DEDICATED
 	O("-clientlib <path>  ", "override client DLL path")
+	O("-menulib <path>    ", "override menu DLL path")
 	O("-console           ", "run engine with console enabled")
 	O("-toconsole         ", "run engine witn console open")
 	O("-oldfont           ", "enable unused Quake font in Half-Life")
@@ -540,13 +540,6 @@ static void Host_MemStats_f( void )
 	}
 }
 
-static void Host_Minimize_f( void )
-{
-#ifdef XASH_SDL
-	if( host.hWnd ) SDL_MinimizeWindow( host.hWnd );
-#endif
-}
-
 /*
 =================
 Host_RegisterDecal
@@ -697,17 +690,17 @@ static qboolean Host_Autosleep( double dt, double scale )
 		static double timewindow; // allocate a time window for sleeps
 		static int counter; // for debug
 		static double realsleeptime;
-		const double sleeptime = sleep * 0.001;
+		const double sleeptime = sleep * 0.000001;
 
 		if( dt < targetframetime * scale )
 		{
 			// if we have allocated time window, try to sleep
 			if( timewindow > realsleeptime )
 			{
-				// Platform_Sleep isn't guaranteed to sleep an exact amount of milliseconds
+				// Platform_Sleep isn't guaranteed to sleep an exact amount of microseconds
 				// so we measure the real sleep time and use it to decrease the window
 				double t1 = Sys_DoubleTime(), t2;
-				Platform_Sleep( sleep ); // in msec!
+				Platform_NanoSleep( sleep * 1000 ); // in usec!
 				t2 = Sys_DoubleTime();
 				realsleeptime = t2 - t1;
 
@@ -1043,7 +1036,7 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 	}
 
 	if( !Sys_CheckParm( "-noch" ))
-		Sys_SetupCrashHandler();
+		Sys_SetupCrashHandler( argv[0] );
 
 #if XASH_DLL_LOADER
 	host.enabledll = !Sys_CheckParm( "-nodll" );
@@ -1062,7 +1055,7 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 
 	host.mempool = Mem_AllocPool( "Zone Engine" );
 
-	host.allow_console = DEFAULT_ALLOWCONSOLE;
+	host.allow_console = DEFAULT_ALLOWCONSOLE || DEFAULT_DEV > 0;
 
 	if( Sys_CheckParm( "-dev" ))
 	{
@@ -1154,6 +1147,10 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 	Cmd_AddCommand( "memlist", Host_MemStats_f, "prints memory pool information" );
 	Cmd_AddRestrictedCommand( "userconfigd", Host_Userconfigd_f, "execute all scripts from userconfig.d" );
 
+#if !XASH_DEDICATED
+	Cmd_AddRestrictedCommand( "host_writeconfig", Host_WriteConfig, "save current configuration" );
+#endif
+
 	Image_Init();
 	Sound_Init();
 
@@ -1162,7 +1159,7 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 		Host_RunTests( 1 );
 #endif
 
-	FS_LoadGameInfo( NULL );
+	FS_LoadGameInfo();
 	Cvar_PostFSInit();
 
 	Image_CheckPaletteQ1 ();
@@ -1193,6 +1190,14 @@ static void Sys_Quit_f( void )
 	Sys_Quit( "command" );
 }
 
+static void Host_MainLoop( void *userdata )
+{
+	double *poldtime = (double *)userdata;
+	double newtime = Sys_DoubleTime();
+	COM_Frame( newtime - *poldtime );
+	*poldtime = newtime;
+}
+
 /*
 =================
 Host_Main
@@ -1200,7 +1205,7 @@ Host_Main
 */
 int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGame, pfnChangeGame func )
 {
-	static double	oldtime, newtime;
+	static double oldtime;
 	string demoname, exename;
 
 	host.starttime = Sys_DoubleTime();
@@ -1234,6 +1239,14 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	Cvar_Getf( "ver", FCVAR_READ_ONLY, "shows an engine version", "%i/%s (hw build %i)", PROTOCOL_VERSION, XASH_COMPAT_VERSION, Q_buildnum_compat());
 	Cvar_Getf( "host_ver", FCVAR_READ_ONLY, "detailed info about this build", "%i " XASH_VERSION " %s %s %s", Q_buildnum(), Q_buildos(), Q_buildarch(), g_buildcommit);
 	Cvar_Getf( "host_lowmemorymode", FCVAR_READ_ONLY, "indicates if engine compiled for low RAM consumption (0 - normal, 1 - low engine limits, 2 - low protocol limits)", "%i", XASH_LOW_MEMORY );
+
+	Cvar_Get( "host_hl25_extended_structs",
+#if SUPPORT_HL25_EXTENDED_STRUCTS
+		"1",
+#else
+		"0",
+#endif
+		FCVAR_READ_ONLY, "indicates if engine was compiled with extended msurface_t struct" );
 
 	Mod_Init();
 	NET_Init();
@@ -1269,7 +1282,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 		Cmd_AddRestrictedCommand( "quit", Sys_Quit_f, "quit the game" );
 		Cmd_AddRestrictedCommand( "exit", Sys_Quit_f, "quit the game" );
 	}
-	else Cmd_AddRestrictedCommand( "minimize", Host_Minimize_f, "minimize main window to tray" );
+	else Cmd_AddRestrictedCommand( "minimize", Platform_Minimize_f, "minimize main window to tray" );
 
 	host.errorframe = 0;
 
@@ -1310,7 +1323,6 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	Cmd_RemoveCommand( "setgl" );
 	Cbuf_ExecStuffCmds();	// execute stuffcmds (commandline)
 	SCR_CheckStartupVids();	// must be last
-	FS_CheckConfig();
 
 	if( Sys_GetParmFromCmdLine( "-timedemo", demoname ))
 		Cbuf_AddTextf( "timedemo %s\n", demoname );
@@ -1344,15 +1356,14 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 		return error_on_exit;
 #endif // XASH_ANDROID
 
+#if !XASH_EMSCRIPTEN
 	// main window message loop
-	while( !host.crashed )
-	{
-		newtime = Sys_DoubleTime ();
-		COM_Frame( newtime - oldtime );
-		oldtime = newtime;
-	}
+	while( host.status != HOST_CRASHED )
+		Host_MainLoop( &oldtime );
+#else // XASH_EMSCRIPTEN
+	emscripten_set_main_loop_arg( Host_MainLoop, &oldtime, 0, false );
+#endif // XASH_EMSCRIPTEN
 
-	// never reached
 	return 0;
 }
 

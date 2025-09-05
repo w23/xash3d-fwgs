@@ -892,6 +892,10 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	vec3_t	oldvel;
 	usercmd_t cmd;
 
+	// if the player got kicked, do not process commands
+	if( cl->state <= cs_zombie )
+		return;
+
 	clent = cl->edict;
 	cmd = *ucmd;
 
@@ -947,12 +951,6 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	clent->v.button = ucmd->buttons;
 	clent->v.light_level = ucmd->lightlevel;
 	if( ucmd->impulse ) clent->v.impulse = ucmd->impulse;
-
-	if( ucmd->impulse == 204 )
-	{
-		// force client.dll update
-		SV_RefreshUserinfo();
-	}
 
 	svgame.globals->time = cl->timebase;
 	svgame.dllFuncs.pfnPlayerPreThink( clent );
