@@ -212,85 +212,123 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	g_render.stats.dynamic_model_count++;
 }
 
+static void beginRenderPass(VkCommandBuffer cmdbuf, VkRenderPass render_pass, VkFramebuffer framebuffer, uint32_t width, uint32_t height) {
+	const VkClearValue clear_value[] = {
+		// *_UNORM is float
+		{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
+		{.depthStencil = {1., 0.}} // TODO reverse-z
+	};
+	const VkRenderPassBeginInfo rpbi = {
+		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		.renderPass = render_pass,
+		.renderArea.extent.width = width,
+		.renderArea.extent.height = height,
+		.clearValueCount = COUNTOF(clear_value),
+		.pClearValues = clear_value,
+		.framebuffer = framebuffer,
+	};
+	vkCmdBeginRenderPass(cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+static void setupViewport(VkCommandBuffer cmdbuf, uint32_t width, uint32_t height) {
+	const VkViewport viewport[] = {
+		{0.f, 0.f, (float)width, (float)height, 0.f, 1.f},
+	};
+	const VkRect2D scissor[] = {{
+		{0, 0},
+		{width, height},
+	}};
+
+	vkCmdSetViewport(cmdbuf, 0, COUNTOF(viewport), viewport);
+	vkCmdSetScissor(cmdbuf, 0, COUNTOF(scissor), scissor);
+}
+
+static void renderRaster(vk_render_draw_frame_t args) {
+	const VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
+	const qboolean draw = args.framebuffer != VK_NULL_HANDLE;
+
+	R_VkRasterPrepareFrame(args.combuf, &(FrameContext){
+		.frame_sequence = args.sequence,
+	});
+
+	if (!draw) {
+		R_VkOverlay_DrawAndFlip( cmdbuf, draw );
+		return;
+	}
+
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+			.image = args.framebuffer_image,
+			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		});
+		barrierCommit(&barrier, args.combuf);
+	}
+
+	beginRenderPass(cmdbuf, vk_render_pass.raster, args.framebuffer, args.width, args.height);
+	setupViewport(cmdbuf, args.width, args.height);
+
+	R_VkRasterSubmit((vk_raster_submit_t){
+		.combuf = args.combuf,
+		.width = args.width,
+		.height = args.height,
+		.frame_index = args.frame_index,
+		.projection = &g_render_state.vk_projection,
+		.view = &g_camera.viewMatrix,
+		.projection_view = &g_render_state.projection_view,
+	});
+
+	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
+
+	vkCmdEndRenderPass(cmdbuf);
+}
+
+static void renderRayster(vk_render_draw_frame_t args) {
+	const VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
+	const qboolean draw = args.framebuffer != VK_NULL_HANDLE;
+
+	VK_RayFrameEnd(&(vk_ray_frame_render_args_t){
+		.combuf = args.combuf,
+		.dst = args.framebuffer_image,
+
+		.projection = &g_render_state.vk_projection,
+		.view = &g_camera.viewMatrix,
+
+		.fov_angle_y = g_camera.fov_y,
+	});
+
+	if (!draw) {
+		R_VkOverlay_DrawAndFlip( cmdbuf, draw );
+		return;
+	}
+
+	{
+		Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+		barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
+			.image = args.framebuffer_image,
+			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+		});
+		barrierCommit(&barrier, args.combuf);
+	}
+
+	beginRenderPass(cmdbuf, vk_render_pass.after_ray_tracing, args.framebuffer, args.width, args.height);
+	setupViewport(cmdbuf, args.width, args.height);
+
+	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
+
+	vkCmdEndRenderPass(cmdbuf);
+}
+
 void R_VkRenderDrawFrame(vk_render_draw_frame_t args) {
 	// TODO: should be done by rendering when it requests textures
 	R_VkImageUploadCommit(args.combuf,
 		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (args.trace_rays ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
 
-	const VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
-	const qboolean draw = args.framebuffer != VK_NULL_HANDLE;
-
 	if (args.trace_rays) {
-		VK_RayFrameEnd(&(vk_ray_frame_render_args_t){
-			.combuf = args.combuf,
-			.dst = args.framebuffer_image,
-
-			.projection = &g_render_state.vk_projection,
-			.view = &g_camera.viewMatrix,
-
-			.fov_angle_y = g_camera.fov_y,
-		});
+		renderRayster(args);
 	} else {
-		R_VkRasterPrepareFrame(args.combuf, &(FrameContext){
-			.frame_sequence = args.sequence,
-		});
+		renderRaster(args);
 	}
-
-	if (draw) {
-		{
-			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
-			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
-				.image = args.framebuffer_image,
-				.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-			});
-			barrierCommit(&barrier, args.combuf);
-		}
-
-		const VkClearValue clear_value[] = {
-			// *_UNORM is float
-			{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
-			{.depthStencil = {1., 0.}} // TODO reverse-z
-		};
-		const VkRenderPassBeginInfo rpbi = {
-			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-			.renderPass = args.trace_rays ? vk_render_pass.after_ray_tracing : vk_render_pass.raster,
-			.renderArea.extent.width = args.width,
-			.renderArea.extent.height = args.height,
-			.clearValueCount = COUNTOF(clear_value),
-			.pClearValues = clear_value,
-			.framebuffer = args.framebuffer,
-		};
-		vkCmdBeginRenderPass(cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-
-		{
-			const VkViewport viewport[] = {
-				{0.f, 0.f, (float)args.width, (float)args.height, 0.f, 1.f},
-			};
-			const VkRect2D scissor[] = {{
-				{0, 0},
-				{args.width, args.height},
-			}};
-
-			vkCmdSetViewport(cmdbuf, 0, COUNTOF(viewport), viewport);
-			vkCmdSetScissor(cmdbuf, 0, COUNTOF(scissor), scissor);
-		}
-	}
-
-	if (!args.trace_rays && draw) {
-		R_VkRasterSubmit((vk_raster_submit_t){
-			.combuf = args.combuf,
-			.width = args.width,
-			.height = args.height,
-			.frame_index = args.frame_index,
-			.projection = &g_render_state.vk_projection,
-			.view = &g_camera.viewMatrix,
-			.projection_view = &g_render_state.projection_view,
-		});
-	}
-
-	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
-
-	if (draw)
-		vkCmdEndRenderPass(cmdbuf);
 }
