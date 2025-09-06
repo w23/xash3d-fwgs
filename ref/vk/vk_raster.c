@@ -6,6 +6,7 @@
 #include "vk_cvar.h"
 #include "vk_math.h"
 #include "vk_textures.h"
+#include "vk_logs.h"
 
 #include "vulkan/VBarrier.h"
 #include "vulkan/VDescriptor.h"
@@ -21,7 +22,7 @@
 #define MAX_UNIFORM_SLOTS (MAX_SCENE_ENTITIES * 2 /* solid + trans */ + 1)
 
 typedef struct {
-	matrix4x4 mvp;
+	matrix4x4 transform;
 	vec4_t color;
 } uniform_data_t;
 
@@ -88,7 +89,6 @@ typedef struct {
 #define MAX_DEBUG_NAME_LENGTH 32
 
 typedef struct render_draw_s {
-	uint32_t ubo_offset; // FIXME move this to draw
 	int lightmap, texture;
 	int pipeline_index;
 	uint32_t element_count;
@@ -104,6 +104,7 @@ typedef struct render_draw_sky_s {
 enum draw_command_type_e {
 	DrawLabelBegin,
 	DrawLabelEnd,
+	DrawSetUniforms,
 	DrawDraw,
 	DrawSky,
 };
@@ -114,16 +115,12 @@ typedef struct {
 		char debug_label[MAX_DEBUG_NAME_LENGTH];
 		render_draw_t draw;
 		render_draw_sky_t draw_sky;
+		uniform_data_t uniforms;
 	};
 } draw_command_t;
 
 static struct {
-	int uniform_data_set_mask;
-	uniform_data_t current_uniform_data;
-	uniform_data_t dirty_uniform_data;
-
 	r_flipping_buffer_t uniform_alloc;
-	uint32_t current_ubo_offset_FIXME;
 
 	draw_command_t draw_commands[MAX_DRAW_COMMANDS];
 	int num_draw_commands;
@@ -452,10 +449,6 @@ void R_VkRasterShutdown( void )
 }
 
 void R_VkRasterBeginFrame(void) {
-	g_render_state.uniform_data_set_mask = UNIFORM_UNSET;
-	g_render_state.current_ubo_offset_FIXME = UINT32_MAX;
-	memset(&g_render_state.current_uniform_data, 0, sizeof(g_render_state.current_uniform_data));
-	memset(&g_render_state.dirty_uniform_data, 0, sizeof(g_render_state.dirty_uniform_data));
 	R_FlippingBuffer_Flip(&g_render_state.uniform_alloc);
 
 	g_render_state.num_draw_commands = 0;
@@ -465,10 +458,19 @@ static uint32_t allocUniform( uint32_t size, uint32_t alignment ) {
 	// FIXME Q_max is not correct, we need NAIMENSCHEEE OBSCHEEE KRATNOE
 	const uint32_t align = Q_max(alignment, g_raster.ubo_align);
 	const uint32_t offset = R_FlippingBuffer_Alloc(&g_render_state.uniform_alloc, size, align);
+
+	if (offset == ALO_ALLOC_FAILED)
+		ERR("Unable to allocate UBO size=%u alignment=%u", size, alignment);
+
 	return offset;
 }
 
 static draw_command_t *drawCmdAlloc( void ) {
+	if (g_render_state.num_draw_commands >= COUNTOF(g_render_state.draw_commands)) {
+		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
+		return NULL;
+	}
+
 	ASSERT(g_render_state.num_draw_commands < COUNTOF(g_render_state.draw_commands));
 	return g_render_state.draw_commands + (g_render_state.num_draw_commands++);
 }
@@ -476,6 +478,8 @@ static draw_command_t *drawCmdAlloc( void ) {
 static void drawCmdPushDebugLabelBegin( const char *debug_label ) {
 	if (vk_core.debug) {
 		draw_command_t *draw_command = drawCmdAlloc();
+		if (!draw_command)
+			return;
 		draw_command->type = DrawLabelBegin;
 		Q_strncpy(draw_command->debug_label, debug_label, sizeof draw_command->debug_label);
 	}
@@ -484,29 +488,10 @@ static void drawCmdPushDebugLabelBegin( const char *debug_label ) {
 static void drawCmdPushDebugLabelEnd( void ) {
 	if (vk_core.debug) {
 		draw_command_t *draw_command = drawCmdAlloc();
+		if (!draw_command)
+			return;
 		draw_command->type = DrawLabelEnd;
 	}
-}
-
-// FIXME get rid of this garbage
-static uint32_t getUboOffset_FIXME( void ) {
-	// Figure out whether we need to update UBO data, and upload new data if we do
-	// TODO generally it's not safe to do memcmp for structures comparison
-	if (g_render_state.current_ubo_offset_FIXME == UINT32_MAX
-		|| ((g_render_state.uniform_data_set_mask & UNIFORM_UPLOADED) == 0)
-		|| memcmp(&g_render_state.current_uniform_data, &g_render_state.dirty_uniform_data, sizeof(g_render_state.current_uniform_data)) != 0) {
-		g_render_state.current_ubo_offset_FIXME = allocUniform(sizeof(uniform_data_t), 16 /* why 16? vec4? */);
-
-		if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
-			return UINT32_MAX;
-
-		uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + g_render_state.current_ubo_offset_FIXME);
-		memcpy(&g_render_state.current_uniform_data, &g_render_state.dirty_uniform_data, sizeof(g_render_state.dirty_uniform_data));
-		memcpy(ubo, &g_render_state.current_uniform_data, sizeof(*ubo));
-		g_render_state.uniform_data_set_mask |= UNIFORM_UPLOADED;
-	}
-
-	return g_render_state.current_ubo_offset_FIXME;
 }
 
 static void drawCmdPushDraw( const render_draw_t *draw )
@@ -519,34 +504,27 @@ static void drawCmdPushDraw( const render_draw_t *draw )
 	ASSERT(draw->texture >= 0);
 	ASSERT(draw->texture < MAX_TEXTURES);
 
-	if (g_render_state.num_draw_commands >= COUNTOF(g_render_state.draw_commands)) {
-		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
-		return;
-	}
-
-	const uint32_t ubo_offset = getUboOffset_FIXME();
-	if (ubo_offset == ALO_ALLOC_FAILED) {
-		// TODO stagger this
-		gEngine.Con_Printf( S_ERROR "Ran out of uniform slots\n" );
-		return;
-	}
-
 	draw_command = drawCmdAlloc();
+	if (!draw_command)
+		return;
 	draw_command->draw = *draw;
-	draw_command->draw.ubo_offset = ubo_offset;
 	draw_command->type = DrawDraw;
+}
+
+static void drawCmdPushUniforms( const uniform_data_t *uniforms ) {
+	draw_command_t *const draw_command = drawCmdAlloc();
+	if (!draw_command)
+		return;
+	draw_command->uniforms = *uniforms;
+	draw_command->type = DrawSetUniforms;
 }
 
 static void drawCmdPushDrawSky( const render_draw_sky_t *draw_sky )
 {
 	draw_command_t *draw_command;
-
-	if (g_render_state.num_draw_commands >= COUNTOF(g_render_state.draw_commands)) {
-		gEngine.Con_Printf( S_ERROR "Maximum number of draw commands reached\n" );
-		return;
-	}
-
 	draw_command = drawCmdAlloc();
+	if (!draw_command)
+		return;
 	draw_command->draw_sky = *draw_sky;
 	draw_command->type = DrawSky;
 }
@@ -601,28 +579,149 @@ void R_VkRasterPrepareFrame( struct vk_combuf_s* combuf, const FrameContext *ctx
 	barrierCommit(&barrier, combuf);
 }
 
+typedef struct {
+	VkPipeline pipeline;
+	int texture;
+	int lightmap;
+	uint32_t ubo_offset;
+	uint32_t dlights_ubo_offset;
+} current_draw_state_t;
+
+static void cmdDrawSky(const vk_raster_submit_t* args, current_draw_state_t *cur,  const render_draw_sky_t *draw_sky) {
+	VkCommandBuffer cmdbuf = args->combuf->cmdbuf;
+
+	if (cur->pipeline != g_raster.pipeline_sky.pipeline) {
+		const uint32_t ubo_offset = allocUniform(sizeof(sky_uniform_data_t), 16 /*?*/);
+		if (ubo_offset == ALO_ALLOC_FAILED)
+			return;
+
+		// Compute and upload UBO stuff
+		{
+			sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + ubo_offset);
+
+			// FIXME model matrix
+			Matrix4x4_ToArrayFloatGL(*args->projection_view, (float*)sky_ubo->mvp);
+
+			sky_ubo->resolution[0] = args->width;
+			sky_ubo->resolution[1] = args->height;
+
+			// TODO DRY, this is copypasted from vk_rtx.c
+			matrix4x4 proj_inv, view_inv;
+			Matrix4x4_Invert_Full(proj_inv, *args->projection);
+			Matrix4x4_ToArrayFloatGL(proj_inv, (float*)sky_ubo->inv_proj);
+
+			// TODO there's a more efficient way to construct an inverse view matrix
+			// from vforward/right/up vectors and origin in g_camera
+			Matrix4x4_Invert_Full(view_inv, *args->view);
+			Matrix4x4_ToArrayFloatGL(view_inv, (float*)sky_ubo->inv_view);
+		}
+
+		cur->pipeline = g_raster.pipeline_sky.pipeline;
+		vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur->pipeline);
+
+		g_raster.pipeline_sky.values[0].buffer = (VkDescriptorBufferInfo){
+			.buffer = g_raster.uniform_buffer.buffer,
+			.offset = 0,
+			.range = sizeof(sky_uniform_data_t),
+		};
+		g_raster.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxOriginal );
+		VK_DescriptorsWrite(&g_raster.pipeline_sky.descs, args->frame_index);
+
+		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			g_raster.pipeline_sky.descs.pipeline_layout, 0, 1, g_raster.pipeline_sky.sets + args->frame_index, 1, &ubo_offset);
+	}
+
+	ASSERT(draw_sky->index_offset >= 0);
+	vkCmdDrawIndexed(cmdbuf, draw_sky->element_count, 1, draw_sky->index_offset, draw_sky->vertex_offset, 0);
+
+	// Reset current draw state
+	cur->texture = -1;
+	cur->lightmap = -1;
+	cur->ubo_offset = -1;
+	cur->dlights_ubo_offset = -1;
+}
+
+static uint32_t cmdSetUniforms(const vk_raster_submit_t* args, current_draw_state_t *cur,  const uniform_data_t *data) {
+	const uint32_t ubo_offset = allocUniform(sizeof(uniform_data_t), 16 /* why 16? vec4? */);
+	if (ubo_offset == ALO_ALLOC_FAILED)
+		return -1;
+
+	matrix4x4 mvp;
+	Matrix4x4_Concat(mvp, *args->projection_view, data->transform);
+
+	uniform_data_t *const ubo = PTR_CAST(uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + ubo_offset);
+	Vector4Copy(data->color, ubo->color);
+	Matrix4x4_ToArrayFloatGL(mvp, (float*)ubo->transform);
+
+	return ubo_offset;
+}
+
+static void cmdDraw(const vk_raster_submit_t* args, current_draw_state_t *cur,  const render_draw_t *draw, uint32_t dlights_ubo_offset, uint32_t ubo_offset) {
+	VkCommandBuffer cmdbuf = args->combuf->cmdbuf;
+
+	ASSERT(draw->pipeline_index >= 0);
+	ASSERT(draw->pipeline_index < COUNTOF(g_raster.pipelines));
+	const VkPipeline pipeline = g_raster.pipelines[draw->pipeline_index];
+
+	if (ubo_offset == -1 || dlights_ubo_offset == -1)
+		return;
+
+	if (cur->pipeline != pipeline) {
+		cur->pipeline = pipeline;
+		vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur->pipeline);
+
+		// Reset binding state, as new pipeline will need a new one
+		cur->texture = -1;
+		cur->lightmap = -1;
+		cur->ubo_offset = -1;
+		cur->dlights_ubo_offset = -1;
+	}
+
+	if (cur->dlights_ubo_offset != dlights_ubo_offset) {
+		cur->dlights_ubo_offset = dlights_ubo_offset;
+		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &cur->dlights_ubo_offset);
+	}
+
+	if (cur->ubo_offset != ubo_offset) {
+		cur->ubo_offset = ubo_offset;
+		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &cur->ubo_offset);
+	}
+
+	if (cur->lightmap != draw->lightmap) {
+		cur->lightmap = draw->lightmap;
+		const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(cur->lightmap);
+		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
+	}
+
+	if (cur->texture != draw->texture) {
+		cur->texture = draw->texture;
+		const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(cur->texture);
+		// TODO names/enums for binding points
+		vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
+	}
+
+	// Only indexed mode is supported
+	ASSERT(draw->index_offset >= 0);
+	vkCmdDrawIndexed(cmdbuf, draw->element_count, 1, draw->index_offset, draw->vertex_offset, 0);
+}
+
 void R_VkRasterSubmit(vk_raster_submit_t args) {
 	VkCommandBuffer cmdbuf = args.combuf->cmdbuf;
 
-	// TODO we can sort collected draw commands for more efficient and correct rendering
-	// that requires adding info about distance to camera for correct order-dependent blending
-
-	struct {
-		VkPipeline pipeline;
-		int texture;
-		int lightmap;
-		uint32_t ubo_offset;
-	} cur = {
-		.pipeline = VK_NULL_HANDLE,
-		.texture = -1,
-		.lightmap = -1,
-		.ubo_offset = -1,
-	};
-
+	uint32_t ubo_offset = -1;
 	const uint32_t dlights_ubo_offset = writeDlightsToUBO();
 	if (dlights_ubo_offset == UINT32_MAX)
 		return;
 
+	current_draw_state_t cur = {
+		.pipeline = VK_NULL_HANDLE,
+		.texture = -1,
+		.lightmap = -1,
+		.ubo_offset = -1,
+		.dlights_ubo_offset = -1,
+	};
+
+	// Bind universal vertex and index buffers
 	{
 		vk_buffer_t* const geom = g_raster.geometry->buffer;
 		ASSERT(geom->sync.read.stage & VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
@@ -633,122 +732,35 @@ void R_VkRasterSubmit(vk_raster_submit_t args) {
 		vkCmdBindIndexBuffer(cmdbuf, geom->buffer, 0, VK_INDEX_TYPE_UINT16);
 	}
 
+	// TODO we can sort collected draw commands for more efficient and correct rendering
+	// that requires adding info about distance to camera for correct order-dependent blending
 	for (int i = 0; i < g_render_state.num_draw_commands; ++i) {
-		const draw_command_t *const draw = g_render_state.draw_commands + i;
+		const draw_command_t *const cmd = g_render_state.draw_commands + i;
 
-		switch (draw->type) {
+		switch (cmd->type) {
 			case DrawLabelBegin:
-			{
-				const VkDebugUtilsLabelEXT label = {
+				vkCmdBeginDebugUtilsLabelEXT(cmdbuf, &(VkDebugUtilsLabelEXT){
 					.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
-					.pLabelName = draw->debug_label,
-				};
-				vkCmdBeginDebugUtilsLabelEXT(cmdbuf, &label);
-				continue;
-			}
+					.pLabelName = cmd->debug_label,
+				});
+				break;
 
 			case DrawLabelEnd:
 				vkCmdEndDebugUtilsLabelEXT(cmdbuf);
-				continue;
+				break;
 
 			case DrawSky:
-			{
-				const render_draw_sky_t *draw_sky = &draw->draw_sky;
+				cmdDrawSky(&args, &cur, &cmd->draw_sky);
+				break;
 
-				if (cur.pipeline != g_raster.pipeline_sky.pipeline) {
-					const uint32_t ubo_offset = allocUniform(sizeof(sky_uniform_data_t), 16 /*?*/);
-					if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
-						continue;
-
-					// Compute and upload UBO stuff
-					{
-						sky_uniform_data_t* const sky_ubo = PTR_CAST(sky_uniform_data_t, (byte*)g_raster.uniform_buffer.mapped + ubo_offset);
-
-						// FIXME model matrix
-						Matrix4x4_ToArrayFloatGL(*args.projection_view, (float*)sky_ubo->mvp);
-
-						sky_ubo->resolution[0] = args.width;
-						sky_ubo->resolution[1] = args.height;
-
-						// TODO DRY, this is copypasted from vk_rtx.c
-						matrix4x4 proj_inv, view_inv;
-						Matrix4x4_Invert_Full(proj_inv, *args.projection);
-						Matrix4x4_ToArrayFloatGL(proj_inv, (float*)sky_ubo->inv_proj);
-
-						// TODO there's a more efficient way to construct an inverse view matrix
-						// from vforward/right/up vectors and origin in g_camera
-						Matrix4x4_Invert_Full(view_inv, *args.view);
-						Matrix4x4_ToArrayFloatGL(view_inv, (float*)sky_ubo->inv_view);
-					}
-
-					cur.pipeline = g_raster.pipeline_sky.pipeline;
-					vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
-
-					g_raster.pipeline_sky.values[0].buffer = (VkDescriptorBufferInfo){
-						.buffer = g_raster.uniform_buffer.buffer,
-						.offset = 0,
-						.range = sizeof(sky_uniform_data_t),
-					};
-					g_raster.pipeline_sky.values[1].image = R_VkTexturesGetSkyboxDescriptorImageInfo( kSkyboxOriginal );
-					VK_DescriptorsWrite(&g_raster.pipeline_sky.descs, args.frame_index);
-
-					vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-						g_raster.pipeline_sky.descs.pipeline_layout, 0, 1, g_raster.pipeline_sky.sets + args.frame_index, 1, &ubo_offset);
-				}
-
-				ASSERT(draw_sky->index_offset >= 0);
-				vkCmdDrawIndexed(cmdbuf, draw_sky->element_count, 1, draw_sky->index_offset, draw_sky->vertex_offset, 0);
-
-				// Reset current draw state
-				cur.texture = -1;
-				cur.lightmap = -1;
-				cur.ubo_offset = -1;
-
-				continue;
-			}
+			case DrawSetUniforms:
+				ubo_offset = cmdSetUniforms(&args, &cur, &cmd->uniforms);
+				break;
 
 			case DrawDraw:
-				// Continue drawing below
+				cmdDraw(&args, &cur, &cmd->draw, dlights_ubo_offset, ubo_offset);
 				break;
 		}
-
-		ASSERT(draw->draw.pipeline_index >= 0);
-		ASSERT(draw->draw.pipeline_index < COUNTOF(g_raster.pipelines));
-		const VkPipeline pipeline = g_raster.pipelines[draw->draw.pipeline_index];
-
-		if (cur.pipeline != pipeline) {
-			cur.pipeline = pipeline;
-			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
-
-			// Make sure that after pipeline change we have this bound correctly
-			// Pipeline change might be due to previous pipeline being skybox, which has
-			// incompatible layout
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
-		}
-
-		if (cur.ubo_offset != draw->draw.ubo_offset)
-		{
-			cur.ubo_offset = draw->draw.ubo_offset;
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 0, 1, vk_desc_fixme.ubo_sets, 1, &cur.ubo_offset);
-		}
-
-		if (cur.lightmap != draw->draw.lightmap) {
-			cur.lightmap = draw->draw.lightmap;
-			const VkDescriptorSet lm_unorm = R_VkTextureGetDescriptorUnorm(cur.lightmap);
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 2, 1, &lm_unorm, 0, NULL);
-		}
-
-		if (cur.texture != draw->draw.texture)
-		{
-			cur.texture = draw->draw.texture;
-			const VkDescriptorSet tex_unorm = R_VkTextureGetDescriptorUnorm(cur.texture);
-			// TODO names/enums for binding points
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_raster.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
-		}
-
-		// Only indexed mode is supported
-		ASSERT(draw->draw.index_offset >= 0);
-		vkCmdDrawIndexed(cmdbuf, draw->draw.element_count, 1, draw->draw.index_offset, draw->draw.vertex_offset, 0);
 	}
 }
 
@@ -762,26 +774,25 @@ void VK_RenderDebugLabelEnd( void )
 	drawCmdPushDebugLabelEnd();
 }
 
-static void uboComputeAndSetMVPFromModel( const matrix4x4 model, const matrix4x4 projection_view ) {
-	matrix4x4 mvp;
-	Matrix4x4_Concat(mvp, projection_view, model);
-	Matrix4x4_ToArrayFloatGL(mvp, (float*)g_render_state.dirty_uniform_data.mvp);
-}
-
 void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 	int current_texture = args.textures_override;
 	int element_count = 0;
 	int index_offset = -1;
 	int vertex_offset = 0;
 
-	// TODO get rid of this dirty ubo thing
-	uboComputeAndSetMVPFromModel( *args.transform, *args.projection_view );
-	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
-
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
 
 	drawCmdPushDebugLabelBegin( args.debug_name );
+
+	// Color and transform will be the same for the next draw commands
+	{
+		uniform_data_t uni;
+		Vector4Copy(*args.color, uni.color);
+		Matrix4x4_Copy(uni.transform, *args.transform);
+
+		drawCmdPushUniforms(&uni);
+	}
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		const vk_render_geometry_t *geom = args.geometries + i;
@@ -820,7 +831,6 @@ void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 						.vertex_offset = vertex_offset,
 						.index_offset = index_offset,
 					};
-
 					drawCmdPushDraw( &draw );
 				}
 			}
@@ -844,7 +854,7 @@ void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 				.index_offset = index_offset,
 			});
 		} else {
-			const render_draw_t draw = {
+			render_draw_t draw = {
 				.lightmap = lightmap,
 				.texture = current_texture,
 				.pipeline_index = args.render_type,
@@ -852,7 +862,6 @@ void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 				.vertex_offset = vertex_offset,
 				.index_offset = index_offset,
 			};
-
 			drawCmdPushDraw( &draw );
 		}
 	}

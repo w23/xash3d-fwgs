@@ -1,6 +1,5 @@
 #pragma once
 
-#include "vk_common.h"
 #include "xash3d_types.h" // matrix4x4, vec4_t
 
 qboolean R_VkRasterInit(void);
@@ -15,7 +14,6 @@ typedef struct {
 	const struct vk_render_geometry_s *geometries;
 	int geometries_count;
 	const matrix4x4 *transform;
-	const matrix4x4 *projection_view; // TODO remove, this is only needed when submitting for rendering
 	const vec4_t *color;
 	int render_type;
 	int textures_override;
