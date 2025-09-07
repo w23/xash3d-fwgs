@@ -127,7 +127,7 @@ static struct {
 } g_brush;
 
 static void computeBrushModelVisibleGeometries(const struct vk_render_model_s* model,
-	vec3_t pos, vk_render_geometry_array_t *inout_geometries);
+	vec3_t pos, vk_int_array_t *inout_geometries);
 
 static void VK_InitRandomTable( void )
 {
@@ -2023,7 +2023,7 @@ void R_BrushUnloadTextures( model_t *mod )
 // Used to track visited `msurface_t`s. Only need values that would be unique between frames for a given model_t
 static uint32_t g_visframe_tag = 0;
 
-static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_render_geometry_array_t *inout_geometries) {
+static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_int_array_t *inout_geometries) {
 	const vk_brush_model_t *const bmodel = mod->cache.data;
 	for (int i = 0; i < leaf->nummarksurfaces; ++i) {
 		msurface_t *const marksurf = leaf->firstmarksurface[i];
@@ -2046,13 +2046,12 @@ static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_
 
 		ASSERT(geom_index < bmodel->render_model.num_geometries);
 
-		const vk_render_geometry_t *const geom = bmodel->render_model.geometries + geom_index;
-		arrayDynamicAppendT(inout_geometries, geom);
+		arrayDynamicAppendT(inout_geometries, &geom_index);
 	}
 }
 
 static void computeBrushModelVisibleGeometries(const struct vk_render_model_s* model,
-	vec3_t pos, vk_render_geometry_array_t *inout_geometries) {
+	vec3_t pos, vk_int_array_t *inout_geometries) {
 	const vk_brush_model_t *const bmodel = (void*)model;
 	const model_t *const mod = bmodel->engine_model;
 

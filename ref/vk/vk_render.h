@@ -99,8 +99,8 @@ struct rt_light_add_polygon_s;
 struct rt_model_s;
 struct vk_render_model_s;
 
-typedef ARRAY_DYNAMIC_DECLARE(vk_render_geometry_t, vk_render_geometry_array_t);
-typedef void (compute_visible_geometries_f)(const struct vk_render_model_s* model, vec3_t pos, vk_render_geometry_array_t* inout);
+typedef ARRAY_DYNAMIC_DECLARE(int, vk_int_array_t);
+typedef void (compute_visible_geometries_f)(const struct vk_render_model_s* model, vec3_t pos, vk_int_array_t* inout);
 
 typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64

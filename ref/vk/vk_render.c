@@ -39,7 +39,7 @@ static struct {
 	} stats;
 
 	// Temp value, but allocation reused between frames/models
-	vk_render_geometry_array_t visible_geometries;
+	vk_int_array_t visible_geometries;
 } g_render;
 
 static struct {
@@ -56,7 +56,7 @@ qboolean VK_RenderInit( void ) {
 	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
 
 	arrayDynamicInitT(&g_render.visible_geometries);
-	arrayDynamicReserveT(&g_render.visible_geometries, 128);
+	arrayDynamicReserveT(&g_render.visible_geometries, 256);
 
 	return R_VkRasterInit();
 }
@@ -156,8 +156,8 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			},
 		});
 	} else {
-		const vk_render_geometry_t *geometries = model->geometries;
 		int geometries_count = model->num_geometries;
+		const int* geometries_indexes = NULL;
 
 		// Rendering optimization for slow devices: render only what's visible based on BSP PVS
 		// Only brush worldmodel provides this, and it's the only thing that provides this.
@@ -166,8 +166,8 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			model->compute_visible_geometries(model, g_camera.vieworg, &g_render.visible_geometries);
 
 			if (g_render.visible_geometries.count > 0) {
-				geometries = g_render.visible_geometries.items;
 				geometries_count = g_render.visible_geometries.count;
+				geometries_indexes = g_render.visible_geometries.items;
 				//INFO("Rendering %s %d geoms of %d", model->debug_name, geometries_count, model->num_geometries);
 			}
 		}
@@ -175,7 +175,8 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 		R_VkRasterAddModel((vk_raster_add_model_t){
 			.debug_name = model->debug_name,
 			.lightmap = model->lightmap,
-			.geometries = geometries,
+			.geometries = model->geometries,
+			.geometries_indexes = geometries_indexes,
 			.geometries_count = geometries_count,
 			.transform = args.transform,
 			.color = args.color,

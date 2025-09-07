@@ -795,7 +795,8 @@ void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 	}
 
 	for (int i = 0; i < args.geometries_count; ++i) {
-		const vk_render_geometry_t *geom = args.geometries + i;
+		const int geom_index = args.geometries_indexes ? args.geometries_indexes[i] : i;
+		const vk_render_geometry_t *const geom = args.geometries + geom_index;
 		const int tex_mat = geom->material.tex_base_color;
 		const int geom_tex = g_raster.use_material_textures->value && (tex_mat > 0 && tex_mat < MAX_TEXTURES) ? tex_mat : geom->ye_olde_texture;
 		const int tex = args.textures_override > 0 ? args.textures_override : geom_tex;
