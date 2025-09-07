@@ -12,6 +12,7 @@
 #include "vk_logs.h"
 #include "std/profiler.h"
 #include "std/arrays.h"
+#include "camera.h"
 
 #include <math.h>
 #include <memory.h>
@@ -2023,6 +2024,11 @@ void R_BrushUnloadTextures( model_t *mod )
 // Used to track visited `msurface_t`s. Only need values that would be unique between frames for a given model_t
 static uint32_t g_visframe_tag = 0;
 
+static qboolean cullSurface(const msurface_t* surf, const gl_frustum_t *frustum) {
+	const int clipflags = 0;
+	return GL_FrustumCullBox( frustum, surf->info->mins, surf->info->maxs, clipflags );
+}
+
 static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_int_array_t *inout_geometries) {
 	const vk_brush_model_t *const bmodel = mod->cache.data;
 	for (int i = 0; i < leaf->nummarksurfaces; ++i) {
@@ -2032,6 +2038,9 @@ static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_
 		if (marksurf->visframe == g_visframe_tag)
 			continue;
 		marksurf->visframe = g_visframe_tag;
+
+		if (cullSurface(marksurf, &g_camera.frustum))
+			continue;
 
 		const int surf_index = marksurf - mod->surfaces;
 		ASSERT(surf_index >= mod->firstmodelsurface);
