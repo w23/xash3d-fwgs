@@ -36,13 +36,16 @@ typedef struct {
 } r_conveyor_t;
 
 typedef struct vk_brush_model_s {
+	// This needs to be the first field, as the renderer passes vk_brush_model_t by vk_render_model_t pointer.
+	vk_render_model_t render_model;
+
 	model_t *engine_model;
 	int patch_rendermode;
 
 	r_geometry_range_t geometry;
 
-	vk_render_model_t render_model;
-	int *surface_to_geometry_index;
+	// Relative to mod->firstmodelsurface
+	int *modelsurface_to_geometry_index;
 
 	int *animated_indexes;
 	int animated_indexes_count;
@@ -122,6 +125,9 @@ static struct {
 		conn_vertex_t *vertices;
 	} conn;
 } g_brush;
+
+static void computeBrushModelVisibleGeometries(const struct vk_render_model_s* model,
+	vec3_t pos, vk_render_geometry_array_t *inout_geometries);
 
 static void VK_InitRandomTable( void )
 {
@@ -1489,7 +1495,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 				.emissive_surfaces_count = &emissive_surfaces_count,
 			});
 
-			args.bmodel->surface_to_geometry_index[i] = num_geometries;
+			ASSERT(i < args.mod->nummodelsurfaces);
+			ASSERT(args.bmodel->modelsurface_to_geometry_index[i] == -1);
+			args.bmodel->modelsurface_to_geometry_index[i] = num_geometries;
 
 			// Fill conveyor data if conveyor
 			r_conveyor_t *conv = NULL;
@@ -1756,9 +1764,9 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 	}
 
 	vk_render_geometry_t *const geometries = Mem_Malloc(vk_core.pool, sizeof(vk_render_geometry_t) * sizes.num_surfaces);
-	bmodel->surface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
+	bmodel->modelsurface_to_geometry_index = Mem_Malloc(vk_core.pool, sizeof(int) * mod->nummodelsurfaces);
 	for (int i = 0; i < mod->nummodelsurfaces; ++i)
-		bmodel->surface_to_geometry_index[i] = -1;
+		bmodel->modelsurface_to_geometry_index[i] = -1;
 	bmodel->animated_indexes = Mem_Malloc(vk_core.pool, sizeof(int) * sizes.animated_count);
 	bmodel->animated_indexes_count = sizes.animated_count;
 
@@ -1889,6 +1897,9 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 	DEBUG("Model %s loaded surfaces: %d (of %d); total vertices: %u, total indices: %u",
 		mod->name, bmodel->render_model.num_geometries, mod->nummodelsurfaces, g_brush.stat.total_vertices, g_brush.stat.total_indices);
 
+	if (is_worldmodel)
+		bmodel->render_model.compute_visible_geometries = computeBrushModelVisibleGeometries;
+
 	return true;
 }
 
@@ -1927,8 +1938,8 @@ static void R_BrushModelDestroy( vk_brush_model_t *bmodel ) {
 	if (bmodel->animated_indexes)
 		Mem_Free(bmodel->animated_indexes);
 
-	if (bmodel->surface_to_geometry_index)
-		Mem_Free(bmodel->surface_to_geometry_index);
+	if (bmodel->modelsurface_to_geometry_index)
+		Mem_Free(bmodel->modelsurface_to_geometry_index);
 
 	if (bmodel->render_model.geometries) {
 		Mem_Free(bmodel->render_model.geometries);
@@ -2006,5 +2017,71 @@ void R_BrushUnloadTextures( model_t *mod )
 
 		R_TextureFree( tx->gl_texturenum );    // main texture
 		R_TextureFree( tx->fb_texturenum );    // luma texture
+	}
+}
+
+// Used to track visited `msurface_t`s. Only need values that would be unique between frames for a given model_t
+static uint32_t g_visframe_tag = 0;
+
+static void appendSurfacesFromLeaf( const mleaf_t* leaf, const model_t *mod, vk_render_geometry_array_t *inout_geometries) {
+	const vk_brush_model_t *const bmodel = mod->cache.data;
+	for (int i = 0; i < leaf->nummarksurfaces; ++i) {
+		msurface_t *const marksurf = leaf->firstmarksurface[i];
+
+		// If already visited
+		if (marksurf->visframe == g_visframe_tag)
+			continue;
+		marksurf->visframe = g_visframe_tag;
+
+		const int surf_index = marksurf - mod->surfaces;
+		ASSERT(surf_index >= mod->firstmodelsurface);
+
+		const int model_surface_index = surf_index - mod->firstmodelsurface;
+		ASSERT(model_surface_index < mod->nummodelsurfaces);
+
+		const int geom_index = bmodel->modelsurface_to_geometry_index[model_surface_index];
+		// Skip surfaces for which there are no geometries (there are many valid reasons for this)
+		if (geom_index < 0)
+			continue;
+
+		ASSERT(geom_index < bmodel->render_model.num_geometries);
+
+		const vk_render_geometry_t *const geom = bmodel->render_model.geometries + geom_index;
+		arrayDynamicAppendT(inout_geometries, geom);
+	}
+}
+
+static void computeBrushModelVisibleGeometries(const struct vk_render_model_s* model,
+	vec3_t pos, vk_render_geometry_array_t *inout_geometries) {
+	const vk_brush_model_t *const bmodel = (void*)model;
+	const model_t *const mod = bmodel->engine_model;
+
+	const mleaf_t* leaf = gEngine.Mod_PointInLeaf(pos, mod->nodes);
+
+	g_visframe_tag++;
+	appendSurfacesFromLeaf(leaf, mod, inout_geometries);
+
+	// Get all PVS leafs
+	{
+		const byte *pvs = leaf->compressed_vis;
+		int pvs_leaf_index = 0;
+		for (;pvs_leaf_index < mod->numleafs; ++pvs) {
+			uint8_t bits = pvs[0];
+
+			// PVS is RLE encoded
+			if (bits == 0) {
+				const int skip = pvs[1];
+				pvs_leaf_index += skip * 8;
+				++pvs;
+				continue;
+			}
+
+			for (int k = 0; k < 8; ++k, ++pvs_leaf_index, bits >>= 1) {
+				if ((bits&1) == 0)
+					continue;
+
+				appendSurfacesFromLeaf( mod->leafs + pvs_leaf_index + 1, mod, inout_geometries );
+			}
+		}
 	}
 }

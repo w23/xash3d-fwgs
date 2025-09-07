@@ -4,6 +4,8 @@
 #include "vk_const.h"
 #include "vk_core.h"
 
+#include "std/arrays.h"
+
 qboolean VK_RenderInit( void );
 void VK_RenderShutdown( void );
 
@@ -95,6 +97,10 @@ uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type);
 
 struct rt_light_add_polygon_s;
 struct rt_model_s;
+struct vk_render_model_s;
+
+typedef ARRAY_DYNAMIC_DECLARE(vk_render_geometry_t, vk_render_geometry_array_t);
+typedef void (compute_visible_geometries_f)(const struct vk_render_model_s* model, vec3_t pos, vk_render_geometry_array_t* inout);
 
 typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64
@@ -107,6 +113,9 @@ typedef struct vk_render_model_s {
 	vk_render_geometry_t *geometries;
 
 	struct rt_model_s *rt_model;
+
+	// Optional, expected to be provided by brush worldmodel
+	compute_visible_geometries_f *compute_visible_geometries;
 } vk_render_model_t;
 
 // Initialize model from scratch

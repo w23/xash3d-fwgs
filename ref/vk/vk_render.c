@@ -10,6 +10,7 @@
 #include "vk_raster.h"
 #include "vk_render_pass.h"
 #include "vk_overlay.h"
+#include "vk_logs.h"
 
 #include "vulkan/VBarrier.h"
 #include "vulkan/VBuffer.h"
@@ -36,6 +37,9 @@ static struct {
 		int dynamic_model_count;
 		int models_count;
 	} stats;
+
+	// Temp value, but allocation reused between frames/models
+	vk_render_geometry_array_t visible_geometries;
 } g_render;
 
 static struct {
@@ -51,12 +55,16 @@ qboolean VK_RenderInit( void ) {
 	R_SPEEDS_COUNTER(g_render.stats.dynamic_model_count, "models_dynamic", kSpeedsMetricCount);
 	R_SPEEDS_COUNTER(g_render.stats.models_count, "models", kSpeedsMetricCount);
 
+	arrayDynamicInitT(&g_render.visible_geometries);
+	arrayDynamicReserveT(&g_render.visible_geometries, 128);
+
 	return R_VkRasterInit();
 }
 
 void VK_RenderShutdown( void )
 {
 	R_VkRasterShutdown();
+	arrayDynamicDestroyT(&g_render.visible_geometries);
 }
 
 void VK_RenderBegin( qboolean ray_tracing ) {
@@ -148,11 +156,27 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			},
 		});
 	} else {
+		const vk_render_geometry_t *geometries = model->geometries;
+		int geometries_count = model->num_geometries;
+
+		// Rendering optimization for slow devices: render only what's visible based on BSP PVS
+		// Only brush worldmodel provides this, and it's the only thing that provides this.
+		if (model->compute_visible_geometries) {
+			arrayDynamicResizeT(&g_render.visible_geometries, 0);
+			model->compute_visible_geometries(model, g_camera.vieworg, &g_render.visible_geometries);
+
+			if (g_render.visible_geometries.count > 0) {
+				geometries = g_render.visible_geometries.items;
+				geometries_count = g_render.visible_geometries.count;
+				//INFO("Rendering %s %d geoms of %d", model->debug_name, geometries_count, model->num_geometries);
+			}
+		}
+
 		R_VkRasterAddModel((vk_raster_add_model_t){
 			.debug_name = model->debug_name,
 			.lightmap = model->lightmap,
-			.geometries = model->geometries,
-			.geometries_count = model->num_geometries,
+			.geometries = geometries,
+			.geometries_count = geometries_count,
 			.transform = args.transform,
 			.color = args.color,
 			.render_type = args.render_type,
