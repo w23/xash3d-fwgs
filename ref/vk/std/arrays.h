@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h> // size_t
+#include <string.h> // memcpy()
 
 #define VIEW_DECLARE_CONST(TYPE, NAME) \
 	struct { \
@@ -50,7 +51,17 @@ void arrayDynamicInit(array_dynamic_t *array, int item_size);
 void arrayDynamicDestroy(array_dynamic_t *array);
 
 void arrayDynamicReserve(array_dynamic_t *array, int capacity);
-void arrayDynamicAppend(array_dynamic_t *array, const void *item);
+static inline void arrayDynamicAppend(array_dynamic_t *array, const void *item) {
+	const int new_count = array->count + 1;
+	if (new_count > array->capacity)
+		arrayDynamicReserve(array, new_count);
+
+	if (item)
+		memcpy((char*)array->items + array->count * array->item_size, item, array->item_size);
+
+	array->count = new_count;
+}
+
 #define arrayDynamicAppendItem(array, item) \
 	do { \
 		ASSERT((array)->item_size == sizeof(&(item))); \

@@ -42,14 +42,3 @@ void arrayDynamicResize(array_dynamic_t *array, int count) {
 	arrayDynamicReserve(array, count);
 	array->count = count;
 }
-
-void arrayDynamicAppend(array_dynamic_t *array, const void *item) {
-	const int new_count = array->count + 1;
-	arrayDynamicReserve(array, new_count);
-
-	if (item)
-		memcpy((char*)array->items + array->count * array->item_size, item, array->item_size);
-
-	array->count = new_count;
-}
-
