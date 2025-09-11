@@ -1447,302 +1447,298 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 	// Load sorted by gl_texturenum
 	// TODO this does not make that much sense in vulkan (can sort later)
-	for (int t = 0; t <= args.sizes.max_texture_id; ++t) {
-		for( int i = 0; i < args.mod->nummodelsurfaces; ++i) {
-			const int surface_index = args.mod->firstmodelsurface + i;
-			msurface_t *surf = args.mod->surfaces + surface_index;
-			const mextrasurf_t *info = surf->info;
-			vk_render_geometry_t *model_geometry = args.out_geometries + num_geometries;
-			const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
-			int index_count = 0;
-			vec3_t tangent;
-			const int orig_tex_id = surf->texinfo->texture->gl_texturenum;
-			if (t != orig_tex_id)
+	for( int i = 0; i < args.mod->nummodelsurfaces; ++i) {
+		const int surface_index = args.mod->firstmodelsurface + i;
+		msurface_t *surf = args.mod->surfaces + surface_index;
+		const mextrasurf_t *info = surf->info;
+		vk_render_geometry_t *model_geometry = args.out_geometries + num_geometries;
+		const float sample_size = gEngine.Mod_SampleSizeForFace( surf );
+		int index_count = 0;
+		vec3_t tangent;
+		const int orig_tex_id = surf->texinfo->texture->gl_texturenum;
+
+		int tex_id = orig_tex_id;
+
+		// TODO this patching should probably override entity patching below
+		const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
+		const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
+		switch (type) {
+		case BrushSurface_Water:
+		case BrushSurface_WaterSide:
+		case BrushSurface_Hidden:
+			continue;
+		case BrushSurface_Animated:
+			args.bmodel->animated_indexes[animated_count++] = num_geometries;
+			break;
+		case BrushSurface_Conveyor:
+			break;
+		case BrushSurface_Sky:
+			if (g_map_entities.remove_all_sky_surfaces)
 				continue;
+		case BrushSurface_Regular:
+			break;
+		}
 
-			int tex_id = orig_tex_id;
+		surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
+			.mod = args.mod,
+			.func_any = args.func_any,
+			.is_static = args.is_static,
+			.bmodel = args.bmodel,
+			.surf = surf,
+			.surface_index = surface_index,
+			.type = type,
+			.tex_id = tex_id,
+			.psurf = psurf,
+			.model_geometry = model_geometry,
+			.emissive_surfaces_count = &emissive_surfaces_count,
+		});
 
-			// TODO this patching should probably override entity patching below
-			const xvk_patch_surface_t *const psurf = R_VkPatchGetSurface(surface_index);
-			const brush_surface_type_e type = getSurfaceType(surf, surface_index, args.is_worldmodel);
-			switch (type) {
-			case BrushSurface_Water:
-			case BrushSurface_WaterSide:
-			case BrushSurface_Hidden:
-				continue;
-			case BrushSurface_Animated:
-				args.bmodel->animated_indexes[animated_count++] = num_geometries;
-				break;
-			case BrushSurface_Conveyor:
-				break;
-			case BrushSurface_Sky:
-				if (g_map_entities.remove_all_sky_surfaces)
-					continue;
-			case BrushSurface_Regular:
-				break;
-			}
+		ASSERT(i < args.mod->nummodelsurfaces);
+		ASSERT(args.bmodel->modelsurface_to_geometry_index[i] == -1);
+		args.bmodel->modelsurface_to_geometry_index[i] = num_geometries;
 
-			surfaceHandleEmissive((SurfaceHandleEmissiveArgs){
-				.mod = args.mod,
-				.func_any = args.func_any,
-				.is_static = args.is_static,
-				.bmodel = args.bmodel,
-				.surf = surf,
-				.surface_index = surface_index,
-				.type = type,
-				.tex_id = tex_id,
-				.psurf = psurf,
-				.model_geometry = model_geometry,
-				.emissive_surfaces_count = &emissive_surfaces_count,
-			});
+		// Fill conveyor data if conveyor
+		r_conveyor_t *conv = NULL;
+		if (type == BrushSurface_Conveyor) {
+			ASSERT(conveyors_count < args.sizes.conveyors_count);
+			conv = &args.bmodel->conveyors[conveyors_count++];
 
-			ASSERT(i < args.mod->nummodelsurfaces);
-			ASSERT(args.bmodel->modelsurface_to_geometry_index[i] == -1);
-			args.bmodel->modelsurface_to_geometry_index[i] = num_geometries;
+			conv->vertices_count = surf->numedges;
 
-			// Fill conveyor data if conveyor
-			r_conveyor_t *conv = NULL;
-			if (type == BrushSurface_Conveyor) {
-				ASSERT(conveyors_count < args.sizes.conveyors_count);
-				conv = &args.bmodel->conveyors[conveyors_count++];
+			conv->vertices_dst_offset = vertex_offset;
+			conv->vertices_src_offset = conveyors_vertices_count;
+			conveyors_vertices_count += conv->vertices_count;
+			ASSERT(conveyors_vertices_count <= args.sizes.conveyors_vertices_count);
 
-				conv->vertices_count = surf->numedges;
+			conv->geometry_index = num_geometries;
 
-				conv->vertices_dst_offset = vertex_offset;
-				conv->vertices_src_offset = conveyors_vertices_count;
-				conveyors_vertices_count += conv->vertices_count;
-				ASSERT(conveyors_vertices_count <= args.sizes.conveyors_vertices_count);
+			conv->texture_width = R_TexturesGetParm(PARM_TEX_WIDTH, orig_tex_id);
+		}
 
-				conv->geometry_index = num_geometries;
+		++num_geometries;
 
-				conv->texture_width = R_TexturesGetParm(PARM_TEX_WIDTH, orig_tex_id);
-			}
+		//DEBUG( "surface %d: numverts=%d numedges=%d", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
 
-			++num_geometries;
+		if (vertex_offset + surf->numedges >= UINT16_MAX) {
+			// We might be able to handle it by adjusting base_vertex_offset, etc
+			ERR("Model %s indices don't fit into 16 bits", args.mod->name);
+			return false;
+		}
 
-			//DEBUG( "surface %d: numverts=%d numedges=%d", i, surf->polys ? surf->polys->numverts : -1, surf->numedges );
+		model_geometry->ye_olde_texture = orig_tex_id;
+		qboolean material_assigned = false;
 
-			if (vertex_offset + surf->numedges >= UINT16_MAX) {
-				// We might be able to handle it by adjusting base_vertex_offset, etc
-				ERR("Model %s indices don't fit into 16 bits", args.mod->name);
-				return false;
-			}
+		if (psurf && (psurf->flags & Patch_Surface_Material)) {
+			model_geometry->material = R_VkMaterialGetForRef(psurf->material_ref);
+			material_assigned = true;
+		}
 
-			model_geometry->ye_olde_texture = orig_tex_id;
-			qboolean material_assigned = false;
-
-			if (psurf && (psurf->flags & Patch_Surface_Material)) {
-				model_geometry->material = R_VkMaterialGetForRef(psurf->material_ref);
-				material_assigned = true;
-			}
-
-			if (!material_assigned && entity_patch) {
-				for (int i = 0; i < entity_patch->matmap_count; ++i) {
-					if (entity_patch->matmap[i].from_tex == orig_tex_id) {
-						model_geometry->material = R_VkMaterialGetForRef(entity_patch->matmap[i].to_mat);
-						DEBUG("  Assigning entity_patch/material[%d] for surf=%d to mat ref=%d",
-							i, surface_index, entity_patch->matmap[i].to_mat.index);
-						material_assigned = true;
-						break;
-					}
-				}
-
-				if (!material_assigned && entity_patch->rendermode > 0) {
-					material_assigned = R_VkMaterialGetEx(tex_id, entity_patch->rendermode, &model_geometry->material);
-					if (!material_assigned && entity_patch->rendermode == kRenderTransColor) {
-						// TransColor means ignore textures and draw just color
-						model_geometry->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
-						model_geometry->ye_olde_texture = tglob.whiteTexture;
-						material_assigned = true;
-					}
+		if (!material_assigned && entity_patch) {
+			for (int i = 0; i < entity_patch->matmap_count; ++i) {
+				if (entity_patch->matmap[i].from_tex == orig_tex_id) {
+					model_geometry->material = R_VkMaterialGetForRef(entity_patch->matmap[i].to_mat);
+					DEBUG("  Assigning entity_patch/material[%d] for surf=%d to mat ref=%d",
+						i, surface_index, entity_patch->matmap[i].to_mat.index);
+					material_assigned = true;
+					break;
 				}
 			}
 
-			if (!material_assigned) {
-				model_geometry->material = R_VkMaterialGetForTexture(tex_id);
-				material_assigned = true;
+			if (!material_assigned && entity_patch->rendermode > 0) {
+				material_assigned = R_VkMaterialGetEx(tex_id, entity_patch->rendermode, &model_geometry->material);
+				if (!material_assigned && entity_patch->rendermode == kRenderTransColor) {
+					// TransColor means ignore textures and draw just color
+					model_geometry->material = R_VkMaterialGetForTexture(tglob.whiteTexture);
+					model_geometry->ye_olde_texture = tglob.whiteTexture;
+					material_assigned = true;
+				}
 			}
+		}
 
-			// Make sure animated textures undergo at least the first update
-			// To update emissive and other texture states
-			if (type == BrushSurface_Animated)
-				model_geometry->ye_olde_texture = -1;
+		if (!material_assigned) {
+			model_geometry->material = R_VkMaterialGetForTexture(tex_id);
+			material_assigned = true;
+		}
 
-			model_geometry->surf_deprecate = surf;
+		// Make sure animated textures undergo at least the first update
+		// To update emissive and other texture states
+		if (type == BrushSurface_Animated)
+			model_geometry->ye_olde_texture = -1;
 
-			model_geometry->vertex_offset = args.base_vertex_offset;
-			model_geometry->max_vertex = vertex_offset + surf->numedges;
+		model_geometry->surf_deprecate = surf;
 
-			model_geometry->index_offset = index_offset;
+		model_geometry->vertex_offset = args.base_vertex_offset;
+		model_geometry->max_vertex = vertex_offset + surf->numedges;
 
-			if ( type == BrushSurface_Sky ) {
-				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
-				model_geometry->ye_olde_texture = TEX_BASE_SKYBOX;
-			} else {
-				ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
-				VK_CreateSurfaceLightmap( surf, args.mod );
-			}
+		model_geometry->index_offset = index_offset;
 
-			vec3_t surf_normal;
-			getSurfaceNormal(surf, surf_normal);
+		if ( type == BrushSurface_Sky ) {
+			model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
+			model_geometry->ye_olde_texture = TEX_BASE_SKYBOX;
+		} else {
+			ASSERT(!FBitSet( surf->flags, SURF_DRAWTILED ));
+			VK_CreateSurfaceLightmap( surf, args.mod );
+		}
 
-			vec3_t p[3];
-			for( int k = 0; k < surf->numedges; k++ )
+		vec3_t surf_normal;
+		getSurfaceNormal(surf, surf_normal);
+
+		vec3_t p[3];
+		for( int k = 0; k < surf->numedges; k++ )
+		{
+			const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
+			const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
+			const medge16_t *edge = args.mod->edges16 + iedge;
+			const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
+			const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
+
+
+			vk_vertex_t vertex = {
+				.pos = {in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
+			};
+
+			vertex.prev_pos[0] = in_vertex->position[0];
+			vertex.prev_pos[1] = in_vertex->position[1];
+			vertex.prev_pos[2] = in_vertex->position[2];
+
+			// Compute texture coordinates, process tangent
 			{
-				const int iedge_dir = args.mod->surfedges[surf->firstedge + k];
-				const int iedge = iedge_dir >= 0 ? iedge_dir : -iedge_dir;
-				const medge16_t *edge = args.mod->edges16 + iedge;
-				const int vertex_index = iedge_dir >= 0 ? edge->v[0] : edge->v[1];
-				const mvertex_t *in_vertex = args.mod->vertexes + vertex_index;
+				vec4_t svec, tvec;
+				if (psurf && (psurf->flags & Patch_Surface_TexMatrix)) {
+					svec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_s[0] + surf->texinfo->vecs[1][0] * psurf->texmat_s[1];
+					svec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_s[0] + surf->texinfo->vecs[1][1] * psurf->texmat_s[1];
+					svec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_s[0] + surf->texinfo->vecs[1][2] * psurf->texmat_s[1];
+					svec[3] = surf->texinfo->vecs[0][3] + psurf->texmat_s[2];
 
-
-				vk_vertex_t vertex = {
-					.pos = {in_vertex->position[0], in_vertex->position[1], in_vertex->position[2]},
-				};
-
-				vertex.prev_pos[0] = in_vertex->position[0];
-				vertex.prev_pos[1] = in_vertex->position[1];
-				vertex.prev_pos[2] = in_vertex->position[2];
-
-				// Compute texture coordinates, process tangent
-				{
-					vec4_t svec, tvec;
-					if (psurf && (psurf->flags & Patch_Surface_TexMatrix)) {
-						svec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_s[0] + surf->texinfo->vecs[1][0] * psurf->texmat_s[1];
-						svec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_s[0] + surf->texinfo->vecs[1][1] * psurf->texmat_s[1];
-						svec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_s[0] + surf->texinfo->vecs[1][2] * psurf->texmat_s[1];
-						svec[3] = surf->texinfo->vecs[0][3] + psurf->texmat_s[2];
-
-						tvec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_t[0] + surf->texinfo->vecs[1][0] * psurf->texmat_t[1];
-						tvec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_t[0] + surf->texinfo->vecs[1][1] * psurf->texmat_t[1];
-						tvec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_t[0] + surf->texinfo->vecs[1][2] * psurf->texmat_t[1];
-						tvec[3] = surf->texinfo->vecs[1][3] + psurf->texmat_t[2];
-					} else {
-						Vector4Copy(surf->texinfo->vecs[0], svec);
-						Vector4Copy(surf->texinfo->vecs[1], tvec);
-					}
-
-					const float s = DotProduct( in_vertex->position, svec ) + svec[3];
-					const float t = DotProduct( in_vertex->position, tvec ) + tvec[3];
-
-					vertex.gl_tc[0] = s / surf->texinfo->texture->width;
-					vertex.gl_tc[1] = t / surf->texinfo->texture->height;
-
-					VectorCopy(svec, tangent);
-					VectorNormalize(tangent);
-
-					// "Inverted" texture mapping should not lead to inverted tangent/normal map
-					// Make sure that orientation is preserved.
-					{
-						vec4_t stnorm;
-						CrossProduct(tvec, svec, stnorm);
-						if (DotProduct(stnorm, surf_normal) < 0.)
-							VectorNegate(tangent, tangent);
-					}
+					tvec[0] = surf->texinfo->vecs[0][0] * psurf->texmat_t[0] + surf->texinfo->vecs[1][0] * psurf->texmat_t[1];
+					tvec[1] = surf->texinfo->vecs[0][1] * psurf->texmat_t[0] + surf->texinfo->vecs[1][1] * psurf->texmat_t[1];
+					tvec[2] = surf->texinfo->vecs[0][2] * psurf->texmat_t[0] + surf->texinfo->vecs[1][2] * psurf->texmat_t[1];
+					tvec[3] = surf->texinfo->vecs[1][3] + psurf->texmat_t[2];
+				} else {
+					Vector4Copy(surf->texinfo->vecs[0], svec);
+					Vector4Copy(surf->texinfo->vecs[1], tvec);
 				}
 
-				// lightmap texture coordinates
+				const float s = DotProduct( in_vertex->position, svec ) + svec[3];
+				const float t = DotProduct( in_vertex->position, tvec ) + tvec[3];
+
+				vertex.gl_tc[0] = s / surf->texinfo->texture->width;
+				vertex.gl_tc[1] = t / surf->texinfo->texture->height;
+
+				VectorCopy(svec, tangent);
+				VectorNormalize(tangent);
+
+				// "Inverted" texture mapping should not lead to inverted tangent/normal map
+				// Make sure that orientation is preserved.
 				{
-					float s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
-					s -= info->lightmapmins[0];
-					s += surf->light_s * sample_size;
-					s += sample_size * 0.5f;
-					s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
-
-					float t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
-					t -= info->lightmapmins[1];
-					t += surf->light_t * sample_size;
-					t += sample_size * 0.5f;
-					t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
-
-					vertex.lm_tc[0] = s;
-					vertex.lm_tc[1] = t;
+					vec4_t stnorm;
+					CrossProduct(tvec, svec, stnorm);
+					if (DotProduct(stnorm, surf_normal) < 0.)
+						VectorNegate(tangent, tangent);
 				}
+			}
 
-				// Compute smoothed normal if needed
-				if (!getSmoothedNormalFor(args.mod, vertex_index, surface_index, vertex.normal)) {
-					VectorCopy(surf_normal, vertex.normal);
+			// lightmap texture coordinates
+			{
+				float s = DotProduct( in_vertex->position, info->lmvecs[0] ) + info->lmvecs[0][3];
+				s -= info->lightmapmins[0];
+				s += surf->light_s * sample_size;
+				s += sample_size * 0.5f;
+				s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
+
+				float t = DotProduct( in_vertex->position, info->lmvecs[1] ) + info->lmvecs[1][3];
+				t -= info->lightmapmins[1];
+				t += surf->light_t * sample_size;
+				t += sample_size * 0.5f;
+				t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->height;
+
+				vertex.lm_tc[0] = s;
+				vertex.lm_tc[1] = t;
+			}
+
+			// Compute smoothed normal if needed
+			if (!getSmoothedNormalFor(args.mod, vertex_index, surface_index, vertex.normal)) {
+				VectorCopy(surf_normal, vertex.normal);
+			}
+
+			{
+				const float normal_len2 = DotProduct(vertex.normal, vertex.normal);
+				if (normal_len2 < .9f) {
+					ERR("model=%s surf=%d vert=%d surf_normal=(%f, %f, %f) vertex.normal=(%f,%f,%f) INVALID len2=%f",
+						args.mod->name, surface_index, k,
+						surf_normal[0], surf_normal[1], surf_normal[2],
+						vertex.normal[0], vertex.normal[1], vertex.normal[2],
+						normal_len2
+					);
 				}
+			}
 
-				{
-					const float normal_len2 = DotProduct(vertex.normal, vertex.normal);
-					if (normal_len2 < .9f) {
-						ERR("model=%s surf=%d vert=%d surf_normal=(%f, %f, %f) vertex.normal=(%f,%f,%f) INVALID len2=%f",
-							args.mod->name, surface_index, k,
+			VectorCopy(tangent, vertex.tangent);
+
+			Vector4Set(vertex.color, 255, 255, 255, 255);
+
+			// Store original vertex data for conveyor reasons
+			if (conv) {
+				const int vertex_index = conv->vertices_src_offset + k;
+				ASSERT(vertex_index < args.sizes.conveyors_vertices_count);
+				args.bmodel->conveyors_vertices[vertex_index] = vertex;
+			}
+
+			//DEBUG(" p[%d]=(%f,%f,%f)", k, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
+
+			*(p_vert++) = vertex;
+
+			// Write vertex window: p[0] = first, p[1] = prev, p[2] = current
+			VectorCopy(in_vertex->position, p[Q_min(k, 2)]);
+
+			// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
+			if (k > 1) {
+				// Check for collinear points/degenerate triangles
+				vec3_t tri_normal;
+				computeNormal(p[0], p[1], p[2], tri_normal);
+				const float area2 = VectorLength2(tri_normal);
+
+				if (area2 <= 0.) {
+					// Do not produce triangle if it has zero area
+					// NOTE: this is suboptimal in the sense that points that might be necessary for proper
+					// normal smoothing might be skipped. In case that this causes undesirable rendering
+					// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
+					// be needed. E.g. ear clipping.
+					/* diagnostics
+					WARN("surface=%d numedges=%d triangle=%d has degenerate normal, area2=%f",
+						surface_index, surf->numedges, index_count / 3, area2);
+					DEBUG("  p[0]=(%f,%f,%f)", p[0][0], p[0][1], p[0][2]);
+					DEBUG("  p[%d]=(%f,%f,%f)", k - 1, p[1][0], p[1][1], p[1][2]);
+					DEBUG("  p[%d]=(%f,%f,%f)", k, p[2][0], p[2][1], p[2][2]);
+					*/
+				} else {
+					*(p_ind++) = (uint16_t)(vertex_offset + 0);
+					*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
+					*(p_ind++) = (uint16_t)(vertex_offset + k);
+					index_count += 3;
+					index_offset += 3;
+
+					/* diagnostics for degenerate triangles
+					const float dot = DotProduct(tri_normal, surf_normal) / sqrt(area2);
+					if (fabs(dot-1.) > 1e-2) {
+						WARN("surface=%d triangle=%d tri_normal=(%f,%f,%f) sn=(%f,%f,%f) dot=%f",
+							surface_index, index_count / 3,
+							tri_normal[0], tri_normal[1], tri_normal[2],
 							surf_normal[0], surf_normal[1], surf_normal[2],
-							vertex.normal[0], vertex.normal[1], vertex.normal[2],
-							normal_len2
+							dot
 						);
 					}
-				}
+					*/
+				} // valid triangle
 
-				VectorCopy(tangent, vertex.tangent);
+				// Move current vertex to prev
+				VectorCopy(p[2], p[1]);
+			} // if (k > 1)
+		} // for surf->numedges
 
-				Vector4Set(vertex.color, 255, 255, 255, 255);
-
-				// Store original vertex data for conveyor reasons
-				if (conv) {
-					const int vertex_index = conv->vertices_src_offset + k;
-					ASSERT(vertex_index < args.sizes.conveyors_vertices_count);
-					args.bmodel->conveyors_vertices[vertex_index] = vertex;
-				}
-
-				//DEBUG(" p[%d]=(%f,%f,%f)", k, vertex.pos[0], vertex.pos[1], vertex.pos[2]);
-
-				*(p_vert++) = vertex;
-
-				// Write vertex window: p[0] = first, p[1] = prev, p[2] = current
-				VectorCopy(in_vertex->position, p[Q_min(k, 2)]);
-
-				// Ray tracing apparently expects triangle list only (although spec is not very clear about this kekw)
-				if (k > 1) {
-					// Check for collinear points/degenerate triangles
-					vec3_t tri_normal;
-					computeNormal(p[0], p[1], p[2], tri_normal);
-					const float area2 = VectorLength2(tri_normal);
-
-					if (area2 <= 0.) {
-						// Do not produce triangle if it has zero area
-						// NOTE: this is suboptimal in the sense that points that might be necessary for proper
-						// normal smoothing might be skipped. In case that this causes undesirable rendering
-						// artifacts, a more proper triangulation algorithm, that doesn't skip points, would
-						// be needed. E.g. ear clipping.
-						/* diagnostics
-						WARN("surface=%d numedges=%d triangle=%d has degenerate normal, area2=%f",
-							surface_index, surf->numedges, index_count / 3, area2);
-						DEBUG("  p[0]=(%f,%f,%f)", p[0][0], p[0][1], p[0][2]);
-						DEBUG("  p[%d]=(%f,%f,%f)", k - 1, p[1][0], p[1][1], p[1][2]);
-						DEBUG("  p[%d]=(%f,%f,%f)", k, p[2][0], p[2][1], p[2][2]);
-						*/
-					} else {
-						*(p_ind++) = (uint16_t)(vertex_offset + 0);
-						*(p_ind++) = (uint16_t)(vertex_offset + k - 1);
-						*(p_ind++) = (uint16_t)(vertex_offset + k);
-						index_count += 3;
-						index_offset += 3;
-
-						/* diagnostics for degenerate triangles
-						const float dot = DotProduct(tri_normal, surf_normal) / sqrt(area2);
-						if (fabs(dot-1.) > 1e-2) {
-							WARN("surface=%d triangle=%d tri_normal=(%f,%f,%f) sn=(%f,%f,%f) dot=%f",
-								surface_index, index_count / 3,
-								tri_normal[0], tri_normal[1], tri_normal[2],
-								surf_normal[0], surf_normal[1], surf_normal[2],
-								dot
-							);
-						}
-						*/
-					} // valid triangle
-
-					// Move current vertex to prev
-					VectorCopy(p[2], p[1]);
-				} // if (k > 1)
-			} // for surf->numedges
-
-			model_geometry->element_count = index_count;
-			vertex_offset += surf->numedges;
-		} // for mod->nummodelsurfaces
-	}
+		model_geometry->element_count = index_count;
+		vertex_offset += surf->numedges;
+	} // for mod->nummodelsurfaces
 
 	// Apply all emissive surfaces found
 	if (emissive_surfaces_count > 0) {

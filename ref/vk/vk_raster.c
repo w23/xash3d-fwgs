@@ -17,6 +17,7 @@
 #include "xash3d_types.h"
 #include "protocol.h" // MAX_DLIGHTS
 
+#include <stdlib.h> // qsort_r()
 #define MODULE_NAME "raster"
 
 #define MAX_UNIFORM_SLOTS (MAX_SCENE_ENTITIES * 2 /* solid + trans */ + 1)
@@ -774,6 +775,21 @@ void VK_RenderDebugLabelEnd( void )
 	drawCmdPushDebugLabelEnd();
 }
 
+static int compareIndexedGeometries(const void *li, const void *ri, void* arg) {
+	const vk_render_geometry_t *const geoms = arg;
+
+	const vk_render_geometry_t *const lg = geoms + *(int*)li;
+	const vk_render_geometry_t *const rg = geoms + *(int*)ri;
+
+
+	const int delta_tex = lg->ye_olde_texture - rg->ye_olde_texture;
+	if (delta_tex != 0)
+		return delta_tex;
+
+	const int delta_index_offset = lg->index_offset - rg->index_offset;
+	return delta_index_offset;
+}
+
 void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 	int current_texture = args.textures_override;
 	int element_count = 0;
@@ -792,6 +808,10 @@ void R_VkRasterAddModel( vk_raster_add_model_t args ) {
 		Matrix4x4_Copy(uni.transform, *args.transform);
 
 		drawCmdPushUniforms(&uni);
+	}
+
+	if (args.geometries_indexes) {
+		qsort_r(args.geometries_indexes, args.geometries_count, sizeof(args.geometries_indexes[0]), compareIndexedGeometries, (void*)args.geometries);
 	}
 
 	for (int i = 0; i < args.geometries_count; ++i) {

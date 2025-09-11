@@ -157,7 +157,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 		});
 	} else {
 		int geometries_count = model->num_geometries;
-		const int* geometries_indexes = NULL;
+		/*const*/ int* geometries_indexes = NULL;
 
 		// Rendering optimization for slow devices: render only what's visible based on BSP PVS
 		// Only brush worldmodel provides this, and it's the only thing that provides this.

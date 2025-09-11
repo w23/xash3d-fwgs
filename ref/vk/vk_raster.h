@@ -13,7 +13,7 @@ typedef struct {
 	int lightmap; // TODO per-geometry
 	const struct vk_render_geometry_s *geometries;
 	// Optional: indirection, only these geometry indices are to be drawn
-	const int *geometries_indexes; // [geometries_count]
+	/*const*/ int *geometries_indexes; // [geometries_count]
 	int geometries_count;
 	const matrix4x4 *transform;
 	const vec4_t *color;
