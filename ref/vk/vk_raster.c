@@ -18,6 +18,10 @@
 #include "protocol.h" // MAX_DLIGHTS
 
 #include <stdlib.h> // qsort_r()
+#ifdef _WIN32
+#define qsort_r qsort_s
+#endif
+
 #define MODULE_NAME "raster"
 
 #define MAX_UNIFORM_SLOTS (MAX_SCENE_ENTITIES * 2 /* solid + trans */ + 1)
@@ -775,7 +779,11 @@ void VK_RenderDebugLabelEnd( void )
 	drawCmdPushDebugLabelEnd();
 }
 
+#ifdef _WIN32
+static int compareIndexedGeometries(void *arg, const void *li, const void *ri) {
+#else
 static int compareIndexedGeometries(const void *li, const void *ri, void* arg) {
+#endif
 	const vk_render_geometry_t *const geoms = arg;
 
 	const vk_render_geometry_t *const lg = geoms + *(int*)li;
