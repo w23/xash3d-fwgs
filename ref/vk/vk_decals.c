@@ -23,6 +23,7 @@ GNU General Public License for more details.
 #include "vk_studio.h"
 #include "vk_scene.h"
 #include "vk_triapi.h"
+#include "r_textures.h"
 #include "xash3d_mathlib.h"
 
 #define DECAL_OVERLAP_DISTANCE	2
@@ -144,11 +145,17 @@ static decal_t *VK_DecalAlloc( decal_t *pdecal )
 //-----------------------------------------------------------------------------
 static void VK_GetDecalDimensions( int texture, int *width, int *height )
 {
-	if( width ) *width = 1;	// to avoid divide by zero
-	if( height ) *height = 1;
+	if (width)
+	{
+		*width = R_TexturesGetParm( PARM_TEX_SRC_WIDTH, texture );
+		if (*width == 0) *width = 1; // to avoid divide by zero
+	}
 
-	// FIXME: include, create or copypaste this func in vk ref
-	//R_GetTextureParms( width, height, texture );
+	if (height)
+	{
+		*height = R_TexturesGetParm( PARM_TEX_SRC_HEIGHT, texture );
+		if (*height == 0) *height = 1; // to avoid divide by zero
+	}
 }
 
 //-----------------------------------------------------------------------------
