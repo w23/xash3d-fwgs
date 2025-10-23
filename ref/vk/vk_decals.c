@@ -409,18 +409,20 @@ static float *VK_DecalVertsClip( decal_t *pDecal, msurface_t *surf, int texture,
 // Generate lighting coordinates at each vertex for decal vertices v[] on surface psurf
 static void VK_DecalVertsLight( float *v, msurface_t *surf, int vertCount )
 {
-	float		sample_size;
-	int		j;
+	// TODO
 
-	sample_size = gEngine.Mod_SampleSizeForFace( surf ); 
+	// float		sample_size;
+	// int		j;
 
-	for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
-	{
-		// lightmap texture coordinates
+	// sample_size = gEngine.Mod_SampleSizeForFace( surf ); 
 
-		// TODO: replace by vk ref function
-		//VK_LightmapCoord( v, surf, sample_size, &v[5] );
-	}
+	// for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
+	// {
+	// 	lightmap texture coordinates
+
+	// 	// TODO: replace by vk ref function
+	// 	VK_LightmapCoord( v, surf, sample_size, &v[5] );
+	// }
 }
 
 // Check for intersecting decals on this surface
@@ -1074,8 +1076,10 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 
 void VK_DrawDecalsBatch( void )
 {
-	cl_entity_t	*e;
-	int		i;
+	// TODO
+
+	// cl_entity_t	*e;
+	// int		i;
 
 	// if( !tr.num_draw_decals ) // TODO: is this really needed? or use cvar?
 	// 	return;
@@ -1224,8 +1228,7 @@ int VK_CreateDecalList( decallist_t *pList )
 
 			VK_DecalUnProject( decal, &pList[total] );
 
-			// TODO: fix
-			//COM_FileBase( VK_GetTexture( decal->texture )->name, pList[total].name, sizeof( pList[total].name ));
+			COM_FileBase( R_TextureGetNameByIndex( decal->texture ), pList[total].name, sizeof( pList[total].name ));
 
 			// check to see if the decal should be added
 			total = DecalListAdd( pList, total );
