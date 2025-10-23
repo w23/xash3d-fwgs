@@ -13,8 +13,6 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-//#include <protocol.h>
-
 #include "vk_core.h"
 #include "vk_logs.h"
 #include "vk_decals.h"
@@ -25,6 +23,8 @@ GNU General Public License for more details.
 #include "vk_triapi.h"
 #include "r_textures.h"
 #include "xash3d_mathlib.h"
+
+#include <stdlib.h>
 
 #define DECAL_OVERLAP_DISTANCE	2
 #define DECAL_DISTANCE		4	// too big values produce more clipped polygons
