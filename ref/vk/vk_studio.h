@@ -28,3 +28,5 @@ const struct r_studio_model_info_s *R_StudioModelPreload(model_t *mod);
 void R_StudioCacheClear( void );
 
 void R_StudioResetPlayerModels( void );
+
+cl_entity_t *VK_GetCurrentEntity( void ); // hack for getting current entity in decals.c

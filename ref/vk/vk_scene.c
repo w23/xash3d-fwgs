@@ -154,6 +154,22 @@ static void reloadPatches( void ) {
 	loadMap(map, force_reload);
 }
 
+cl_entity_t* VK_GetEntityByIndex(int index)
+{
+	if (index > 0 && index < globals.max_entities)
+		return globals.entities + index;
+
+	return NULL;
+}
+
+model_t* VK_ModelHandle(int index)
+{
+	if (index > 0 && index < gp_cl->nummodels)
+		return gp_cl->models[index];
+
+	return NULL;
+}
+
 void VK_SceneInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);

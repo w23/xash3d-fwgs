@@ -1,10 +1,9 @@
 #pragma once
 
-#include <xash3d_types.h>
-#include <const.h>
-#include <com_model.h>
+#include "xash3d_types.h"
 
-#include "vk_triapi.h"
+struct cl_entity_s;
+typedef struct model_s model_t;
 
 void VK_ClearDecals( void );
 void VK_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t pos, int flags, float scale );

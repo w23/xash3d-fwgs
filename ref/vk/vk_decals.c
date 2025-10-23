@@ -19,12 +19,10 @@ GNU General Public License for more details.
 #include "vk_logs.h"
 #include "vk_decals.h"
 #include "vk_common.h"
-
-//#include <ref_api.h>
-//#include <common.h>
-//#include <filesystem_internal.h>
 #include "vk_const.h"
-
+#include "vk_studio.h"
+#include "vk_scene.h"
+#include "vk_triapi.h"
 #include "xash3d_mathlib.h"
 
 #define DECAL_OVERLAP_DISTANCE	2
@@ -407,7 +405,7 @@ static void VK_DecalVertsLight( float *v, msurface_t *surf, int vertCount )
 	float		sample_size;
 	int		j;
 
-	sample_size = 1;//gEngine.Mod_SampleSizeForFace( surf ); // TODO: get samplesize
+	sample_size = gEngine.Mod_SampleSizeForFace( surf ); 
 
 	for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
 	{
@@ -699,8 +697,8 @@ static void VK_DecalNodeSurfaces( model_t *model, mnode_t *node, decalinfo_t *de
 		if( surf->flags & (SURF_DRAWTURB|SURF_DRAWSKY|SURF_CONVEYOR))
 			continue;
 
-		if( surf->flags & SURF_TRANSPARENT /*&& !glState.stencilEnabled*/ ) // TODO fix
-			continue;
+		// if( surf->flags & SURF_TRANSPARENT && !glState.stencilEnabled ) // TODO is this needed?
+		// 	continue;
 
 		VK_DecalSurface( surf, decalinfo );
 	}
@@ -770,18 +768,17 @@ void VK_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t po
 		return;
 	}
 
-	// FIXME: include header with CL_ModelHandle function
-	// if( entityIndex > 0 )
-	// {
-	// 	ent = CL_GetEntityByIndex( entityIndex );
+	if( entityIndex > 0 )
+	{
+		ent = VK_GetEntityByIndex(entityIndex);
 
-	// 	if( modelIndex > 0 ) model = CL_ModelHandle( modelIndex );
-	// 	else if( ent != NULL ) model = CL_ModelHandle( ent->curstate.modelindex );
-	// 	else return;
-	// }
-	// else if( modelIndex > 0 )
-	// 	model = CL_ModelHandle( modelIndex );
-	// else model = CL_ModelHandle( 1 );
+		if( modelIndex > 0 ) model = VK_ModelHandle( modelIndex );
+		else if( ent != NULL ) model = VK_ModelHandle( ent->curstate.modelindex );
+		else return;
+	}
+	else if( modelIndex > 0 )
+		model = VK_ModelHandle( modelIndex );
+	else model = VK_ModelHandle( 1 );
 
 	if( !model ) return;
 
@@ -895,16 +892,23 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	v = VK_DecalSetupVerts( pDecal, fa, pDecal->texture, &numVerts );
 	if( !numVerts ) return;
 
+
+	TriSetTexture( pDecal->texture );
 	// GL_Bind( XASH_TEXTURE0, pDecal->texture );
 
+	TriBegin( TRI_POLYGON );
 	// pglBegin( GL_POLYGON );
 
-	// for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
-	// {
-	// 	pglTexCoord2f( v[3], v[4] );
-	// 	pglVertex3fv( v );
-	// }
+	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
+	{
+		TriTexCoord2f( v[3], v[4] );
+		//pglTexCoord2f( v[3], v[4] );
 
+		TriVertex3fv( v );
+		//pglVertex3fv( v );
+	}
+
+	TriEnd();
 	// pglEnd();
 }
 
@@ -915,104 +919,120 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 
 	if( !fa->pdecals ) return;
 
-	//e = RI.currententity; // TODO: get current entity
-	//Assert( e != NULL );
+	e = VK_GetCurrentEntity();
+	assert( e != NULL );
 
-	// if( single )
-	// {
-	// 	if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
-	// 	{
-	// 		pglDepthMask( GL_FALSE );
-	// 		pglEnable( GL_BLEND );
+	if( single )
+	{
+		if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
+		{
+			TriRenderMode( kRenderTransAlpha );
+			// pglDepthMask( GL_FALSE );
+			// pglEnable( GL_BLEND );
 
-	// 		if( e->curstate.rendermode == kRenderTransAlpha )
-	// 			pglDisable( GL_ALPHA_TEST );
-	// 	}
+			// if( e->curstate.rendermode == kRenderTransAlpha )
+			// 	pglDisable( GL_ALPHA_TEST );
+		}
 
-	// 	if( e->curstate.rendermode == kRenderTransColor )
-	// 		pglEnable( GL_TEXTURE_2D );
+		// if( e->curstate.rendermode == kRenderTransColor )
+		// 	pglEnable( GL_TEXTURE_2D );
 
-	// 	if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
-	// 		GL_Cull( GL_NONE );
+		// if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
+		// 	GL_Cull( GL_NONE );
 
-	// 	if( gl_polyoffset.value )
-	// 	{
-	// 		pglEnable( GL_POLYGON_OFFSET_FILL );
-	// 		pglPolygonOffset( -1.0f, -gl_polyoffset.value );
-	// 	}
-	// }
+		// if( gl_polyoffset.value )
+		// {
+		// 	pglEnable( GL_POLYGON_OFFSET_FILL );
+		// 	pglPolygonOffset( -1.0f, -gl_polyoffset.value );
+		// }
+	}
 
-	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) && glState.stencilEnabled )
-	// {
-	// 	mtexinfo_t	*tex = fa->texinfo;
+	if( FBitSet( fa->flags, SURF_TRANSPARENT ) /*&& glState.stencilEnabled*/ )
+	{
+		mtexinfo_t	*tex = fa->texinfo;
 
-	// 	for( p = fa->pdecals; p; p = p->pnext )
-	// 	{
-	// 		if( p->texture )
-	// 		{
-	// 			float *o, *v;
-	// 			int i, numVerts;
-	// 			o = VK_DecalSetupVerts( p, fa, p->texture, &numVerts );
+		for( p = fa->pdecals; p; p = p->pnext )
+		{
+			if( p->texture )
+			{
+				float *o, *v;
+				int i, numVerts;
+				o = VK_DecalSetupVerts( p, fa, p->texture, &numVerts );
 
-	// 			pglEnable( GL_STENCIL_TEST );
-	// 			pglStencilFunc( GL_ALWAYS, 1, 0xFFFFFFFF );
-	// 			pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+				// pglEnable( GL_STENCIL_TEST );
+				// pglStencilFunc( GL_ALWAYS, 1, 0xFFFFFFFF );
+				// pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 
-	// 			pglStencilOp( GL_KEEP, GL_KEEP, GL_REPLACE );
-	// 			pglBegin( GL_POLYGON );
+				// pglStencilOp( GL_KEEP, GL_KEEP, GL_REPLACE );
 
-	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-	// 			{
-	// 				v[5] = ( DotProduct( v, tex->vecs[0] ) + tex->vecs[0][3] ) / tex->texture->width;
-	// 				v[6] = ( DotProduct( v, tex->vecs[1] ) + tex->vecs[1][3] ) / tex->texture->height;
+				TriBegin( TRI_POLYGON );
+				//pglBegin( GL_POLYGON );
 
-	// 				pglTexCoord2f( v[5], v[6] );
-	// 				pglVertex3fv( v );
-	// 			}
+				for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
+				{
+					v[5] = ( DotProduct( v, tex->vecs[0] ) + tex->vecs[0][3] ) / tex->texture->width;
+					v[6] = ( DotProduct( v, tex->vecs[1] ) + tex->vecs[1][3] ) / tex->texture->height;
 
-	// 			pglEnd();
-	// 			pglStencilOp( GL_KEEP, GL_KEEP, GL_DECR );
+					TriTexCoord2f( v[5], v[6] );
+					// pglTexCoord2f( v[5], v[6] );
 
-	// 			pglEnable( GL_ALPHA_TEST );
-	// 			pglBegin( GL_POLYGON );
+					TriVertex3fv( v );
+					// pglVertex3fv( v );
+				}
 
-	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-	// 			{
-	// 				pglTexCoord2f( v[5], v[6] );
-	// 				pglVertex3fv( v );
-	// 			}
+				TriEnd();
+				//pglEnd();
 
-	// 			pglEnd();
-	// 			pglDisable( GL_ALPHA_TEST );
+				// pglStencilOp( GL_KEEP, GL_KEEP, GL_DECR );
 
-	// 			pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
-	// 			pglStencilFunc( GL_EQUAL, 0, 0xFFFFFFFF );
-	// 			pglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
-	// 		}
-	// 	}
-	// }
+				// pglEnable( GL_ALPHA_TEST );
 
-	// pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+				TriBegin( TRI_POLYGON );
+				//pglBegin( GL_POLYGON );
 
-	// if( reverse && e->curstate.rendermode == kRenderTransTexture )
-	// {
-	// 	decal_t	*list[1024];
-	// 	int	i, count;
+				for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
+				{
+					TriTexCoord2f( v[5], v[6] );
+					// pglTexCoord2f( v[5], v[6] );
 
-	// 	for( p = fa->pdecals, count = 0; p && count < 1024; p = p->pnext )
-	// 		if( p->texture ) list[count++] = p;
+					TriVertex3fv( v );
+					// pglVertex3fv( v );
+				}
 
-	// 	for( i = count - 1; i >= 0; i-- )
-	// 		VK_DrawSingleDecal( list[i], fa );
-	// }
-	// else
-	// {
-	// 	for( p = fa->pdecals; p; p = p->pnext )
-	// 	{
-	// 		if( !p->texture ) continue;
-	// 		VK_DrawSingleDecal( p, fa );
-	// 	}
-	// }
+				TriEnd();
+				//pglEnd();
+
+				// pglDisable( GL_ALPHA_TEST );
+
+				// pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+				// pglStencilFunc( GL_EQUAL, 0, 0xFFFFFFFF );
+				// pglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
+			}
+		}
+	}
+
+	TriRenderMode( kRenderTransAlpha );
+	//pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+
+	if( reverse && e->curstate.rendermode == kRenderTransTexture )
+	{
+		decal_t	*list[1024];
+		int	i, count;
+
+		for( p = fa->pdecals, count = 0; p && count < 1024; p = p->pnext )
+			if( p->texture ) list[count++] = p;
+
+		for( i = count - 1; i >= 0; i-- )
+			VK_DrawSingleDecal( list[i], fa );
+	}
+	else
+	{
+		for( p = fa->pdecals; p; p = p->pnext )
+		{
+			if( !p->texture ) continue;
+			VK_DrawSingleDecal( p, fa );
+		}
+	}
 
 	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) && glState.stencilEnabled )
 	// 	pglDisable( GL_STENCIL_TEST );
@@ -1050,11 +1070,11 @@ void VK_DrawDecalsBatch( void )
 	cl_entity_t	*e;
 	int		i;
 
-	//if( !tr.num_draw_decals ) // TODO
-	//	return;
+	// if( !tr.num_draw_decals ) // TODO: is this really needed? or use cvar?
+	// 	return;
 
-	//e = RI.currententity; // TODO
-	//Assert( e != NULL );
+	// e = VK_GetCurrentEntity();
+	// Assert( e != NULL );
 
 	// if( e->curstate.rendermode != kRenderTransTexture )
 	// {
