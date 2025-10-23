@@ -1074,8 +1074,8 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 	// }
 }
 
-void VK_DrawDecalsBatch( void )
-{
+// void VK_DrawDecalsBatch( void )
+// {
 	// TODO
 
 	// cl_entity_t	*e;
@@ -1122,7 +1122,7 @@ void VK_DrawDecalsBatch( void )
 	// 	GL_Cull( GL_FRONT );
 
 	// tr.num_draw_decals = 0;
-}
+//}
 
 /*
 =============================================================
