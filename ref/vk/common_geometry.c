@@ -272,7 +272,7 @@ int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 {
 	int		i, lnumverts, nColinElim = 0;
 	float		sample_size;
-	texture_t		*tex;
+	//texture_t		*tex;
 	//gl_texture_t	*glt;
 	glpoly2_t		*poly;
 
