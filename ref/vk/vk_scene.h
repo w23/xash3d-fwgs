@@ -36,3 +36,4 @@ void CL_AddCustomBeam( struct cl_entity_s *pEnvBeam );
 
 cl_entity_t* VK_GetEntityByIndex(int index);
 model_t* VK_ModelHandle(int index);
+void VK_InitModelsPolys ( void );

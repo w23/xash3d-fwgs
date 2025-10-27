@@ -172,7 +172,7 @@ model_t* VK_ModelHandle(int index)
 
 int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa );
 
-void VK_InitModelsPolys ( void)
+void VK_InitModelsPolys ( void )
 {
 	// copypaste from GL_BuildLightmaps
 	int	i, j = 0;
