@@ -199,3 +199,156 @@ void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa )
 	// do subdivide
 	SubdividePolygon_r( loadmodel, fa, fa->numedges, verts[0] );
 }
+
+// FIXME: refactor and remove copypaste!!!
+void VK_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords )
+{
+	const mextrasurf_t *info = surf->info;
+	float s, t;
+
+	s = DotProduct( v, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
+	s += surf->light_s * sample_size;
+	s += sample_size * 0.5f;
+	s /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
+
+	t = DotProduct( v, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
+	t += surf->light_t * sample_size;
+	t += sample_size * 0.5f;
+	t /= BLOCK_SIZE * sample_size; //fa->texinfo->texture->width;
+
+	Vector2Set( coords, s, t );
+}
+
+static void VK_TextureCoord( const vec3_t v, const msurface_t *surf, vec2_t coords )
+{
+	const mtexinfo_t *info = surf->texinfo;
+	float s, t;
+
+	s = DotProduct( v, info->vecs[0] );
+	t = DotProduct( v, info->vecs[1] );
+
+	if( !FBitSet( surf->flags, SURF_DRAWTURB ))
+	{
+		s = ( s + info->vecs[0][3] ) / info->texture->width;
+		t = ( t + info->vecs[1][3] ) / info->texture->height;
+	}
+
+	Vector2Set( coords, s, t );
+}
+
+static void VK_GetEdgePosition( const model_t *mod, const msurface_t *fa, int i, vec3_t vec )
+{
+	const int lindex = mod->surfedges[fa->firstedge + i];
+
+	if( FBitSet( mod->flags, MODEL_QBSP2 ))
+	{
+		const medge32_t *pedges = mod->edges32;
+
+		if( lindex > 0 )
+			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
+		else
+			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
+	}
+	else
+	{
+		const medge16_t *pedges = mod->edges16;
+
+		if( lindex > 0 )
+			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
+		else
+			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
+	}
+}
+
+/*
+================
+VK_BuildPolygonFromSurface
+
+Init surf->polys for decals
+Adapted copypaste of GL_BuildPolygonFromSurface
+================
+*/
+int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
+{
+	int		i, lnumverts, nColinElim = 0;
+	float		sample_size;
+	texture_t		*tex;
+	//gl_texture_t	*glt;
+	glpoly2_t		*poly;
+
+	if( !mod || !fa->texinfo || !fa->texinfo->texture )
+		return nColinElim; // bad polygon ?
+
+	// if( FBitSet( fa->flags, SURF_CONVEYOR ) && fa->texinfo->texture->gl_texturenum != 0 )
+	// {
+	// 	glt = R_GetTexture( fa->texinfo->texture->gl_texturenum );
+	// 	tex = fa->texinfo->texture;
+	// 	Assert( glt != NULL && tex != NULL );
+
+	// 	// update conveyor widths for keep properly speed of scrolling
+	// 	glt->srcWidth = tex->width;
+	// 	glt->srcHeight = tex->height;
+	// }
+
+	sample_size = gEngine.Mod_SampleSizeForFace( fa );
+
+	// reconstruct the polygon
+	lnumverts = fa->numedges;
+
+	// detach if already created, reconstruct again
+	poly = fa->polys;
+	fa->polys = NULL;
+
+	// quake simple models (healthkits etc) need to be reconstructed their polys because LM coords has changed after the map change
+	poly = Mem_Realloc( mod->mempool, poly, sizeof( glpoly2_t ) + lnumverts * VERTEXSIZE * sizeof( float ));
+	poly->next = fa->polys;
+	poly->flags = fa->flags;
+	fa->polys = poly;
+	poly->numverts = lnumverts;
+
+	for( i = 0; i < lnumverts; i++ )
+	{
+		VK_GetEdgePosition( mod, fa, i, poly->verts[i] );
+		VK_TextureCoord( poly->verts[i], fa, &poly->verts[i][3] );
+		VK_LightmapCoord( poly->verts[i], fa, sample_size, &poly->verts[i][5] );
+	}
+
+	// remove co-linear points - Ed
+	if( /*!gl_keeptjunctions.value &&*/ !FBitSet( fa->flags, SURF_UNDERWATER )) // TODO: fugure out gl_keeptjunctions
+	{
+		for( i = 0; i < lnumverts; i++ )
+		{
+			vec3_t	v1, v2;
+			float	*prev, *this, *next;
+
+			prev = poly->verts[(i + lnumverts - 1) % lnumverts];
+			next = poly->verts[(i + 1) % lnumverts];
+			this = poly->verts[i];
+
+			VectorSubtract( this, prev, v1 );
+			VectorNormalize( v1 );
+			VectorSubtract( next, prev, v2 );
+			VectorNormalize( v2 );
+
+			// skip co-linear points
+			if(( fabs( v1[0] - v2[0] ) <= 0.001f) && (fabs( v1[1] - v2[1] ) <= 0.001f) && (fabs( v1[2] - v2[2] ) <= 0.001f))
+			{
+				int	j, k;
+
+				for( j = i + 1; j < lnumverts; j++ )
+				{
+					for( k = 0; k < VERTEXSIZE; k++ )
+						poly->verts[j-1][k] = poly->verts[j][k];
+				}
+
+				// retry next vertex next time, which is now current vertex
+				lnumverts--;
+				nColinElim++;
+				i--;
+			}
+		}
+	}
+
+	poly->numverts = lnumverts;
+	return nColinElim;
+}

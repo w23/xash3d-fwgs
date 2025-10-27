@@ -170,6 +170,38 @@ model_t* VK_ModelHandle(int index)
 	return NULL;
 }
 
+int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa );
+
+void VK_InitModelsPolys ( void)
+{
+	// copypaste from GL_BuildLightmaps
+	int	i, j = 0;
+	model_t	*m;
+
+	for( i = 0; i < gp_cl->nummodels; i++ )
+	{
+		if(( m = VK_ModelHandle( i + 1 )) == NULL )
+			continue;
+
+		if( m->name[0] == '*' || m->type != mod_brush )
+			continue;
+
+		for( j = 0; j < m->numsurfaces; j++ )
+		{
+			// clearing all decal chains
+			m->surfaces[j].pdecals = NULL;
+			m->surfaces[j].visframe = 0;
+
+			//GL_CreateSurfaceLightmap( m->surfaces + j, m ); // TODO: it is really needed?
+
+			if( m->surfaces[j].flags & SURF_DRAWTURB )
+				continue;
+
+			VK_BuildPolygonFromSurface( m, m->surfaces + j );
+		}
+	}
+}
+
 void VK_SceneInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
@@ -253,6 +285,8 @@ void R_NewMap( void ) {
 	loadMap(map, force_reload);
 
 	R_StudioResetPlayerModels();
+
+	VK_InitModelsPolys();
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
