@@ -917,31 +917,33 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 		//pglVertex3fv( v );
 	}
 
-	TriEnd();
+	const vec4_t color = { 1, 1, 1, 1 }; // TODO: get decal color
+	TriEndEx( color, "single decal" );
+
+	//TriEnd();
 	// pglEnd();
 }
 
 void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 {
 	decal_t		*p;
-	cl_entity_t	*e;
 
 	if( !fa->pdecals ) return;
 
-	e = VK_GetCurrentEntity();
-	assert( e != NULL );
+	//e = VK_GetCurrentEntity();
+	//assert( e != NULL );
 
-	if( single )
-	{
-		if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
-		{
-			TriRenderMode( kRenderTransAlpha );
+	//if( single )
+	//{
+		//if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
+		//{
+			//TriRenderMode( kRenderTransAlpha );
 			// pglDepthMask( GL_FALSE );
 			// pglEnable( GL_BLEND );
 
 			// if( e->curstate.rendermode == kRenderTransAlpha )
 			// 	pglDisable( GL_ALPHA_TEST );
-		}
+		//}
 
 		// if( e->curstate.rendermode == kRenderTransColor )
 		// 	pglEnable( GL_TEXTURE_2D );
@@ -954,76 +956,81 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 		// 	pglEnable( GL_POLYGON_OFFSET_FILL );
 		// 	pglPolygonOffset( -1.0f, -gl_polyoffset.value );
 		// }
-	}
+	//}
 
-	if( FBitSet( fa->flags, SURF_TRANSPARENT ) /*&& glState.stencilEnabled*/ )
-	{
-		mtexinfo_t	*tex = fa->texinfo;
+	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) /*&& glState.stencilEnabled*/ )
+	// {
+	// 	mtexinfo_t	*tex = fa->texinfo;
 
-		for( p = fa->pdecals; p; p = p->pnext )
-		{
-			if( p->texture )
-			{
-				float *o, *v;
-				int i, numVerts;
-				o = VK_DecalSetupVerts( p, fa, p->texture, &numVerts );
+	// 	for( p = fa->pdecals; p; p = p->pnext )
+	// 	{
+	// 		if( p->texture )
+	// 		{
+	// 			float *o, *v;
+	// 			int i, numVerts;
+	// 			o = VK_DecalSetupVerts( p, fa, p->texture, &numVerts );
 
-				// pglEnable( GL_STENCIL_TEST );
-				// pglStencilFunc( GL_ALWAYS, 1, 0xFFFFFFFF );
-				// pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
+	// 			// pglEnable( GL_STENCIL_TEST );
+	// 			// pglStencilFunc( GL_ALWAYS, 1, 0xFFFFFFFF );
+	// 			// pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
 
-				// pglStencilOp( GL_KEEP, GL_KEEP, GL_REPLACE );
+	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_REPLACE );
 
-				TriBegin( TRI_POLYGON );
-				//pglBegin( GL_POLYGON );
+	// 			TriBegin( TRI_POLYGON );
+	// 			//pglBegin( GL_POLYGON );
 
-				for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-				{
-					v[5] = ( DotProduct( v, tex->vecs[0] ) + tex->vecs[0][3] ) / tex->texture->width;
-					v[6] = ( DotProduct( v, tex->vecs[1] ) + tex->vecs[1][3] ) / tex->texture->height;
+	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
+	// 			{
+	// 				v[5] = ( DotProduct( v, tex->vecs[0] ) + tex->vecs[0][3] ) / tex->texture->width;
+	// 				v[6] = ( DotProduct( v, tex->vecs[1] ) + tex->vecs[1][3] ) / tex->texture->height;
 
-					TriTexCoord2f( v[5], v[6] );
-					// pglTexCoord2f( v[5], v[6] );
+	// 				TriTexCoord2f( v[5], v[6] );
+	// 				// pglTexCoord2f( v[5], v[6] );
 
-					TriVertex3fv( v );
-					// pglVertex3fv( v );
-				}
+	// 				TriVertex3fv( v );
+	// 				// pglVertex3fv( v );
+	// 			}
 
-				TriEnd();
-				//pglEnd();
+	// 			const vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
+	// 			TriEndEx( color, "surface decals 1" );
 
-				// pglStencilOp( GL_KEEP, GL_KEEP, GL_DECR );
+	// 			//pglEnd();
 
-				// pglEnable( GL_ALPHA_TEST );
+	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_DECR );
 
-				TriBegin( TRI_POLYGON );
-				//pglBegin( GL_POLYGON );
+	// 			// pglEnable( GL_ALPHA_TEST );
 
-				for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-				{
-					TriTexCoord2f( v[5], v[6] );
-					// pglTexCoord2f( v[5], v[6] );
+	// 			TriBegin( TRI_POLYGON );
+	// 			//pglBegin( GL_POLYGON );
 
-					TriVertex3fv( v );
-					// pglVertex3fv( v );
-				}
+	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
+	// 			{
+	// 				TriTexCoord2f( v[5], v[6] );
+	// 				// pglTexCoord2f( v[5], v[6] );
 
-				TriEnd();
-				//pglEnd();
+	// 				TriVertex3fv( v );
+	// 				// pglVertex3fv( v );
+	// 			}
 
-				// pglDisable( GL_ALPHA_TEST );
+	// 			TriEndEx( color, "surface decals 2" );
 
-				// pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
-				// pglStencilFunc( GL_EQUAL, 0, 0xFFFFFFFF );
-				// pglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
-			}
-		}
-	}
+	// 			TriRenderMode( kRenderNormal );
+
+	// 			//pglEnd();
+
+	// 			// pglDisable( GL_ALPHA_TEST );
+
+	// 			// pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
+	// 			// pglStencilFunc( GL_EQUAL, 0, 0xFFFFFFFF );
+	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
+	// 		}
+	// 	}
+	// }
 
 	TriRenderMode( kRenderTransAlpha );
 	//pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-	if( reverse && e->curstate.rendermode == kRenderTransTexture )
+	if( reverse /* && e->curstate.rendermode == kRenderTransTexture */ )
 	{
 		decal_t	*list[1024];
 		int	i, count;
@@ -1042,6 +1049,8 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 			VK_DrawSingleDecal( p, fa );
 		}
 	}
+
+	TriRenderMode( kRenderNormal );
 
 	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) && glState.stencilEnabled )
 	// 	pglDisable( GL_STENCIL_TEST );

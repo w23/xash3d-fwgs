@@ -66,6 +66,7 @@ void TriBegin( int primitive_mode ) {
 		case TRI_TRIANGLES: break;
 		case TRI_TRIANGLE_STRIP: break;
 		case TRI_QUADS: break;
+		case TRI_POLYGON: break;
 		default:
 			gEngine.Con_Printf(S_ERROR "TriBegin: unsupported primitive_mode %d\n", primitive_mode);
 			return;
@@ -135,6 +136,30 @@ static int genTriangleStripIndices(void) {
 	return num_indices;
 }
 
+static int genPolygonIndices(void) {
+	int num_indices = 0;
+	uint16_t *const dst_idx = g_triapi.indices;
+	int num_vertices = g_triapi.num_vertices;
+
+	if (num_vertices < 3)
+		return 0;
+
+	for (int i = 1; i < num_vertices - 1; ++i) {
+		if (num_indices > MAX_TRIAPI_INDICES - 3) {
+			gEngine.Con_Printf(S_ERROR "Triapi ran out of indices space, max %d (vertices=%d)\n",
+				MAX_TRIAPI_INDICES, g_triapi.num_vertices);
+			break;
+		}
+
+		// Triangle fan: (0, i, i+1)
+		dst_idx[num_indices++] = 0;
+		dst_idx[num_indices++] = i;
+		dst_idx[num_indices++] = i + 1;
+	}
+
+	return num_indices;
+}
+
 void TriEnd( void ) {
 	if (!g_triapi.primitive_mode)
 		return;
@@ -155,6 +180,7 @@ void TriEndEx( const vec4_t color, const char* name ) {
 		/* 	break; */
 		case TRI_TRIANGLE_STRIP: num_indices = genTriangleStripIndices(); break;
 		case TRI_QUADS: num_indices = genQuadsIndices(); break;
+		case TRI_POLYGON: num_indices = genPolygonIndices(); break;
 		default:
 			gEngine.Con_Printf(S_ERROR "TriEnd: unsupported primitive_mode %d\n", g_triapi.primitive_mode - 1);
 			break;

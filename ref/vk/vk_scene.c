@@ -35,6 +35,7 @@
 	X(scene_render, "VK_SceneRender"); \
 	X(draw_viewmodel, "draw viewmodel"); \
 	X(draw_worldbrush, "draw worldbrush"); \
+	X(draw_decals, "draw decals"); \
 	X(draw_opaques, "draw opaque entities"); \
 	X(draw_opaque_beams, "draw opaque beams"); \
 	X(draw_translucent, "draw translucent entities"); \
@@ -707,6 +708,24 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 			RT_LightAddFlashlight(local_player, true);
 		}
 	}
+	
+	APROF_SCOPE_BEGIN(draw_decals);
+	// Draw decals
+	model_t *m = NULL;
+	for(int i = 0; i < gp_cl->nummodels; ++i)
+	{
+		if(( m = VK_ModelHandle(i + 1)) == NULL )
+			continue;
+
+		if( m->name[0] == '*' || m->type != mod_brush )
+			continue;
+
+		for(int j = 0; j < m->numsurfaces; ++j)
+		{
+			VK_DrawSurfaceDecals(m->surfaces + j, true, false);
+		}
+	}
+	APROF_SCOPE_END(draw_decals);
 
 	APROF_SCOPE_BEGIN(draw_opaques);
 	// Draw opaque entities
