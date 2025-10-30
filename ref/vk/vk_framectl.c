@@ -810,3 +810,10 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 		filename, (save_end_ns - save_begin_ns) / 1e6, (end_ns - start_ns) / 1e6);
 	return result;
 }
+
+void VK_SetDepthOffset( float offset )
+{
+	vk_combuf_t *const combuf = g_frame.frames[g_frame.current.index].combuf;
+
+	vkCmdSetDepthBias(combuf->cmdbuf, -1.0f, 0.0f, -offset);
+}

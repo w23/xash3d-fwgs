@@ -4,6 +4,7 @@
 #include "vk_lightmap.h"
 #include "vk_const.h"
 #include "vk_render.h"
+#include "vk_framectl.h"
 #include "vk_geometry.h"
 #include "vk_studio.h"
 #include "vk_common.h"
@@ -708,16 +709,14 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 			RT_LightAddFlashlight(local_player, true);
 		}
 	}
-	
+
 	APROF_SCOPE_BEGIN(draw_decals);
 	// Draw decals
-	model_t *m = NULL;
+	VK_SetDepthOffset( 2.0f ); // TODO: use vk_decals_depth_offset
 	for(int i = 0; i < gp_cl->nummodels; ++i)
 	{
-		if(( m = VK_ModelHandle(i + 1)) == NULL )
-			continue;
-
-		if( m->name[0] == '*' || m->type != mod_brush )
+		model_t *m = VK_ModelHandle(i + 1);
+		if(m == NULL || m->name[0] == '*' || m->type != mod_brush)
 			continue;
 
 		for(int j = 0; j < m->numsurfaces; ++j)
@@ -725,6 +724,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 			VK_DrawSurfaceDecals(m->surfaces + j, true, false);
 		}
 	}
+	VK_SetDepthOffset( 0.0f );
 	APROF_SCOPE_END(draw_decals);
 
 	APROF_SCOPE_BEGIN(draw_opaques);

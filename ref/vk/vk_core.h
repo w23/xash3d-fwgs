@@ -232,6 +232,7 @@ do { \
 	X(vkDestroyDescriptorSetLayout) \
 	X(vkCmdSetViewport) \
 	X(vkCmdSetScissor) \
+	X(vkCmdSetDepthBias) \
 	X(vkCmdUpdateBuffer) \
 	X(vkCmdBindIndexBuffer) \
 	X(vkCmdDrawIndexed) \
