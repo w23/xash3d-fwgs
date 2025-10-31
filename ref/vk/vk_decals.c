@@ -26,6 +26,10 @@ GNU General Public License for more details.
 
 #include <stdlib.h>
 
+// increase on z-fighting
+#define DECAL_DEPTH_OFFSET -0.2f
+
+// same with OpenGL renderer
 #define DECAL_OVERLAP_DISTANCE	2
 #define DECAL_DISTANCE		4	// too big values produce more clipped polygons
 #define MAX_DECALCLIPVERT		32	// produced vertexes of fragmented decal
@@ -163,12 +167,14 @@ static void VK_GetDecalDimensions( int texture, int *width, int *height )
 //-----------------------------------------------------------------------------
 static void VK_DecalComputeBasis( msurface_t *surf, int flags, vec3_t textureSpaceBasis[3] )
 {
-	vec3_t	surfaceNormal;
+	vec3_t	surfaceNormal = {};
 
 	// setup normal
-	if( surf->flags & SURF_PLANEBACK )
-		VectorNegate( surf->plane->normal, surfaceNormal );
-	else VectorCopy( surf->plane->normal, surfaceNormal );
+	if (surf->plane->normal) {
+		if( surf->flags & SURF_PLANEBACK )
+			VectorNegate( surf->plane->normal, surfaceNormal );
+		else VectorCopy( surf->plane->normal, surfaceNormal );
+	}
 
 	VectorNormalize2( surfaceNormal, textureSpaceBasis[2] );
 #if 0
@@ -908,12 +914,21 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	TriBegin( TRI_POLYGON );
 	// pglBegin( GL_POLYGON );
 
+	// TODO: do decals offset by vulkan depth offset and use cvar
+	vec3_t n = {};
+	if (fa->plane->normal) {
+		VectorCopy(fa->plane->normal, n);
+		VectorScale(n, DECAL_DEPTH_OFFSET, n);
+	}
+
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
 		TriTexCoord2f( v[3], v[4] );
 		//pglTexCoord2f( v[3], v[4] );
 
-		TriVertex3fv( v );
+		TriVertex3f( v[0] + n[0], v[1] + n[1], v[2] + n[2] );
+
+		//TriVertex3fv( v );
 		//pglVertex3fv( v );
 	}
 
@@ -1149,9 +1164,12 @@ static qboolean VK_DecalUnProject( decal_t *pdecal, decallist_t *entry )
 	entry->entityIndex = pdecal->entityIndex;
 
 	// Grab surface plane equation
-	if( pdecal->psurface->flags & SURF_PLANEBACK )
-		VectorNegate( pdecal->psurface->plane->normal, entry->impactPlaneNormal );
-	else VectorCopy( pdecal->psurface->plane->normal, entry->impactPlaneNormal );
+	// TODO: calculate pdecal->psurface->plane->normal
+	if (pdecal->psurface->plane->normal) {
+		if( pdecal->psurface->flags & SURF_PLANEBACK )
+			VectorNegate( pdecal->psurface->plane->normal, entry->impactPlaneNormal );
+		else VectorCopy( pdecal->psurface->plane->normal, entry->impactPlaneNormal );
+	}
 
 	return true;
 }
