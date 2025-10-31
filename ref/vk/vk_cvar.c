@@ -48,6 +48,5 @@ void VK_LoadCvarsAfterInit( void )
 		rt_spatial_reconstruction = gEngine.Cvar_Get("rt_spatial_reconstruction", "", FCVAR_GLCONFIG, "Apply spatial reconstruction to specular");
 	} else {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
-		vk_decals_depth_offset = gEngine.Cvar_Get( "vk_decals_depth_offset", "2", FCVAR_GLCONFIG, "Decals depth offset in rasterizer mode" );
 	}
 }

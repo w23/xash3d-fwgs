@@ -781,12 +781,12 @@ static void computeConveyorOffset(const color24 rendercolor, float tex_width, fl
 	float flRate, flAngle;
 
 	// TODO
-	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && VK_GetCurrentEntity() == VK_GetEntityByIndex( 0 ) )
-	{
-	 	// same as doom speed */
-	 	flConveyorSpeed = -35.0f;
-	}
-	else
+	/* if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && RI.currententity == gEngfuncs.GetEntityByIndex( 0 ) ) */
+	/* { */
+	/* 	// same as doom speed */
+	/* 	flConveyorSpeed = -35.0f; */
+	/* } */
+	/* else */
 	{
 		flConveyorSpeed = (rendercolor.g<<8|rendercolor.b) / 16.0f;
 		if( rendercolor.r ) flConveyorSpeed = -flConveyorSpeed;

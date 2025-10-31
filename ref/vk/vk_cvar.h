@@ -31,7 +31,6 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_denoise_gi_by_sh) \
 	X(rt_disable_gi) \
 	X(rt_spatial_reconstruction) \
-	X(vk_decals_depth_offset) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

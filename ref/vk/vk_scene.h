@@ -8,7 +8,6 @@
 
 struct ref_viewpass_s;
 struct cl_entity_s;
-typedef struct cl_entity_s cl_entity_t;
 
 void VK_SceneInit( void );
 
@@ -34,6 +33,6 @@ struct beam_s;
 void CL_DrawBeams( int fTrans, struct beam_s *active_beams );
 void CL_AddCustomBeam( struct cl_entity_s *pEnvBeam );
 
-cl_entity_t* VK_GetEntityByIndex(int index);
+struct cl_entity_s* VK_GetEntityByIndex(int index);
 model_t* VK_ModelHandle(int index);
 void VK_InitModelsPolys ( void );

@@ -155,19 +155,6 @@ static struct {
 
 /*
 ================
-VK_GetCurrentEntity
-
-dirty hack for getting current entity in decals.c
-need ideas to remove this hack and do this right
-================
-*/
-cl_entity_t *VK_GetCurrentEntity( void ) 	
-{
-	return RI.currententity;
-}
-
-/*
-================
 R_StudioSetupTimings
 
 init current time for a given model
