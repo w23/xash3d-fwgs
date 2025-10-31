@@ -905,15 +905,18 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 
 
 	TriSetTexture( pDecal->texture );
+	TriColor4f( 1, 1, 1, 1 );
 
 	TriBegin( TRI_POLYGON );
 
 	// TODO: do decals offset by vulkan depth offset and use cvar
-	vec3_t n = {};
-	if (fa->plane->normal) {
-		VectorCopy(fa->plane->normal, n);
-		VectorScale(n, DECAL_DEPTH_OFFSET, n);
-	}
+	// FIXME: using of fa->plane->normal is wrong
+	vec3_t n = {}, a, b;
+	VectorSubtract((v + VERTEXSIZE), v, a);
+	VectorSubtract((v + VERTEXSIZE * 2), v, b);
+	CrossProduct(a, b, n);
+	VectorNormalizeFast(n);
+	VectorScale(n, DECAL_DEPTH_OFFSET, n);
 
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
