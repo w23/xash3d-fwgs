@@ -3,7 +3,6 @@
 #include "xash3d_types.h"
 
 struct cl_entity_s;
-typedef struct model_s model_t;
 
 void VK_ClearDecals( void );
 void VK_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t pos, int flags, float scale );

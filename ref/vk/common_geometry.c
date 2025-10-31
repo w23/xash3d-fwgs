@@ -200,7 +200,13 @@ void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa )
 	SubdividePolygon_r( loadmodel, fa, fa->numedges, verts[0] );
 }
 
-// FIXME: refactor and remove copypaste!!!
+/*
+================
+VK_LightmapCoord
+
+Total copypaste of R_LightmapCoord from gl_rsurf.c
+================
+*/
 void VK_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords )
 {
 	const mextrasurf_t *info = surf->info;
@@ -219,7 +225,14 @@ void VK_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sampl
 	Vector2Set( coords, s, t );
 }
 
-static void VK_TextureCoord( const vec3_t v, const msurface_t *surf, vec2_t coords )
+/*
+================
+R_TextureCoord
+
+Total copypaste of R_TextureCoord from gl_rsurf.c
+================
+*/
+static void R_TextureCoord( const vec3_t v, const msurface_t *surf, vec2_t coords )
 {
 	const mtexinfo_t *info = surf->texinfo;
 	float s, t;
@@ -234,30 +247,6 @@ static void VK_TextureCoord( const vec3_t v, const msurface_t *surf, vec2_t coor
 	}
 
 	Vector2Set( coords, s, t );
-}
-
-static void VK_GetEdgePosition( const model_t *mod, const msurface_t *fa, int i, vec3_t vec )
-{
-	const int lindex = mod->surfedges[fa->firstedge + i];
-
-	if( FBitSet( mod->flags, MODEL_QBSP2 ))
-	{
-		const medge32_t *pedges = mod->edges32;
-
-		if( lindex > 0 )
-			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
-		else
-			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
-	}
-	else
-	{
-		const medge16_t *pedges = mod->edges16;
-
-		if( lindex > 0 )
-			VectorCopy( mod->vertexes[pedges[lindex].v[0]].position, vec );
-		else
-			VectorCopy( mod->vertexes[pedges[-lindex].v[1]].position, vec );
-	}
 }
 
 /*
@@ -308,8 +297,8 @@ int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 
 	for( i = 0; i < lnumverts; i++ )
 	{
-		VK_GetEdgePosition( mod, fa, i, poly->verts[i] );
-		VK_TextureCoord( poly->verts[i], fa, &poly->verts[i][3] );
+		R_GetEdgePosition( mod, fa, i, poly->verts[i] );
+		R_TextureCoord( poly->verts[i], fa, &poly->verts[i][3] );
 		VK_LightmapCoord( poly->verts[i], fa, sample_size, &poly->verts[i][5] );
 	}
 

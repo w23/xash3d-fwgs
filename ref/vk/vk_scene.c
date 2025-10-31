@@ -4,7 +4,6 @@
 #include "vk_lightmap.h"
 #include "vk_const.h"
 #include "vk_render.h"
-#include "vk_framectl.h"
 #include "vk_geometry.h"
 #include "vk_studio.h"
 #include "vk_common.h"
