@@ -12,8 +12,6 @@
 #include "vk_logs.h"
 #include "std/profiler.h"
 #include "std/arrays.h"
-#include "vk_studio.h" // VK_GetCurrentEntity
-#include "vk_scene.h" // VK_GetEntityByIndex
 
 #include <math.h>
 #include <memory.h>
