@@ -754,8 +754,6 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 						g_render.pipeline_sky.descs.pipeline_layout, 0, 1, g_render.pipeline_sky.sets + frame_index, 1, &ubo_offset);
 				}
 
-				VK_ApplyDepthOffset(combuf);
-
 				ASSERT(draw_sky->index_offset >= 0);
 				vkCmdDrawIndexed(cmdbuf, draw_sky->element_count, 1, draw_sky->index_offset, draw_sky->vertex_offset, 0);
 
@@ -805,8 +803,6 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 			// TODO names/enums for binding points
 			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 1, 1, &tex_unorm, 0, NULL);
 		}
-
-		VK_ApplyDepthOffset(combuf);
 
 		// Only indexed mode is supported
 		ASSERT(draw->draw.index_offset >= 0);
@@ -1072,18 +1068,4 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 	}
 
 	g_render.stats.dynamic_model_count++;
-}
-
-float vk_depth_offset = {0}; // TODO: store in structure of render state?
-
-void VK_SetDepthOffset( float offset )
-{
-	vk_depth_offset = offset;
-}
-
-void VK_ApplyDepthOffset( vk_combuf_t* combuf )
-{
-	float slopeOffset = vk_depth_offset != 0.0f ? -1.0f : 0.0f;
-
-	vkCmdSetDepthBias(combuf->cmdbuf, slopeOffset, 0.0f, -vk_depth_offset);
 }

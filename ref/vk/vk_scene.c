@@ -726,7 +726,6 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 
 	APROF_SCOPE_BEGIN(draw_decals);
 	// Draw decals
-	VK_SetDepthOffset( 2.0f );
 	for(int i = 0; i < gp_cl->nummodels; ++i)
 	{
 		model_t *m = VK_ModelHandle(i + 1);
@@ -738,7 +737,6 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 			VK_DrawSurfaceDecals(m->surfaces + j, true, false);
 		}
 	}
-	VK_SetDepthOffset( 0.0f );
 	APROF_SCOPE_END(draw_decals);
 
 	// Draw opaque beams
