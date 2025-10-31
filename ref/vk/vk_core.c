@@ -412,6 +412,8 @@ qboolean R_VkInit( void )
 	R_SpriteInit();
 	R_BeamInit();
 
+	VK_ClearDecals();
+
 	INFO("R_VkInit done");
 	return true;
 }
