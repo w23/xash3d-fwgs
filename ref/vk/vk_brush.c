@@ -1024,10 +1024,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		},
 	});
 
-	// if (render_mode == kRenderNormal) {
-	// 	VK_DrawBrushModelDecals(bmodel->engine_model, &transform);
-	// }
-
+	// draw decals for brush model
 	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
 		msurface_t* s = bmodel->render_model.geometries[i].surf_deprecate;
 
