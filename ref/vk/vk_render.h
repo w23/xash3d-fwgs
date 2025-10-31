@@ -174,3 +174,6 @@ void VK_RenderEnd( struct vk_combuf_s*, qboolean draw, uint32_t width, uint32_t 
 
 struct r_vk_image_s;
 void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst);
+
+void VK_SetDepthOffset( float offset );
+void VK_ApplyDepthOffset( struct vk_combuf_s* combuf );

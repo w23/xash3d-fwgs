@@ -710,23 +710,6 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 	}
 
-	APROF_SCOPE_BEGIN(draw_decals);
-	// Draw decals
-	VK_SetDepthOffset( 2.0f ); // TODO: use vk_decals_depth_offset
-	for(int i = 0; i < gp_cl->nummodels; ++i)
-	{
-		model_t *m = VK_ModelHandle(i + 1);
-		if(m == NULL || m->name[0] == '*' || m->type != mod_brush)
-			continue;
-
-		for(int j = 0; j < m->numsurfaces; ++j)
-		{
-			VK_DrawSurfaceDecals(m->surfaces + j, true, false);
-		}
-	}
-	VK_SetDepthOffset( 0.0f );
-	APROF_SCOPE_END(draw_decals);
-
 	APROF_SCOPE_BEGIN(draw_opaques);
 	// Draw opaque entities
 	for (int i = 0; i < g_lists.draw_list->num_solid_entities; ++i)
@@ -740,6 +723,23 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 	}
 	APROF_SCOPE_END(draw_opaques);
+
+	APROF_SCOPE_BEGIN(draw_decals);
+	// Draw decals
+	VK_SetDepthOffset( 2.0f );
+	for(int i = 0; i < gp_cl->nummodels; ++i)
+	{
+		model_t *m = VK_ModelHandle(i + 1);
+		if(m == NULL || m->name[0] == '*' || m->type != mod_brush)
+			continue;
+
+		for(int j = 0; j < m->numsurfaces; ++j)
+		{
+			VK_DrawSurfaceDecals(m->surfaces + j, true, false);
+		}
+	}
+	VK_SetDepthOffset( 0.0f );
+	APROF_SCOPE_END(draw_decals);
 
 	// Draw opaque beams
 	APROF_SCOPE_BEGIN(draw_opaque_beams);
