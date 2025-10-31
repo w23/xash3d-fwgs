@@ -11,3 +11,4 @@ void VK_DecalRemoveAll( int texture );
 int VK_CreateDecalList( struct decallist_s *pList );
 void VK_ClearAllDecals( void );
 void VK_EntityRemoveDecals( struct model_s *mod );
+void VK_SetDecalsTransform( const matrix4x4* transform );

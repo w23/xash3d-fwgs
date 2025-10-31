@@ -69,10 +69,14 @@ static float	g_DecalClipVerts2[MAX_DECALCLIPVERT][VERTEXSIZE];
 decal_t	gDecalPool[MAX_RENDER_DECALS];
 static int	gDecalCount;
 
+matrix4x4 gDecalTransform;
+
 void VK_ClearDecals( void )
 {
 	memset( gDecalPool, 0, sizeof( gDecalPool ));
 	gDecalCount = 0;
+
+	Matrix4x4_LoadIdentity(gDecalTransform);
 }
 
 // unlink pdecal from any surface it's attached to
@@ -920,8 +924,11 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
+		VectorAdd(v, n, v);
+		Matrix3x4_VectorTransform(gDecalTransform, v, a);
+
 		TriTexCoord2f( v[3], v[4] );
-		TriVertex3f( v[0] + n[0], v[1] + n[1], v[2] + n[2] );
+		TriVertex3fv( a );
 	}
 
 	const vec4_t color = { 1, 1, 1, 1 }; // TODO: get decal color
@@ -1159,5 +1166,14 @@ void VK_ClearAllDecals( void )
 	if( gEngine.drawFuncs->R_ClearStudioDecals )
 	{
 		gEngine.drawFuncs->R_ClearStudioDecals();
+	}
+}
+
+void VK_SetDecalsTransform( const matrix4x4* transform )
+{
+	if (!transform) {
+		Matrix4x4_LoadIdentity(gDecalTransform);
+	} else {
+		Matrix4x4_Copy(gDecalTransform, transform);
 	}
 }

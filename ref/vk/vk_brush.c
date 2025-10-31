@@ -8,6 +8,7 @@
 #include "vk_geometry.h"
 #include "vk_light.h"
 #include "vk_mapents.h"
+#include "vk_decals.h"
 #include "r_speeds.h"
 #include "vk_logs.h"
 #include "std/profiler.h"
@@ -177,7 +178,7 @@ static void addWarpVertIndCounts(const msurface_t *warp, int *num_vertices, int 
 typedef struct {
 	float prev_time;
 	float wave_height;
-	const msurface_t *warp;
+	msurface_t *warp;
 
 	vk_vertex_t *dst_vertices;
 	uint16_t *dst_indices;
@@ -456,7 +457,7 @@ static void surfaceHandleEmissive(SurfaceHandleEmissiveArgs args);
 
 typedef struct {
 	const cl_entity_t *ent;
-	const msurface_t *surfaces;
+	msurface_t *surfaces;
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
@@ -480,7 +481,7 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 	int emissive_surfaces_count = 0;
 	for (int i = 0; i < args.wmodel->surfaces_count; ++i) {
 		const int surf_index = args.wmodel->surfaces_indices[i];
-		const msurface_t *warp = args.surfaces + surf_index;
+		msurface_t *warp = args.surfaces + surf_index;
 
 		if (args.is_creating) {
 			const int orig_tex_id = warp->texinfo->texture->gl_texturenum;
@@ -738,7 +739,7 @@ static material_mode_e brushMaterialModeForRenderType(vk_render_type_e render_ty
 	return kMaterialMode_Opaque;
 }
 
-static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent, const msurface_t *surfaces, int render_type, const vec4_t color, const matrix4x4 transform, const matrix4x4 prev_transform, float prev_time) {
+static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent, msurface_t *surfaces, int render_type, const vec4_t color, const matrix4x4 transform, const matrix4x4 prev_transform, float prev_time) {
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(wmodel->surfaces_count > 0);
 
@@ -1022,6 +1023,20 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 			.old_texture = -1,
 		},
 	});
+
+	// if (render_mode == kRenderNormal) {
+	// 	VK_DrawBrushModelDecals(bmodel->engine_model, &transform);
+	// }
+
+	for (int i = 0; i < bmodel->render_model.num_geometries; ++i) {
+		msurface_t* s = bmodel->render_model.geometries[i].surf_deprecate;
+
+		if (!s || !s->pdecals)
+			continue;
+
+		VK_SetDecalsTransform(&transform);
+		VK_DrawSurfaceDecals( s, true, false );
+	}
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
 	bmodel->prev_time = gp_cl->time;

@@ -23,7 +23,7 @@ typedef struct vk_render_geometry_s {
 	// Non-null only for brush models
 	// Used for updating animated textures for brush models
 	// Remove: have an explicit list of surfaces with animated textures
-	const struct msurface_s *surf_deprecate;
+	struct msurface_s *surf_deprecate;
 
 	// If this geometry is special, it will have a material type override
 	r_vk_material_t material;
