@@ -104,3 +104,6 @@ static inline uint LinearGammaTable( uint b )
 
 void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa );
 colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec );
+
+void VK_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords );
+int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa );
