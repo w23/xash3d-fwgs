@@ -415,20 +415,16 @@ static float *VK_DecalVertsClip( decal_t *pDecal, msurface_t *surf, int texture,
 // Generate lighting coordinates at each vertex for decal vertices v[] on surface psurf
 static void VK_DecalVertsLight( float *v, msurface_t *surf, int vertCount )
 {
-	// TODO
+	float		sample_size;
+	int		j;
 
-	// float		sample_size;
-	// int		j;
+	sample_size = gEngine.Mod_SampleSizeForFace( surf ); 
 
-	// sample_size = gEngine.Mod_SampleSizeForFace( surf ); 
-
-	// for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
-	// {
-	// 	lightmap texture coordinates
-
-	// 	// TODO: replace by vk ref function
-	// 	VK_LightmapCoord( v, surf, sample_size, &v[5] );
-	// }
+	for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
+	{
+		// lightmap texture coordinates
+		VK_LightmapCoord( v, surf, sample_size, &v[5] );
+	}
 }
 
 // Check for intersecting decals on this surface
@@ -909,10 +905,8 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 
 
 	TriSetTexture( pDecal->texture );
-	// GL_Bind( XASH_TEXTURE0, pDecal->texture );
 
 	TriBegin( TRI_POLYGON );
-	// pglBegin( GL_POLYGON );
 
 	// TODO: do decals offset by vulkan depth offset and use cvar
 	vec3_t n = {};
@@ -924,19 +918,11 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
 		TriTexCoord2f( v[3], v[4] );
-		//pglTexCoord2f( v[3], v[4] );
-
 		TriVertex3f( v[0] + n[0], v[1] + n[1], v[2] + n[2] );
-
-		//TriVertex3fv( v );
-		//pglVertex3fv( v );
 	}
 
 	const vec4_t color = { 1, 1, 1, 1 }; // TODO: get decal color
 	TriEndEx( color, "single decal" );
-
-	//TriEnd();
-	// pglEnd();
 }
 
 void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
@@ -945,107 +931,9 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 
 	if( !fa->pdecals ) return;
 
-	//e = VK_GetCurrentEntity();
-	//assert( e != NULL );
-
-	//if( single )
-	//{
-		//if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
-		//{
-			//TriRenderMode( kRenderTransAlpha );
-			// pglDepthMask( GL_FALSE );
-			// pglEnable( GL_BLEND );
-
-			// if( e->curstate.rendermode == kRenderTransAlpha )
-			// 	pglDisable( GL_ALPHA_TEST );
-		//}
-
-		// if( e->curstate.rendermode == kRenderTransColor )
-		// 	pglEnable( GL_TEXTURE_2D );
-
-		// if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
-		// 	GL_Cull( GL_NONE );
-
-		// if( gl_polyoffset.value )
-		// {
-		// 	pglEnable( GL_POLYGON_OFFSET_FILL );
-		// 	pglPolygonOffset( -1.0f, -gl_polyoffset.value );
-		// }
-	//}
-
-	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) /*&& glState.stencilEnabled*/ )
-	// {
-	// 	mtexinfo_t	*tex = fa->texinfo;
-
-	// 	for( p = fa->pdecals; p; p = p->pnext )
-	// 	{
-	// 		if( p->texture )
-	// 		{
-	// 			float *o, *v;
-	// 			int i, numVerts;
-	// 			o = VK_DecalSetupVerts( p, fa, p->texture, &numVerts );
-
-	// 			// pglEnable( GL_STENCIL_TEST );
-	// 			// pglStencilFunc( GL_ALWAYS, 1, 0xFFFFFFFF );
-	// 			// pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE );
-
-	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_REPLACE );
-
-	// 			TriBegin( TRI_POLYGON );
-	// 			//pglBegin( GL_POLYGON );
-
-	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-	// 			{
-	// 				v[5] = ( DotProduct( v, tex->vecs[0] ) + tex->vecs[0][3] ) / tex->texture->width;
-	// 				v[6] = ( DotProduct( v, tex->vecs[1] ) + tex->vecs[1][3] ) / tex->texture->height;
-
-	// 				TriTexCoord2f( v[5], v[6] );
-	// 				// pglTexCoord2f( v[5], v[6] );
-
-	// 				TriVertex3fv( v );
-	// 				// pglVertex3fv( v );
-	// 			}
-
-	// 			const vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
-	// 			TriEndEx( color, "surface decals 1" );
-
-	// 			//pglEnd();
-
-	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_DECR );
-
-	// 			// pglEnable( GL_ALPHA_TEST );
-
-	// 			TriBegin( TRI_POLYGON );
-	// 			//pglBegin( GL_POLYGON );
-
-	// 			for( i = 0, v = o; i < numVerts; i++, v += VERTEXSIZE )
-	// 			{
-	// 				TriTexCoord2f( v[5], v[6] );
-	// 				// pglTexCoord2f( v[5], v[6] );
-
-	// 				TriVertex3fv( v );
-	// 				// pglVertex3fv( v );
-	// 			}
-
-	// 			TriEndEx( color, "surface decals 2" );
-
-	// 			TriRenderMode( kRenderNormal );
-
-	// 			//pglEnd();
-
-	// 			// pglDisable( GL_ALPHA_TEST );
-
-	// 			// pglColorMask( GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE );
-	// 			// pglStencilFunc( GL_EQUAL, 0, 0xFFFFFFFF );
-	// 			// pglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
-	// 		}
-	// 	}
-	// }
-
 	TriRenderMode( kRenderTransAlpha );
-	//pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-	if( reverse /* && e->curstate.rendermode == kRenderTransTexture */ )
+	if( reverse )
 	{
 		decal_t	*list[1024];
 		int	i, count;
@@ -1066,87 +954,7 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 	}
 
 	TriRenderMode( kRenderNormal );
-
-	// if( FBitSet( fa->flags, SURF_TRANSPARENT ) && glState.stencilEnabled )
-	// 	pglDisable( GL_STENCIL_TEST );
-
-	// if( single )
-	// {
-	// 	if( e->curstate.rendermode == kRenderNormal || e->curstate.rendermode == kRenderTransAlpha )
-	// 	{
-	// 		pglDepthMask( GL_TRUE );
-	// 		pglDisable( GL_BLEND );
-
-	// 		if( e->curstate.rendermode == kRenderTransAlpha )
-	// 			pglEnable( GL_ALPHA_TEST );
-	// 	}
-
-	// 	if( gl_polyoffset.value )
-	// 		pglDisable( GL_POLYGON_OFFSET_FILL );
-
-	// 	if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
-	// 		GL_Cull( GL_FRONT );
-
-	// 	if( e->curstate.rendermode == kRenderTransColor )
-	// 		pglDisable( GL_TEXTURE_2D );
-
-	// 	// restore blendfunc here
-	// 	if( e->curstate.rendermode == kRenderTransAdd || e->curstate.rendermode == kRenderGlow )
-	// 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
-
-	// 	pglTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	// }
 }
-
-// void VK_DrawDecalsBatch( void )
-// {
-	// TODO
-
-	// cl_entity_t	*e;
-	// int		i;
-
-	// if( !tr.num_draw_decals ) // TODO: is this really needed? or use cvar?
-	// 	return;
-
-	// e = VK_GetCurrentEntity();
-	// Assert( e != NULL );
-
-	// if( e->curstate.rendermode != kRenderTransTexture )
-	// {
-	// 	pglEnable( GL_BLEND );
-	// 	pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	// 	pglDepthMask( GL_FALSE );
-	// }
-
-	// if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
-	// 	GL_Cull( GL_NONE );
-
-	// if( gl_polyoffset.value )
-	// {
-	// 	pglEnable( GL_POLYGON_OFFSET_FILL );
-	// 	pglPolygonOffset( -1.0f, -gl_polyoffset.value );
-	// }
-
-	// for( i = 0; i < tr.num_draw_decals; i++ )
-	// {
-	// 	VK_DrawSurfaceDecals( tr.draw_decals[i], false, false );
-	// }
-
-	// if( e->curstate.rendermode != kRenderTransTexture )
-	// {
-	// 	pglDepthMask( GL_TRUE );
-	// 	pglDisable( GL_BLEND );
-	// 	pglDisable( GL_ALPHA_TEST );
-	// }
-
-	// if( gl_polyoffset.value )
-	// 	pglDisable( GL_POLYGON_OFFSET_FILL );
-
-	// if( e->curstate.rendermode == kRenderTransTexture || e->curstate.rendermode == kRenderTransAdd )
-	// 	GL_Cull( GL_FRONT );
-
-	// tr.num_draw_decals = 0;
-//}
 
 /*
 =============================================================
