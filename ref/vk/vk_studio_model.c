@@ -73,7 +73,7 @@ static void studioModelCalcBones(int numbones, const mstudiobone_t *pbone, const
 		float *const adj = NULL;
 		vec4_t q;
 		vec3_t pos;
-		R_StudioCalcBones( frame, interpolation, pbone, panim, adj, pos, q );
+		R_StudioCalcBones(frame, interpolation, pbone + b, panim + b, adj, pos, q);
 
 		matrix3x4 bonematrix;
 		Matrix3x4_FromOriginQuat(bonematrix, q, pos);
