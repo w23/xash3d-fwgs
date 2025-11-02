@@ -905,8 +905,9 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	int	i, numVerts;
 
 	v = VK_DecalSetupVerts( pDecal, fa, pDecal->texture, &numVerts );
-	if( !numVerts ) return;
 
+	if( !numVerts )
+		return;
 
 	TriSetTexture( pDecal->texture );
 	TriColor4f( 1, 1, 1, 1 );
@@ -914,21 +915,17 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	TriBegin( TRI_POLYGON );
 
 	// TODO: do decals offset by vulkan depth offset and use cvar
-	// FIXME: using of fa->plane->normal is wrong
-	vec3_t n = {}, a, b;
-	VectorSubtract((v + VERTEXSIZE), v, a);
-	VectorSubtract((v + VERTEXSIZE * 2), v, b);
-	CrossProduct(a, b, n);
-	VectorNormalizeFast(n);
-	VectorScale(n, DECAL_DEPTH_OFFSET, n);
+	vec3_t normal, bumpedPos, worldPos;
+	float sign = (pDecal->psurface->flags & SURF_PLANEBACK) ? 1.0f : -1.0f;
+	VectorScale(pDecal->psurface->plane->normal, DECAL_DEPTH_OFFSET * sign, normal);
 
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
-		VectorAdd(v, n, v);
-		Matrix3x4_VectorTransform(gDecalTransform, v, a);
+		VectorAdd(v, normal, bumpedPos);
+		Matrix3x4_VectorTransform(gDecalTransform, bumpedPos, worldPos);
 
 		TriTexCoord2f( v[3], v[4] );
-		TriVertex3fv( a );
+		TriVertex3fv( worldPos );
 	}
 
 	const vec4_t color = { 1, 1, 1, 1 }; // TODO: get decal color
