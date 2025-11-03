@@ -5,6 +5,7 @@
 typedef struct model_s model_t;
 
 void TriRenderMode( int mode );
+void TriRenderType( int render_type );
 void TriSetTexture( int texture_index );
 int TriSpriteTexture( model_t *pSpriteModel, int frame );
 

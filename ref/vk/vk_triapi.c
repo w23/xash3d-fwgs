@@ -59,6 +59,12 @@ void TriRenderMode( int render_mode ) {
 	}
 }
 
+void TriRenderType( int render_type ) {
+	ASSERT(render_type >= 0 && render_type < kVkRenderType_COUNT);
+
+	g_triapi.render_type = render_type;
+}
+
 void TriBegin( int primitive_mode ) {
 	ASSERT(!g_triapi.primitive_mode);
 

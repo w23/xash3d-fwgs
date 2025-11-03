@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "vk_studio.h"
 #include "vk_scene.h"
 #include "vk_triapi.h"
+#include "vk_render.h"
 #include "r_textures.h"
 #include "xash3d_mathlib.h"
 
@@ -915,17 +916,19 @@ void VK_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	TriBegin( TRI_POLYGON );
 
 	// TODO: do decals offset by vulkan depth offset and use cvar
-	vec3_t normal, bumpedPos, worldPos;
+	vec3_t normal, offset, bumpedPos, worldPos;
 	float sign = (pDecal->psurface->flags & SURF_PLANEBACK) ? 1.0f : -1.0f;
-	VectorScale(pDecal->psurface->plane->normal, DECAL_DEPTH_OFFSET * sign, normal);
+	VectorScale(pDecal->psurface->plane->normal, sign, normal);
+	VectorScale(normal, DECAL_DEPTH_OFFSET, offset);
 
 	for( i = 0; i < numVerts; i++, v += VERTEXSIZE )
 	{
-		VectorAdd(v, normal, bumpedPos);
+		VectorAdd(v, offset, bumpedPos);
 		Matrix3x4_VectorTransform(gDecalTransform, bumpedPos, worldPos);
 
 		TriTexCoord2f( v[3], v[4] );
 		TriVertex3fv( worldPos );
+		TriNormal3fv( normal );
 	}
 
 	const vec4_t color = { 1, 1, 1, 1 }; // TODO: get decal color
@@ -938,7 +941,7 @@ void VK_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 
 	if( !fa->pdecals ) return;
 
-	TriRenderMode( kRenderTransAlpha );
+	TriRenderType( kVkRenderType_Decal );
 
 	if( reverse )
 	{

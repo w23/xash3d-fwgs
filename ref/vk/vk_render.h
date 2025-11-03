@@ -76,6 +76,9 @@ typedef enum {
 	// - studio: kRenderTransAdd
 	kVkRenderType_1_1_R,    // blend: src + dst, depth test
 
+	// Decals changing diffuse and rmxx of surface material
+	kVkRenderType_Decal,    // blend: src*a + dst (1-a), no depth test or write
+
 	kVkRenderType_COUNT
 } vk_render_type_e;
 

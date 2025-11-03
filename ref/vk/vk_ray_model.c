@@ -40,6 +40,10 @@ uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type) {
 			return MATERIAL_MODE_OPAQUE_ALPHA_TEST;
 			break;
 
+		case kVkRenderType_Decal: // decals changing diffuse and rmxx of surface material
+			return MATERIAL_MODE_DECAL;
+			break;
+
 		default:
 			gEngine.Host_Error("Unexpected render type %d\n", render_type);
 	}
@@ -266,6 +270,7 @@ static const char* group_names[MATERIAL_MODE_COUNT] = {
 	"MATERIAL_MODE_BLEND_ADD",
 	"MATERIAL_MODE_BLEND_MIX",
 	"MATERIAL_MODE_BLEND_GLOW",
+	"MATERIAL_MODE_DECAL",
 };
 
 static struct {

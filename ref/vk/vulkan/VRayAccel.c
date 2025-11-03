@@ -383,6 +383,7 @@ static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress ge
 			case MATERIAL_MODE_BLEND_ADD:
 			case MATERIAL_MODE_BLEND_MIX:
 			case MATERIAL_MODE_BLEND_GLOW:
+			case MATERIAL_MODE_DECAL:
 				inst[i].mask = GEOMETRY_BIT_BLEND;
 				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
 				// Force no-culling because these should be visible from any angle

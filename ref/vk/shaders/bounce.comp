@@ -172,6 +172,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		vec3 contribution = vec3(0.);
 		pos += mat.geometry_normal * kRayNormalOffsetFudge;
 
+		vec4 blend = vec4(0.);
 		vec3 hit_color = vec3(0.);
 		// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
 		if (any(isnan(bounce_direction)))
@@ -181,6 +182,9 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		const vec3 hit_pos = payload.hit_t.xyz;
 		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
 		if (did_hit) {
+			// modify material by decals before light and reflection calculating
+			blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w, payload.base_color_a, payload.material_rmxx);
+
 			vec3 ldiffuse = vec3(0.);
 			vec3 lspecular = vec3(0.);
 			hit_material.base_color = payload.base_color_a.rgb;
@@ -216,9 +220,12 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		} /* if (did_hit) */ else {
 			// not hit -- hit sky
 			hit_color = payload.emissive.rgb;
+
+			//vec4 dummyColor = vec4(0.);
+			//vec4 dummyRmxx = vec4(0.);
+			//blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w, dummyColor, dummyRmxx);
 		}
 
-		const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
 		contribution = throughput * (SRGBtoLINEAR(blend.rgb) + hit_color * blend.a);
 
 		if (first_brdf_type == BRDF_TYPE_DIFFUSE)
