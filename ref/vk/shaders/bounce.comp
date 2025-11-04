@@ -221,9 +221,10 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 			// not hit -- hit sky
 			hit_color = payload.emissive.rgb;
 
-			//vec4 dummyColor = vec4(0.);
-			//vec4 dummyRmxx = vec4(0.);
-			//blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w, dummyColor, dummyRmxx);
+			// trace blending without decals
+			vec4 dummyColor = vec4(0.);
+			vec4 dummyRmxx = vec4(0.);
+			blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w, dummyColor, dummyRmxx);
 		}
 
 		contribution = throughput * (SRGBtoLINEAR(blend.rgb) + hit_color * blend.a);
