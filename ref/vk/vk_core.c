@@ -14,10 +14,12 @@
 #include "vk_geometry.h"
 #include "vk_studio.h"
 #include "vk_rtx.h"
+#include "vk_render_pass.h"
 #include "vulkan/VDescriptor.h"
-#include "vulkan/VResource.h"
-#include "vulkan/VNvAftermath.h"
 #include "vulkan/VDevmem.h"
+#include "vulkan/VNvAftermath.h"
+#include "vulkan/VResource.h"
+#include "vulkan/VSwapchain.h"
 #include "r_speeds.h"
 #include "vk_speeds.h"
 #include "vk_sprite.h"
@@ -280,6 +282,38 @@ static const r_vk_module_t *const modules[] = {
 };
 */
 
+// TODO sort these based on ???
+static const VkFormat depth_formats[] = {
+	VK_FORMAT_D32_SFLOAT,
+	VK_FORMAT_D24_UNORM_S8_UINT,
+	VK_FORMAT_X8_D24_UNORM_PACK32,
+	VK_FORMAT_D16_UNORM,
+	VK_FORMAT_D32_SFLOAT_S8_UINT,
+	VK_FORMAT_D16_UNORM_S8_UINT,
+	VK_FORMAT_UNDEFINED
+};
+
+// TODO move into vk_image
+static VkFormat findSupportedImageFormat(const VkFormat *candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
+	for (int i = 0; candidates[i] != VK_FORMAT_UNDEFINED; ++i) {
+		VkFormatProperties props;
+		VkFormatFeatureFlags props_format;
+		vkGetPhysicalDeviceFormatProperties(v_device_info.physical_device, candidates[i], &props);
+		switch (tiling) {
+			case VK_IMAGE_TILING_OPTIMAL:
+				props_format = props.optimalTilingFeatures; break;
+			case VK_IMAGE_TILING_LINEAR:
+				props_format = props.linearTilingFeatures; break;
+			default:
+				return VK_FORMAT_UNDEFINED;
+		}
+		if ((props_format & features) == features)
+			return candidates[i];
+	}
+
+	return VK_FORMAT_UNDEFINED;
+}
+
 qboolean R_VkInit( void )
 {
 	// FIXME !!!! handle initialization errors properly: destroy what has already been created
@@ -352,6 +386,8 @@ qboolean R_VkInit( void )
 
 	VK_LoadCvarsAfterInit();
 
+	const VkFormat depth_format = findSupportedImageFormat(depth_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
 	R_VkResourcesInit();
 
 	if (!R_VkImageInit())
@@ -369,11 +405,17 @@ qboolean R_VkInit( void )
 	if (!R_VkStagingInit())
 		return false;
 
+	if (!R_VkRenderPassInit(SWAPCHAIN_FORMAT, depth_format))
+		return false;
+
 	if (!VK_PipelineInit())
 		return false;
 
 	// TODO ...
 	if (!VK_DescriptorInit())
+		return false;
+
+	if (!R_VkSwapchainInit(vk_render_pass.raster, depth_format))
 		return false;
 
 	if (!VK_FrameCtlInit())
@@ -437,12 +479,14 @@ void R_VkShutdown( void ) {
 	R_GeometryBuffer_Shutdown();
 
 	VK_FrameCtlShutdown();
+	R_VkSwapchainShutdown();
 
 	R_VkMaterialsShutdown();
 
 	R_TexturesShutdown();
 
 	VK_PipelineShutdown();
+	R_VkRenderPassShutdown();
 
 	VK_DescriptorShutdown();
 

@@ -250,18 +250,14 @@ void aloPoolFree(struct alo_pool_s *pool, int index) {
 void aloRingInit(alo_ring_t* ring, uint32_t size) {
 	ring->size = size;
 	ring->head = 0;
-	ring->tail = size;
+	ring->tail = 0;
 }
 
 // Marks everything up-to-pos as free (expects up-to-pos to be valid)
 void aloRingFree(alo_ring_t* ring, uint32_t up_to_pos) {
 	ASSERT(up_to_pos < ring->size);
 	// FIXME assert that up_to_pos is valid and within allocated region
-	if (up_to_pos == ring->head) {
-		ring->head = 0;
-		ring->tail = ring->size;
-	} else
-		ring->tail = up_to_pos;
+	ring->tail = up_to_pos;
 }
 
 // Allocates a new aligned region and returns offset to it (AllocFailed if allocation failed)
@@ -271,10 +267,19 @@ uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment) {
 
 	ASSERT(size != 0);
 
+	// Full:
+	// [XXXXXX.XXXX]
+	//        ht
+
+	// Empty:
+  //     h
+	// [...........]
+	//     t
+
 	// [XXX.....XXX]
 	//     h    t
-	if (ring->head <= ring->tail) {
-		if (pos + size > ring->tail)
+	if (ring->head < ring->tail) {
+		if (pos + size >= ring->tail)
 			return ALO_ALLOC_FAILED;
 
 		ring->head = pos + size;
@@ -286,13 +291,14 @@ uint32_t aloRingAlloc(alo_ring_t* ring, uint32_t size, uint32_t alignment) {
 	//  2        1
 
 	// 1. Check if we have enough space immediately in front of head
-	if (pos + size <= ring->size) {
-		ring->head = pos + size;
+	const uint32_t newpos = pos + size;
+	if (newpos < ring->size) {
+		ring->head = newpos;
 		return pos;
 	}
 
 	// 2. wrap around
-	if (size > ring->tail)
+	if (size >= ring->tail)
 		return ALO_ALLOC_FAILED;
 
 	ring->head = size;
@@ -595,17 +601,20 @@ void testRing(void) {
 	fprintf(stderr, "%s\n", __FUNCTION__);
 
 	TEST_ALLOC(p0, 64, 0, 1);
-	TEST_ALLOC(p1, 64, 64, 1);
+	TEST_ALLOC(p1f, 64, ALO_ALLOC_FAILED, 1);
+	TEST_ALLOC(p1, 63, 64, 1);
 	TEST_ALLOC(p2, 64, ALO_ALLOC_FAILED, 1);
 	TEST_FREE(p1);
 	TEST_ALLOC(p3, 32, 0, 1);
 	TEST_FREE(p3);
+
 	TEST_ALLOC(p4, 64, 32, 1);
 	TEST_ALLOC(p5, 64, ALO_ALLOC_FAILED, 1);
 	TEST_ALLOC(p6, 16, 96, 1);
 	TEST_ALLOC(p7, 32, ALO_ALLOC_FAILED, 1);
 	TEST_FREE(p4);
-	TEST_ALLOC(p8, 32, 0, 1);
+	TEST_ALLOC(p8f, 32, ALO_ALLOC_FAILED, 1);
+	TEST_ALLOC(p8, 31, 0, 1);
 }
 
 void stressTestRing(void) {

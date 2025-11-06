@@ -1,24 +1,22 @@
 #include "vk_framectl.h"
 
-#include "vk_overlay.h"
 #include "vk_scene.h"
 #include "vk_render.h"
+#include "vk_render_pass.h"
 #include "vk_cvar.h"
+#include "vk_logs.h"
+
+#include "vulkan/VBarrier.h"
 #include "vulkan/VDevmem.h"
 #include "vulkan/VSwapchain.h"
 #include "vulkan/VImage.h"
 #include "vulkan/VStaging.h"
 #include "vulkan/VCommandPool.h"
 #include "vulkan/VCombuf.h"
-#include "vk_logs.h"
-#include "vulkan/VBarrier.h"
-#include "vulkan/VResource.h"
 
 #include "std/arrays.h"
 #include "std/profiler.h"
 #include "r_speeds.h"
-
-#include "eiface.h" // ARRAYSIZE
 
 #include <string.h>
 
@@ -75,129 +73,6 @@ static struct {
 #define SCOPE_DECLARE(scope, name, flags) APROF_SCOPE_DECLARE(scope)
 PROFILER_SCOPES(SCOPE_DECLARE)
 #undef SCOPE_DECLARE
-
-// TODO move into vk_image
-static VkFormat findSupportedImageFormat(const VkFormat *candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
-	for (int i = 0; candidates[i] != VK_FORMAT_UNDEFINED; ++i) {
-		VkFormatProperties props;
-		VkFormatFeatureFlags props_format;
-		vkGetPhysicalDeviceFormatProperties(v_device_info.physical_device, candidates[i], &props);
-		switch (tiling) {
-			case VK_IMAGE_TILING_OPTIMAL:
-				props_format = props.optimalTilingFeatures; break;
-			case VK_IMAGE_TILING_LINEAR:
-				props_format = props.linearTilingFeatures; break;
-			default:
-				return VK_FORMAT_UNDEFINED;
-		}
-		if ((props_format & features) == features)
-			return candidates[i];
-	}
-
-	return VK_FORMAT_UNDEFINED;
-}
-
-// TODO sort these based on ???
-static const VkFormat depth_formats[] = {
-	VK_FORMAT_D32_SFLOAT,
-	VK_FORMAT_D24_UNORM_S8_UINT,
-	VK_FORMAT_X8_D24_UNORM_PACK32,
-	VK_FORMAT_D16_UNORM,
-	VK_FORMAT_D32_SFLOAT_S8_UINT,
-	VK_FORMAT_D16_UNORM_S8_UINT,
-	VK_FORMAT_UNDEFINED
-};
-
-static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracing ) {
-	VkRenderPass render_pass;
-
-	const VkAttachmentDescription attachments[] = {{
-		.format = SWAPCHAIN_FORMAT,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
-		.loadOp = ray_tracing ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR /* TODO: prod renderer should not care VK_ATTACHMENT_LOAD_OP_DONT_CARE */,
-		.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-		.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.initialLayout = ray_tracing ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
-		.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-	}, {
-		// Depth
-		.format = depth_format,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
-		.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-		.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-		.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-	}};
-
-	const VkAttachmentReference color_attachment = {
-		.attachment = 0,
-		.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-	};
-
-	const VkAttachmentReference depth_attachment = {
-		.attachment = 1,
-		.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-	};
-
-	const VkSubpassDescription subdesc = {
-		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments = &color_attachment,
-		.pDepthStencilAttachment = &depth_attachment,
-	};
-
-	BOUNDED_ARRAY(VkSubpassDependency, dependencies, 2);
-	if (vk_core.rtx) {
-		const VkSubpassDependency color = {
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = 0,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		};
-		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
-	} else {
-		const VkSubpassDependency color = {
-			.srcSubpass = VK_SUBPASS_EXTERNAL,
-			.dstSubpass = 0,
-			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = 0,
-			.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT,
-		};
-		BOUNDED_ARRAY_APPEND_ITEM(dependencies, color);
-	}
-
-	const VkSubpassDependency depth = {
-		.srcSubpass = VK_SUBPASS_EXTERNAL,
-		.dstSubpass = 0,
-		.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-		.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-		.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-		.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
-		.dependencyFlags = 0,
-	};
-	BOUNDED_ARRAY_APPEND_ITEM(dependencies, depth);
-
-	const VkRenderPassCreateInfo rpci = {
-		.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = ARRAYSIZE(attachments),
-		.pAttachments = attachments,
-		.subpassCount = 1,
-		.pSubpasses = &subdesc,
-		.dependencyCount = dependencies.count,
-		.pDependencies = dependencies.items,
-	};
-
-	XVK_CHECK(vkCreateRenderPass(vk_core.device, &rpci, NULL, &render_pass));
-	return render_pass;
-}
 
 static void waitForFrameFence( void ) {
 
@@ -329,72 +204,18 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 
 	R_VkCombufBegin( combuf );
 
-	// TODO: should be done by rendering when it requests textures
-	R_VkImageUploadCommit(combuf,
-		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | (vk_frame.rtx_enabled ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0));
-
-	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
-
-	if (vk_frame.rtx_enabled) {
-		VK_RenderEndRTX( combuf, &g_frame.current.framebuffer.image );
-	} else {
-		VK_RenderEndPrepare_FIXME(combuf, &(FrameContext){
-			.frame_sequence = g_frame.sequence,
-		});
-	}
+	R_VkRenderDrawFrame((vk_render_draw_frame_t){
+		.combuf = combuf,
+		.width = frame_width,
+		.height = frame_height,
+		.framebuffer = g_frame.current.framebuffer.framebuffer,
+		.framebuffer_image = &g_frame.current.framebuffer.image,
+		.sequence = g_frame.sequence,
+		.frame_index = g_frame.current.index,
+		.trace_rays = vk_frame.rtx_enabled,
+	});
 
 	if (draw) {
-		{
-			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
-			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
-				.image = &g_frame.current.framebuffer.image,
-				.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.access = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-			});
-			barrierCommit(&barrier, combuf);
-		}
-
-		const VkClearValue clear_value[] = {
-			// *_UNORM is float
-			{.color = {.float32 = {1.f, 0.f, 0.f, 0.f}}},
-			{.depthStencil = {1., 0.}} // TODO reverse-z
-		};
-		const VkRenderPassBeginInfo rpbi = {
-			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-			.renderPass = vk_frame.rtx_enabled ? vk_frame.render_pass.after_ray_tracing : vk_frame.render_pass.raster,
-			.renderArea.extent.width = frame_width,
-			.renderArea.extent.height = frame_height,
-			.clearValueCount = ARRAYSIZE(clear_value),
-			.pClearValues = clear_value,
-			.framebuffer = g_frame.current.framebuffer.framebuffer,
-		};
-		vkCmdBeginRenderPass(cmdbuf, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-
-		{
-			const VkViewport viewport[] = {
-				{0.f, 0.f, (float)frame_width, (float)frame_height, 0.f, 1.f},
-			};
-			const VkRect2D scissor[] = {{
-				{0, 0},
-				{frame_width, frame_height},
-			}};
-
-			vkCmdSetViewport(cmdbuf, 0, ARRAYSIZE(viewport), viewport);
-			vkCmdSetScissor(cmdbuf, 0, ARRAYSIZE(scissor), scissor);
-		}
-	}
-
-	if (!vk_frame.rtx_enabled)
-		VK_RenderEnd( combuf, draw,
-			frame_width, frame_height,
-			g_frame.current.index
-			);
-
-	R_VkOverlay_DrawAndFlip( cmdbuf, draw );
-
-	if (draw) {
-		vkCmdEndRenderPass(cmdbuf);
-
 		// Render pass's finalLayout transitions the image into this one
 		g_frame.current.framebuffer.image.sync.read.access = 0;
 		g_frame.current.framebuffer.image.sync.write.access = 0;
@@ -511,16 +332,6 @@ qboolean VK_FrameCtlInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT_EX);
 
-	const VkFormat depth_format = findSupportedImageFormat(depth_formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-	// FIXME move this out to renderers
-	vk_frame.render_pass.raster = createRenderPass(depth_format, false);
-	if (vk_core.rtx)
-		vk_frame.render_pass.after_ray_tracing = createRenderPass(depth_format, true);
-
-	if (!R_VkSwapchainInit(vk_frame.render_pass.raster, depth_format))
-		return false;
-
 	for (int i = 0; i < MAX_CONCURRENT_FRAMES; ++i) {
 		vk_framectl_frame_t *const frame = g_frame.frames + i;
 		frame->combuf = R_VkCombufOpen();
@@ -562,12 +373,6 @@ void VK_FrameCtlShutdown( void ) {
 		R_VkSemaphoreDestroy(frame->sem_done2);
 		R_VkFenceDestroy(frame->fence_done);
 	}
-
-	R_VkSwapchainShutdown();
-
-	vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.raster, NULL);
-	if (vk_core.rtx)
-		vkDestroyRenderPass(vk_core.device, vk_frame.render_pass.after_ray_tracing, NULL);
 }
 
 static qboolean canBlitFromSwapchainToFormat( VkFormat dest_format ) {

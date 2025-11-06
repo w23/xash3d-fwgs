@@ -104,6 +104,8 @@ void R_SetupCamera( const ref_viewpass_t *rvp )
 	else GL_FrustumInitProj( &g_camera.frustum, 0.0f, R_GetFarClip(), g_camera.fov_x, g_camera.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
 	*/
 
+	GL_FrustumInitProj( &g_camera.frustum, 0.0f, R_GetFarClip(), g_camera.fov_x, g_camera.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
+
 	R_SetupProjectionMatrix( g_camera.projectionMatrix );
 	R_SetupModelviewMatrix( g_camera.viewMatrix );
 

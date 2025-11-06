@@ -279,3 +279,8 @@ typedef struct {
 	VkAccessFlags2 access;
 	VkPipelineStageFlagBits2 stage;
 } r_vksync_scope_t;
+
+// TODO this needs to be negotiated by swapchain creation
+// however, currently render pass also needs it so ugh
+#define SWAPCHAIN_FORMAT VK_FORMAT_B8G8R8A8_UNORM //SRGB
+//#define SWAPCHAIN_FORMAT VK_FORMAT_B8G8R8A8_SRGB

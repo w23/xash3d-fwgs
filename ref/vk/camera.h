@@ -1,9 +1,10 @@
 #pragma once
 
 #include "xash3d_types.h"
+#include "frustum.h"
 
 typedef struct vk_global_camera_s {
-	vec3_t vieworg; // locked vieworigin
+	vec3_t vieworg;
 	vec3_t viewangles;
 	vec3_t vforward;
 	vec3_t vright;
@@ -12,7 +13,7 @@ typedef struct vk_global_camera_s {
 	float fov_x, fov_y; // current view fov
 
 	int viewport[4];
-	//gl_frustum_t frustum;
+	gl_frustum_t frustum;
 
 	matrix4x4 viewMatrix;
 	matrix4x4 projectionMatrix;

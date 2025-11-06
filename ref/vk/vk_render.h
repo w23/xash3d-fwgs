@@ -4,6 +4,8 @@
 #include "vk_const.h"
 #include "vk_core.h"
 
+#include "std/arrays.h"
+
 qboolean VK_RenderInit( void );
 void VK_RenderShutdown( void );
 
@@ -95,6 +97,10 @@ uint32_t R_VkMaterialModeFromRenderType(vk_render_type_e render_type);
 
 struct rt_light_add_polygon_s;
 struct rt_model_s;
+struct vk_render_model_s;
+
+typedef ARRAY_DYNAMIC_DECLARE(int, vk_int_array_t);
+typedef void (compute_visible_geometries_f)(const struct vk_render_model_s* model, vec3_t pos, vk_int_array_t* inout);
 
 typedef struct vk_render_model_s {
 #define MAX_MODEL_NAME_LENGTH 64
@@ -107,6 +113,9 @@ typedef struct vk_render_model_s {
 	vk_render_geometry_t *geometries;
 
 	struct rt_model_s *rt_model;
+
+	// Optional, expected to be provided by brush worldmodel
+	compute_visible_geometries_f *compute_visible_geometries;
 } vk_render_model_t;
 
 // Initialize model from scratch
@@ -167,10 +176,14 @@ void VK_RenderDebugLabelEnd( void );
 
 void VK_RenderBegin( qboolean ray_tracing );
 
-struct vk_combuf_s;
-struct FrameContext;
-void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const struct FrameContext *ctx );
-void VK_RenderEnd( struct vk_combuf_s*, qboolean draw, uint32_t width, uint32_t height, int frame_index );
+typedef struct {
+	struct vk_combuf_s* combuf;
+	uint32_t width, height;
+	VkFramebuffer framebuffer;
+	struct r_vk_image_s* framebuffer_image;
+	uint32_t sequence;
+	uint32_t frame_index;
+	qboolean trace_rays;
+} vk_render_draw_frame_t;
 
-struct r_vk_image_s;
-void VK_RenderEndRTX( struct vk_combuf_s* combuf, struct r_vk_image_s *dst);
+void R_VkRenderDrawFrame(vk_render_draw_frame_t args);
