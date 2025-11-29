@@ -120,14 +120,12 @@ void main() {
 		payload.emissive.rgb = sampleSkybox(ray.direction);
 	}
 
-	payload.base_color_a = LINEARtoSRGB(payload.base_color_a); // convert in sRGB before applying decals
-
 	const vec4 blend = traceLegacyBlending(ray.origin, ray.direction, L, payload.base_color_a, payload.material_rmxx);
 
 	imageStore(out_legacy_blend, pix, blend);
 
 	imageStore(out_position_t, pix, payload.hit_t);
-	imageStore(out_base_color_a, pix, payload.base_color_a);
+	imageStore(out_base_color_a, pix, LINEARtoSRGB(payload.base_color_a));
 	imageStore(out_normals_gs, pix, payload.normals_gs);
 	imageStore(out_material_rmxx, pix, payload.material_rmxx);
 	imageStore(out_emissive, pix, payload.emissive);

@@ -97,7 +97,7 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L, inout vec4 surfBaseColorA,
 			// Handled in composite step below
 		} else if (model.mode == MATERIAL_MODE_DECAL) {
 			// TODO: blend also normals and emissive from decal
-			surfBaseColorA = mix(surfBaseColorA, vec4(color, alpha), alpha);
+			surfBaseColorA = mix(surfBaseColorA, vec4(SRGBtoLINEAR(color), alpha), alpha); // mix in linear color space
 			surfRmxx = mix(surfRmxx, vec4(kusok.material.roughness, kusok.material.metalness, 0., 0.), alpha);
 
 			// don't apply decal in blending
