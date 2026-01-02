@@ -6,7 +6,7 @@
 // Traces geometry with simple blending. Simple means that it's only additive or mix/coverage, and it doesn't participate in lighting, and it doesn't reflect/refract rays.
 // Done in sRGB-γ space for legacy-look reasons.
 // Returns vec4(emissive_srgb.rgb, revealage)
-vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L, inout vec4 surfBaseColorA, inout vec4 surfRmxx) {
+vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
 	const float kGlowSoftOvershoot = 16.;
 	vec3 emissive = vec3(0.);
 
@@ -34,6 +34,10 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L, inout vec4 surfBaseColorA,
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, false);
 		const ModelHeader model = getModelHeader(model_index);
+		
+		if (model.mode == MATERIAL_MODE_DECAL)
+			continue; // TODO: move decals to separated queue
+		
 		const Kusok kusok = getKusok(geom.kusok_index);
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 
@@ -67,8 +71,6 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L, inout vec4 surfBaseColorA,
 			emissive += vec3(0., 1., 1.);
 		} else if (model.mode == MATERIAL_MODE_OPAQUE) {
 			emissive += vec3(1., 1., 1.);
-		} else if (model.mode == MATERIAL_MODE_DECAL) {
-			emissive += vec3(1., 1., 0.);
 		}
 #else
 		// Note that simple blending is legacy blending really.
@@ -95,14 +97,6 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L, inout vec4 surfBaseColorA,
 			alpha = 0.;
 		} else if (model.mode == MATERIAL_MODE_BLEND_MIX) {
 			// Handled in composite step below
-		} else if (model.mode == MATERIAL_MODE_DECAL) {
-			// TODO: blend also normals and emissive from decal
-			surfBaseColorA = mix(surfBaseColorA, vec4(SRGBtoLINEAR(color), alpha), alpha); // mix in linear color space
-			surfRmxx = mix(surfRmxx, vec4(kusok.material.roughness, kusok.material.metalness, 0., 0.), alpha);
-
-			// don't apply decal in blending
-			alpha = 0.;
-			color = vec3(0.);
 		} else {
 			// Signal unhandled blending type
 			color = vec3(1., 0., 1.);
