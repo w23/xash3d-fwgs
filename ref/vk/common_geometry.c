@@ -257,7 +257,7 @@ Init surf->polys for decals
 Adapted copypaste of GL_BuildPolygonFromSurface
 ================
 */
-int VK_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
+int R_BuildPolygonFromSurface( model_t *mod, msurface_t *fa )
 {
 	int		i, lnumverts, nColinElim = 0;
 	float		sample_size;
