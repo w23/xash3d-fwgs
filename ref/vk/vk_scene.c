@@ -171,7 +171,7 @@ model_t* R_ModelHandle(int index)
 	return NULL;
 }
 
-void VK_InitModelsPolys ( void )
+void R_InitModelsPolys ( void )
 {
 	// copypaste from GL_BuildLightmaps
 	int	i, j = 0;
@@ -287,7 +287,7 @@ void R_NewMap( void ) {
 
 	R_StudioResetPlayerModels();
 
-	VK_InitModelsPolys();
+	R_InitModelsPolys();
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
