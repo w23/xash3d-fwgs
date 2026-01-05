@@ -59,7 +59,7 @@ enum {
 	kVkPipeline_A_1_R,    // blend: src*a + dst, depth test
 	kVkPipeline_AT,       // no blend, depth RW, alpha test
 	kVkPipeline_1_1_R,    // blend: src + dst, depth test
-
+	kVkPipeline_Decal, 	  // copy of kVkPipeline_A_1mA_R but for separated decal material
 	kVkPipeline_COUNT,
 };
 
@@ -331,6 +331,18 @@ static qboolean createPipelines( void )
 			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 			if (!createPipeline(g_render.pipelines + kVkPipeline_1_1_R, "1_1_R", &ci))
+				return false;
+		}
+
+				{
+			spec_data.alpha_test_threshold = 0.f;
+			ci.depthWriteEnable = VK_FALSE;
+			ci.depthTestEnable = VK_TRUE;
+			ci.blendEnable = VK_TRUE;
+			ci.colorBlendOp = VK_BLEND_OP_ADD;
+			ci.srcAlphaBlendFactor = ci.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+			ci.dstAlphaBlendFactor = ci.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+			if (!createPipeline(g_render.pipelines + kVkPipeline_Decal, "Decal", &ci))
 				return false;
 		}
 	}
