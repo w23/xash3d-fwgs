@@ -11,7 +11,7 @@
 #include "vk_studio.h"
 #include "vk_beams.h"
 #include "vk_brush.h"
-#include "vk_decals.h"
+#include "r_decals.h"
 #include "vk_rpart.h"
 #include "vk_triapi.h"
 #include "r_speeds.h"
@@ -538,10 +538,10 @@ static const ref_interface_t gReffuncs =
 	.R_LightPoint = R_LightPoint,
 
 	// decals
-	.R_DecalShoot = VK_DecalShoot,
-	.R_DecalRemoveAll = VK_DecalRemoveAll,
-	.R_CreateDecalList = VK_CreateDecalList,
-	.R_ClearAllDecals = VK_ClearAllDecals,
+	.R_DecalShoot = R_DecalShoot,
+	.R_DecalRemoveAll = R_DecalRemoveAll,
+	.R_CreateDecalList = R_CreateDecalList,
+	.R_ClearAllDecals = R_ClearAllDecals,
 
 	.R_StudioEstimateFrame = R_StudioEstimateFrame,
 	.R_StudioLerpMovement = R_StudioLerpMovement,
@@ -582,9 +582,9 @@ static const ref_interface_t gReffuncs =
 	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
 	// Decals manipulating (draw & remove)
-	.DrawSingleDecal = VK_DrawSingleDecal,
-	.R_DecalSetupVerts = VK_DecalSetupVerts,
-	.R_EntityRemoveDecals = VK_EntityRemoveDecals,
+	.DrawSingleDecal = R_DrawSingleDecal,
+	.R_DecalSetupVerts = R_DecalSetupVerts,
+	.R_EntityRemoveDecals = R_EntityRemoveDecals,
 
 	.AVI_UploadRawFrame = AVI_UploadRawFrame,
 

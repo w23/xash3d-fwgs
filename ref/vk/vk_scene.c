@@ -10,7 +10,7 @@
 #include "vk_core.h"
 #include "vk_sprite.h"
 #include "vk_beams.h"
-#include "vk_decals.h"
+#include "r_decals.h"
 #include "vk_light.h"
 #include "vk_rtx.h"
 #include "r_textures.h"
@@ -272,7 +272,7 @@ void R_NewMap( void ) {
 	// Make sure that EntityData doesn't accidentally reference old pointers.
 	VK_EntityDataClear();
 
-	VK_ClearDecals();
+	R_ClearDecals();
 
 	RT_FrameDiscontinuity();
 

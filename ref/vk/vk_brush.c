@@ -8,7 +8,7 @@
 #include "vk_geometry.h"
 #include "vk_light.h"
 #include "vk_mapents.h"
-#include "vk_decals.h"
+#include "r_decals.h"
 #include "r_speeds.h"
 #include "vk_logs.h"
 #include "std/profiler.h"
@@ -1031,8 +1031,8 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		if (!s || !s->pdecals)
 			continue;
 
-		VK_SetDecalsTransform(&transform);
-		VK_DrawSurfaceDecals( s, true, false );
+		R_SetDecalsTransform(&transform);
+		R_DrawSurfaceDecals( s, true, false );
 	}
 
 	Matrix4x4_Copy(bmodel->prev_transform, transform);
