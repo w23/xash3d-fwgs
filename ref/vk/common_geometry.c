@@ -202,12 +202,12 @@ void GL_SubdivideSurface( model_t *loadmodel, msurface_t *fa )
 
 /*
 ================
-VK_LightmapCoord
+R_LightmapCoord
 
 Total copypaste of R_LightmapCoord from gl_rsurf.c
 ================
 */
-void VK_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords )
+void R_LightmapCoord( const vec3_t v, const msurface_t *surf, const float sample_size, vec2_t coords )
 {
 	const mextrasurf_t *info = surf->info;
 	float s, t;
