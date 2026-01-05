@@ -33,6 +33,6 @@ struct beam_s;
 void CL_DrawBeams( int fTrans, struct beam_s *active_beams );
 void CL_AddCustomBeam( struct cl_entity_s *pEnvBeam );
 
-struct cl_entity_s* VK_GetEntityByIndex(int index);
-model_t* VK_ModelHandle(int index);
-void VK_InitModelsPolys ( void );
+struct cl_entity_s* R_GetEntityByIndex(int index);
+model_t* R_ModelHandle(int index);
+void R_InitModelsPolys ( void );
