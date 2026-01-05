@@ -428,7 +428,7 @@ static void VK_DecalVertsLight( float *v, msurface_t *surf, int vertCount )
 	for( j = 0; j < vertCount; j++, v += VERTEXSIZE )
 	{
 		// lightmap texture coordinates
-		VK_LightmapCoord( v, surf, sample_size, &v[5] );
+		R_LightmapCoord( v, surf, sample_size, &v[5] );
 	}
 }
 
@@ -786,15 +786,15 @@ void VK_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t po
 
 	if( entityIndex > 0 )
 	{
-		ent = VK_GetEntityByIndex(entityIndex);
+		ent = R_GetEntityByIndex(entityIndex);
 
-		if( modelIndex > 0 ) model = VK_ModelHandle( modelIndex );
-		else if( ent != NULL ) model = VK_ModelHandle( ent->curstate.modelindex );
+		if( modelIndex > 0 ) model = R_ModelHandle( modelIndex );
+		else if( ent != NULL ) model = R_ModelHandle( ent->curstate.modelindex );
 		else return;
 	}
 	else if( modelIndex > 0 )
-		model = VK_ModelHandle( modelIndex );
-	else model = VK_ModelHandle( 1 );
+		model = R_ModelHandle( modelIndex );
+	else model = R_ModelHandle( 1 );
 
 	if( !model ) return;
 

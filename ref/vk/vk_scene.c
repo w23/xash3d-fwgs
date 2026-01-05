@@ -155,7 +155,7 @@ static void reloadPatches( void ) {
 	loadMap(map, force_reload);
 }
 
-cl_entity_t* VK_GetEntityByIndex(int index)
+cl_entity_t* R_GetEntityByIndex(int index)
 {
 	if (index > 0 && index < globals.max_entities)
 		return globals.entities + index;
@@ -163,7 +163,7 @@ cl_entity_t* VK_GetEntityByIndex(int index)
 	return NULL;
 }
 
-model_t* VK_ModelHandle(int index)
+model_t* R_ModelHandle(int index)
 {
 	if (index > 0 && index < gp_cl->nummodels)
 		return gp_cl->models[index];
@@ -179,7 +179,7 @@ void VK_InitModelsPolys ( void )
 
 	for( i = 0; i < gp_cl->nummodels; i++ )
 	{
-		if(( m = VK_ModelHandle( i + 1 )) == NULL )
+		if(( m = R_ModelHandle( i + 1 )) == NULL )
 			continue;
 
 		if( m->name[0] == '*' || m->type != mod_brush )
@@ -196,7 +196,7 @@ void VK_InitModelsPolys ( void )
 			if( m->surfaces[j].flags & SURF_DRAWTURB )
 				continue;
 
-			VK_BuildPolygonFromSurface( m, m->surfaces + j );
+			R_BuildPolygonFromSurface( m, m->surfaces + j );
 		}
 	}
 }
