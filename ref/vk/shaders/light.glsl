@@ -6,6 +6,7 @@ const float shadow_offset_fudge = .1;
 
 #include "brdf.glsl"
 #include "light_common.glsl"
+#include "light_weight.glsl"
 
 #if LIGHT_POLYGON
 #include "light_polygon.glsl"
@@ -16,7 +17,15 @@ const float shadow_offset_fudge = .1;
 // 1. Spherical lights
 // 2. Spotlights
 // 3. Env|dir lights
-void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computePointLights(
+	vec3 P,
+	vec3 N,
+	uint cluster_index,
+	vec3 view_dir,
+	MaterialProperties material,
+	out vec3 diffuse,
+	out vec3 specular,
+	inout BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
 	diffuse = specular = vec3(0.);
 
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
@@ -183,14 +192,16 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 				continue;
 		}
 
+		updateBrightestLights(ldiffuse, lspecular, i, brightest_lights);
 		diffuse += ldiffuse;
 		specular += lspecular;
 	} // for all lights
 }
 #endif
 
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
 	diffuse = specular = vec3(0.);
+	initBrightestLights(brightest_lights);
 
 	// No direct lighting for white furnace mode. The only light sources is no-hit|SURF_SKY bounce indirect light.
 	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
@@ -227,12 +238,12 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	//C += .3 * fract(vec3(light_cell) / 4.);
 
 #if LIGHT_POLYGON
-	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular);
+	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular, brightest_lights);
 #endif
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
-	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular);
+	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, brightest_lights);
 	diffuse += ldiffuse;
 	specular += lspecular;
 #endif
@@ -251,3 +262,10 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	}
 #endif
 }
+
+
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+	BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights);
+}
+
