@@ -2,6 +2,8 @@
 #include "debug.glsl"
 #include "utils.glsl"
 #include "color_spaces.glsl"
+#include "noise.glsl"
+#include "brdf.glsl"
 
 #define GLSL
 #include "ray_interop.h"
@@ -119,6 +121,96 @@ vec2 sampleCombinedDirectConfidence9Tap(ivec2 center, ivec2 res) {
 	vec2 polygon_confidence = polygon_total / weight;
 	vec2 point_confidence = point_total / weight;
 	return min(polygon_confidence, point_confidence);
+}
+
+struct LuminanceStats {
+	float mean;
+	float variance;
+};
+
+vec3 sampleCurrentPreTemporalDiffuse(ivec2 pix) {
+	vec3 value = imageLoad(light_point_diffuse, pix).rgb + imageLoad(light_poly_diffuse, pix).rgb;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		value += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+	} else {
+		value += imageLoad(indirect_diffuse, pix / INDIRECT_SCALE).rgb;
+	}
+	return value;
+}
+
+vec3 sampleCurrentPreTemporalSpecular(ivec2 pix) {
+	return imageLoad(light_point_specular, pix).rgb
+		+ imageLoad(light_poly_specular, pix).rgb
+		+ imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb;
+}
+
+LuminanceStats sampleCurrentDiffuseStats3x3(ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			float l = luminance(sampleCurrentPreTemporalDiffuse(p));
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+LuminanceStats sampleCurrentSpecularStats3x3(ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			float l = luminance(sampleCurrentPreTemporalSpecular(p));
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+LuminanceStats sampleHistoryStats3x3(bool is_specular, ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			vec3 rad = is_specular ? imageLoad(prev_temporal_specular, p).rgb : imageLoad(prev_temporal_diffuse, p).rgb;
+			float l = luminance(rad);
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+float computeVarianceConfidence(float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
+	float expected_sigma = sqrt(max(max(current_stats.variance, history_stats.variance), 0.0));
+	float expected_delta = max(expected_sigma + 0.1 * max(current_stats.mean, history_stats.mean), 0.02);
+	float mismatch = max(abs(current_luma - history_luma), abs(current_stats.mean - history_stats.mean)) / expected_delta;
+	return 1.0 - smoothstep(2.0, 6.0, mismatch);
+}
+
+float softenVarianceConfidence(float confidence) {
+	return mix(1.0, confidence, 0.35);
 }
 
 struct Components {
@@ -534,6 +626,12 @@ void main() {
 		vec3 history_specular = specular;
 		float diffuse_confidence = 0.0;
 		float specular_confidence = 0.0;
+		float diffuse_variance_confidence = 1.0;
+		float specular_variance_confidence = 1.0;
+		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
+		const LuminanceStats current_specular_stats = sampleCurrentSpecularStats3x3(pix, res);
+		const float current_diffuse_luma = luminance(diffuse);
+		const float current_specular_luma = luminance(specular);
 		
 		if (any(greaterThanEqual(reproj_pix, ivec2(0))) && any(lessThan(reproj_pix, res))) {			
 			const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
@@ -546,6 +644,8 @@ void main() {
 				history_diffuse = history_diffuse_depth.rgb;
 				history_specular = history_specular_sample.rgb;
 				diffuse_confidence = sampleCombinedDirectConfidence9Tap(reproj_pix, res).x;
+				const LuminanceStats history_diffuse_stats = sampleHistoryStats3x3(false, reproj_pix, res);
+				diffuse_variance_confidence = computeVarianceConfidence(current_diffuse_luma, current_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
 			}
 		}
 
@@ -556,6 +656,8 @@ void main() {
 			const vec4 history_specular_sample = imageLoad( prev_temporal_specular, parallax_pix );
 			history_specular = closestColor(history_specular_sample.xyz, history_specular, specular);
 			specular_confidence = sampleCombinedDirectConfidence9Tap(parallax_pix, res).y;
+			const LuminanceStats history_specular_stats = sampleHistoryStats3x3(true, parallax_pix, res);
+			specular_variance_confidence = computeVarianceConfidence(current_specular_luma, current_specular_stats, luminance(history_specular), history_specular_stats);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -571,8 +673,8 @@ void main() {
 #endif
 
 		if (better_depth_offset < depth_treshold) {
-			float diffuse_history_mix = DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT * diffuse_confidence;
-			float specular_history_mix = SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT * max(diffuse_confidence, specular_confidence);
+			float diffuse_history_mix = DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT * diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
+			float specular_history_mix = SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT * max(diffuse_confidence, specular_confidence) * softenVarianceConfidence(specular_variance_confidence);
 			diffuse = mix(diffuse, history_diffuse, diffuse_history_mix);
 			specular = mix(specular, history_specular, specular_history_mix);
 		}
@@ -627,6 +729,11 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
+
+
+
+
 
 
 
