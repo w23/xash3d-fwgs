@@ -5,6 +5,7 @@
 #include "color_spaces.glsl"
 
 #include "light.glsl"
+#include "temporal_reprojection.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
@@ -14,6 +15,7 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 
 void main() {
 #ifdef RAY_TRACE
+	const ivec2 res = ivec2(gl_LaunchSizeEXT.xy);
 	const vec2 uv = (gl_LaunchIDEXT.xy + .5) / gl_LaunchSizeEXT.xy * 2. - 1.;
 	const ivec2 pix = ivec2(gl_LaunchIDEXT.xy);
 #elif defined(RAY_QUERY)
@@ -77,8 +79,14 @@ void main() {
 #endif
 		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights);
 
-		unpackBrightestLights(imageLoad(prev_temporal, pix), prev_brightest_lights);
-		unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, pix), prev_shading_normal, prev_roughness);
+		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
+		ivec2 reproj_pix = ivec2(-1);
+		float reproj_depth_necessary = 0.0;
+		float reproj_depth_threshold = 0.0;
+		if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
+			unpackBrightestLights(imageLoad(prev_temporal, reproj_pix), prev_brightest_lights);
+			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
+		}
 
 		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
 		processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
@@ -102,3 +110,5 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
+
+

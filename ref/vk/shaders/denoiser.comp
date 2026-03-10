@@ -50,11 +50,13 @@ layout(set = 0, binding = 21) uniform sampler3D blue_noise_texture;
 #endif
 
 layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 23, rgba16f) uniform readonly image2D light_polygon_confidence;
+layout(set = 0, binding = 24, rgba16f) uniform readonly image2D light_point_confidence;
 
 //layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
 
 #include "atrous.glsl"
-
+#include "temporal_reprojection.glsl"
 const int INDIRECT_SCALE = 2;
 
 // Blatantly copypasted from https://www.shadertoy.com/view/XsGfWV
@@ -97,6 +99,26 @@ vec3 closestColor(vec3 color1, vec3 color2, vec3 sampleColor) {
     float dist1 = dot(color1 - sampleColor, color1 - sampleColor);
     float dist2 = dot(color2 - sampleColor, color2 - sampleColor);
     return (dist1 < dist2) ? color1 : color2;
+}
+
+float sampleCombinedDirectConfidence9Tap(ivec2 center, ivec2 res) {
+	float polygon_total = 0.0;
+	float point_total = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			polygon_total += imageLoad(light_polygon_confidence, p).r;
+			point_total += imageLoad(light_point_confidence, p).r;
+			weight += 1.0;
+		}
+	}
+	if (weight <= 0.0) {
+		return 0.0;
+	}
+	float polygon_confidence = polygon_total / weight;
+	float point_confidence = point_total / weight;
+	return min(polygon_confidence, point_confidence);
 }
 
 struct Components {
@@ -496,15 +518,16 @@ void main() {
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth = length(origin - position);
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
-		const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(prev_position, 1.)).xyz, 1.);
-		const vec2 reproj_uv = clip_space.xy / clip_space.w;
-		const ivec2 reproj_pix = ivec2((reproj_uv * 0.5 + vec2(0.5)) * vec2(res));
+		ivec2 reproj_pix = ivec2(-1);
+		float depth_nessesary = 0.0;
+		float depth_treshold = 0.0;
+		reprojectToPrevFramePixel(prev_position, res, reproj_pix, depth_nessesary, depth_treshold);
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
-		const float depth_nessesary = length(prev_position - prev_origin);
-		const float depth_treshold = 0.01 * clip_space.w;
 		float better_depth_offset = depth_treshold;
 		vec3 history_diffuse = diffuse;
 		vec3 history_specular = specular;
+		float diffuse_confidence = 0.0;
+		float specular_confidence = 0.0;
 		
 		if (any(greaterThanEqual(reproj_pix, ivec2(0))) && any(lessThan(reproj_pix, res))) {			
 			const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
@@ -516,6 +539,7 @@ void main() {
 				better_depth_offset = depth_offset;
 				history_diffuse = history_diffuse_depth.rgb;
 				history_specular = history_specular_sample.rgb;
+				diffuse_confidence = sampleCombinedDirectConfidence9Tap(reproj_pix, res);
 			}
 		}
 
@@ -558,13 +582,13 @@ void main() {
 			const float refl_center = prev_distance_to_plane / (prev_distance_to_plane + refl_distance_to_plane);
 			const vec3 parallax_position = mix(prev_origin_on_plane, refl_on_plane, refl_center);
 
-			const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(parallax_position, 1.)).xyz, 1.);
-			const vec2 parallax_uv = clip_space.xy / clip_space.w;
-			const ivec2 parallax_pix = ivec2((parallax_uv * 0.5 + vec2(0.5)) * vec2(res));
+			ivec2 parallax_pix = ivec2(-1);
+			float parallax_clip_w = 0.0;
 
-			if (any(greaterThanEqual(parallax_pix, ivec2(0))) && any(lessThan(parallax_pix, res))) {
+			if (projectWorldToPrevFramePixel(parallax_position, res, parallax_pix, parallax_clip_w)) {
 				const vec4 history_specular_sample = imageLoad( prev_temporal_specular, parallax_pix );
 				history_specular = closestColor(history_specular_sample.xyz, history_specular, specular);
+				specular_confidence = sampleCombinedDirectConfidence9Tap(parallax_pix, res);
 			}
 		}
 
@@ -581,8 +605,10 @@ void main() {
 #endif
 
 		if (better_depth_offset < depth_treshold) {
-			diffuse = mix(diffuse, history_diffuse, DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT);
-			specular = mix(specular, history_specular, SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT);
+			float diffuse_history_mix = DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT * diffuse_confidence;
+			float specular_history_mix = SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT * max(diffuse_confidence, specular_confidence);
+			diffuse = mix(diffuse, history_diffuse, diffuse_history_mix);
+			specular = mix(specular, history_specular, specular_history_mix);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -635,3 +661,8 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
+
+
+
+
