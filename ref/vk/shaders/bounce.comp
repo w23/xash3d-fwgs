@@ -58,6 +58,17 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	geometry_normal = normalDecode(n.xy);
 	shading_normal = normalDecode(n.zw);
 }
+const int kMaxBounces = 1;
+const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
+const float kBounceRayNormalOffset = .02;
+const float kBounceRayMinT = .005;
+const float kBounceLightingNormalOffset = .01;
+
+ivec2 pix;
+vec3 offsetRayOrigin(vec3 pos, vec3 geometry_normal, vec3 ray_dir, float eps) {
+	const float normal_sign = dot(geometry_normal, ray_dir) >= 0.0 ? 1.0 : -1.0;
+	return pos + geometry_normal * (eps * normal_sign);
+}
 
 bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 	rayQueryEXT rq;
@@ -69,7 +80,7 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		;
 
 	const float L = 10000.; // TODO Why 10k? Use the real max distance, as in ray_primary.comp
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST, origin, 0., direction, L);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST, origin, kBounceRayMinT, direction, L);
 	while (rayQueryProceedEXT(rq)) {
 		if (0 != (rayQueryGetRayFlagsEXT(rq) & gl_RayFlagsOpaqueEXT))
 			continue;
@@ -117,11 +128,7 @@ struct MaterialEx {
 	//TODO float alpha;
 };
 
-const int kMaxBounces = 1;
-const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
-const float kRayNormalOffsetFudge = .01;
 
-ivec2 pix;
 void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout vec3 first_bounce_direction) {
 	vec3 throughput = vec3(1.);
 
@@ -170,15 +177,16 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		payload.normals_gs = vec4(0.);
 
 		vec3 contribution = vec3(0.);
-		pos += mat.geometry_normal * kRayNormalOffsetFudge;
+		const vec3 ray_origin = offsetRayOrigin(pos, mat.geometry_normal, bounce_direction, kBounceRayNormalOffset);
 
 		vec3 hit_color = vec3(0.);
 		// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
 		if (any(isnan(bounce_direction)))
 			break;
-		const bool did_hit = getHit(pos, bounce_direction, payload);
+		const bool did_hit = getHit(ray_origin, bounce_direction, payload);
 		MaterialProperties hit_material;
 		const vec3 hit_pos = payload.hit_t.xyz;
+		const vec3 hit_geometry_normal = normalDecode(payload.normals_gs.xy);
 		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
 		if (did_hit) {
 			vec3 ldiffuse = vec3(0.);
@@ -194,7 +202,8 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 			break;
 		}
 #endif
-			computeLighting(hit_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
+			const vec3 hit_lighting_pos = hit_pos + hit_geometry_normal * kBounceLightingNormalOffset;
+			computeLighting(hit_lighting_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
 			if (IS_INVALIDV(ldiffuse)) {
 #ifdef SHADER_DEBUG_ENABLE
@@ -218,7 +227,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 			hit_color = payload.emissive.rgb;
 		}
 
-		const vec4 blend = traceLegacyBlending(pos, bounce_direction, payload.hit_t.w);
+		const vec4 blend = traceLegacyBlending(ray_origin, bounce_direction, payload.hit_t.w);
 		contribution = throughput * (SRGBtoLINEAR(blend.rgb) + hit_color * blend.a);
 
 		if (first_brdf_type == BRDF_TYPE_DIFFUSE)
@@ -236,7 +245,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		pos = hit_pos;
 		direction = bounce_direction;
 		mat.prop = hit_material;
-		mat.geometry_normal = normalDecode(payload.normals_gs.xy);
+		mat.geometry_normal = hit_geometry_normal;
 		mat.shading_normal = hit_shading_normal;
 
 		if (brdf_type == BRDF_TYPE_DIFFUSE) {
