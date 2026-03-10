@@ -105,6 +105,7 @@ static void parseDebugDisplayValue( void ) {
 	X(MATERIAL, "red = roughness, green = metalness") \
 	X(DIFFUSE, "direct + indirect diffuse, spatially denoised") \
 	X(SPECULAR, "direct + indirect specular, spatially denoised") \
+	X(CONFIDENCE, "direct-light confidence masks: red = simple reprojection, green = parallax reprojection") \
 
 #define X(suffix, info) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
@@ -452,3 +453,5 @@ void RT_FrameDiscontinuity( void ) {
 	DEBUG("%s", __FUNCTION__);
 	g_rtx.discontinuity = true;
 }
+
+

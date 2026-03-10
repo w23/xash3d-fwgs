@@ -48,6 +48,10 @@
 #define BRIGHTEST_LIGHTS_PER_TEXEL 4
 #endif
 
+#ifndef TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
+#define TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF 1
+#endif
+
 struct BrightestLightEntry {
     uint index;
     float luminance;
@@ -202,33 +206,149 @@ int findBrightestLightEntry(BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_T
 	return -1;
 }
 
+float sumBrightestLightLuminance(BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL])
+{
+	float total = 0.0;
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		if (brightest[i].index == 0xffffffffu || brightest[i].luminance <= 0.0) {
+			continue;
+		}
+		total += brightest[i].luminance;
+	}
+	return total;
+}
+
+bool isBrightestLightEntryIndexValid(BrightestLightEntry entry)
+{
+	if (entry.index == 0xffffffffu || entry.luminance <= 0.0) {
+		return false;
+	}
+#if LIGHT_POINT
+	return entry.index < lights.m.num_point_lights;
+#elif LIGHT_POLYGON
+	return entry.index < lights.m.num_polygons;
+#else
+	return false;
+#endif
+}
+
+float entryConfidenceMagnitude(BrightestLightEntry entry, float reevaluated_weight)
+{
+	return max(max(reevaluated_weight, entry.luminance), 0.0);
+}
+
+void extractSortedBrightestLuminance(
+	BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
+	out float sorted_luminance[BRIGHTEST_LIGHTS_PER_TEXEL])
+{
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		sorted_luminance[i] = brightest[i].luminance > 0.0 ? brightest[i].luminance : 0.0;
+	}
+
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL - 1; ++i) {
+		for (int j = i + 1; j < BRIGHTEST_LIGHTS_PER_TEXEL; ++j) {
+			if (sorted_luminance[j] > sorted_luminance[i]) {
+				float tmp = sorted_luminance[i];
+				sorted_luminance[i] = sorted_luminance[j];
+				sorted_luminance[j] = tmp;
+			}
+		}
+	}
+}
+
+float computeTemporalBrightnessProfileConfidence(
+	BrightestLightEntry current_brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
+	BrightestLightEntry prev_brightest[BRIGHTEST_LIGHTS_PER_TEXEL])
+{
+	float current_sorted[BRIGHTEST_LIGHTS_PER_TEXEL];
+	float prev_sorted[BRIGHTEST_LIGHTS_PER_TEXEL];
+	extractSortedBrightestLuminance(current_brightest, current_sorted);
+	extractSortedBrightestLuminance(prev_brightest, prev_sorted);
+
+	float diff_sum = 0.0;
+	float ref_sum = 0.0;
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		diff_sum += abs(current_sorted[i] - prev_sorted[i]);
+		ref_sum += max(current_sorted[i], prev_sorted[i]);
+	}
+
+	if (ref_sum <= 1e-4) {
+		return 1.0;
+	}
+
+	float relative_diff = diff_sum / ref_sum;
+	return 1.0 - clamp(relative_diff, 0.0, 1.0);
+}
+
+float computeTemporalIndexedConfidence(
+	BrightestLightEntry current_brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
+	BrightestLightEntry prev_brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
+	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+{
+	float diff_sum = 0.0;
+	float ref_sum = 0.0;
+	bool visited_current[BRIGHTEST_LIGHTS_PER_TEXEL];
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		visited_current[i] = false;
+	}
+
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		BrightestLightEntry prev = prev_brightest[i];
+		if (prev.index == 0xffffffffu || prev.luminance <= 0.0) {
+			continue;
+		}
+
+		float prev_magnitude = entryConfidenceMagnitude(prev, prev_weights[i]);
+		float current_magnitude = 0.0;
+		int current_index = findBrightestLightEntry(current_brightest, prev.index);
+		if (current_index >= 0 && isBrightestLightEntryIndexValid(current_brightest[current_index])) {
+			visited_current[current_index] = true;
+			current_magnitude = entryConfidenceMagnitude(current_brightest[current_index], current_weights[current_index]);
+		}
+
+		diff_sum += abs(current_magnitude - prev_magnitude);
+		ref_sum += max(current_magnitude, prev_magnitude);
+	}
+
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		BrightestLightEntry current = current_brightest[i];
+		if (visited_current[i] || current.index == 0xffffffffu || current.luminance <= 0.0) {
+			continue;
+		}
+
+		float current_magnitude = entryConfidenceMagnitude(current, current_weights[i]);
+		diff_sum += current_magnitude;
+		ref_sum += current_magnitude;
+	}
+
+	if (ref_sum <= 1e-4) {
+		return 1.0;
+	}
+
+	return 1.0 - clamp(diff_sum / ref_sum, 0.0, 1.0);
+}
+
 float computeTemporalConfidence(
 	BrightestLightEntry current_brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
 	BrightestLightEntry prev_brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
 {
-	float weighted_confidence = 0.0;
-	float total_weight = 0.0;
+	float indexed_confidence = computeTemporalIndexedConfidence(
+		current_brightest,
+		prev_brightest,
+		current_weights,
+		prev_weights);
 
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		BrightestLightEntry current = current_brightest[i];
-		if (current.index == 0xffffffffu || current.luminance <= 0.0) {
-			continue;
-		}
-
-		int prev_index = findBrightestLightEntry(prev_brightest, current.index);
-		if (prev_index < 0) {
-			continue;
-		}
-
-		float confidence = 1.0 / (1.0 + abs(current_weights[i] - prev_weights[prev_index]));
-		float weight = max(current.luminance, 1e-4);
-		weighted_confidence += confidence * weight;
-		total_weight += weight;
-	}
-
-	return total_weight > 0.0 ? weighted_confidence / total_weight : 0.0;
+#if TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
+	float brightness_confidence = computeTemporalBrightnessProfileConfidence(
+		current_brightest,
+		prev_brightest);
+	return min(indexed_confidence, brightness_confidence);
+#else
+	return indexed_confidence;
+#endif
 }
 
 #ifndef POLYGON_LIGHT_SAMPLE_NORMAL_EPSILON
@@ -345,5 +465,11 @@ vec2 lightPolygonWeightCalculation(
 }
 
 #endif // LIGHT_WEIGHT_GLSL_INCLUDED
+
+
+
+
+
+
 
 

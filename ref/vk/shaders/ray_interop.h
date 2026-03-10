@@ -190,6 +190,7 @@ struct LightCluster {
 #define DEBUG_DISPLAY_MATERIAL 15
 #define DEBUG_DISPLAY_DIFFUSE 16
 #define DEBUG_DISPLAY_SPECULAR 17
+#define DEBUG_DISPLAY_CONFIDENCE 18
 // add more when needed
 
 #define DEBUG_FLAG_WHITE_FURNACE (1<<0)
@@ -227,3 +228,6 @@ struct UniformBuffer {
 #endif
 
 #endif // RAY_INTEROP_H_INCLUDED
+
+
+

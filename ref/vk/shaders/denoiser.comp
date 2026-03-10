@@ -465,6 +465,12 @@ void main() {
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NGEOM) {
 		imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.));
 		return;
+	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_CONFIDENCE) {
+		vec2 polygon_confidence = imageLoad(light_polygon_confidence, pix).rg;
+		vec2 point_confidence = imageLoad(light_point_confidence, pix).rg;
+		vec2 confidence = min(polygon_confidence, point_confidence);
+		imageStore(out_dest, pix, vec4(confidence.r, confidence.g, 0.0, 0.0));
+		return;
 	}
 
 #ifdef DEBUG_NOISE
@@ -621,6 +627,13 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
+
+
+
+
+
+
 
 
 

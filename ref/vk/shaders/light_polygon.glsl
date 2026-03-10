@@ -10,8 +10,8 @@
 #define DO_ALL_IN_CLUSTER 1
 
 #ifndef RAY_BOUNCE
-#define PROJECTED
-//#define SOLID
+//#define PROJECTED
+#define SOLID
 //#define SIMPLE_SOLID
 #else
 //#define PROJECTED
