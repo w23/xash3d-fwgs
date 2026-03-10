@@ -45,7 +45,7 @@
 #endif
 
 #ifndef BRIGHTEST_LIGHTS_PER_TEXEL
-#define BRIGHTEST_LIGHTS_PER_TEXEL 4
+#define BRIGHTEST_LIGHTS_PER_TEXEL 8
 #endif
 
 #ifndef TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
@@ -117,21 +117,36 @@ BrightestLightEntry unpackBrightnessEntry(float packed)
 	return entry;
 }
 
-vec4 packBrightestLights(BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL])
+void packBrightestLights(
+	BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL],
+	out vec4 packed0,
+	out vec4 packed1)
 {
-	return vec4(
+	packed0 = vec4(
 		packBrightnessEntry(brightest[0]),
 		packBrightnessEntry(brightest[1]),
 		packBrightnessEntry(brightest[2]),
 		packBrightnessEntry(brightest[3]));
+	packed1 = vec4(
+		packBrightnessEntry(brightest[4]),
+		packBrightnessEntry(brightest[5]),
+		packBrightnessEntry(brightest[6]),
+		packBrightnessEntry(brightest[7]));
 }
 
-void unpackBrightestLights(vec4 packed, out BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL])
+void unpackBrightestLights(
+	vec4 packed0,
+	vec4 packed1,
+	out BrightestLightEntry brightest[BRIGHTEST_LIGHTS_PER_TEXEL])
 {
-	brightest[0] = unpackBrightnessEntry(packed.x);
-	brightest[1] = unpackBrightnessEntry(packed.y);
-	brightest[2] = unpackBrightnessEntry(packed.z);
-	brightest[3] = unpackBrightnessEntry(packed.w);
+	brightest[0] = unpackBrightnessEntry(packed0.x);
+	brightest[1] = unpackBrightnessEntry(packed0.y);
+	brightest[2] = unpackBrightnessEntry(packed0.z);
+	brightest[3] = unpackBrightnessEntry(packed0.w);
+	brightest[4] = unpackBrightnessEntry(packed1.x);
+	brightest[5] = unpackBrightnessEntry(packed1.y);
+	brightest[6] = unpackBrightnessEntry(packed1.z);
+	brightest[7] = unpackBrightnessEntry(packed1.w);
 }
 
 vec4 packTemporalNormalRoughness(vec3 shading_normal, float roughness)
@@ -487,6 +502,7 @@ vec2 lightPolygonWeightCalculation(
 }
 
 #endif // LIGHT_WEIGHT_GLSL_INCLUDED
+
 
 
 

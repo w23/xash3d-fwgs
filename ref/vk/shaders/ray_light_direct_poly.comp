@@ -28,19 +28,23 @@ layout(set = 0, binding = 15, rgba32f) uniform readonly image2D reflection_direc
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_light_poly_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_light_poly_specular;
-layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_light_poly_temporal;
-layout(set = 0, binding = 23, rgba32f) uniform readonly image2D prev_light_poly_temporal;
-layout(set = 0, binding = 24, rgba32f) uniform writeonly image2D out_light_poly_temporal_normal_roughness;
-layout(set = 0, binding = 25, rgba32f) uniform readonly image2D prev_light_poly_temporal_normal_roughness;
-layout(set = 0, binding = 26, rgba16f) uniform writeonly image2D out_light_polygon_confidence;
+layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_light_poly_temporal_0;
+layout(set = 0, binding = 23, rgba32f) uniform readonly image2D prev_light_poly_temporal_0;
+layout(set = 0, binding = 24, rgba32f) uniform writeonly image2D out_light_poly_temporal_1;
+layout(set = 0, binding = 25, rgba32f) uniform readonly image2D prev_light_poly_temporal_1;
+layout(set = 0, binding = 26, rgba32f) uniform writeonly image2D out_light_poly_temporal_normal_roughness;
+layout(set = 0, binding = 27, rgba32f) uniform readonly image2D prev_light_poly_temporal_normal_roughness;
+layout(set = 0, binding = 28, rgba16f) uniform writeonly image2D out_light_polygon_confidence;
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
 layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
 layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
-#define out_temporal out_light_poly_temporal
-#define prev_temporal prev_light_poly_temporal
+#define out_temporal_0 out_light_poly_temporal_0
+#define prev_temporal_0 prev_light_poly_temporal_0
+#define out_temporal_1 out_light_poly_temporal_1
+#define prev_temporal_1 prev_light_poly_temporal_1
 #define out_temporal_normal_roughness out_light_poly_temporal_normal_roughness
 #define prev_temporal_normal_roughness prev_light_poly_temporal_normal_roughness
 #define out_confidence out_light_polygon_confidence
@@ -48,3 +52,4 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #define RAY_QUERY
 #define LIGHT_POLYGON 1
 #include "ray_light_direct.glsl"
+

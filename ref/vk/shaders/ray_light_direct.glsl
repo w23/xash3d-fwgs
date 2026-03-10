@@ -63,6 +63,8 @@ void main() {
 	float prev_roughness = 0.0;
 	float diffuse_confidence = 0.0;
 	float specular_confidence = 0.0;
+    vec4 packed_brightest_0 = vec4(-1.0);
+    vec4 packed_brightest_1 = vec4(-1.0);
 
 	initBrightestLights(brightest_lights);
 	initBrightestLights(prev_brightest_lights);
@@ -95,7 +97,7 @@ void main() {
 			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 				prev_weights[i] = 0.0;
 			}
-			unpackBrightestLights(imageLoad(prev_temporal, reproj_pix), prev_brightest_lights);
+			unpackBrightestLights(imageLoad(prev_temporal_0, reproj_pix), imageLoad(prev_temporal_1, reproj_pix), prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
 			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
 			diffuse_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
@@ -108,7 +110,7 @@ void main() {
 			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 				prev_weights[i] = 0.0;
 			}
-			unpackBrightestLights(imageLoad(prev_temporal, parallax_pix), prev_brightest_lights);
+			unpackBrightestLights(imageLoad(prev_temporal_0, parallax_pix), imageLoad(prev_temporal_1, parallax_pix), prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
 			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
 			specular_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
@@ -118,7 +120,9 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
 	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
-	imageStore(out_temporal, pix, packBrightestLights(brightest_lights));
+	packBrightestLights(brightest_lights, packed_brightest_0, packed_brightest_1);
+	imageStore(out_temporal_0, pix, packed_brightest_0);
+	imageStore(out_temporal_1, pix, packed_brightest_1);
 	imageStore(out_temporal_normal_roughness, pix, packTemporalNormalRoughness(shading_normal, material.roughness));
 	imageStore(out_confidence, pix, vec4(diffuse_confidence, specular_confidence, 0.0, 0.0));
 
@@ -132,3 +136,4 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
+
