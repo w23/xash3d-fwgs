@@ -7,6 +7,9 @@
 #include "light.glsl"
 #include "temporal_reprojection.glsl"
 
+const int TEMPORAL_PARALLAX_INDIRECT_SCALE = 2;
+const int TEMPORAL_PARALLAX_KERNEL = 1;
+
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
 	geometry_normal = normalDecode(n.xy);
@@ -31,9 +34,10 @@ void main() {
 
 	rand01_state = ubo.ubo.random_seed + pix.x * 1833 + pix.y * 31337;
 
-	// FIXME incorrect for reflection/refraction
-	const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
+	const vec4 target = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
 	const vec3 direction = normalize((ubo.ubo.inv_view * vec4(target.xyz, 0)).xyz);
+	const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
+	const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
 
 	const vec4 material_data = imageLoad(material_rmxx, pix);
 
@@ -48,7 +52,7 @@ void main() {
 
 	const vec4 pos_t = imageLoad(position_t, pix);
 
-	vec3 diffuse = vec3(0.), specular = vec3(0.);
+	vec3 diffuse = vec3(0.0), specular = vec3(0.0);
 	vec3 geometry_normal = vec3(0.0), shading_normal = vec3(0.0);
 	vec3 lighting_position = pos_t.xyz;
 	BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL];
@@ -57,7 +61,8 @@ void main() {
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 	vec3 prev_shading_normal = vec3(0.0);
 	float prev_roughness = 0.0;
-	float confidence = 0.0;
+	float diffuse_confidence = 0.0;
+	float specular_confidence = 0.0;
 
 	initBrightestLights(brightest_lights);
 	initBrightestLights(prev_brightest_lights);
@@ -79,18 +84,35 @@ void main() {
 #endif
 		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights);
 
+		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
+
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		ivec2 reproj_pix = ivec2(-1);
 		float reproj_depth_necessary = 0.0;
 		float reproj_depth_threshold = 0.0;
 		if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
+			initBrightestLights(prev_brightest_lights);
+			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+				prev_weights[i] = 0.0;
+			}
 			unpackBrightestLights(imageLoad(prev_temporal, reproj_pix), prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
+			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
+			diffuse_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
 		}
 
-		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
-		processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
-		confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
+		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, TEMPORAL_PARALLAX_INDIRECT_SCALE, TEMPORAL_PARALLAX_KERNEL);
+		ivec2 parallax_pix = ivec2(-1);
+		if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, parallax_pix)) {
+			initBrightestLights(prev_brightest_lights);
+			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+				prev_weights[i] = 0.0;
+			}
+			unpackBrightestLights(imageLoad(prev_temporal, parallax_pix), prev_brightest_lights);
+			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
+			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
+			specular_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
+		}
 	}
 
 	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
@@ -98,7 +120,7 @@ void main() {
 
 	imageStore(out_temporal, pix, packBrightestLights(brightest_lights));
 	imageStore(out_temporal_normal_roughness, pix, packTemporalNormalRoughness(shading_normal, material.roughness));
-	imageStore(out_confidence, pix, vec4(confidence, 0.0, 0.0, 0.0));
+	imageStore(out_confidence, pix, vec4(diffuse_confidence, specular_confidence, 0.0, 0.0));
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
@@ -110,5 +132,3 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
-
-
