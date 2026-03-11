@@ -356,13 +356,13 @@ float computeTemporalIndexedConfidence(
 		if (prev_is_valid) {
 			prev_magnitude = prev_weights[i];
 			if (prev_magnitude <= eps) {
-				continue;
+				prev_magnitude = invalidEntryMagnitude(prev);
 			}
 		} else {
 			prev_magnitude = invalidEntryMagnitude(prev);
-			if (prev_magnitude <= eps) {
-				continue;
-			}
+		}
+		if (prev_magnitude <= eps) {
+			continue;
 		}
 
 		float current_magnitude = 0.0;
@@ -533,6 +533,7 @@ vec2 lightPolygonWeightCalculation(
 }
 
 #endif // LIGHT_WEIGHT_GLSL_INCLUDED
+
 
 
 
