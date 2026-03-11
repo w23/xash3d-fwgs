@@ -182,7 +182,7 @@ void updateBrightestLights(
 float packBrightnessEntry(BrightestLightEntry entry)
 {
 	float entry_total_luminance = brightestLightEntryTotalLuminance(entry);
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX || entry_total_luminance <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 		return -1.0;
 	}
 
@@ -300,7 +300,7 @@ vec2 lightWeightFromIndex(uint light_index, vec3 P, vec3 N, vec3 V, float roughn
 
 float lightWeightFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, float roughness)
 {
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(entry) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 		return 0.0;
 	}
 
@@ -310,7 +310,7 @@ float lightWeightFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, fl
 
 vec2 lightWeightsFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, float roughness)
 {
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(entry) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 		return vec2(0.0);
 	}
 
@@ -392,7 +392,7 @@ float sumBrightestLightLuminance(BrightestLights brightest)
 	float total = 0.0;
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry entry = getBrightestLightEntry(brightest, i);
-		if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(entry) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+		if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 			continue;
 		}
 		total += brightestLightEntryTotalLuminance(entry);
@@ -402,7 +402,7 @@ float sumBrightestLightLuminance(BrightestLights brightest)
 
 bool isBrightestLightEntryIndexValid(BrightestLightEntry entry)
 {
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(entry) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 		return false;
 	}
 #if LIGHT_POINT
@@ -503,7 +503,7 @@ float computeTemporalIndexedConfidenceByChannel(
 
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry prev = getBrightestLightEntry(prev_brightest, i);
-		if (prev.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(prev) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+		if (prev.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 			continue;
 		}
 
@@ -538,7 +538,7 @@ float computeTemporalIndexedConfidenceByChannel(
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry current = getBrightestLightEntry(current_brightest, i);
 		float current_magnitude = current_weights[i];
-		if (visited_current[i] || current.index == BRIGHTEST_LIGHT_INVALID_INDEX || brightestLightEntryTotalLuminance(current) <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON || current_magnitude <= eps) {
+		if (visited_current[i] || current.index == BRIGHTEST_LIGHT_INVALID_INDEX || current_magnitude <= eps) {
 			continue;
 		}
 
