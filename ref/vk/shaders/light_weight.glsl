@@ -80,12 +80,9 @@ const float BRIGHTEST_LIGHT_LUMINANCE_EPSILON = 0.001;
 const vec4 BRIGHTEST_LIGHT_RANK_BIAS_0 = vec4(0.0, 1e-6, 2e-6, 3e-6);
 const vec4 BRIGHTEST_LIGHT_RANK_BIAS_1 = vec4(4e-6, 5e-6, 6e-6, 7e-6);
 const float BRIGHTEST_LIGHT_RANK_EPSILON = 1e-7;
-const float BRIGHTEST_LIGHT_PACK_INDEX_SCALE = 1024.0;
-const float BRIGHTEST_LIGHT_DIFFUSE_SCALE = 128.0;
-const float BRIGHTEST_LIGHT_DIFFUSE_QUANT_MAX = 1023.0;
-const float BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX = 8.0;
+const float BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX = 16.0;
 const float BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX = 16.0;
-const float BRIGHTEST_LIGHT_SPECULAR_PACK_MAX = 0.99;
+const float BRIGHTEST_LIGHT_INDEX_DIFFUSE_PACK_MAX = 0.99;
 
 #define BRIGHTEST_LIGHT_CHANNEL_TOTAL 0
 #define BRIGHTEST_LIGHT_CHANNEL_DIFFUSE 1
@@ -99,6 +96,18 @@ float clampDiffuseTemporalLuminance(float value)
 float clampSpecularTemporalLuminance(float value)
 {
 	return clamp(value, 0.0, BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX);
+}
+
+float quantizeDiffuseTemporalLuminance(float value)
+{
+	float packed = min(clampDiffuseTemporalLuminance(value) / BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX, BRIGHTEST_LIGHT_INDEX_DIFFUSE_PACK_MAX);
+	return packed * BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX;
+}
+
+float quantizeSpecularTemporalLuminance(float value)
+{
+	float packed = min(clampSpecularTemporalLuminance(value) / BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX, 1.0);
+	return packed * BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX;
 }
 
 float brightestLightEntryTotalLuminance(BrightestLightEntry entry)
@@ -151,8 +160,8 @@ void updateBrightestLights(
 #if DISABLE_BRIGHTEST_LIGHTS_TRACKING
 	return;
 #else
-	float diffuse_luminance = clampDiffuseTemporalLuminance(luminance(diffuse));
-	float specular_luminance = clampSpecularTemporalLuminance(luminance(specular));
+	float diffuse_luminance = quantizeDiffuseTemporalLuminance(luminance(diffuse));
+	float specular_luminance = quantizeSpecularTemporalLuminance(luminance(specular));
 	float light_luminance = diffuse_luminance + specular_luminance;
 	if (light_luminance <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
 		return;
@@ -163,7 +172,6 @@ void updateBrightestLights(
 	float min0 = min(min(ranked0.x, ranked0.y), min(ranked0.z, ranked0.w));
 	float min1 = min(min(ranked1.x, ranked1.y), min(ranked1.z, ranked1.w));
 	float min_rank = min(min0, min1);
-
 	bvec4 replace0 = lessThan(abs(ranked0 - vec4(min_rank)), vec4(BRIGHTEST_LIGHT_RANK_EPSILON));
 	bvec4 replace1 = lessThan(abs(ranked1 - vec4(min_rank)), vec4(BRIGHTEST_LIGHT_RANK_EPSILON));
 	vec4 diffuse_value = vec4(diffuse_luminance);
@@ -179,65 +187,82 @@ void updateBrightestLights(
 #endif
 }
 
-float packBrightnessEntry(BrightestLightEntry entry)
+float packBrightnessEntryIndexDiffuse(BrightestLightEntry entry)
 {
-	float entry_total_luminance = brightestLightEntryTotalLuminance(entry);
 	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
 		return -1.0;
 	}
-
-	float packed_diffuse_luminance = min(floor(clampDiffuseTemporalLuminance(entry.diffuse_luminance) * BRIGHTEST_LIGHT_DIFFUSE_SCALE), BRIGHTEST_LIGHT_DIFFUSE_QUANT_MAX);
-	float packed_specular_luminance = min(clampSpecularTemporalLuminance(entry.specular_luminance) / BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX, BRIGHTEST_LIGHT_SPECULAR_PACK_MAX);
-	return float(entry.index) * BRIGHTEST_LIGHT_PACK_INDEX_SCALE + packed_diffuse_luminance + packed_specular_luminance;
+	return float(entry.index) + min(clampDiffuseTemporalLuminance(entry.diffuse_luminance) / BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX, BRIGHTEST_LIGHT_INDEX_DIFFUSE_PACK_MAX);
 }
 
-BrightestLightEntry unpackBrightnessEntry(float packed)
+float packBrightnessEntrySpecular(BrightestLightEntry entry)
+{
+	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
+		return 0.0;
+	}
+	return quantizeSpecularTemporalLuminance(entry.specular_luminance);
+}
+
+BrightestLightEntry unpackBrightnessEntry(float packed_index_diffuse, float packed_specular)
 {
 	BrightestLightEntry entry;
-	if (packed < 0.0) {
+	if (packed_index_diffuse < 0.0) {
 		entry.index = BRIGHTEST_LIGHT_INVALID_INDEX;
 		entry.diffuse_luminance = -1.0;
 		entry.specular_luminance = -1.0;
 		return entry;
 	}
 
-	float packed_integer = floor(packed);
-	entry.index = uint(floor(packed_integer / BRIGHTEST_LIGHT_PACK_INDEX_SCALE));
-	entry.diffuse_luminance = clampDiffuseTemporalLuminance(mod(packed_integer, BRIGHTEST_LIGHT_PACK_INDEX_SCALE) / BRIGHTEST_LIGHT_DIFFUSE_SCALE);
-	entry.specular_luminance = clampSpecularTemporalLuminance(fract(packed) * BRIGHTEST_LIGHT_SPECULAR_LUMINANCE_MAX);
+	entry.index = uint(floor(packed_index_diffuse));
+	entry.diffuse_luminance = quantizeDiffuseTemporalLuminance(fract(packed_index_diffuse) * BRIGHTEST_LIGHT_DIFFUSE_LUMINANCE_MAX);
+	entry.specular_luminance = quantizeSpecularTemporalLuminance(packed_specular);
 	return entry;
 }
 
 void packBrightestLights(
 	BrightestLights brightest,
 	out vec4 packed0,
-	out vec4 packed1)
+	out vec4 packed1,
+	out vec4 packed2,
+	out vec4 packed3)
 {
 	packed0 = vec4(
-		packBrightnessEntry(getBrightestLightEntry(brightest, 0)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 1)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 2)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 3)));
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 0)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 1)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 2)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 3)));
 	packed1 = vec4(
-		packBrightnessEntry(getBrightestLightEntry(brightest, 4)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 5)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 6)),
-		packBrightnessEntry(getBrightestLightEntry(brightest, 7)));
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 4)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 5)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 6)),
+		packBrightnessEntryIndexDiffuse(getBrightestLightEntry(brightest, 7)));
+	packed2 = vec4(
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 0)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 1)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 2)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 3)));
+	packed3 = vec4(
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 4)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 5)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 6)),
+		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 7)));
 }
 
 void unpackBrightestLights(
 	vec4 packed0,
 	vec4 packed1,
+	vec4 packed2,
+	vec4 packed3,
 	out BrightestLights brightest)
 {
-	BrightestLightEntry entry0 = unpackBrightnessEntry(packed0.x);
-	BrightestLightEntry entry1 = unpackBrightnessEntry(packed0.y);
-	BrightestLightEntry entry2 = unpackBrightnessEntry(packed0.z);
-	BrightestLightEntry entry3 = unpackBrightnessEntry(packed0.w);
-	BrightestLightEntry entry4 = unpackBrightnessEntry(packed1.x);
-	BrightestLightEntry entry5 = unpackBrightnessEntry(packed1.y);
-	BrightestLightEntry entry6 = unpackBrightnessEntry(packed1.z);
-	BrightestLightEntry entry7 = unpackBrightnessEntry(packed1.w);
+	BrightestLightEntry entry0 = unpackBrightnessEntry(packed0.x, packed2.x);
+	BrightestLightEntry entry1 = unpackBrightnessEntry(packed0.y, packed2.y);
+	BrightestLightEntry entry2 = unpackBrightnessEntry(packed0.z, packed2.z);
+	BrightestLightEntry entry3 = unpackBrightnessEntry(packed0.w, packed2.w);
+	BrightestLightEntry entry4 = unpackBrightnessEntry(packed1.x, packed3.x);
+	BrightestLightEntry entry5 = unpackBrightnessEntry(packed1.y, packed3.y);
+	BrightestLightEntry entry6 = unpackBrightnessEntry(packed1.z, packed3.z);
+	BrightestLightEntry entry7 = unpackBrightnessEntry(packed1.w, packed3.w);
 	brightest.indices0 = uvec4(entry0.index, entry1.index, entry2.index, entry3.index);
 	brightest.indices1 = uvec4(entry4.index, entry5.index, entry6.index, entry7.index);
 	brightest.diffuse_luminance0 = vec4(entry0.diffuse_luminance, entry1.diffuse_luminance, entry2.diffuse_luminance, entry3.diffuse_luminance);
@@ -313,7 +338,7 @@ float lightWeightFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, fl
 	}
 
 	vec2 weight = lightWeightFromIndex(entry.index, P, N, V, roughness);
-	return clampDiffuseTemporalLuminance(weight.x) + clampSpecularTemporalLuminance(weight.y);
+	return quantizeDiffuseTemporalLuminance(weight.x) + quantizeSpecularTemporalLuminance(weight.y);
 }
 
 vec2 lightWeightsFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, float roughness)
@@ -324,8 +349,8 @@ vec2 lightWeightsFromEntry(BrightestLightEntry entry, vec3 P, vec3 N, vec3 V, fl
 
 	vec2 weight = lightWeightFromIndex(entry.index, P, N, V, roughness);
 	return vec2(
-		clampDiffuseTemporalLuminance(weight.x),
-		clampSpecularTemporalLuminance(weight.y));
+		quantizeDiffuseTemporalLuminance(weight.x),
+		quantizeSpecularTemporalLuminance(weight.y));
 }
 
 void processTemporalLightEntries(
@@ -421,6 +446,21 @@ bool isBrightestLightEntryIndexValid(BrightestLightEntry entry)
 	return false;
 #endif
 }
+
+bool hasTrackedBrightestLightByChannel(BrightestLights brightest, int channel)
+{
+	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+		BrightestLightEntry entry = getBrightestLightEntry(brightest, i);
+		if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
+			continue;
+		}
+		if (brightestLightEntryChannelLuminance(entry, channel) > BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
+			return true;
+		}
+	}
+	return false;
+}
+
 
 float confidenceWeightEpsilon()
 {
@@ -523,29 +563,18 @@ float computeTemporalIndexedConfidenceByChannel(
 			continue;
 		}
 
-		float prev_magnitude = 0.0;
 		bool prev_is_valid = isBrightestLightEntryIndexValid(prev);
-		if (prev_is_valid) {
-			prev_magnitude = prev_weights[i];
-			if (prev_magnitude <= eps) {
-				prev_magnitude = invalidEntryMagnitudeByChannel(prev, channel);
-			}
-		} else {
-			prev_magnitude = invalidEntryMagnitudeByChannel(prev, channel);
-		}
-		if (prev_magnitude <= eps) {
-			continue;
-		}
+		float prev_magnitude = invalidEntryMagnitudeByChannel(prev, channel);
 
 		float current_magnitude = 0.0;
 		if (prev_is_valid) {
 			vec2 current_weight = lightWeightFromIndex(prev.index, P, N, V, roughness);
 			if (channel == BRIGHTEST_LIGHT_CHANNEL_DIFFUSE) {
-				current_magnitude = clampDiffuseTemporalLuminance(current_weight.x);
+				current_magnitude = quantizeDiffuseTemporalLuminance(current_weight.x);
 			} else if (channel == BRIGHTEST_LIGHT_CHANNEL_SPECULAR) {
-				current_magnitude = clampSpecularTemporalLuminance(current_weight.y);
+				current_magnitude = quantizeSpecularTemporalLuminance(current_weight.y);
 			} else {
-				current_magnitude = clampDiffuseTemporalLuminance(current_weight.x) + clampSpecularTemporalLuminance(current_weight.y);
+				current_magnitude = quantizeDiffuseTemporalLuminance(current_weight.x) + quantizeSpecularTemporalLuminance(current_weight.y);
 			}
 		}
 
