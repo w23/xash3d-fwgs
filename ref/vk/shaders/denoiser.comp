@@ -745,10 +745,12 @@ void main() {
 
 		if (better_depth_offset < depth_treshold) {
 			float diffuse_history_mix = DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT * diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
-			float aggressive_indirect_specular_confidence = pow(indirect_specular_confidence, 0.35);
-			float direct_specular_history_mix = 0.82 * max(diffuse_confidence, specular_confidence) * mix(1.0, softenVarianceConfidence(specular_variance_confidence), 0.6);
-			float indirect_specular_history_boost = 0.35 * aggressive_indirect_specular_confidence * (1.0 - direct_specular_history_mix);
-			float specular_history_mix = clamp(direct_specular_history_mix + indirect_specular_history_boost, 0.0, 0.98);
+			float aggressive_indirect_specular_confidence = pow(indirect_specular_confidence, 0.22);
+			float indirect_specular_reset_gate = smoothstep(0.12, 0.50, indirect_specular_confidence);
+			float direct_specular_history_mix = 0.84 * max(diffuse_confidence, specular_confidence) * mix(1.0, softenVarianceConfidence(specular_variance_confidence), 0.65);
+			float indirect_specular_history_boost = 0.60 * aggressive_indirect_specular_confidence * indirect_specular_reset_gate * (1.0 - direct_specular_history_mix);
+			float specular_history_mix = clamp(direct_specular_history_mix + indirect_specular_history_boost, 0.0, 0.985);
+			specular_history_mix *= mix(0.05, 1.0, indirect_specular_reset_gate);
 			diffuse = mix(diffuse, history_diffuse, diffuse_history_mix);
 			specular = mix(specular, history_specular, specular_history_mix);
 		}
@@ -806,6 +808,7 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
 
 
 
