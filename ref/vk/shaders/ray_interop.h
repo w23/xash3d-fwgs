@@ -137,7 +137,8 @@ struct PointLight {
 
 	// TODO move to either dedicated array, or section of array (by-index type delimiter)
 	uint environment; // Is directional-only environment light
-	PAD(3)
+	uint flashlight; // Is flashlight spotlight
+	PAD(2)
 };
 
 struct PolygonLight {
@@ -228,6 +229,8 @@ struct UniformBuffer {
 #endif
 
 #endif // RAY_INTEROP_H_INCLUDED
+
+
 
 
 

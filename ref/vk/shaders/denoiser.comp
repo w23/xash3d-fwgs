@@ -54,6 +54,8 @@ layout(set = 0, binding = 21) uniform sampler3D blue_noise_texture;
 layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
 layout(set = 0, binding = 23, rgba16f) uniform readonly image2D light_polygon_confidence;
 layout(set = 0, binding = 24, rgba16f) uniform readonly image2D light_point_confidence;
+layout(set = 0, binding = 25, rgba16f) uniform readonly image2D light_point_flashlight_diffuse;
+layout(set = 0, binding = 26, rgba16f) uniform readonly image2D light_point_flashlight_specular;
 
 //layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
 
@@ -217,12 +219,12 @@ float softenVarianceConfidence(float confidence) {
 }
 
 struct Components {
-	vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
+	vec3 direct_diffuse, direct_specular, direct_flashlight_diffuse, direct_flashlight_specular, indirect_diffuse, indirect_specular;
 };
 
 Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	Components c;
-	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+	c.direct_diffuse = c.direct_specular = c.direct_flashlight_diffuse = c.direct_flashlight_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 	const ivec2 p = pix;
 	const ivec2 p_indirect = pix / INDIRECT_SCALE;
 	c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb;
@@ -234,6 +236,8 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 	}
 	c.direct_specular += imageLoad(light_poly_specular, p).rgb;
 	c.direct_specular += imageLoad(light_point_specular, p).rgb;
+	c.direct_flashlight_diffuse += imageLoad(light_point_flashlight_diffuse, p).rgb;
+	c.direct_flashlight_specular += imageLoad(light_point_flashlight_specular, p).rgb;
 	c.indirect_specular += imageLoad(indirect_specular_reconstructed, p_indirect).rgb;
 	return c;
 }
@@ -265,13 +269,15 @@ Components dontBlurSamples(const ivec2 res, const ivec2 pix) {
 
 Components boxBlurSamples(ivec2 res, ivec2 pix) {
 	Components c;
-	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+	c.direct_diffuse = c.direct_specular = c.direct_flashlight_diffuse = c.direct_flashlight_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
 	BOX_BLUR(c.direct_diffuse, light_poly_diffuse, res, pix, DIRECT_DIFFUSE_KERNEL);
 	BOX_BLUR(c.direct_diffuse, light_point_diffuse, res, pix, DIRECT_DIFFUSE_KERNEL);
 
 	BOX_BLUR(c.direct_specular, light_poly_specular, res, pix, DIRECT_SPECULAR_KERNEL);
 	BOX_BLUR(c.direct_specular, light_point_specular, res, pix, DIRECT_SPECULAR_KERNEL);
+	BOX_BLUR(c.direct_flashlight_diffuse, light_point_flashlight_diffuse, res, pix, DIRECT_DIFFUSE_KERNEL);
+	BOX_BLUR(c.direct_flashlight_specular, light_point_flashlight_specular, res, pix, DIRECT_SPECULAR_KERNEL);
 
 	res /= 2;
 	pix /= 2;
@@ -294,7 +300,7 @@ vec3 restoreSpecular(vec3 decolorized_specular, vec3 base_color, float metalness
 
 Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_normal, vec3 geometry_normal, vec3 base_color, float metalness) {
 	Components c;
-	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+	c.direct_diffuse = c.direct_specular = c.direct_flashlight_diffuse = c.direct_flashlight_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
 	float weight_total_diffuse = 0.;
 	float weight_total_specular = 0.;
@@ -319,6 +325,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					c.direct_diffuse +=
 						(imageLoad(light_poly_diffuse, p).rgb
 						+imageLoad(light_point_diffuse, p).rgb) * weight;
+					c.direct_flashlight_diffuse += imageLoad(light_point_flashlight_diffuse, p).rgb * weight;
 				}
 			}
 
@@ -336,6 +343,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 					c.direct_specular +=
 						(imageLoad(light_poly_specular, p).rgb
 						+imageLoad(light_point_specular, p).rgb) * weight;
+					c.direct_flashlight_specular += imageLoad(light_point_flashlight_specular, p).rgb * weight;
 				}
 			}
 
@@ -384,7 +392,9 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	const float one_over_weight_indirect_diffuse = 1. / weight_total_indirect_diffuse;
 	const float one_over_weight_indirect_specular = 1. / weight_total_indirect_specular;
 	c.direct_diffuse *= one_over_weight_diffuse;
+	c.direct_flashlight_diffuse *= one_over_weight_diffuse;
 	c.direct_specular *= one_over_weight_specular;
+	c.direct_flashlight_specular *= one_over_weight_specular;
 
 	indirect_diffuse_c2 *= one_over_weight_indirect_diffuse;
 	c.indirect_specular *= one_over_weight_indirect_specular;
@@ -403,7 +413,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 
 Components blurSamples(const ivec2 res, const ivec2 pix) {
 	Components c;
-	c.direct_diffuse = c.direct_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
+	c.direct_diffuse = c.direct_specular = c.direct_flashlight_diffuse = c.direct_flashlight_specular = c.indirect_diffuse = c.indirect_specular = vec3(0.);
 
 	const vec4 center_pos = imageLoad(position_t, pix);
 
@@ -451,6 +461,7 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 
 				c.direct_diffuse += imageLoad(light_point_diffuse, p).rgb * direct_diffuse_scale;
 				c.direct_diffuse += imageLoad(light_poly_diffuse, p).rgb * direct_diffuse_scale;
+				c.direct_flashlight_diffuse += imageLoad(light_point_flashlight_diffuse, p).rgb * direct_diffuse_scale;
 			}
 
 			if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 &&
@@ -475,6 +486,7 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 
 				c.direct_specular += imageLoad(light_point_specular, p).rgb * specular_scale;
 				DEBUG_VALIDATE_VEC3(c.direct_specular, "%d c.direct_specular=(%f,%f,%f) point");
+				c.direct_flashlight_specular += imageLoad(light_point_flashlight_specular, p).rgb * specular_scale;
 			}
 
 			if (all(lessThan(abs(ivec2(x, y)), ivec2(INDIRECT_SPECULAR_KERNEL)))) {
@@ -490,8 +502,10 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 			}
 		}
 
-	if (direct_diffuse_total > 0.)
+	if (direct_diffuse_total > 0.) {
 		c.direct_diffuse /= direct_diffuse_total;
+		c.direct_flashlight_diffuse /= direct_diffuse_total;
+	}
 
 	if (indirect_diffuse_total > 0.)
 		c.indirect_diffuse *= indirect_diffuse_total;
@@ -508,8 +522,10 @@ Components blurSamples(const ivec2 res, const ivec2 pix) {
 	}
 #endif
 
-	if (direct_specular_total > 0.)
+	if (direct_specular_total > 0.) {
 		c.direct_specular *= direct_specular_total;
+		c.direct_flashlight_specular *= direct_specular_total;
+	}
 
 	if (indirect_specular_total > 0.)
 		c.indirect_specular *= indirect_specular_total;
@@ -580,13 +596,13 @@ void main() {
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular + c.direct_flashlight_diffuse + c.direct_flashlight_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_DIFF) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse), 0.)); return;
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_flashlight_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_SPEC) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_specular), 0.)); return;
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_specular + c.direct_flashlight_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT) {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.indirect_specular), 0.)); return;
@@ -598,15 +614,17 @@ void main() {
 		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIFFUSE) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.direct_diffuse), 0.)); return;
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.direct_diffuse + c.direct_flashlight_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SPECULAR) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_specular + c.direct_specular), 0.)); return;
+		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_specular + c.direct_specular + c.direct_flashlight_specular), 0.)); return;
 		return;
 	}
 
 	vec3 diffuse = c.direct_diffuse + c.indirect_diffuse;
 	vec3 specular = c.direct_specular + c.indirect_specular;
+	const vec3 flashlight_diffuse = c.direct_flashlight_diffuse;
+	const vec3 flashlight_specular = c.direct_flashlight_specular;
 
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
 		diffuse += imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
@@ -706,6 +724,9 @@ void main() {
 #endif // ifndef DISABLE_TEMPORAL_DENOISER
 	}
 
+	diffuse += flashlight_diffuse;
+	specular += flashlight_specular;
+
 	vec3 colour = vec3(0.);
 
 	if (ubo.ubo.debug_display_only != DEBUG_DISPLAY_LIGHTING) {
@@ -732,6 +753,9 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
+
+
 
 
 

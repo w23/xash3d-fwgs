@@ -53,6 +53,9 @@ void main() {
 	const vec4 pos_t = imageLoad(position_t, pix);
 
 	vec3 diffuse = vec3(0.0), specular = vec3(0.0);
+#if LIGHT_POINT
+	vec3 flashlight_diffuse = vec3(0.0), flashlight_specular = vec3(0.0);
+#endif
 	vec3 geometry_normal = vec3(0.0), shading_normal = vec3(0.0);
 	vec3 lighting_position = pos_t.xyz;
 	BrightestLights brightest_lights;
@@ -84,7 +87,11 @@ void main() {
 				__LINE__, PRIVEC3(pos_t.xyz), PRIVEC3(geometry_normal), PRIVEC4(packed_normal));
 		} else
 #endif
+#if LIGHT_POINT
+		computeLightingPointDirect(lighting_position, shading_normal, -direction, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights);
+#else
 		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights);
+#endif
 
 		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
 
@@ -129,6 +136,8 @@ void main() {
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_light_point_specular, pix, vec4(specular, 0.f));
+	imageStore(out_light_point_flashlight_diffuse, pix, vec4(flashlight_diffuse, 0.f));
+	imageStore(out_light_point_flashlight_specular, pix, vec4(flashlight_specular, 0.f));
 #endif
 
 #if LIGHT_POLYGON
