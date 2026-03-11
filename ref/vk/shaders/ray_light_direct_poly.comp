@@ -39,6 +39,10 @@ layout(set = 0, binding = 29, rgba16f) uniform writeonly image2D out_temporal_li
 layout(set = 0, binding = 34, rgba16f) uniform readonly image2D prev_temporal_light_poly_2;
 layout(set = 0, binding = 35, rgba16f) uniform writeonly image2D out_temporal_light_poly_3;
 layout(set = 0, binding = 36, rgba16f) uniform readonly image2D prev_temporal_light_poly_3;
+layout(set = 0, binding = 37, rgba16f) uniform writeonly image2D out_temporal_light_poly_4;
+layout(set = 0, binding = 38, rgba16f) uniform readonly image2D prev_temporal_light_poly_4;
+layout(set = 0, binding = 39, rgba16f) uniform writeonly image2D out_temporal_light_poly_5;
+layout(set = 0, binding = 40, rgba16f) uniform readonly image2D prev_temporal_light_poly_5;
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
 layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
@@ -52,6 +56,10 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #define prev_temporal_2 prev_temporal_light_poly_2
 #define out_temporal_3 out_temporal_light_poly_3
 #define prev_temporal_3 prev_temporal_light_poly_3
+#define out_temporal_4 out_temporal_light_poly_4
+#define prev_temporal_4 prev_temporal_light_poly_4
+#define out_temporal_5 out_temporal_light_poly_5
+#define prev_temporal_5 prev_temporal_light_poly_5
 #define out_temporal_normal_roughness out_temporal_light_poly_normal_roughness
 #define prev_temporal_normal_roughness prev_temporal_light_poly_normal_roughness
 #define out_confidence out_light_polygon_confidence

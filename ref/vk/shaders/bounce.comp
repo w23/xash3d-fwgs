@@ -44,6 +44,10 @@ layout(set = 0, binding = 37, rgba16f) uniform writeonly image2D out_temporal_re
 layout(set = 0, binding = 38, rgba16f) uniform readonly image2D prev_temporal_reflection_2;
 layout(set = 0, binding = 39, rgba16f) uniform writeonly image2D out_temporal_reflection_3;
 layout(set = 0, binding = 40, rgba16f) uniform readonly image2D prev_temporal_reflection_3;
+layout(set = 0, binding = 41, rgba16f) uniform writeonly image2D out_temporal_reflection_4;
+layout(set = 0, binding = 42, rgba16f) uniform readonly image2D prev_temporal_reflection_4;
+layout(set = 0, binding = 43, rgba16f) uniform writeonly image2D out_temporal_reflection_5;
+layout(set = 0, binding = 44, rgba16f) uniform readonly image2D prev_temporal_reflection_5;
 layout(set = 0, binding = 29, rgba32f) uniform readonly image2D prev_temporal_reflection_normal_roughness;
 layout(set = 0, binding = 34, rgba16f) uniform writeonly image2D out_reflection_confidence;
 layout(set = 0, binding = 35, rgba32f) uniform writeonly image2D out_temporal_reflection_hit;
@@ -294,7 +298,7 @@ void main() {
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	vec3 first_bounce_direction = vec3(0.), reflection_direction = vec3(0.);
-	bool confidence_disabled = true;
+	bool confidence_disabled = (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
 	vec2 reflection_confidence = vec2(1.0);
 	vec3 reflection_hit_position = vec3(0.0);
 	vec3 reflection_shading_normal = vec3(0.0);
@@ -367,6 +371,9 @@ void main() {
 					vec3 reflection_direct_diffuse = vec3(0.0), reflection_direct_specular = vec3(0.0);
 					const vec3 reflection_lighting_pos = reflection_hit_position + reflection_geometry_normal * kBounceLightingNormalOffset;
 					computeLighting(reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_material, reflection_direct_diffuse, reflection_direct_specular, reflection_brightest_lights, !confidence_disabled);
+					if (!confidence_disabled) {
+						finalizeBrightestLightsWeights(reflection_brightest_lights, reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_roughness);
+					}
 
 					float current_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 					float prev_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
@@ -389,7 +396,7 @@ void main() {
 					if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
 						BrightestLights prev_brightest_lights;
 						initBrightestLights(prev_brightest_lights);
-						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, reproj_pix), imageLoad(prev_temporal_reflection_1, reproj_pix), imageLoad(prev_temporal_reflection_2, reproj_pix), imageLoad(prev_temporal_reflection_3, reproj_pix), prev_brightest_lights);
+						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, reproj_pix), imageLoad(prev_temporal_reflection_1, reproj_pix), imageLoad(prev_temporal_reflection_2, reproj_pix), imageLoad(prev_temporal_reflection_3, reproj_pix), imageLoad(prev_temporal_reflection_4, reproj_pix), imageLoad(prev_temporal_reflection_5, reproj_pix), prev_brightest_lights);
 						vec3 prev_shading_normal = vec3(0.0);
 						float prev_roughness = 0.0;
 						unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
@@ -403,7 +410,7 @@ void main() {
 					if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, reflection_ray_length, res, parallax_pix)) {
 						BrightestLights prev_brightest_lights;
 						initBrightestLights(prev_brightest_lights);
-						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, parallax_pix), imageLoad(prev_temporal_reflection_1, parallax_pix), imageLoad(prev_temporal_reflection_2, parallax_pix), imageLoad(prev_temporal_reflection_3, parallax_pix), prev_brightest_lights);
+						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, parallax_pix), imageLoad(prev_temporal_reflection_1, parallax_pix), imageLoad(prev_temporal_reflection_2, parallax_pix), imageLoad(prev_temporal_reflection_3, parallax_pix), imageLoad(prev_temporal_reflection_4, parallax_pix), imageLoad(prev_temporal_reflection_5, parallax_pix), prev_brightest_lights);
 						vec3 prev_shading_normal = vec3(0.0);
 						float prev_roughness = 0.0;
 						unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
@@ -439,14 +446,16 @@ void main() {
 		reflection_direction = first_bounce_direction;
 	}
 
-	vec4 packed_reflection_0 = vec4(-1.0), packed_reflection_1 = vec4(-1.0), packed_reflection_2 = vec4(0.0), packed_reflection_3 = vec4(0.0);
+	vec4 packed_reflection_0 = vec4(0.0), packed_reflection_1 = vec4(0.0), packed_reflection_2 = vec4(0.0), packed_reflection_3 = vec4(0.0), packed_reflection_4 = vec4(-1.0), packed_reflection_5 = vec4(-1.0);
 	if (!confidence_disabled) {
-	packBrightestLights(reflection_brightest_lights, packed_reflection_0, packed_reflection_1, packed_reflection_2, packed_reflection_3);
+	packBrightestLights(reflection_brightest_lights, packed_reflection_0, packed_reflection_1, packed_reflection_2, packed_reflection_3, packed_reflection_4, packed_reflection_5);
 	}
 	imageStore(out_temporal_reflection_0, pix, packed_reflection_0);
 	imageStore(out_temporal_reflection_1, pix, packed_reflection_1);
 	imageStore(out_temporal_reflection_2, pix, packed_reflection_2);
 	imageStore(out_temporal_reflection_3, pix, packed_reflection_3);
+	imageStore(out_temporal_reflection_4, pix, packed_reflection_4);
+	imageStore(out_temporal_reflection_5, pix, packed_reflection_5);
 	imageStore(out_temporal_reflection_normal_roughness, pix, packTemporalNormalRoughness(reflection_shading_normal, reflection_roughness));
 	imageStore(out_temporal_reflection_hit, pix, vec4(reflection_hit_position, 0.0));
 	imageStore(out_reflection_confidence, pix, confidence_disabled ? vec4(1.0, 1.0, 0.0, 0.0) : vec4(reflection_confidence, 0.0, 0.0));
