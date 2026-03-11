@@ -56,6 +56,10 @@
 #define TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF 1
 #endif
 
+#ifndef TEMPORAL_CONFIDENCE_INCLUDE_PREV_LIGHTS_SUM_DIFF
+#define TEMPORAL_CONFIDENCE_INCLUDE_PREV_LIGHTS_SUM_DIFF 1
+#endif
+
 struct BrightestLightEntry {
     uint index;
     float luminance;
@@ -541,6 +545,7 @@ vec2 lightPolygonWeightCalculation(
 }
 
 #endif // LIGHT_WEIGHT_GLSL_INCLUDED
+
 
 
 
