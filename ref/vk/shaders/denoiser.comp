@@ -210,6 +210,9 @@ float computeVarianceConfidence(float current_luma, LuminanceStats current_stats
 }
 
 float softenVarianceConfidence(float confidence) {
+	if (confidence <= 0.2) {
+		return 0.0;
+	}
 	return mix(1.0, confidence, 0.35);
 }
 
@@ -729,6 +732,7 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
+
 
 
 
