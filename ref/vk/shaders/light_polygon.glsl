@@ -225,7 +225,7 @@ void sampleEmissiveSurfaces(
 	uint cluster_index,
 	inout vec3 diffuse,
 	inout vec3 specular,
-	inout BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
+	inout BrightestLights brightest_lights) {
 	const uint num_polygons = uint(light_grid.clusters_[cluster_index].num_polygons);
 
 	if (num_polygons == 0)
@@ -251,7 +251,7 @@ void sampleEmissiveSurfaces(
 	uint cluster_index,
 	inout vec3 diffuse,
 	inout vec3 specular,
-	inout BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
+	inout BrightestLights brightest_lights) {
 #if DO_ALL_IN_CLUSTER
 	const SampleContext ctx = buildSampleContext(P, N, view_dir);
 
@@ -394,3 +394,4 @@ void sampleEmissiveSurfaces(
 #endif
 }
 #endif
+

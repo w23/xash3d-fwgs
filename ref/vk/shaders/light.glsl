@@ -25,7 +25,7 @@ void computePointLights(
 	MaterialProperties material,
 	out vec3 diffuse,
 	out vec3 specular,
-	inout BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
+	inout BrightestLights brightest_lights) {
 	diffuse = specular = vec3(0.);
 
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
@@ -199,7 +199,7 @@ void computePointLights(
 }
 #endif
 
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL]) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLights brightest_lights) {
 	diffuse = specular = vec3(0.);
 	initBrightestLights(brightest_lights);
 
@@ -265,7 +265,8 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 
 
 void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
-	BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	BrightestLights brightest_lights;
 	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights);
 }
+
 

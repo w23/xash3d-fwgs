@@ -55,8 +55,8 @@ void main() {
 	vec3 diffuse = vec3(0.0), specular = vec3(0.0);
 	vec3 geometry_normal = vec3(0.0), shading_normal = vec3(0.0);
 	vec3 lighting_position = pos_t.xyz;
-	BrightestLightEntry brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL];
-	BrightestLightEntry prev_brightest_lights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	BrightestLights brightest_lights;
+	BrightestLights prev_brightest_lights;
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 	vec3 prev_shading_normal = vec3(0.0);
@@ -136,4 +136,5 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
+
 
