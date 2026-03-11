@@ -201,6 +201,7 @@ struct LightCluster {
 #define RENDERER_FLAG_DENOISE_GI_BY_SH (1<<2)
 #define RENDERER_FLAG_DISABLE_GI (1<<3)
 #define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
+#define RENDERER_FLAG_DISABLE_CONFIDENCE (1<<5)
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
@@ -229,6 +230,7 @@ struct UniformBuffer {
 #endif
 
 #endif // RAY_INTEROP_H_INCLUDED
+
 
 
 

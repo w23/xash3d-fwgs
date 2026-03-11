@@ -64,8 +64,9 @@ void main() {
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 	vec3 prev_shading_normal = vec3(0.0);
 	float prev_roughness = 0.0;
-	float diffuse_confidence = 0.0;
-	float specular_confidence = 0.0;
+	bool confidence_disabled = (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
+	float diffuse_confidence = confidence_disabled ? 1.0 : 0.0;
+	float specular_confidence = confidence_disabled ? 1.0 : 0.0;
     vec4 packed_brightest_0 = vec4(-1.0);
     vec4 packed_brightest_1 = vec4(-1.0);
 
@@ -88,11 +89,12 @@ void main() {
 		} else
 #endif
 #if LIGHT_POINT
-		computeLightingPointDirect(lighting_position, shading_normal, -direction, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights);
+		computeLightingPointDirect(lighting_position, shading_normal, -direction, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, !confidence_disabled);
 #else
-		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights, true);
+		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights, !confidence_disabled);
 #endif
 
+		if (!confidence_disabled) {
 		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
 
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
@@ -122,16 +124,19 @@ void main() {
 			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
 			specular_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
 		}
+		}
 	}
 
 	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
 	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
+	if (!confidence_disabled) {
 	packBrightestLights(brightest_lights, packed_brightest_0, packed_brightest_1);
+	}
 	imageStore(out_temporal_0, pix, packed_brightest_0);
 	imageStore(out_temporal_1, pix, packed_brightest_1);
 	imageStore(out_temporal_normal_roughness, pix, packTemporalNormalRoughness(shading_normal, material.roughness));
-	imageStore(out_confidence, pix, vec4(diffuse_confidence, specular_confidence, 0.0, 0.0));
+	imageStore(out_confidence, pix, confidence_disabled ? vec4(1.0, 1.0, 0.0, 0.0) : vec4(diffuse_confidence, specular_confidence, 0.0, 0.0));
 
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
@@ -145,6 +150,7 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
+
 
 
 

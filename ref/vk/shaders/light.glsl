@@ -230,7 +230,7 @@ void computePointLights(
 	specular += flashlight_specular;
 }
 
-void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights) {
+void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights, bool track_brightest_lights) {
 	diffuse = specular = vec3(0.);
 	flashlight_diffuse = flashlight_specular = vec3(0.);
 	initBrightestLights(brightest_lights);
@@ -248,7 +248,7 @@ void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialPropertie
 	}
 #endif
 
-	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, true);
+	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, track_brightest_lights);
 }
 #endif
 void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLights brightest_lights, bool track_brightest_lights) {
@@ -326,4 +326,11 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 
 
 
+
+
+#if LIGHT_POINT
+void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights) {
+	computeLightingPointDirect(P, N, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, true);
+}
+#endif
 

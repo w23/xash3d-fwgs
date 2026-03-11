@@ -43,8 +43,10 @@ void VK_LoadCvarsAfterInit( void )
 		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
 		rt_legacy_bounce = gEngine.Cvar_Get("rt_legacy_bounce", "0", FCVAR_GLCONFIG, "Enable legacy bounce mode: disable only_diffuse_gi, separated_reflection, denoise_gi_by_sh and spatial_reconstruction flags");
 		rt_disable_gi = gEngine.Cvar_Get("rt_disable_gi", "0", FCVAR_GLCONFIG, "Disable global illumination calculation");
+		rt_disable_confidence = gEngine.Cvar_Get("rt_disable_confidence", "0", FCVAR_GLCONFIG, "Disable confidence masks and brightest-lights tracking for direct/reflection");
 	} else {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}
 }
+
 
