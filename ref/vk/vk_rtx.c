@@ -207,12 +207,13 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 
 	ret.random_seed = getRandomSeed();
 
-#define SET_RENDERER_FLAG(cvar,flag) (CVAR_TO_BOOL(cvar) ? flag : 0)
-	ret.renderer_flags = SET_RENDERER_FLAG(rt_only_diffuse_gi, RENDERER_FLAG_ONLY_DIFFUSE_GI) |
-						  SET_RENDERER_FLAG(rt_separated_reflection, RENDERER_FLAG_SEPARATED_REFLECTION) |
-						  SET_RENDERER_FLAG(rt_denoise_gi_by_sh, RENDERER_FLAG_DENOISE_GI_BY_SH) |
-						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI) |
-						  SET_RENDERER_FLAG(rt_spatial_reconstruction, RENDERER_FLAG_SPATIAL_RECONSTRUCTION);
+#define SET_RENDERER_FLAG(flag) (legacy_bounce ? 0 : (flag))
+	const qboolean legacy_bounce = CVAR_TO_BOOL(rt_legacy_bounce);
+	ret.renderer_flags = SET_RENDERER_FLAG(RENDERER_FLAG_ONLY_DIFFUSE_GI) |
+					  SET_RENDERER_FLAG(RENDERER_FLAG_SEPARATED_REFLECTION) |
+					  SET_RENDERER_FLAG(RENDERER_FLAG_DENOISE_GI_BY_SH) |
+					  SET_RENDERER_FLAG(RENDERER_FLAG_SPATIAL_RECONSTRUCTION) |
+					  (CVAR_TO_BOOL(rt_disable_gi) ? RENDERER_FLAG_DISABLE_GI : 0);
 #undef SET_RENDERER_FLAG
 
 	return ret;
@@ -453,5 +454,6 @@ void RT_FrameDiscontinuity( void ) {
 	DEBUG("%s", __FUNCTION__);
 	g_rtx.discontinuity = true;
 }
+
 
 
