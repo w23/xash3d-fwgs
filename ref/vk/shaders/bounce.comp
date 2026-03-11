@@ -47,6 +47,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 
 #define LIGHT_POLYGON 1
 #define LIGHT_POINT 1
+#define DISABLE_BRIGHTEST_LIGHTS_TRACKING 1
 
 #include "light.glsl"
 

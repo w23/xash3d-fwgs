@@ -1,6 +1,10 @@
 #ifndef TEMPORAL_REPROJECTION_GLSL_INCLUDED
 #define TEMPORAL_REPROJECTION_GLSL_INCLUDED
 
+#ifndef LOAD_REFLECTION_RAY_LENGTH
+#define LOAD_REFLECTION_RAY_LENGTH(pix) length(imageLoad(reflection_direction_pdf, pix).xyz)
+#endif
+
 bool projectWorldToPrevFramePixel(vec3 world_position, ivec2 res, out ivec2 reproj_pix, out float clip_w) {
 	const vec4 clip_space = inverse(ubo.ubo.prev_inv_proj) * vec4((inverse(ubo.ubo.prev_inv_view) * vec4(world_position, 1.0)).xyz, 1.0);
 	clip_w = clip_space.w;
@@ -38,7 +42,7 @@ float sampleAverageReflectionRayLength(ivec2 pix, ivec2 res, int indirect_scale,
 				continue;
 			}
 
-			average_ray_length += length(imageLoad(reflection_direction_pdf, p).xyz);
+			average_ray_length += LOAD_REFLECTION_RAY_LENGTH(p);
 			ray_length_samples_count += 1.0;
 		}
 	}

@@ -48,6 +48,10 @@
 #define BRIGHTEST_LIGHTS_PER_TEXEL 8
 #endif
 
+#ifndef DISABLE_BRIGHTEST_LIGHTS_TRACKING
+#define DISABLE_BRIGHTEST_LIGHTS_TRACKING 0
+#endif
+
 #ifndef TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
 #define TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF 1
 #endif
@@ -97,6 +101,9 @@ void updateBrightestLights(
 	uint light_index,
 	inout BrightestLights brightest)
 {
+#if DISABLE_BRIGHTEST_LIGHTS_TRACKING
+	return;
+#else
 	float light_luminance = luminance(diffuse + specular);
 	if (light_luminance <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
 		return;
@@ -117,6 +124,7 @@ void updateBrightestLights(
 	brightest.luminance1 = mix(brightest.luminance1, luminance_value, replace1);
 	brightest.indices0 = mix(brightest.indices0, index_value, replace0);
 	brightest.indices1 = mix(brightest.indices1, index_value, replace1);
+#endif
 }
 
 float packBrightnessEntry(BrightestLightEntry entry)

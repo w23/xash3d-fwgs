@@ -7,5 +7,6 @@
 #define SPATIAL_RECONSTRUCTION_RADIUS 11.
 #define SPECULAR_INPUT_IMAGE indirect_specular
 #define SPECULAR_OUTPUT_IMAGE out_indirect_specular_reconstructed_pass1
+#define SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix) length(imageLoad(reflection_direction_pdf, pix).xyz)
 
 #include "spatial_reconstruction.glsl"
