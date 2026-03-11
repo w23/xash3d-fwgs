@@ -60,8 +60,10 @@ void main() {
 	vec3 lighting_position = pos_t.xyz;
 	BrightestLights brightest_lights;
 	BrightestLights prev_brightest_lights;
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	float current_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	float prev_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	float current_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+	float prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 	vec3 prev_shading_normal = vec3(0.0);
 	float prev_roughness = 0.0;
 	bool confidence_disabled = (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
@@ -73,8 +75,10 @@ void main() {
 	initBrightestLights(brightest_lights);
 	initBrightestLights(prev_brightest_lights);
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		current_weights[i] = 0.0;
-		prev_weights[i] = 0.0;
+		current_diffuse_weights[i] = 0.0;
+		prev_diffuse_weights[i] = 0.0;
+		current_specular_weights[i] = 0.0;
+		prev_specular_weights[i] = 0.0;
 	}
 
 	if (pos_t.w > 0.) {
@@ -95,7 +99,8 @@ void main() {
 #endif
 
 		if (!confidence_disabled) {
-		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
+		processTemporalDiffuseLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_diffuse_weights);
+		processTemporalSpecularLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_specular_weights);
 
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		ivec2 reproj_pix = ivec2(-1);
@@ -104,12 +109,13 @@ void main() {
 		if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
 			initBrightestLights(prev_brightest_lights);
 			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-				prev_weights[i] = 0.0;
+				prev_diffuse_weights[i] = 0.0;
+				prev_specular_weights[i] = 0.0;
 			}
 			unpackBrightestLights(imageLoad(prev_temporal_0, reproj_pix), imageLoad(prev_temporal_1, reproj_pix), prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
-			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
-			diffuse_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
+			processTemporalDiffuseLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_diffuse_weights);
+			diffuse_confidence = computeTemporalDiffuseConfidence(brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights);
 		}
 
 		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, TEMPORAL_PARALLAX_INDIRECT_SCALE, TEMPORAL_PARALLAX_KERNEL);
@@ -117,12 +123,13 @@ void main() {
 		if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, parallax_pix)) {
 			initBrightestLights(prev_brightest_lights);
 			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-				prev_weights[i] = 0.0;
+				prev_diffuse_weights[i] = 0.0;
+				prev_specular_weights[i] = 0.0;
 			}
 			unpackBrightestLights(imageLoad(prev_temporal_0, parallax_pix), imageLoad(prev_temporal_1, parallax_pix), prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
-			processTemporalLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_weights);
-			specular_confidence = computeTemporalConfidence(brightest_lights, prev_brightest_lights, current_weights, prev_weights);
+			processTemporalSpecularLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_specular_weights);
+			specular_confidence = computeTemporalSpecularConfidence(brightest_lights, prev_brightest_lights, current_specular_weights, prev_specular_weights);
 		}
 		}
 	}
@@ -150,7 +157,3 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
-
-
-
-
