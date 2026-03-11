@@ -391,7 +391,7 @@ void main() {
 						unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
 						const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, reproj_pix).xyz;
 						processTemporalDiffuseLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, prev_diffuse_weights);
-						reflection_confidence.x = computeTemporalDiffuseConfidence(reflection_brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights);
+						reflection_confidence.x = computeTemporalDiffuseConfidence(reflection_brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights, reflection_lighting_pos, prev_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), prev_roughness);
 					}
 
 					const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
@@ -408,7 +408,7 @@ void main() {
 							prev_specular_weights[i] = 0.0;
 						}
 						processTemporalSpecularLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, prev_specular_weights);
-						reflection_confidence.y = computeTemporalSpecularConfidence(reflection_brightest_lights, prev_brightest_lights, current_specular_weights, prev_specular_weights);
+						reflection_confidence.y = computeTemporalSpecularConfidence(reflection_brightest_lights, prev_brightest_lights, current_specular_weights, prev_specular_weights, reflection_lighting_pos, prev_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), prev_roughness);
 					}
 					}
 				}

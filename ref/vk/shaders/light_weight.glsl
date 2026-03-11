@@ -272,6 +272,10 @@ float computeTemporalIndexedConfidenceByChannel(
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness,
 	int channel);
 
 float computeTemporalConfidenceByChannel(
@@ -279,6 +283,10 @@ float computeTemporalConfidenceByChannel(
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness,
 	int channel);
 
 vec2 lightWeightFromIndex(uint light_index, vec3 P, vec3 N, vec3 V, float roughness)
@@ -476,13 +484,21 @@ float computeTemporalIndexedConfidence(
 	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness)
 {
 	return computeTemporalIndexedConfidenceByChannel(
 		current_brightest,
 		prev_brightest,
 		current_weights,
 		prev_weights,
+		P,
+		N,
+		V,
+		roughness,
 		BRIGHTEST_LIGHT_CHANNEL_TOTAL);
 }
 
@@ -491,15 +507,15 @@ float computeTemporalIndexedConfidenceByChannel(
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness,
 	int channel)
 {
 	float diff_sum = 0.0;
 	float ref_sum = 0.0;
 	float eps = confidenceWeightEpsilon();
-	bool visited_current[BRIGHTEST_LIGHTS_PER_TEXEL];
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		visited_current[i] = false;
-	}
 
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry prev = getBrightestLightEntry(prev_brightest, i);
@@ -522,28 +538,19 @@ float computeTemporalIndexedConfidenceByChannel(
 		}
 
 		float current_magnitude = 0.0;
-		int current_index = findBrightestLightEntry(current_brightest, prev.index);
-		if (current_index >= 0 && isBrightestLightEntryIndexValid(getBrightestLightEntry(current_brightest, current_index))) {
-			float matched_weight = current_weights[current_index];
-			if (matched_weight > eps) {
-				visited_current[current_index] = true;
-				current_magnitude = matched_weight;
+		if (prev_is_valid) {
+			vec2 current_weight = lightWeightFromIndex(prev.index, P, N, V, roughness);
+			if (channel == BRIGHTEST_LIGHT_CHANNEL_DIFFUSE) {
+				current_magnitude = clampDiffuseTemporalLuminance(current_weight.x);
+			} else if (channel == BRIGHTEST_LIGHT_CHANNEL_SPECULAR) {
+				current_magnitude = clampSpecularTemporalLuminance(current_weight.y);
+			} else {
+				current_magnitude = clampDiffuseTemporalLuminance(current_weight.x) + clampSpecularTemporalLuminance(current_weight.y);
 			}
 		}
 
 		diff_sum += abs(current_magnitude - prev_magnitude);
 		ref_sum += max(current_magnitude, prev_magnitude);
-	}
-
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		BrightestLightEntry current = getBrightestLightEntry(current_brightest, i);
-		float current_magnitude = current_weights[i];
-		if (visited_current[i] || current.index == BRIGHTEST_LIGHT_INVALID_INDEX || current_magnitude <= eps) {
-			continue;
-		}
-
-		diff_sum += current_magnitude;
-		ref_sum += current_magnitude;
 	}
 
 	if (ref_sum <= eps) {
@@ -557,13 +564,21 @@ float computeTemporalConfidence(
 	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness)
 {
 	return computeTemporalConfidenceByChannel(
 		current_brightest,
 		prev_brightest,
 		current_weights,
 		prev_weights,
+		P,
+		N,
+		V,
+		roughness,
 		BRIGHTEST_LIGHT_CHANNEL_TOTAL);
 }
 
@@ -572,6 +587,10 @@ float computeTemporalConfidenceByChannel(
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness,
 	int channel)
 {
 	float indexed_confidence = computeTemporalIndexedConfidenceByChannel(
@@ -579,6 +598,10 @@ float computeTemporalConfidenceByChannel(
 		prev_brightest,
 		current_weights,
 		prev_weights,
+		P,
+		N,
+		V,
+		roughness,
 		channel);
 
 #if TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
@@ -595,13 +618,21 @@ float computeTemporalDiffuseConfidence(
 	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness)
 {
 	return computeTemporalConfidenceByChannel(
 		current_brightest,
 		prev_brightest,
 		current_weights,
 		prev_weights,
+		P,
+		N,
+		V,
+		roughness,
 		BRIGHTEST_LIGHT_CHANNEL_DIFFUSE);
 }
 
@@ -609,13 +640,21 @@ float computeTemporalSpecularConfidence(
 	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
 	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	vec3 P,
+	vec3 N,
+	vec3 V,
+	float roughness)
 {
 	return computeTemporalConfidenceByChannel(
 		current_brightest,
 		prev_brightest,
 		current_weights,
 		prev_weights,
+		P,
+		N,
+		V,
+		roughness,
 		BRIGHTEST_LIGHT_CHANNEL_SPECULAR);
 }
 
