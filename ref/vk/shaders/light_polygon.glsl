@@ -225,7 +225,8 @@ void sampleEmissiveSurfaces(
 	uint cluster_index,
 	inout vec3 diffuse,
 	inout vec3 specular,
-	inout BrightestLights brightest_lights) {
+	inout BrightestLights brightest_lights,
+	bool track_brightest_lights) {
 	const uint num_polygons = uint(light_grid.clusters_[cluster_index].num_polygons);
 
 	if (num_polygons == 0)
@@ -251,7 +252,8 @@ void sampleEmissiveSurfaces(
 	uint cluster_index,
 	inout vec3 diffuse,
 	inout vec3 specular,
-	inout BrightestLights brightest_lights) {
+	inout BrightestLights brightest_lights,
+	bool track_brightest_lights) {
 #if DO_ALL_IN_CLUSTER
 	const SampleContext ctx = buildSampleContext(P, N, view_dir);
 
@@ -297,7 +299,9 @@ void sampleEmissiveSurfaces(
 			evalSplitBRDF(N, light_sample_dir.xyz, view_dir, material, poly_diffuse, poly_specular);
 			poly_diffuse *= emissive * estimate;
 			poly_specular *= emissive * estimate;
-			updateBrightestLights(poly_diffuse, poly_specular, index, brightest_lights);
+			if (track_brightest_lights) {
+				updateBrightestLights(poly_diffuse, poly_specular, index, brightest_lights);
+			}
 			diffuse += poly_diffuse;
 			specular += poly_specular;
 
@@ -394,4 +398,7 @@ void sampleEmissiveSurfaces(
 #endif
 }
 #endif
+
+
+
 

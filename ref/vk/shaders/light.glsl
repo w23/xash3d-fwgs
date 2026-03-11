@@ -27,7 +27,8 @@ void computePointLightsSplitFlashlight(
 	out vec3 specular,
 	out vec3 flashlight_diffuse,
 	out vec3 flashlight_specular,
-	inout BrightestLights brightest_lights) {
+	inout BrightestLights brightest_lights,
+	bool track_brightest_lights) {
 	diffuse = specular = vec3(0.);
 	flashlight_diffuse = flashlight_specular = vec3(0.);
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
@@ -203,7 +204,9 @@ void computePointLightsSplitFlashlight(
 			continue;
 		}
 
-		updateBrightestLights(ldiffuse, lspecular, i, brightest_lights);
+		if (track_brightest_lights) {
+			updateBrightestLights(ldiffuse, lspecular, i, brightest_lights);
+		}
 		diffuse += ldiffuse;
 		specular += lspecular;
 	} // for all lights
@@ -219,9 +222,10 @@ void computePointLights(
 	MaterialProperties material,
 	out vec3 diffuse,
 	out vec3 specular,
-	inout BrightestLights brightest_lights) {
+	inout BrightestLights brightest_lights,
+	bool track_brightest_lights) {
 	vec3 flashlight_diffuse, flashlight_specular;
-	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights);
+	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, track_brightest_lights);
 	diffuse += flashlight_diffuse;
 	specular += flashlight_specular;
 }
@@ -244,10 +248,10 @@ void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialPropertie
 	}
 #endif
 
-	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights);
+	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, true);
 }
 #endif
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLights brightest_lights) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLights brightest_lights, bool track_brightest_lights) {
 	diffuse = specular = vec3(0.);
 	initBrightestLights(brightest_lights);
 
@@ -286,12 +290,12 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	//C += .3 * fract(vec3(light_cell) / 4.);
 
 #if LIGHT_POLYGON
-	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular, brightest_lights);
+	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular, brightest_lights, track_brightest_lights);
 #endif
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
-	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, brightest_lights);
+	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, brightest_lights, track_brightest_lights);
 	diffuse += ldiffuse;
 	specular += lspecular;
 #endif
@@ -314,7 +318,12 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 
 void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
 	BrightestLights brightest_lights;
-	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights);
+	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights, true);
 }
+
+
+
+
+
 
 

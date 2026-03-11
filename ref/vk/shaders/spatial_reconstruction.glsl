@@ -46,6 +46,7 @@ layout(set = 0, binding = 4, rgba16f) uniform readonly image2D SPECULAR_INPUT_IM
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D reflection_direction_pdf;
 
 layout(set = 0, binding = 6) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D reflection_confidence;
 
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 layout(set = 0, binding = 7, rgba16f) uniform writeonly image2D out_indirect_specular_ray_length;
@@ -159,7 +160,7 @@ void main() {
 		float rayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 		imageStore(out_indirect_specular_ray_length, pix, vec4(rayLength, 0.0, 0.0, 0.0));
-		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, 0.0));
+		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, imageLoad(reflection_confidence, pix).y));
 #else
 		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, rayLength));
 #endif
@@ -196,6 +197,7 @@ void main() {
 	float nearestSurfaceHitDistance = 0.0;
 	float weights_sum = 0.0;
 	float ray_length_sum = 0.0;
+	float reflection_confidence_sum = 0.0;
 
 	for (int i = 0; i < SPATIAL_RECONSTRUCTION_SAMPLES; i++) {
 		ivec2 p = max(ivec2(0), min(ivec2(res) - ivec2(1), ivec2(pix + radius * poisson[i].xy)));
@@ -210,11 +212,13 @@ void main() {
 		if (sampleRayLength > 0.0) {
 			// Keep ray-length accumulation weighted by the exact same sample weights as radiance.
 			ray_length_sum += sampleRayLength * weightLength.x;
+			reflection_confidence_sum += imageLoad(reflection_confidence, p).y * weightLength.x;
 			weights_sum += weightLength.x;
 		}
 	}
 
 	float resolvedRayLength = weights_sum > 0.0 ? ray_length_sum / weights_sum : 0.0;
+	float resolvedLightConfidence = clamp(weights_sum > 0.0 ? reflection_confidence_sum / weights_sum : imageLoad(reflection_confidence, pix).y, 0.0, 1.0);
 	vec4 resolvedRadiance = pixelAreaStat.colorSum / max(pixelAreaStat.weightSum, 1e-6f);
 	float resolvedVariance = pixelAreaStat.variance / max(pixelAreaStat.weightSum, 1e-6f);
 	float resolvedDepth = computeResolvedDepth(origin, position, nearestSurfaceHitDistance);
@@ -222,12 +226,16 @@ void main() {
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 	float previousRayLength = imageLoad(prev_indirect_specular_ray_length, pix).r;
 	float rayLengthConfidence = computeRayLengthConfidence(resolvedRayLength, previousRayLength);
+	float combinedConfidence = min(rayLengthConfidence, resolvedLightConfidence);
 	imageStore(out_indirect_specular_ray_length, pix, vec4(resolvedRayLength, 0.0, 0.0, 0.0));
-	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, rayLengthConfidence));
+	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, combinedConfidence));
 #else
 	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, resolvedRayLength));
 #endif
 }
+
+
+
 
 
 

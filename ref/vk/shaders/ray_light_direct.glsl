@@ -90,7 +90,7 @@ void main() {
 #if LIGHT_POINT
 		computeLightingPointDirect(lighting_position, shading_normal, -direction, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights);
 #else
-		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights);
+		computeLighting(lighting_position, shading_normal, -direction, material, diffuse, specular, brightest_lights, true);
 #endif
 
 		processTemporalLightEntries(brightest_lights, lighting_position, shading_normal, -direction, material.roughness, current_weights);
@@ -145,5 +145,6 @@ void main() {
 	imageStore(out_light_poly_specular, pix, vec4(specular, 0.f));
 #endif
 }
+
 
 
