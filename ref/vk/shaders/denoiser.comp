@@ -45,6 +45,8 @@ layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_diffuse;
 
 layout(set = 0, binding = 19, rgba16f) uniform image2D out_temporal_specular;
 layout(set = 0, binding = 20, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 28, rgba16f) uniform image2D out_temporal_indirect_specular;
+layout(set = 0, binding = 29, rgba16f) uniform image2D prev_temporal_indirect_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
@@ -142,10 +144,13 @@ vec3 sampleCurrentPreTemporalDiffuse(ivec2 pix) {
 	return value;
 }
 
-vec3 sampleCurrentPreTemporalSpecular(ivec2 pix) {
+vec3 sampleCurrentPreTemporalDirectSpecular(ivec2 pix) {
 	return imageLoad(light_point_specular, pix).rgb
-		+ imageLoad(light_poly_specular, pix).rgb
-		+ imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb;
+		+ imageLoad(light_poly_specular, pix).rgb;
+}
+
+vec3 sampleCurrentPreTemporalIndirectSpecular(ivec2 pix) {
+	return imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb;
 }
 
 LuminanceStats sampleCurrentDiffuseStats3x3(ivec2 center, ivec2 res) {
@@ -174,7 +179,45 @@ LuminanceStats sampleCurrentSpecularStats3x3(ivec2 center, ivec2 res) {
 	for (int y = -1; y <= 1; ++y) {
 		for (int x = -1; x <= 1; ++x) {
 			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			float l = luminance(sampleCurrentPreTemporalSpecular(p));
+			float l = luminance(sampleCurrentPreTemporalDirectSpecular(p) + sampleCurrentPreTemporalIndirectSpecular(p));
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+LuminanceStats sampleCurrentDirectSpecularStats3x3(ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			float l = luminance(sampleCurrentPreTemporalDirectSpecular(p));
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+LuminanceStats sampleCurrentIndirectSpecularStats3x3(ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			float l = luminance(sampleCurrentPreTemporalIndirectSpecular(p));
 			mean += l;
 			mean_sq += l * l;
 			weight += 1.0;
@@ -195,6 +238,25 @@ LuminanceStats sampleHistoryStats3x3(bool is_specular, ivec2 center, ivec2 res) 
 			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
 			vec3 rad = is_specular ? imageLoad(prev_temporal_specular, p).rgb : imageLoad(prev_temporal_diffuse, p).rgb;
 			float l = luminance(rad);
+			mean += l;
+			mean_sq += l * l;
+			weight += 1.0;
+		}
+	}
+	LuminanceStats stats;
+	stats.mean = weight > 0.0 ? mean / weight : 0.0;
+	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+	return stats;
+}
+
+LuminanceStats sampleHistoryIndirectSpecularStats3x3(ivec2 center, ivec2 res) {
+	float mean = 0.0;
+	float mean_sq = 0.0;
+	float weight = 0.0;
+	for (int y = -1; y <= 1; ++y) {
+		for (int x = -1; x <= 1; ++x) {
+			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
+			float l = luminance(imageLoad(prev_temporal_indirect_specular, p).rgb);
 			mean += l;
 			mean_sq += l * l;
 			weight += 1.0;
@@ -448,7 +510,7 @@ Components blurATrous(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shading_n
 	const vec3 d0 = indirect_diffuse_c1 - indirect_diffuse_c0;
 	const vec3 d1 = indirect_diffuse_c2 - indirect_diffuse_c1;
 
-	// TODO(or not todo): The Á-Trous paper mentions that it should be c2 + d1 + d0, but
+	// TODO(or not todo): The Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В Р В Р’В Р Р†Р вЂљРІвЂћСћР В РІР‚в„ўР вЂ™Р’В Р В Р’В Р вЂ™Р’В Р В Р’В Р Р†Р вЂљР’В Р В Р’В Р вЂ™Р’В Р В Р вЂ Р В РІР‚С™Р РЋРІвЂћСћР В Р’В Р В Р вЂ№Р В Р Р‹Р Р†РІР‚С›РЎС›Р В Р’В Р вЂ™Р’В Р В РІР‚в„ўР вЂ™Р’В Р В Р’В Р Р†Р вЂљРІвЂћСћР В РІР‚в„ўР вЂ™Р’В Р В Р’В Р вЂ™Р’В Р В Р’В Р В РІР‚в„–Р В Р’В Р В РІР‚В Р В Р’В Р Р†Р вЂљРЎв„ўР В Р Р‹Р РЋРІвЂћСћ-Trous paper mentions that it should be c2 + d1 + d0, but
 	// it gives horrible artifacts. Either I'm misreading the paper, or something else is broken here,
 	// Using just c2 seems fine enough (although still not up to original paper image quality)
 	c.indirect_diffuse = indirect_diffuse_c2;// + d1 + d0;
@@ -694,47 +756,62 @@ void main() {
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
 		float better_depth_offset = depth_treshold;
 		vec3 history_diffuse = diffuse;
-		vec3 history_specular = specular;
+		vec3 direct_specular = c.direct_specular;
+		vec3 indirect_specular = c.indirect_specular;
+		vec3 history_direct_specular = direct_specular;
+		vec3 history_indirect_specular = indirect_specular;
 		float diffuse_confidence = 0.0;
-		float specular_confidence = 0.0;
+		float direct_specular_confidence_temporal = 0.0;
+		float indirect_specular_confidence_temporal = 0.0;
 		float diffuse_variance_confidence = 1.0;
-		float specular_variance_confidence = 1.0;
+		float direct_specular_variance_confidence = 1.0;
+		float indirect_specular_variance_confidence = 1.0;
 		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
-		const LuminanceStats current_specular_stats = sampleCurrentSpecularStats3x3(pix, res);
+		const LuminanceStats current_direct_specular_stats = sampleCurrentDirectSpecularStats3x3(pix, res);
+		const LuminanceStats current_indirect_specular_stats = sampleCurrentIndirectSpecularStats3x3(pix, res);
 		const float current_diffuse_luma = luminance(diffuse);
-		const float current_specular_luma = luminance(specular);
+		const float current_direct_specular_luma = luminance(direct_specular);
+		const float current_indirect_specular_luma = luminance(indirect_specular);
 		
 		if (any(greaterThanEqual(reproj_pix, ivec2(0))) && any(lessThan(reproj_pix, res))) {			
 			const vec4 history_diffuse_depth = imageLoad( prev_temporal_diffuse, reproj_pix );
-			const vec4 history_specular_sample = imageLoad( prev_temporal_specular, reproj_pix );
 
 			const float history_depth = history_diffuse_depth.w;
 			const float depth_offset = abs(history_depth - depth_nessesary);
 			if ( depth_offset < better_depth_offset ) {
 				better_depth_offset = depth_offset;
 				history_diffuse = history_diffuse_depth.rgb;
-				history_specular = history_specular_sample.rgb;
 				diffuse_confidence = direct_diffuse_confidence;
 				const LuminanceStats history_diffuse_stats = sampleHistoryStats3x3(false, reproj_pix, res);
 				diffuse_variance_confidence = computeVarianceConfidence(current_diffuse_luma, current_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
 			}
 		}
 
-		// parallax reprojecting for specular
+		// parallax reprojecting for direct specular
 		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, INDIRECT_SCALE, 1);
 		ivec2 parallax_pix = ivec2(-1);
 		if (parallaxReprojectToPrevFramePixel(position, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, parallax_pix)) {
-			const vec4 history_specular_sample = imageLoad( prev_temporal_specular, parallax_pix );
-			history_specular = closestColor(history_specular_sample.xyz, history_specular, specular);
-			specular_confidence = direct_specular_confidence;
-			const LuminanceStats history_specular_stats = sampleHistoryStats3x3(true, parallax_pix, res);
-			specular_variance_confidence = computeVarianceConfidence(current_specular_luma, current_specular_stats, luminance(history_specular), history_specular_stats);
+			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_specular, parallax_pix);
+			history_direct_specular = closestColor(history_direct_specular_sample.xyz, history_direct_specular, direct_specular);
+			direct_specular_confidence_temporal = direct_specular_confidence;
+			const LuminanceStats history_direct_specular_stats = sampleHistoryStats3x3(true, parallax_pix, res);
+			direct_specular_variance_confidence = computeVarianceConfidence(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
+		}
+
+		// parallax reprojecting for indirect specular
+		ivec2 indirect_parallax_pix = ivec2(-1);
+		if (parallaxReprojectToPrevFramePixel(position, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, indirect_parallax_pix)) {
+			const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_indirect_specular, indirect_parallax_pix);
+			history_indirect_specular = closestColor(history_indirect_specular_sample.xyz, history_indirect_specular, indirect_specular);
+			indirect_specular_confidence_temporal = indirect_specular_confidence;
+			const LuminanceStats history_indirect_specular_stats = sampleHistoryIndirectSpecularStats3x3(indirect_parallax_pix, res);
+			indirect_specular_variance_confidence = computeVarianceConfidence(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
-		if (IS_INVALIDV(history_specular)) {
-			debugPrintfEXT("PRE pix=(%d,%d) history_specular=inv", pix.x, pix.y);
-			history_specular = vec3(0.);
+		if (IS_INVALIDV(history_direct_specular)) {
+			debugPrintfEXT("PRE pix=(%d,%d) history_direct_specular=inv", pix.x, pix.y);
+			history_direct_specular = vec3(0.);
 		}
 
 		if (IS_INVALIDV(specular)) {
@@ -745,14 +822,12 @@ void main() {
 
 		if (better_depth_offset < depth_treshold) {
 			float diffuse_history_mix = DIFFUSE_TEMPORAL_HISTORY_MIX_WEIGHT * diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
-			float aggressive_indirect_specular_confidence = pow(indirect_specular_confidence, 0.22);
-			float indirect_specular_reset_gate = smoothstep(0.12, 0.50, indirect_specular_confidence);
-			float direct_specular_history_mix = 0.84 * max(diffuse_confidence, specular_confidence) * mix(1.0, softenVarianceConfidence(specular_variance_confidence), 0.65);
-			float indirect_specular_history_boost = 0.60 * aggressive_indirect_specular_confidence * indirect_specular_reset_gate * (1.0 - direct_specular_history_mix);
-			float specular_history_mix = clamp(direct_specular_history_mix + indirect_specular_history_boost, 0.0, 0.985);
-			specular_history_mix *= mix(0.05, 1.0, indirect_specular_reset_gate);
+			float direct_specular_history_mix = SPECULAR_TEMPORAL_HISTORY_MIX_WEIGHT * direct_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(direct_specular_variance_confidence), 0.65);
+			float indirect_specular_history_mix = 0.60 * indirect_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(indirect_specular_variance_confidence), 0.65);
 			diffuse = mix(diffuse, history_diffuse, diffuse_history_mix);
-			specular = mix(specular, history_specular, specular_history_mix);
+			direct_specular = mix(direct_specular, history_direct_specular, clamp(direct_specular_history_mix, 0.0, 0.985));
+			indirect_specular = mix(indirect_specular, history_indirect_specular, clamp(indirect_specular_history_mix, 0.0, 0.985));
+			specular = direct_specular + indirect_specular;
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -762,10 +837,10 @@ void main() {
 		}
 
 		if (IS_INVALIDV(specular)) {
-			debugPrintfEXT("pix=(%d,%d) new_specular=inv, specular=(%f, %f, %f) history_specular=(%f, %f, %f)",
+			debugPrintfEXT("pix=(%d,%d) new_specular=inv, specular=(%f, %f, %f) history_direct_specular=(%f, %f, %f)",
 				pix.x, pix.y,
 				specular.r, specular.g, specular.b,
-				history_specular.r, history_specular.g, history_specular.b
+				history_direct_specular.r, history_direct_specular.g, history_direct_specular.b
 				);
 			specular = vec3(0.);
 		}
@@ -775,7 +850,8 @@ void main() {
 		DEBUG_VALIDATE_RANGE_VEC3("denoiser.specular", specular, 0., 1e6);
 
 		imageStore(out_temporal_diffuse, pix, vec4(diffuse, depth));
-		imageStore(out_temporal_specular, pix, vec4(specular, 0./*unused*/));
+		imageStore(out_temporal_specular, pix, vec4(direct_specular, 0./*unused*/));
+		imageStore(out_temporal_indirect_specular, pix, vec4(indirect_specular, 0./*unused*/));
 #endif // ifndef DISABLE_TEMPORAL_DENOISER
 	}
 
@@ -799,7 +875,7 @@ void main() {
 	colour = LINEARtoSRGB(colour);
 
 // See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
-// Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
+// Adding emissive_blend to the final color in the incorrect sRGB space. It makes
 // it look much more like the original. Adding emissive in the *correct* linear space differs
 // from the original a lot, and looks perceptively worse.
 	colour += legacy_blend.rgb;
