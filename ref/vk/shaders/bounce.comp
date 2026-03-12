@@ -150,11 +150,29 @@ struct MaterialEx {
 };
 
 
-void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout vec3 first_bounce_direction) {
+void computeBounces(
+	MaterialEx mat,
+	vec3 pos,
+	vec3 direction,
+	int bouncesCount,
+	inout vec3 diffuse,
+	inout vec3 specular,
+	inout vec3 first_bounce_direction,
+	bool track_first_bounce_temporal,
+	inout vec3 first_bounce_hit_position,
+	inout vec3 first_bounce_lighting_position,
+	inout vec3 first_bounce_shading_normal,
+	inout float first_bounce_roughness,
+	inout BrightestLights first_bounce_brightest_lights,
+	out bool first_bounce_did_hit) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
 	int first_brdf_type = BRDF_TYPE_NONE;
+	first_bounce_did_hit = false;
+	if (track_first_bounce_temporal) {
+		initBrightestLights(first_bounce_brightest_lights);
+	}
 
 	for (int i = 0; i < bouncesCount; ++i) {
 		vec3 bounce_direction;
@@ -209,6 +227,8 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		const vec3 hit_pos = payload.hit_t.xyz;
 		const vec3 hit_geometry_normal = normalDecode(payload.normals_gs.xy);
 		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
+		const bool track_brightest_lights = track_first_bounce_temporal && i == 0;
+		BrightestLights bounce_brightest_lights;
 		if (did_hit) {
 			vec3 ldiffuse = vec3(0.);
 			vec3 lspecular = vec3(0.);
@@ -224,8 +244,7 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		}
 #endif
 			const vec3 hit_lighting_pos = hit_pos + hit_geometry_normal * kBounceLightingNormalOffset;
-			BrightestLights bounce_brightest_lights;
-			computeLighting(hit_lighting_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular, bounce_brightest_lights, false);
+			computeLighting(hit_lighting_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular, bounce_brightest_lights, track_brightest_lights);
 
 			if (IS_INVALIDV(ldiffuse)) {
 #ifdef SHADER_DEBUG_ENABLE
@@ -257,8 +276,22 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		else
 			specular += contribution;
 
-		if (i == 0)
+		if (i == 0) {
 			first_bounce_direction = hit_pos - pos;
+			if (track_first_bounce_temporal) {
+				first_bounce_did_hit = did_hit;
+				if (did_hit) {
+					first_bounce_hit_position = hit_pos;
+					first_bounce_lighting_position = hit_pos + hit_geometry_normal * kBounceLightingNormalOffset;
+					first_bounce_shading_normal = hit_shading_normal;
+					first_bounce_roughness = hit_material.roughness;
+					if (track_brightest_lights) {
+						first_bounce_brightest_lights = bounce_brightest_lights;
+						finalizeBrightestLightsWeights(first_bounce_brightest_lights, first_bounce_lighting_position, first_bounce_shading_normal, normalize(pos - first_bounce_lighting_position), first_bounce_roughness);
+					}
+				}
+			}
+		}
 
 		if (!did_hit)
 			break;
@@ -331,7 +364,14 @@ void main() {
 			mat.prop.roughness = material_data.r;
 		}
 
-		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, first_bounce_direction);
+		vec3 unused_hit_position = vec3(0.0);
+		vec3 unused_lighting_position = vec3(0.0);
+		vec3 unused_shading_normal = vec3(0.0);
+		float unused_roughness = 0.0;
+		BrightestLights unused_brightest_lights;
+		initBrightestLights(unused_brightest_lights);
+		bool unused_did_hit = false;
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, first_bounce_direction, false, unused_hit_position, unused_lighting_position, unused_shading_normal, unused_roughness, unused_brightest_lights, unused_did_hit);
 
 		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
 			diffuse += specular;
@@ -346,85 +386,60 @@ void main() {
 			mat.prop.roughness = material_data.r;
 
 			vec3 unusedDiffuse = vec3(0.);
-			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, reflection_direction);
+			vec3 reflection_lighting_position = vec3(0.0);
+			bool reflection_did_hit = false;
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, reflection_direction, !confidence_disabled, reflection_hit_position, reflection_lighting_position, reflection_shading_normal, reflection_roughness, reflection_brightest_lights, reflection_did_hit);
 
 			const float reflection_ray_length = length(reflection_direction);
-			if (reflection_ray_length > 0.0) {
-				const vec3 reflection_dir_n = reflection_direction / reflection_ray_length;
-				const vec3 ray_origin = offsetRayOrigin(pos_t.xyz, geometry_normal, reflection_dir_n, kBounceRayNormalOffset);
-				RayPayloadPrimary reflection_payload;
-				reflection_payload.base_color_a = vec4(0.0);
-				reflection_payload.emissive = vec4(0.0);
-				reflection_payload.material_rmxx = vec4(0.0);
-				reflection_payload.normals_gs = vec4(0.0);
+			if (reflection_did_hit && !confidence_disabled && reflection_ray_length > 0.0) {
+				float current_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+				float prev_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+				float current_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+				float prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+				for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+					current_diffuse_weights[i] = 0.0;
+					prev_diffuse_weights[i] = 0.0;
+					current_specular_weights[i] = 0.0;
+					prev_specular_weights[i] = 0.0;
+				}
 
-				if (getHit(ray_origin, reflection_dir_n, reflection_payload)) {
-					reflection_hit_position = reflection_payload.hit_t.xyz;
-					const vec3 reflection_geometry_normal = normalDecode(reflection_payload.normals_gs.xy);
-					reflection_shading_normal = normalDecode(reflection_payload.normals_gs.zw);
-					reflection_roughness = reflection_payload.material_rmxx.r;
-					MaterialProperties reflection_material;
-					reflection_material.base_color = reflection_payload.base_color_a.rgb;
-					reflection_material.metalness = reflection_payload.material_rmxx.g;
-					reflection_material.roughness = reflection_payload.material_rmxx.r;
+				processTemporalDiffuseLightEntries(reflection_brightest_lights, reflection_lighting_position, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_position), reflection_roughness, current_diffuse_weights);
+				processTemporalSpecularLightEntries(reflection_brightest_lights, reflection_lighting_position, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_position), reflection_roughness, current_specular_weights);
 
-					vec3 reflection_direct_diffuse = vec3(0.0), reflection_direct_specular = vec3(0.0);
-					const vec3 reflection_lighting_pos = reflection_hit_position + reflection_geometry_normal * kBounceLightingNormalOffset;
-					computeLighting(reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_material, reflection_direct_diffuse, reflection_direct_specular, reflection_brightest_lights, !confidence_disabled);
-					if (!confidence_disabled) {
-						finalizeBrightestLightsWeights(reflection_brightest_lights, reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_roughness);
-					}
+				const vec3 prev_position = imageLoad(geometry_prev_position, pix * INDIRECT_SCALE).xyz;
+				ivec2 reproj_pix = ivec2(-1);
+				float reproj_depth_necessary = 0.0;
+				float reproj_depth_threshold = 0.0;
+				if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
+					BrightestLights prev_brightest_lights;
+					initBrightestLights(prev_brightest_lights);
+					unpackBrightestLights(imageLoad(prev_temporal_reflection_0, reproj_pix), imageLoad(prev_temporal_reflection_1, reproj_pix), imageLoad(prev_temporal_reflection_2, reproj_pix), imageLoad(prev_temporal_reflection_3, reproj_pix), imageLoad(prev_temporal_reflection_4, reproj_pix), imageLoad(prev_temporal_reflection_5, reproj_pix), prev_brightest_lights);
+					vec3 prev_shading_normal = vec3(0.0);
+					float prev_roughness = 0.0;
+					unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
+					const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, reproj_pix).xyz;
+					processTemporalDiffuseLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, prev_diffuse_weights);
+					reflection_confidence.x = computeTemporalDiffuseConfidence(reflection_brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights, reflection_lighting_position, prev_shading_normal, normalize(pos_t.xyz - reflection_lighting_position), prev_roughness);
+				}
 
-					float current_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-					float prev_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-					float current_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-					float prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
+				const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+				ivec2 parallax_pix = ivec2(-1);
+				if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, reflection_ray_length, res, parallax_pix)) {
+					BrightestLights prev_brightest_lights;
+					initBrightestLights(prev_brightest_lights);
+					unpackBrightestLights(imageLoad(prev_temporal_reflection_0, parallax_pix), imageLoad(prev_temporal_reflection_1, parallax_pix), imageLoad(prev_temporal_reflection_2, parallax_pix), imageLoad(prev_temporal_reflection_3, parallax_pix), imageLoad(prev_temporal_reflection_4, parallax_pix), imageLoad(prev_temporal_reflection_5, parallax_pix), prev_brightest_lights);
+					vec3 prev_shading_normal = vec3(0.0);
+					float prev_roughness = 0.0;
+					unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
+					const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, parallax_pix).xyz;
+					float current_prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
 					for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-						current_diffuse_weights[i] = 0.0;
-						prev_diffuse_weights[i] = 0.0;
-						current_specular_weights[i] = 0.0;
-						prev_specular_weights[i] = 0.0;
+						BrightestLightEntry prev_entry = getBrightestLightEntry(prev_brightest_lights, i);
+						prev_specular_weights[i] = max(prev_entry.specular_luminance, 0.0);
+						current_prev_specular_weights[i] = 0.0;
 					}
-					if (!confidence_disabled) {
-					processTemporalDiffuseLightEntries(reflection_brightest_lights, reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_roughness, current_diffuse_weights);
-					processTemporalSpecularLightEntries(reflection_brightest_lights, reflection_lighting_pos, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), reflection_roughness, current_specular_weights);
-
-					const vec3 prev_position = imageLoad(geometry_prev_position, pix * INDIRECT_SCALE).xyz;
-					ivec2 reproj_pix = ivec2(-1);
-					float reproj_depth_necessary = 0.0;
-					float reproj_depth_threshold = 0.0;
-					if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
-						BrightestLights prev_brightest_lights;
-						initBrightestLights(prev_brightest_lights);
-						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, reproj_pix), imageLoad(prev_temporal_reflection_1, reproj_pix), imageLoad(prev_temporal_reflection_2, reproj_pix), imageLoad(prev_temporal_reflection_3, reproj_pix), imageLoad(prev_temporal_reflection_4, reproj_pix), imageLoad(prev_temporal_reflection_5, reproj_pix), prev_brightest_lights);
-						vec3 prev_shading_normal = vec3(0.0);
-						float prev_roughness = 0.0;
-						unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
-						const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, reproj_pix).xyz;
-						processTemporalDiffuseLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, prev_diffuse_weights);
-						reflection_confidence.x = computeTemporalDiffuseConfidence(reflection_brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights, reflection_lighting_pos, prev_shading_normal, normalize(pos_t.xyz - reflection_lighting_pos), prev_roughness);
-					}
-
-					const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-					ivec2 parallax_pix = ivec2(-1);
-					if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, reflection_ray_length, res, parallax_pix)) {
-						BrightestLights prev_brightest_lights;
-						initBrightestLights(prev_brightest_lights);
-						unpackBrightestLights(imageLoad(prev_temporal_reflection_0, parallax_pix), imageLoad(prev_temporal_reflection_1, parallax_pix), imageLoad(prev_temporal_reflection_2, parallax_pix), imageLoad(prev_temporal_reflection_3, parallax_pix), imageLoad(prev_temporal_reflection_4, parallax_pix), imageLoad(prev_temporal_reflection_5, parallax_pix), prev_brightest_lights);
-						vec3 prev_shading_normal = vec3(0.0);
-						float prev_roughness = 0.0;
-						unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
-						const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, parallax_pix).xyz;
-						float current_prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-						for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-							BrightestLightEntry prev_entry = getBrightestLightEntry(prev_brightest_lights, i);
-							prev_specular_weights[i] = max(prev_entry.specular_luminance, 0.0);
-							current_prev_specular_weights[i] = 0.0;
-						}
-						processTemporalSpecularLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, current_prev_specular_weights);
-						reflection_confidence.y = computeTemporalBrightnessConfidence(current_prev_specular_weights, prev_specular_weights);
-					}
-					}
+					processTemporalSpecularLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, current_prev_specular_weights);
+					reflection_confidence.y = computeTemporalBrightnessConfidence(current_prev_specular_weights, prev_specular_weights);
 				}
 			}
 		}
