@@ -846,37 +846,47 @@ void main() {
 		reprojectToPrevFramePixel(prev_position, res, reproj_pix, depth_necessary, depth_treshold);
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0., 0., 0., 1.)).xyz;
 		float better_depth_offset = depth_treshold;
-		vec3 history_diffuse = direct_diffuse;
-		vec3 history_indirect_diffuse = indirect_diffuse;
+
 		vec3 direct_specular = c.direct_specular;
 		vec3 indirect_specular = c.indirect_specular;
+
+		vec3 history_diffuse = direct_diffuse;
+		vec3 history_indirect_diffuse = indirect_diffuse;
 		vec3 history_direct_specular = direct_specular;
 		vec3 history_indirect_specular = indirect_specular;
+
 		float diffuse_history_samples = 1.0;
 		float indirect_diffuse_history_samples = 1.0;
 		float direct_specular_history_samples = 1.0;
 		float indirect_specular_history_samples = 1.0;
+
 		float diffuse_confidence = 0.0;
 		float indirect_diffuse_confidence_temporal = 0.0;
 		float direct_specular_confidence_temporal = 0.0;
 		float indirect_specular_confidence_temporal = 0.0;
+
 		float diffuse_variance_confidence = 1.0;
 		float indirect_diffuse_variance_confidence = 1.0;
 		float direct_specular_variance_confidence = 1.0;
 		float indirect_specular_variance_confidence = 1.0;
+
 		float direct_specular_history_outlier = 0.0;
 		float direct_specular_history_luma_cap = DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP;
 		float direct_specular_noise_gate = 0.0;
+
 		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
 		const LuminanceStats current_direct_specular_stats = sampleCurrentDirectSpecularStats3x3(pix, res);
 		const LuminanceStats current_indirect_specular_stats = sampleCurrentIndirectSpecularStats3x3(pix, res);
+
 		LuminanceStats history_diffuse_stats = current_diffuse_stats;
 		LuminanceStats history_direct_specular_stats = current_direct_specular_stats;
 		LuminanceStats history_indirect_specular_stats = current_indirect_specular_stats;
+
 		const float current_diffuse_luma = luminance(direct_diffuse);
 		const float current_indirect_diffuse_luma = luminance(indirect_diffuse);
 		const float current_direct_specular_luma = luminance(direct_specular);
 		const float current_indirect_specular_luma = luminance(indirect_specular);
+
 		const float current_roughness = imageLoad(material_rmxx, pix).x;
 		
 		if (all(greaterThanEqual(reproj_pix, ivec2(0))) && all(lessThan(reproj_pix, res))) {			
