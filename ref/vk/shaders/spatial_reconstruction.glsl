@@ -297,6 +297,57 @@ void main() {
 	vec3 V = normalize(origin - position);
 	float NdotV = saturate(dot(shading_normal, V));
 	float roughness = imageLoad(material_rmxx, pix * INDIRECT_SCALE).x;
+	float metalness = imageLoad(material_rmxx, pix * INDIRECT_SCALE).y;
+	bool mirror_surface = (metalness >= 0.999) && (roughness <= 0.001);
+	if (mirror_surface) {
+		vec4 passthrough = imageLoad(SPECULAR_INPUT_IMAGE, pix);
+		float rayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
+		ivec2 outputRes = imageSize(SPECULAR_OUTPUT_IMAGE);
+		ivec2 basePix = pix * INDIRECT_SCALE;
+		bool write2x2 = all(greaterThanEqual(outputRes, res * INDIRECT_SCALE));
+#if SPATIAL_RECONSTRUCTION_FINAL_PASS
+		ivec2 rayLengthRes = imageSize(out_indirect_specular_ray_length);
+		bool writeRayLength2x2 = all(greaterThanEqual(rayLengthRes, res * INDIRECT_SCALE));
+		if (writeRayLength2x2) {
+			for (int y = 0; y < INDIRECT_SCALE; ++y) {
+				for (int x = 0; x < INDIRECT_SCALE; ++x) {
+					ivec2 p = basePix + ivec2(x, y);
+					if (all(lessThan(p, rayLengthRes))) {
+						imageStore(out_indirect_specular_ray_length, p, vec4(rayLength, 0.0, 0.0, 0.0));
+					}
+				}
+			}
+		} else {
+			imageStore(out_indirect_specular_ray_length, pix, vec4(rayLength, 0.0, 0.0, 0.0));
+		}
+		if (write2x2) {
+			for (int y = 0; y < INDIRECT_SCALE; ++y) {
+				for (int x = 0; x < INDIRECT_SCALE; ++x) {
+					ivec2 p = basePix + ivec2(x, y);
+					if (all(lessThan(p, outputRes))) {
+						imageStore(SPECULAR_OUTPUT_IMAGE, p, vec4(passthrough.rgb, 1.0));
+					}
+				}
+			}
+		} else {
+			imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, 1.0));
+		}
+#else
+		if (write2x2) {
+			for (int y = 0; y < INDIRECT_SCALE; ++y) {
+				for (int x = 0; x < INDIRECT_SCALE; ++x) {
+					ivec2 p = basePix + ivec2(x, y);
+					if (all(lessThan(p, outputRes))) {
+						imageStore(SPECULAR_OUTPUT_IMAGE, p, vec4(passthrough.rgb, rayLength));
+					}
+				}
+			}
+		} else {
+			imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, rayLength));
+		}
+#endif
+		return;
+	}
 	float radius = SPATIAL_RECONSTRUCTION_RADIUS;
 	vec3 centerReflectionDirection = normalize(reflect(-V, shading_normal));
 	RayNeighborhoodStats neighborhoodStats = sampleRayNeighborhoodStats(pix, res, centerReflectionDirection);

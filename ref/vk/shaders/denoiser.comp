@@ -290,6 +290,8 @@ void main() {
 
 	const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
 	const float metalness = imageLoad(material_rmxx, pix).g;
+	const bool separated_reflection = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0;
+	const bool legacy_bounce = !separated_reflection;
 
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
@@ -334,7 +336,8 @@ void main() {
 	vec3 direct_diffuse = pre_temporal_direct_diffuse_sample.rgb;
 	vec3 indirect_diffuse = imageLoad(precombined_indirect_diffuse, pix).rgb;
 	vec3 diffuse = direct_diffuse + indirect_diffuse;
-	vec3 specular = pre_temporal_direct_specular_sample.rgb + restoreSpecular(pre_temporal_indirect_specular_sample.rgb, base_color, metalness);
+	vec3 indirect_specular_colored = separated_reflection ? restoreSpecular(pre_temporal_indirect_specular_sample.rgb, base_color, metalness) : pre_temporal_indirect_specular_sample.rgb;
+	vec3 specular = pre_temporal_direct_specular_sample.rgb + indirect_specular_colored;
 
 	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
 		// Skip
@@ -424,6 +427,7 @@ void main() {
 		const float current_indirect_specular_luma = luminance(indirect_specular);
 
 		const float current_roughness = imageLoad(material_rmxx, pix).x;
+		const bool mirror_surface = (metalness >= 0.999) && (current_roughness <= 0.001);
 		
 		if (all(greaterThanEqual(reproj_pix, ivec2(0))) && all(lessThan(reproj_pix, res))) {			
 			const vec4 history_diffuse_sample = imageLoad(prev_temporal_diffuse, reproj_pix);
@@ -448,7 +452,7 @@ void main() {
 		bool has_base_history = better_depth_offset < depth_treshold;
 
 		// direct specular uses only simple reprojection (avoid base-color smearing)
-		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, INDIRECT_SCALE, 1);
+		const float average_ray_length = (separated_reflection || mirror_surface) ? sampleAverageReflectionRayLength(pix, res, INDIRECT_SCALE, 1) : 0.0;
 		ivec2 direct_specular_history_pix = reproj_pix;
 		if (has_base_history) {
 			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_specular, direct_specular_history_pix);
@@ -478,10 +482,13 @@ void main() {
 
 		// parallax reprojecting for indirect specular
 		ivec2 indirect_parallax_pix = ivec2(-1);
-		bool has_indirect_specular_reprojection = parallaxReprojectToPrevFramePixel(position, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, indirect_parallax_pix) && all(greaterThanEqual(indirect_parallax_pix, ivec2(0))) && all(lessThan(indirect_parallax_pix, res));
+		bool has_indirect_specular_reprojection = false;
+		if (separated_reflection || mirror_surface) {
+			has_indirect_specular_reprojection = parallaxReprojectToPrevFramePixel(position, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, indirect_parallax_pix) && all(greaterThanEqual(indirect_parallax_pix, ivec2(0))) && all(lessThan(indirect_parallax_pix, res));
+		}
 		bool use_indirect_specular_parallax = false;
 		ivec2 indirect_specular_history_pix = reproj_pix;
-		if (has_base_history && has_indirect_specular_reprojection) {
+		if ((separated_reflection || mirror_surface) && has_base_history && has_indirect_specular_reprojection) {
 			vec4 parallax_history_meta = imageLoad(prev_temporal_reproj_depth, indirect_parallax_pix);
 			float parallax_plane_depth = 0.0;
 			bool has_parallax_plane_depth = computePlaneDepthInPrevFrame(indirect_parallax_pix, res, position, geometry_normal, parallax_plane_depth);
@@ -561,6 +568,9 @@ void main() {
 			if (hard_direct_off || direct_hard_reset) {
 				indirect_diffuse_reset_factor = 0.0;
 			}
+			if (legacy_bounce) {
+				indirect_diffuse_reset_factor = 1.0;
+			}
 			vec4 accumulated_indirect_diffuse = accumulateTemporalRadiance(indirect_diffuse, history_indirect_diffuse, indirect_diffuse_history_samples, indirect_diffuse_reset_factor);
 			indirect_diffuse = accumulated_indirect_diffuse.rgb;
 			indirect_diffuse_history_samples = accumulated_indirect_diffuse.a;
@@ -598,6 +608,9 @@ void main() {
 			if (indirect_specular_confidence_temporal <= 0.01) {
 				indirect_specular_reset_factor = 0.0;
 			}
+			if (legacy_bounce) {
+				indirect_specular_reset_factor = 1.0;
+			}
 			vec4 accumulated_indirect_specular = accumulateTemporalRadiance(indirect_specular, history_indirect_specular, indirect_specular_history_samples, indirect_specular_reset_factor);
 			indirect_specular = accumulated_indirect_specular.rgb;
 			indirect_specular_history_samples = accumulated_indirect_specular.a;
@@ -606,7 +619,8 @@ void main() {
 		}
 
 		diffuse = direct_diffuse + indirect_diffuse;
-		specular = direct_specular + restoreSpecular(indirect_specular, base_color, metalness);
+		indirect_specular_colored = separated_reflection ? restoreSpecular(indirect_specular, base_color, metalness) : indirect_specular;
+		specular = direct_specular + indirect_specular_colored;
 
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALIDV(diffuse)) {
