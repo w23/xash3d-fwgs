@@ -1042,6 +1042,10 @@ void main() {
 				indirect_specular_reset_factor = 0.0;
 			}
 			indirect_specular_reset_factor *= direct_specular_confidence;
+			indirect_specular_reset_factor *= indirect_specular_confidence_temporal;
+			if (indirect_specular_confidence_temporal <= 0.01) {
+				indirect_specular_reset_factor = 0.0;
+			}
 			vec4 accumulated_indirect_specular = accumulateTemporalRadiance(indirect_specular, history_indirect_specular, indirect_specular_history_samples, indirect_specular_reset_factor);
 			indirect_specular = accumulated_indirect_specular.rgb;
 			indirect_specular_history_samples = accumulated_indirect_specular.a;
