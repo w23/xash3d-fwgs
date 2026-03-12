@@ -56,6 +56,7 @@ layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
 layout(set = 0, binding = 3, rgba8) uniform readonly image2D material_rmxx;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D SPECULAR_INPUT_IMAGE;
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D reflection_direction_pdf;
+layout(set = 0, binding = 9, rgba8) uniform readonly image2D base_color_a;
 
 layout(set = 0, binding = 6) uniform UBO { UniformBuffer ubo; } ubo;
 
@@ -67,6 +68,7 @@ layout(set = 0, binding = 8, rgba16f) uniform readonly image2D prev_indirect_spe
 #include "utils.glsl"
 #include "noise.glsl"
 #include "brdf.glsl"
+#include "color_spaces.glsl"
 
 #ifndef PI
 	#define PI 3.14 // FIXME please
@@ -310,6 +312,8 @@ void main() {
 #endif
 		return;
 	}
+	const bool legacy_bounce = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) == 0;
+	const vec3 center_base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix * INDIRECT_SCALE).rgb);
 	float radius = SPATIAL_RECONSTRUCTION_RADIUS;
 	vec3 centerReflectionDirection = normalize(reflect(-V, shading_normal));
 	RayNeighborhoodStats neighborhoodStats = sampleRayNeighborhoodStats(pix, res, centerReflectionDirection);
@@ -333,6 +337,12 @@ void main() {
 	
 	for (int i = 0; i < SPATIAL_RECONSTRUCTION_SAMPLES; i++) {
 		ivec2 p = max(ivec2(0), min(ivec2(res) - ivec2(1), ivec2(pix + radius * poisson[i].xy)));
+		if (legacy_bounce) {
+			vec3 sample_base_color = SRGBtoLINEAR(imageLoad(base_color_a, p * INDIRECT_SCALE).rgb);
+			if (any(greaterThan(abs(sample_base_color - center_base_color), vec3(0.05)))) {
+				continue;
+			}
+		}
 		float weightS = computeSpatialWeight(poisson[i].z * poisson[i].z, SPATIAL_RECONSTRUCTION_SIGMA);
 		vec2 weightLength = computeWeightRayLength(p, V, shading_normal, roughness, NdotV, weightS, centerReflectionDirection, neighborhoodStats);
 		vec2 fallbackWeightLength = computeWeightRayLengthFallback(p, V, shading_normal, roughness, NdotV, weightS, centerReflectionDirection, neighborhoodStats);
