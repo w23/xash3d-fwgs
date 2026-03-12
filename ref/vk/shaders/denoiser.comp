@@ -183,79 +183,61 @@ vec3 sampleCurrentPreTemporalIndirectSpecular(ivec2 pix) {
 	return imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).rgb;
 }
 
-LuminanceStats sampleCurrentDiffuseStats3x3(ivec2 center, ivec2 res) {
-	float mean = 0.0;
-	float mean_sq = 0.0;
-	float weight = 0.0;
-	for (int y = -1; y <= 1; ++y) {
-		for (int x = -1; x <= 1; ++x) {
-			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			float l = luminance(sampleCurrentPreTemporalDiffuse(p));
-			mean += l;
-			mean_sq += l * l;
-			weight += 1.0;
-		}
-	}
+LuminanceStats buildLuminanceStats(float mean, float mean_sq, float weight) {
 	LuminanceStats stats;
 	stats.mean = weight > 0.0 ? mean / weight : 0.0;
 	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
 	return stats;
 }
 
-LuminanceStats sampleCurrentSpecularStats3x3(ivec2 center, ivec2 res) {
-	float mean = 0.0;
-	float mean_sq = 0.0;
-	float weight = 0.0;
-	for (int y = -1; y <= 1; ++y) {
-		for (int x = -1; x <= 1; ++x) {
-			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			float l = luminance(sampleCurrentPreTemporalDirectSpecular(p) + sampleCurrentPreTemporalIndirectSpecular(p));
-			mean += l;
-			mean_sq += l * l;
-			weight += 1.0;
-		}
-	}
-	LuminanceStats stats;
-	stats.mean = weight > 0.0 ? mean / weight : 0.0;
-	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
-	return stats;
-}
+struct CurrentLuminanceStats3x3 {
+	LuminanceStats diffuse;
+	LuminanceStats specular;
+	LuminanceStats direct_specular;
+	LuminanceStats indirect_specular;
+};
 
-LuminanceStats sampleCurrentDirectSpecularStats3x3(ivec2 center, ivec2 res) {
-	float mean = 0.0;
-	float mean_sq = 0.0;
+CurrentLuminanceStats3x3 sampleCurrentStats3x3(ivec2 center, ivec2 res) {
+	float diffuse_mean = 0.0;
+	float diffuse_mean_sq = 0.0;
+	float specular_mean = 0.0;
+	float specular_mean_sq = 0.0;
+	float direct_specular_mean = 0.0;
+	float direct_specular_mean_sq = 0.0;
+	float indirect_specular_mean = 0.0;
+	float indirect_specular_mean_sq = 0.0;
 	float weight = 0.0;
-	for (int y = -1; y <= 1; ++y) {
-		for (int x = -1; x <= 1; ++x) {
-			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			float l = luminance(sampleCurrentPreTemporalDirectSpecular(p));
-			mean += l;
-			mean_sq += l * l;
-			weight += 1.0;
-		}
-	}
-	LuminanceStats stats;
-	stats.mean = weight > 0.0 ? mean / weight : 0.0;
-	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
-	return stats;
-}
 
-LuminanceStats sampleCurrentIndirectSpecularStats3x3(ivec2 center, ivec2 res) {
-	float mean = 0.0;
-	float mean_sq = 0.0;
-	float weight = 0.0;
 	for (int y = -1; y <= 1; ++y) {
 		for (int x = -1; x <= 1; ++x) {
 			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			float l = luminance(sampleCurrentPreTemporalIndirectSpecular(p));
-			mean += l;
-			mean_sq += l * l;
+			vec3 diffuse_rad = sampleCurrentPreTemporalDiffuse(p);
+			vec3 direct_specular_rad = sampleCurrentPreTemporalDirectSpecular(p);
+			vec3 indirect_specular_rad = sampleCurrentPreTemporalIndirectSpecular(p);
+			vec3 specular_rad = direct_specular_rad + indirect_specular_rad;
+
+			float diffuse_luma = luminance(diffuse_rad);
+			float direct_specular_luma = luminance(direct_specular_rad);
+			float indirect_specular_luma = luminance(indirect_specular_rad);
+			float specular_luma = luminance(specular_rad);
+
+			diffuse_mean += diffuse_luma;
+			diffuse_mean_sq += diffuse_luma * diffuse_luma;
+			direct_specular_mean += direct_specular_luma;
+			direct_specular_mean_sq += direct_specular_luma * direct_specular_luma;
+			indirect_specular_mean += indirect_specular_luma;
+			indirect_specular_mean_sq += indirect_specular_luma * indirect_specular_luma;
+			specular_mean += specular_luma;
+			specular_mean_sq += specular_luma * specular_luma;
 			weight += 1.0;
 		}
 	}
-	LuminanceStats stats;
-	stats.mean = weight > 0.0 ? mean / weight : 0.0;
-	stats.variance = max(weight > 0.0 ? mean_sq / weight - stats.mean * stats.mean : 0.0, 0.0);
+
+	CurrentLuminanceStats3x3 stats;
+	stats.diffuse = buildLuminanceStats(diffuse_mean, diffuse_mean_sq, weight);
+	stats.direct_specular = buildLuminanceStats(direct_specular_mean, direct_specular_mean_sq, weight);
+	stats.indirect_specular = buildLuminanceStats(indirect_specular_mean, indirect_specular_mean_sq, weight);
+	stats.specular = buildLuminanceStats(specular_mean, specular_mean_sq, weight);
 	return stats;
 }
 
@@ -771,7 +753,7 @@ void main() {
 		vec2 point_confidence = imageLoad(light_point_confidence, pix).rg;
 		vec2 confidence = min(polygon_confidence, point_confidence);
 		float indirect_specular_confidence = imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).a;
-		imageStore(out_dest, pix, vec4(confidence.r, confidence.g, indirect_specular_confidence, 0.0));
+		imageStore(out_dest, pix, vec4(indirect_specular_confidence));
 		return;
 	}
 
@@ -874,9 +856,10 @@ void main() {
 		float direct_specular_history_luma_cap = DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP;
 		float direct_specular_noise_gate = 0.0;
 
-		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
-		const LuminanceStats current_direct_specular_stats = sampleCurrentDirectSpecularStats3x3(pix, res);
-		const LuminanceStats current_indirect_specular_stats = sampleCurrentIndirectSpecularStats3x3(pix, res);
+		const CurrentLuminanceStats3x3 current_stats = sampleCurrentStats3x3(pix, res);
+		const LuminanceStats current_diffuse_stats = current_stats.diffuse;
+		const LuminanceStats current_direct_specular_stats = current_stats.direct_specular;
+		const LuminanceStats current_indirect_specular_stats = current_stats.indirect_specular;
 
 		LuminanceStats history_diffuse_stats = current_diffuse_stats;
 		LuminanceStats history_direct_specular_stats = current_direct_specular_stats;
