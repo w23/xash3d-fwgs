@@ -1070,8 +1070,8 @@ void main() {
 			indirect_specular_history_samples = 0.0;
 		}
 
-		diffuse = /*direct_diffuse +*/ indirect_diffuse; // debug
-		specular = vec3(0.0);//direct_specular + restoreSpecular(indirect_specular, base_color, metalness); // debug
+		diffuse = direct_diffuse + indirect_diffuse;
+		specular = direct_specular + restoreSpecular(indirect_specular, base_color, metalness);
 
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALIDV(diffuse)) {
