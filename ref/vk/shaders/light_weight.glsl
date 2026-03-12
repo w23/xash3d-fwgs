@@ -141,6 +141,10 @@ void initBrightestLights(out BrightestLights brightest)
 	brightest.specular_luminance1 = vec4(0.0);
 }
 
+bool temporalConfidenceDisabled()
+{
+	return (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
+}
 void updateBrightestLightsByLuminance(
 	float diffuse_luminance,
 	float specular_luminance,
@@ -150,6 +154,9 @@ void updateBrightestLightsByLuminance(
 #if DISABLE_BRIGHTEST_LIGHTS_TRACKING
 	return;
 #else
+	if (temporalConfidenceDisabled()) {
+		return;
+	}
 	float light_luminance = diffuse_luminance + specular_luminance;
 	if (light_luminance <= BRIGHTEST_LIGHT_LUMINANCE_EPSILON) {
 		return;
@@ -183,6 +190,9 @@ void updateBrightestLights(
 #if DISABLE_BRIGHTEST_LIGHTS_TRACKING
 	return;
 #else
+	if (temporalConfidenceDisabled()) {
+		return;
+	}
 	float diffuse_luminance = luminance(diffuse);
 	float specular_luminance = luminance(specular);
 	float light_luminance = diffuse_luminance + specular_luminance;
@@ -283,6 +293,9 @@ void finalizeBrightestLightsWeights(
 	vec3 V,
 	float roughness)
 {
+	if (temporalConfidenceDisabled()) {
+		return;
+	}
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry entry = getBrightestLightEntry(brightest, i);
 		if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
@@ -318,6 +331,7 @@ void finalizeBrightestLightsWeights(
 		setBrightestLightEntry(brightest, i, entry);
 	}
 }
+
 void processTemporalLightEntries(
 	BrightestLights brightest,
 	vec3 P,
@@ -326,6 +340,12 @@ void processTemporalLightEntries(
 	float roughness,
 	out float weights[BRIGHTEST_LIGHTS_PER_TEXEL])
 {
+	if (temporalConfidenceDisabled()) {
+		for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+			weights[i] = 0.0;
+		}
+		return;
+	}
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		weights[i] = lightWeightFromEntry(getBrightestLightEntry(brightest, i), P, N, V, roughness);
 	}
@@ -340,6 +360,12 @@ void processTemporalLightEntriesByChannel(
 	int channel,
 	out float weights[BRIGHTEST_LIGHTS_PER_TEXEL])
 {
+	if (temporalConfidenceDisabled()) {
+		for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
+			weights[i] = 0.0;
+		}
+		return;
+	}
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		vec2 weight = lightWeightsFromEntry(getBrightestLightEntry(brightest, i), P, N, V, roughness);
 		if (channel == BRIGHTEST_LIGHT_CHANNEL_DIFFUSE) {
@@ -414,6 +440,9 @@ bool isBrightestLightEntryIndexValid(BrightestLightEntry entry)
 
 bool hasTrackedBrightestLightByChannel(BrightestLights brightest, int channel)
 {
+	if (temporalConfidenceDisabled()) {
+		return false;
+	}
 	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
 		BrightestLightEntry entry = getBrightestLightEntry(brightest, i);
 		if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
@@ -450,6 +479,9 @@ float computeTemporalStoredConfidenceByChannel(
 	float roughness,
 	int channel)
 {
+	if (temporalConfidenceDisabled()) {
+		return 1.0;
+	}
 	float diff_sum = 0.0;
 	float ref_sum = 0.0;
 	float eps = confidenceWeightEpsilon();
