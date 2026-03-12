@@ -210,9 +210,10 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 #define SET_RENDERER_FLAG(flag) (legacy_bounce ? 0 : (flag))
 	const qboolean legacy_bounce = CVAR_TO_BOOL(rt_legacy_bounce);
 	const qboolean disable_reconstruction = CVAR_TO_BOOL(rt_disable_reconstruction);
+	const qboolean disable_sh_gi_denoising = CVAR_TO_BOOL(rt_disable_sh_gi_denoising);
 	ret.renderer_flags = SET_RENDERER_FLAG(RENDERER_FLAG_ONLY_DIFFUSE_GI) |
 					  SET_RENDERER_FLAG(RENDERER_FLAG_SEPARATED_REFLECTION) |
-					  SET_RENDERER_FLAG(RENDERER_FLAG_DENOISE_GI_BY_SH) |
+					  (disable_sh_gi_denoising ? 0 : RENDERER_FLAG_DENOISE_GI_BY_SH) |
 					  (disable_reconstruction ? 0 : RENDERER_FLAG_SPATIAL_RECONSTRUCTION) |
 					  (CVAR_TO_BOOL(rt_disable_gi) ? RENDERER_FLAG_DISABLE_GI : 0) |
 					  (CVAR_TO_BOOL(rt_disable_confidence) ? RENDERER_FLAG_DISABLE_CONFIDENCE : 0) |
