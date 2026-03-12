@@ -125,21 +125,10 @@ void main() {
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
 			processTemporalDiffuseLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_diffuse_weights);
 			diffuse_confidence = computeTemporalDiffuseConfidence(brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights, lighting_position, prev_shading_normal, -direction, prev_roughness);
-		}
-
-		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, TEMPORAL_PARALLAX_INDIRECT_SCALE, TEMPORAL_PARALLAX_KERNEL);
-		ivec2 parallax_pix = ivec2(-1);
-		if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, parallax_pix)) {
-			initBrightestLights(prev_brightest_lights);
-			for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-				prev_diffuse_weights[i] = 0.0;
-				prev_specular_weights[i] = 0.0;
-			}
-			unpackBrightestLights(imageLoad(prev_temporal_0, parallax_pix), imageLoad(prev_temporal_1, parallax_pix), imageLoad(prev_temporal_2, parallax_pix), imageLoad(prev_temporal_3, parallax_pix), imageLoad(prev_temporal_4, parallax_pix), imageLoad(prev_temporal_5, parallax_pix), prev_brightest_lights);
-			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
 			processTemporalSpecularLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_specular_weights);
 			specular_confidence = computeTemporalSpecularConfidence(brightest_lights, prev_brightest_lights, current_specular_weights, prev_specular_weights, lighting_position, prev_shading_normal, -direction, prev_roughness);
 		}
+
 		}
 	}
 

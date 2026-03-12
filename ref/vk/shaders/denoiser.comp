@@ -911,35 +911,13 @@ void main() {
 
 		bool has_base_history = better_depth_offset < depth_treshold;
 
-		// parallax reprojecting for direct specular
+		// direct specular uses only simple reprojection (avoid base-color smearing)
 		const float average_ray_length = sampleAverageReflectionRayLength(pix, res, INDIRECT_SCALE, 1);
-		ivec2 parallax_pix = ivec2(-1);
-		bool has_direct_specular_reprojection = parallaxReprojectToPrevFramePixel(position, prev_position, geometry_normal, origin, prev_origin, average_ray_length, res, parallax_pix) && all(greaterThanEqual(parallax_pix, ivec2(0))) && all(lessThan(parallax_pix, res));
-		bool use_direct_specular_parallax = false;
 		ivec2 direct_specular_history_pix = reproj_pix;
-		if (has_base_history && has_direct_specular_reprojection) {
-			vec4 parallax_history_meta = imageLoad(prev_temporal_reproj_depth, parallax_pix);
-			float parallax_plane_depth = 0.0;
-			bool has_parallax_plane_depth = computePlaneDepthInPrevFrame(parallax_pix, res, position, geometry_normal, parallax_plane_depth);
-			if (has_parallax_plane_depth) {
-				float parallax_depth_offset = abs(parallax_history_meta.r - parallax_plane_depth);
-				vec3 parallax_prev_shading_normal = normalDecode(parallax_history_meta.ba);
-				float parallax_normal_delta = 1.0 - saturate(dot(shading_normal, parallax_prev_shading_normal));
-				float parallax_roughness_delta = abs(parallax_history_meta.g - current_roughness);
-				float parallax_normal_match = 1.0 - smoothstep(TEMPORAL_PARALLAX_SHADING_NORMAL_THRESHOLD, TEMPORAL_PARALLAX_SHADING_NORMAL_THRESHOLD * 2.0, parallax_normal_delta);
-				float parallax_roughness_match = 1.0 - smoothstep(TEMPORAL_PARALLAX_ROUGHNESS_THRESHOLD, TEMPORAL_PARALLAX_ROUGHNESS_THRESHOLD * 2.0, parallax_roughness_delta);
-				use_direct_specular_parallax = (parallax_depth_offset < depth_treshold) && (parallax_normal_match > 0.0) && (parallax_roughness_match > 0.0);
-			}
-		}
 		if (has_base_history) {
-			if (use_direct_specular_parallax) {
-				direct_specular_history_pix = parallax_pix;
-			}
 			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_specular, direct_specular_history_pix);
 			history_direct_specular = history_direct_specular_sample.xyz;
-			if (!use_direct_specular_parallax) {
-				history_direct_specular = clampSpecularLuminance(history_direct_specular, DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
-			}
+			history_direct_specular = clampSpecularLuminance(history_direct_specular, DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
 			direct_specular_history_samples = max(history_direct_specular_sample.a, 0.0);
 			direct_specular_confidence_temporal = direct_specular_confidence;
 			history_direct_specular_stats = sampleHistoryStats3x3(true, direct_specular_history_pix, res);
