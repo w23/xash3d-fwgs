@@ -841,6 +841,9 @@ void main() {
 		float diffuse_variance_confidence = 1.0;
 		float direct_specular_variance_confidence = 1.0;
 		float indirect_specular_variance_confidence = 1.0;
+		float direct_specular_history_outlier = 0.0;
+		float direct_specular_history_luma_cap = DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP;
+		float direct_specular_noise_gate = 0.0;
 		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
 		const LuminanceStats current_direct_specular_stats = sampleCurrentDirectSpecularStats3x3(pix, res);
 		const LuminanceStats current_indirect_specular_stats = sampleCurrentIndirectSpecularStats3x3(pix, res);
@@ -902,6 +905,22 @@ void main() {
 			direct_specular_confidence_temporal = direct_specular_confidence;
 			history_direct_specular_stats = sampleHistoryStats3x3(true, direct_specular_history_pix, res);
 			direct_specular_variance_confidence = computeVarianceConfidence(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
+			float current_direct_sigma = sqrt(max(current_direct_specular_stats.variance, 0.0));
+			float direct_noise_norm = current_direct_sigma / (current_direct_specular_stats.mean + 0.05);
+			direct_specular_noise_gate = smoothstep(0.08, 0.45, direct_noise_norm);
+			float direct_envelope_sigma_scale = mix(2.5, 5.5, direct_specular_noise_gate);
+			float direct_envelope_mean_scale = mix(0.15, 0.45, direct_specular_noise_gate);
+			float direct_history_envelope = max(current_direct_sigma * direct_envelope_sigma_scale + direct_envelope_mean_scale * current_direct_specular_stats.mean, 0.03);
+			float direct_history_delta = abs(luminance(history_direct_specular) - current_direct_specular_stats.mean);
+			float direct_outlier_lo = mix(1.0, 1.4, direct_specular_noise_gate);
+			float direct_outlier_hi = mix(2.5, 4.2, direct_specular_noise_gate);
+			direct_specular_history_outlier = smoothstep(direct_outlier_lo, direct_outlier_hi, direct_history_delta / direct_history_envelope);
+			direct_specular_history_luma_cap = max(current_direct_specular_stats.mean + direct_history_envelope * mix(1.0, 1.6, direct_specular_noise_gate), DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
+			if (direct_specular_history_outlier > 0.0) {
+				history_direct_specular = clampSpecularLuminance(history_direct_specular, direct_specular_history_luma_cap);
+			}
+			float direct_confidence_attenuation = mix(0.85, 0.35, direct_specular_noise_gate);
+			direct_specular_confidence_temporal *= (1.0 - direct_confidence_attenuation * direct_specular_history_outlier);
 		}
 
 		// parallax reprojecting for indirect specular
@@ -963,9 +982,13 @@ void main() {
 		if (has_direct_specular_history) {
 			float direct_specular_variance_gate = computeVarianceGate(current_direct_specular_stats, history_direct_specular_stats);
 			float direct_specular_reset_factor = direct_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(direct_specular_variance_confidence), 0.65);
+			direct_specular_reset_factor *= mix(1.0, mix(0.15, 0.55, direct_specular_noise_gate), direct_specular_history_outlier);
 			direct_specular_reset_factor = applyVarianceSoftReset(direct_specular_reset_factor, direct_specular_variance_gate, 0.18);
 			vec4 accumulated_direct_specular = accumulateTemporalRadiance(direct_specular, history_direct_specular, direct_specular_history_samples, direct_specular_reset_factor);
 			direct_specular = accumulated_direct_specular.rgb;
+			if (direct_specular_history_outlier > 0.0) {
+				direct_specular = clampSpecularLuminance(direct_specular, direct_specular_history_luma_cap * mix(1.1, 1.45, direct_specular_noise_gate));
+			}
 			direct_specular_history_samples = accumulated_direct_specular.a;
 		} else {
 			direct_specular_history_samples = 0.0;
