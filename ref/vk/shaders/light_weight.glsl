@@ -604,6 +604,15 @@ float computeTemporalWeightProfileConfidence(
 	return 1.0 - clamp(diff_sum / ref_sum, 0.0, 1.0);
 }
 
+float computeTemporalBrightnessConfidence(
+	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
+	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
+{
+	return computeTemporalWeightProfileConfidence(
+		current_weights,
+		prev_weights);
+}
+
 float computeTemporalIndexedConfidence(
 	BrightestLights current_brightest,
 	BrightestLights prev_brightest,

@@ -29,6 +29,18 @@
 #define SPATIAL_RECONSTRUCTION_SIGMA 0.9
 #define INDIRECT_SCALE 2
 
+#ifndef SPATIAL_RECONSTRUCTION_USE_SOFT_DIRECTION_CONE
+#define SPATIAL_RECONSTRUCTION_USE_SOFT_DIRECTION_CONE 1
+#endif
+
+#ifndef SPATIAL_RECONSTRUCTION_CONE_OUTER_SCALE
+#define SPATIAL_RECONSTRUCTION_CONE_OUTER_SCALE 2.0
+#endif
+
+#ifndef SPATIAL_RECONSTRUCTION_RAY_LENGTH_SOFT_RANGE
+#define SPATIAL_RECONSTRUCTION_RAY_LENGTH_SOFT_RANGE (1.0 / 3.0)
+#endif
+
 #define GLSL
 #include "ray_interop.h"
 #undef GLSL
@@ -74,6 +86,85 @@ struct PixelAreaStatistic {
 	vec4 colorSum;
 };
 
+struct RayNeighborhoodStats {
+	float minRayLength;
+	float maxRayLength;
+	float innerConeDot;
+	float outerConeDot;
+};
+
+ivec2 getRayNeighborhoodOffset(int index) {
+	if (index == 0) return ivec2(0, 0);
+	if (index == 1) return ivec2(1, 0);
+	if (index == 2) return ivec2(-1, 0);
+	if (index == 3) return ivec2(0, 1);
+	return ivec2(0, -1);
+}
+
+bool loadReflectionDirection(ivec2 pix, out vec3 rayDirection, out float rayLength, out float pdf) {
+	vec4 rayDirectionPDF = imageLoad(reflection_direction_pdf, pix);
+	rayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
+	float directionLength = length(rayDirectionPDF.xyz);
+	rayDirection = directionLength > 0.0 ? rayDirectionPDF.xyz / directionLength : vec3(0.0);
+	pdf = rayDirectionPDF.w;
+	return directionLength > 0.0;
+}
+
+RayNeighborhoodStats sampleRayNeighborhoodStats(ivec2 centerPix, ivec2 res, vec3 coneDirection) {
+	RayNeighborhoodStats stats;
+	stats.minRayLength = 0.0;
+	stats.maxRayLength = 0.0;
+	stats.innerConeDot = -1.0;
+	stats.outerConeDot = -1.0;
+
+	float minConeDot = 1.0;
+	bool hasRayLengths = false;
+	bool hasDirections = false;
+	for (int i = 0; i < 5; ++i) {
+		ivec2 p = clamp(centerPix + getRayNeighborhoodOffset(i), ivec2(0), res - 1);
+		float sampleRayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(p);
+		if (sampleRayLength > 0.0) {
+			stats.minRayLength = hasRayLengths ? min(stats.minRayLength, sampleRayLength) : sampleRayLength;
+			stats.maxRayLength = hasRayLengths ? max(stats.maxRayLength, sampleRayLength) : sampleRayLength;
+			hasRayLengths = true;
+		}
+
+		vec3 sampleDirection;
+		float sampleDirectionLength;
+		float samplePdf;
+		if (loadReflectionDirection(p, sampleDirection, sampleDirectionLength, samplePdf)) {
+			minConeDot = min(minConeDot, saturate(dot(coneDirection, sampleDirection)));
+			hasDirections = true;
+		}
+	}
+
+	if (!hasRayLengths) {
+		stats.minRayLength = 0.0;
+		stats.maxRayLength = 0.0;
+	}
+
+	if (hasDirections) {
+		float innerConeAngle = max(1.0 - minConeDot, 0.0);
+		float outerConeAngle = max(innerConeAngle * SPATIAL_RECONSTRUCTION_CONE_OUTER_SCALE, 1.0e-4);
+		stats.innerConeDot = clamp(1.0 - innerConeAngle, -1.0, 1.0);
+		stats.outerConeDot = clamp(1.0 - outerConeAngle, -1.0, stats.innerConeDot);
+	}
+
+	return stats;
+}
+
+float computeSoftConeWeight(vec3 coneDirection, vec3 sampleDirection, RayNeighborhoodStats stats) {
+#if SPATIAL_RECONSTRUCTION_USE_SOFT_DIRECTION_CONE
+	if (stats.innerConeDot < -0.5 || stats.outerConeDot < -0.5) {
+		return 1.0;
+	}
+	float coneDot = saturate(dot(coneDirection, sampleDirection));
+	return smoothstep(stats.outerConeDot, stats.innerConeDot, coneDot);
+#else
+	return 1.0;
+#endif
+}
+
 float computeGaussianWeight(float texelDistance) {
 	return exp(-0.66 * texelDistance * texelDistance);
 }
@@ -93,12 +184,11 @@ float normalDistribution_GGX(float NdotH, float alphaRoughness) {
 	return a2 / max(PI * f * f, 1e-9);
 }
 
-vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight) {
-	vec4 rayDirectionPDF = imageLoad(reflection_direction_pdf, pix);
-	float rayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
-	float directionLength = length(rayDirectionPDF.xyz);
-	vec3 rayDirection = directionLength > 0.0 ? rayDirectionPDF.xyz / directionLength : vec3(0.0);
-	float PDF = rayDirectionPDF.w;
+vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight, vec3 coneDirection, RayNeighborhoodStats neighborhoodStats) {
+	vec3 rayDirection;
+	float rayLength;
+	float PDF;
+	loadReflectionDirection(pix, rayDirection, rayLength, PDF);
 	float alphaRoughness = roughness * roughness;
 
 	vec3 L = rayDirection;
@@ -110,7 +200,11 @@ vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float Nd
 	float D = normalDistribution_GGX(NdotH, alphaRoughness);
 	float localBRDF = vis * D * NdotL;
 	localBRDF *= computeGaussianWeight(weight);
+	localBRDF *= computeSoftConeWeight(coneDirection, rayDirection, neighborhoodStats);
 	float rcpRayLength = rayLength == 0.0 ? 0.0 : 1.0 / rayLength;
+	if (localBRDF <= 0.0) {
+		return vec2(0.0, rcpRayLength);
+	}
 	return vec2(max(localBRDF / max(PDF, 1.0e-5f), 1e-6), rcpRayLength);
 }
 
@@ -132,12 +226,21 @@ float computeSpatialWeight(float texelDistance, float sigma) {
 	return exp(-(texelDistance) / (2.0 * sigma * sigma));
 }
 
-float computeRayLengthConfidence(float currentLength, float previousLength) {
-	if (currentLength <= 0.0 || previousLength <= 0.0) {
+float computeRayLengthConfidence(float currentLength, float previousLength, RayNeighborhoodStats neighborhoodStats) {
+	if (currentLength <= 0.0 || neighborhoodStats.maxRayLength <= 0.0) {
 		return 0.0;
 	}
-	float relativeDelta = abs(currentLength - previousLength) / max(max(currentLength, previousLength), 1e-3);
-	return 1.0 - smoothstep(0.06, 0.40, relativeDelta);
+	if (previousLength <= 0.0) {
+		return 1.0;
+	}
+
+	float minRayLength = min(neighborhoodStats.minRayLength, currentLength);
+	float maxRayLength = max(neighborhoodStats.maxRayLength, currentLength);
+	float lowerSoftRange = max(minRayLength * SPATIAL_RECONSTRUCTION_RAY_LENGTH_SOFT_RANGE, 1e-3);
+	float upperSoftRange = max(maxRayLength * SPATIAL_RECONSTRUCTION_RAY_LENGTH_SOFT_RANGE, 1e-3);
+	float lowerWeight = smoothstep(max(minRayLength - lowerSoftRange, 0.0), minRayLength, previousLength);
+	float upperWeight = 1.0 - smoothstep(maxRayLength, maxRayLength + upperSoftRange, previousLength);
+	return clamp(min(lowerWeight, upperWeight), 0.0, 1.0);
 }
 
 vec3 clampSpecular(vec3 specular, float maxLuminace) {
@@ -185,8 +288,9 @@ void main() {
 	vec3 V = normalize(origin - position);
 	float NdotV = saturate(dot(shading_normal, V));
 	float roughness = imageLoad(material_rmxx, pix * INDIRECT_SCALE).x;
-	float roughness_factor = saturate(float(SPATIAL_RECONSTRUCTION_ROUGHNESS_FACTOR) * roughness);
-	float radius = mix(0.0, SPATIAL_RECONSTRUCTION_RADIUS, roughness_factor);
+	float radius = SPATIAL_RECONSTRUCTION_RADIUS;
+	vec3 centerReflectionDirection = normalize(reflect(-V, shading_normal));
+	RayNeighborhoodStats neighborhoodStats = sampleRayNeighborhoodStats(pix, res, centerReflectionDirection);
 
 	PixelAreaStatistic pixelAreaStat;
 	pixelAreaStat.colorSum = vec4(0.0);
@@ -198,11 +302,11 @@ void main() {
 	float weights_sum = 0.0;
 	float ray_length_sum = 0.0;
 	float reflection_confidence_sum = 0.0;
-
+	
 	for (int i = 0; i < SPATIAL_RECONSTRUCTION_SAMPLES; i++) {
 		ivec2 p = max(ivec2(0), min(ivec2(res) - ivec2(1), ivec2(pix + radius * poisson[i].xy)));
 		float weightS = computeSpatialWeight(poisson[i].z * poisson[i].z, SPATIAL_RECONSTRUCTION_SIGMA);
-		vec2 weightLength = computeWeightRayLength(p, V, shading_normal, roughness, NdotV, weightS);
+		vec2 weightLength = computeWeightRayLength(p, V, shading_normal, roughness, NdotV, weightS, centerReflectionDirection, neighborhoodStats);
 		vec3 sampleColor = clampSpecular(imageLoad(SPECULAR_INPUT_IMAGE, p).xyz, SPECULAR_CLAMPING_MAX);
 		computeWeightedVariance(pixelAreaStat, sampleColor, weightLength.x);
 		if (weightLength.x > 1.0e-6) {
@@ -225,8 +329,8 @@ void main() {
 		
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 	float previousRayLength = imageLoad(prev_indirect_specular_ray_length, pix).r;
-	float rayLengthConfidence = computeRayLengthConfidence(resolvedRayLength, previousRayLength);
-	float combinedConfidence = min(rayLengthConfidence, resolvedLightConfidence);
+	float rayLengthConfidence = computeRayLengthConfidence(resolvedRayLength, previousRayLength, neighborhoodStats);
+	float combinedConfidence = resolvedLightConfidence * rayLengthConfidence;
 	imageStore(out_indirect_specular_ray_length, pix, vec4(resolvedRayLength, 0.0, 0.0, 0.0));
 	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, combinedConfidence));
 #else
