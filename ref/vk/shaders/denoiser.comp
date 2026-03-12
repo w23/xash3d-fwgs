@@ -998,18 +998,23 @@ void main() {
 		bool has_direct_specular_history = has_base_history;
 		bool has_indirect_specular_history = has_base_history;
 		float direct_variance_reset_boost = 0.0;
+		bool direct_hard_reset = false;
 
 		if (has_diffuse_history) {
 			float diffuse_variance_gate = computeVarianceGate(current_diffuse_stats, history_diffuse_stats);
 			float diffuse_reset_factor = diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
 			diffuse_reset_factor = applyVarianceSoftReset(diffuse_reset_factor, diffuse_variance_gate, 0.22);
 			direct_variance_reset_boost = smoothstep(0.10, 0.55, diffuse_variance_gate * (1.0 - diffuse_reset_factor));
+			direct_hard_reset = (diffuse_confidence <= 0.01)
+				|| ((diffuse_variance_gate >= 0.95) && (diffuse_variance_confidence <= 0.20))
+				|| (diffuse_reset_factor <= 0.06);
 			vec4 accumulated_diffuse = accumulateTemporalRadiance(direct_diffuse, history_diffuse, diffuse_history_samples, diffuse_reset_factor);
 			direct_diffuse = accumulated_diffuse.rgb;
 			diffuse_history_samples = accumulated_diffuse.a;
 		} else {
 			diffuse_history_samples = 0.0;
 			direct_variance_reset_boost = 0.0;
+			direct_hard_reset = false;
 		}
 
 		if (has_indirect_diffuse_history) {
@@ -1022,13 +1027,15 @@ void main() {
 			float direct_relight_boost = smoothstep(0.12, 0.55, direct_relight_norm);
 			indirect_diffuse_reset_factor = applyVarianceSoftReset(indirect_diffuse_reset_factor, indirect_diffuse_variance_gate, 0.92);
 			float direct_confidence_boost = mix(0.35, 1.0, indirect_diffuse_direct_confidence);
-			indirect_diffuse_reset_factor = max(indirect_diffuse_reset_factor, direct_relight_boost * direct_confidence_boost);
+			float direct_relight_reset = 1.0 - direct_relight_boost * direct_confidence_boost;
+			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_relight_reset);
 			float direct_variance_gate_boost = direct_variance_reset_boost * direct_confidence_boost;
-			indirect_diffuse_reset_factor = max(indirect_diffuse_reset_factor, direct_variance_gate_boost);
+			float direct_variance_reset = 1.0 - direct_variance_gate_boost;
+			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_variance_reset);
 			float direct_off_ratio = current_diffuse_luma / (direct_history_luma + 1e-4);
 			bool hard_direct_off = (direct_history_luma > 0.03) && (current_diffuse_luma < 0.004 || direct_off_ratio < 0.06);
-			if (hard_direct_off) {
-				indirect_diffuse_reset_factor = 1.0;
+			if (hard_direct_off || direct_hard_reset) {
+				indirect_diffuse_reset_factor = 0.0;
 			}
 			vec4 accumulated_indirect_diffuse = accumulateTemporalRadiance(indirect_diffuse, history_indirect_diffuse, indirect_diffuse_history_samples, indirect_diffuse_reset_factor);
 			indirect_diffuse = accumulated_indirect_diffuse.rgb;
