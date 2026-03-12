@@ -1,0 +1,193 @@
+#version 460
+#include "utils.glsl"
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D precombined_direct_diffuse;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D precombined_direct_specular;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D precombined_indirect_specular;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D precombined_flashlight_diffuse;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D precombined_flashlight_specular;
+
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D indirect_diffuse;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
+
+layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_final_atrous_direct_diffuse;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_final_atrous_direct_specular;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_final_atrous_indirect_specular;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_diffuse;
+layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_specular;
+layout(set = 0, binding = 16, rgba16f) uniform writeonly image2D out_final_atrous_indirect_diffuse;
+
+#include "atrous.glsl"
+
+const int INDIRECT_SCALE = 2;
+
+void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
+	const vec4 n = imageLoad(normals_gs, uv);
+	geometry_normal = normalDecode(n.xy);
+	shading_normal = normalDecode(n.zw);
+}
+
+void main() {
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	const vec3 pos = imageLoad(position_t, pix).xyz;
+	vec3 geometry_normal, shading_normal;
+	readNormals(pix, geometry_normal, shading_normal);
+
+	vec3 direct_diffuse = vec3(0.0);
+	vec3 direct_specular = vec3(0.0);
+	vec3 flashlight_diffuse = vec3(0.0);
+	vec3 flashlight_specular = vec3(0.0);
+	vec3 indirect_specular = vec3(0.0);
+	float direct_diffuse_confidence = 0.0;
+	float direct_specular_confidence = 0.0;
+	float indirect_specular_confidence = 0.0;
+
+	float weight_total_diffuse = 0.0;
+	float weight_total_specular = 0.0;
+	float weight_total_indirect_specular = 0.0;
+
+	const vec2 center_direct_confidence = vec2(
+		imageLoad(precombined_direct_diffuse, pix).a,
+		imageLoad(precombined_direct_specular, pix).a);
+	const float center_indirect_specular_confidence = imageLoad(precombined_indirect_specular, pix).a;
+
+	const ivec2 res_scaled = res / INDIRECT_SCALE;
+	float weight_total_indirect_diffuse = 0.0;
+	vec3 indirect_diffuse_c2 = vec3(0.0);
+
+	for (int x = 0; x <= ATROUS_KERNEL_WIDTH; ++x) {
+		for (int y = 0; y <= ATROUS_KERNEL_WIDTH; ++y) {
+			const ivec2 offset = ivec2(x, y);
+
+			{
+				const float sn_phi = 0.5;
+				const float p_phi = 2.0;
+				const int step_width = 3;
+				ivec2 p;
+				const float weight = aTrousSampleWeigth(res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
+				if (weight > 0.0) {
+					const vec4 sample_direct_diffuse = imageLoad(precombined_direct_diffuse, p);
+					const vec4 sample_flashlight_diffuse = imageLoad(precombined_flashlight_diffuse, p);
+					weight_total_diffuse += weight;
+					direct_diffuse += sample_direct_diffuse.rgb * weight;
+					flashlight_diffuse += sample_flashlight_diffuse.rgb * weight;
+					direct_diffuse_confidence += sample_direct_diffuse.a * weight;
+				}
+			}
+
+			{
+				const float sn_phi = 0.5;
+				const float p_phi = 1.0;
+				const int step_width = 1;
+				ivec2 p;
+				const float weight = aTrousSampleWeigth(res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
+				if (weight > 0.0) {
+					const vec4 sample_direct_specular = imageLoad(precombined_direct_specular, p);
+					const vec4 sample_flashlight_specular = imageLoad(precombined_flashlight_specular, p);
+					weight_total_specular += weight;
+					direct_specular += sample_direct_specular.rgb * weight;
+					flashlight_specular += sample_flashlight_specular.rgb * weight;
+					direct_specular_confidence += sample_direct_specular.a * weight;
+				}
+			}
+
+			{
+				const float sn_phi = 0.5;
+				const float p_phi = 3.0;
+				const int step_width = 2;
+				ivec2 p;
+				const float weight = aTrousSampleWeigth(res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
+				if (weight > 0.0) {
+					const ivec2 p_scaled = p / INDIRECT_SCALE;
+					if (all(lessThan(p_scaled, res_scaled))) {
+						weight_total_indirect_diffuse += weight;
+						indirect_diffuse_c2 += imageLoad(indirect_diffuse_atrous1, p_scaled).rgb * weight;
+					}
+				}
+			}
+
+			{
+				const float sn_phi = 0.5;
+				const float p_phi = 1.0;
+				const int step_width = 1;
+				ivec2 p;
+				const float weight = aTrousSampleWeigth(res, pix, pos, shading_normal, offset, step_width, 1, sn_phi, p_phi, p);
+				if (weight > 0.0) {
+					const ivec2 p_scaled = p / INDIRECT_SCALE;
+					if (all(lessThan(p_scaled, res_scaled))) {
+						const vec4 sample_indirect_specular = imageLoad(precombined_indirect_specular, p);
+						const float sample_confidence = sample_indirect_specular.a;
+						const float confidence_delta = abs(sample_confidence - center_indirect_specular_confidence);
+						const float confidence_edge = 1.0 - smoothstep(0.04, 0.25, confidence_delta);
+						const float combined_weight = weight * confidence_edge;
+						if (combined_weight > 0.0) {
+							weight_total_indirect_specular += combined_weight;
+							indirect_specular += sample_indirect_specular.rgb * combined_weight;
+							indirect_specular_confidence += sample_confidence * combined_weight;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (weight_total_diffuse > 0.0) {
+		float inv_weight = 1.0 / weight_total_diffuse;
+		direct_diffuse *= inv_weight;
+		flashlight_diffuse *= inv_weight;
+		direct_diffuse_confidence = clamp(direct_diffuse_confidence * inv_weight, 0.0, 1.0);
+	} else {
+		direct_diffuse_confidence = clamp(center_direct_confidence.x, 0.0, 1.0);
+	}
+
+	if (weight_total_specular > 0.0) {
+		float inv_weight = 1.0 / weight_total_specular;
+		direct_specular *= inv_weight;
+		flashlight_specular *= inv_weight;
+		direct_specular_confidence = clamp(direct_specular_confidence * inv_weight, 0.0, 1.0);
+	} else {
+		direct_specular_confidence = clamp(center_direct_confidence.y, 0.0, 1.0);
+	}
+
+	if (weight_total_indirect_specular > 0.0) {
+		float inv_weight = 1.0 / weight_total_indirect_specular;
+		indirect_specular *= inv_weight;
+		indirect_specular_confidence = clamp(indirect_specular_confidence * inv_weight, 0.0, 1.0);
+	} else {
+		indirect_specular = vec3(0.0);
+		indirect_specular_confidence = clamp(center_indirect_specular_confidence, 0.0, 1.0);
+	}
+
+	vec3 filtered_indirect_diffuse;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		filtered_indirect_diffuse = imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
+	} else if (weight_total_indirect_diffuse > 0.0) {
+		filtered_indirect_diffuse = indirect_diffuse_c2 * (1.0 / weight_total_indirect_diffuse);
+	} else {
+		filtered_indirect_diffuse = imageLoad(indirect_diffuse, pix / INDIRECT_SCALE).rgb;
+	}
+
+	imageStore(out_final_atrous_direct_diffuse, pix, vec4(direct_diffuse, direct_diffuse_confidence));
+	imageStore(out_final_atrous_direct_specular, pix, vec4(direct_specular, direct_specular_confidence));
+	imageStore(out_final_atrous_indirect_specular, pix, vec4(indirect_specular, indirect_specular_confidence));
+	imageStore(out_final_atrous_flashlight_diffuse, pix, vec4(flashlight_diffuse, 0.0));
+	imageStore(out_final_atrous_flashlight_specular, pix, vec4(flashlight_specular, 0.0));
+	imageStore(out_final_atrous_indirect_diffuse, pix, vec4(filtered_indirect_diffuse, 0.0));
+}

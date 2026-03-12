@@ -1,0 +1,48 @@
+#version 460
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D light_poly_diffuse;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D light_point_diffuse;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D light_poly_specular;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D light_point_specular;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D light_polygon_confidence;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D light_point_confidence;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D light_point_flashlight_diffuse;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D light_point_flashlight_specular;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_specular_reconstructed;
+
+layout(set = 0, binding = 10, rgba16f) uniform writeonly image2D out_precombined_direct_diffuse;
+layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_precombined_direct_specular;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_precombined_indirect_specular;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_precombined_flashlight_diffuse;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_precombined_flashlight_specular;
+
+const int INDIRECT_SCALE = 2;
+
+void main() {
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	const vec3 direct_diffuse = imageLoad(light_poly_diffuse, pix).rgb + imageLoad(light_point_diffuse, pix).rgb;
+	const vec3 direct_specular = imageLoad(light_poly_specular, pix).rgb + imageLoad(light_point_specular, pix).rgb;
+	const vec2 direct_confidence = min(imageLoad(light_polygon_confidence, pix).rg, imageLoad(light_point_confidence, pix).rg);
+
+	const ivec2 pix_indirect = pix / INDIRECT_SCALE;
+	const vec4 indirect_specular = imageLoad(indirect_specular_reconstructed, pix_indirect);
+
+	imageStore(out_precombined_direct_diffuse, pix, vec4(direct_diffuse, clamp(direct_confidence.x, 0.0, 1.0)));
+	imageStore(out_precombined_direct_specular, pix, vec4(direct_specular, clamp(direct_confidence.y, 0.0, 1.0)));
+	imageStore(out_precombined_indirect_specular, pix, vec4(indirect_specular.rgb, clamp(indirect_specular.a, 0.0, 1.0)));
+	imageStore(out_precombined_flashlight_diffuse, pix, vec4(imageLoad(light_point_flashlight_diffuse, pix).rgb, 0.0));
+	imageStore(out_precombined_flashlight_specular, pix, vec4(imageLoad(light_point_flashlight_specular, pix).rgb, 0.0));
+}
