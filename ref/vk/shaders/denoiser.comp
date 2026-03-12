@@ -14,6 +14,7 @@
 #define TEMPORAL_HISTORY_CURRENT_WEIGHT_MIN 0.1
 #define TEMPORAL_PARALLAX_ROUGHNESS_THRESHOLD 0.1
 #define TEMPORAL_PARALLAX_SHADING_NORMAL_THRESHOLD 0.01
+#define DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP 2.0
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -301,6 +302,15 @@ LuminanceStats sampleHistoryIndirectSpecularStats3x3(ivec2 center, ivec2 res) {
 	return stats;
 }
 
+vec3 clampSpecularLuminance(vec3 specular, float max_luminance) {
+	float lum = luminance(specular);
+	if (lum <= 0.0) {
+		return vec3(0.0);
+	}
+	float clamped = min(max_luminance, lum);
+	return specular * (clamped / lum);
+}
+
 float computeVarianceConfidence(float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
 	float expected_sigma = sqrt(max(max(current_stats.variance, history_stats.variance), 0.0));
 	float expected_delta = max(expected_sigma + 0.1 * max(current_stats.mean, history_stats.mean), 0.02);
@@ -313,6 +323,21 @@ float softenVarianceConfidence(float confidence) {
 		return 0.0;
 	}
 	return mix(1.0, confidence, 0.35);
+}
+
+float computeVarianceGate(LuminanceStats current_stats, LuminanceStats history_stats) {
+	float current_sigma = sqrt(max(current_stats.variance, 0.0));
+	float history_sigma = sqrt(max(history_stats.variance, 0.0));
+	float sigma = max(current_sigma, history_sigma);
+	float signal = max(max(current_stats.mean, history_stats.mean), 0.02);
+	float normalized_sigma = sigma / (signal + 1e-4);
+	return smoothstep(0.04, 0.35, normalized_sigma);
+}
+
+float applyVarianceSoftReset(float reset_factor, float variance_gate, float min_reset_scale) {
+	float gate = clamp(variance_gate, 0.0, 1.0);
+	float scaled_reset = reset_factor * mix(min_reset_scale, 1.0, gate);
+	return clamp(scaled_reset, 0.0, 1.0);
 }
 
 vec4 accumulateTemporalRadiance(vec3 current, vec3 history, float history_samples, float reset_factor) {
@@ -819,6 +844,9 @@ void main() {
 		const LuminanceStats current_diffuse_stats = sampleCurrentDiffuseStats3x3(pix, res);
 		const LuminanceStats current_direct_specular_stats = sampleCurrentDirectSpecularStats3x3(pix, res);
 		const LuminanceStats current_indirect_specular_stats = sampleCurrentIndirectSpecularStats3x3(pix, res);
+		LuminanceStats history_diffuse_stats = current_diffuse_stats;
+		LuminanceStats history_direct_specular_stats = current_direct_specular_stats;
+		LuminanceStats history_indirect_specular_stats = current_indirect_specular_stats;
 		const float current_diffuse_luma = luminance(diffuse);
 		const float current_direct_specular_luma = luminance(direct_specular);
 		const float current_indirect_specular_luma = luminance(indirect_specular);
@@ -834,7 +862,7 @@ void main() {
 				history_diffuse = history_diffuse_sample.rgb;
 				diffuse_history_samples = max(history_diffuse_sample.a, 0.0);
 				diffuse_confidence = direct_diffuse_confidence;
-				const LuminanceStats history_diffuse_stats = sampleHistoryStats3x3(false, reproj_pix, res);
+				history_diffuse_stats = sampleHistoryStats3x3(false, reproj_pix, res);
 				diffuse_variance_confidence = computeVarianceConfidence(current_diffuse_luma, current_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
 			}
 		}
@@ -867,9 +895,12 @@ void main() {
 			}
 			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_specular, direct_specular_history_pix);
 			history_direct_specular = history_direct_specular_sample.xyz;
+			if (!use_direct_specular_parallax) {
+				history_direct_specular = clampSpecularLuminance(history_direct_specular, DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
+			}
 			direct_specular_history_samples = max(history_direct_specular_sample.a, 0.0);
 			direct_specular_confidence_temporal = direct_specular_confidence;
-			const LuminanceStats history_direct_specular_stats = sampleHistoryStats3x3(true, direct_specular_history_pix, res);
+			history_direct_specular_stats = sampleHistoryStats3x3(true, direct_specular_history_pix, res);
 			direct_specular_variance_confidence = computeVarianceConfidence(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
 		}
 
@@ -900,7 +931,7 @@ void main() {
 			history_indirect_specular = history_indirect_specular_sample.xyz;
 			indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
 			indirect_specular_confidence_temporal = indirect_specular_confidence;
-			const LuminanceStats history_indirect_specular_stats = sampleHistoryIndirectSpecularStats3x3(indirect_specular_history_pix, res);
+			history_indirect_specular_stats = sampleHistoryIndirectSpecularStats3x3(indirect_specular_history_pix, res);
 			indirect_specular_variance_confidence = computeVarianceConfidence(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
 		}
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -919,7 +950,9 @@ void main() {
 		bool has_indirect_specular_history = has_base_history;
 
 		if (has_diffuse_history) {
+			float diffuse_variance_gate = computeVarianceGate(current_diffuse_stats, history_diffuse_stats);
 			float diffuse_reset_factor = diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
+			diffuse_reset_factor = applyVarianceSoftReset(diffuse_reset_factor, diffuse_variance_gate, 0.22);
 			vec4 accumulated_diffuse = accumulateTemporalRadiance(diffuse, history_diffuse, diffuse_history_samples, diffuse_reset_factor);
 			diffuse = accumulated_diffuse.rgb;
 			diffuse_history_samples = accumulated_diffuse.a;
@@ -928,7 +961,9 @@ void main() {
 		}
 
 		if (has_direct_specular_history) {
+			float direct_specular_variance_gate = computeVarianceGate(current_direct_specular_stats, history_direct_specular_stats);
 			float direct_specular_reset_factor = direct_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(direct_specular_variance_confidence), 0.65);
+			direct_specular_reset_factor = applyVarianceSoftReset(direct_specular_reset_factor, direct_specular_variance_gate, 0.18);
 			vec4 accumulated_direct_specular = accumulateTemporalRadiance(direct_specular, history_direct_specular, direct_specular_history_samples, direct_specular_reset_factor);
 			direct_specular = accumulated_direct_specular.rgb;
 			direct_specular_history_samples = accumulated_direct_specular.a;
@@ -937,7 +972,9 @@ void main() {
 		}
 
 		if (has_indirect_specular_history) {
-			float indirect_specular_reset_factor = indirect_specular_confidence_temporal;
+			float indirect_specular_variance_gate = mix(0.35, 1.0, computeVarianceGate(current_indirect_specular_stats, history_indirect_specular_stats));
+			float indirect_specular_reset_factor = indirect_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(indirect_specular_variance_confidence), 0.45);
+			indirect_specular_reset_factor = applyVarianceSoftReset(indirect_specular_reset_factor, indirect_specular_variance_gate, 0.30);
 			vec4 accumulated_indirect_specular = accumulateTemporalRadiance(indirect_specular, history_indirect_specular, indirect_specular_history_samples, indirect_specular_reset_factor);
 			indirect_specular = accumulated_indirect_specular.rgb;
 			indirect_specular_history_samples = accumulated_indirect_specular.a;
