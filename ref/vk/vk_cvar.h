@@ -29,6 +29,8 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_legacy_bounce) \
 	X(rt_disable_gi) \
 	X(rt_disable_confidence) \
+	X(rt_disable_reconstruction) \
+	X(rt_disable_reprojection) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

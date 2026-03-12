@@ -815,9 +815,7 @@ void main() {
 		diffuse = direct_diffuse + indirect_diffuse;
 	}
 
-	{
-//#define DISABLE_TEMPORAL_DENOISER
-#ifndef DISABLE_TEMPORAL_DENOISER
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_REPROJECTION) == 0) {
 		// TODO: need to extract reprojecting from this shader because reprojected stuff need svgf denoising pass after it
 		const vec3 origin = (ubo.ubo.inv_view * vec4(0., 0., 0., 1.)).xyz;
 		const float depth = length(origin - position);
@@ -1081,9 +1079,7 @@ void main() {
 		imageStore(out_temporal_indirect_specular, pix, vec4(indirect_specular, indirect_specular_history_samples));
 		vec2 temporal_shading_normal = normalEncode(shading_normal);
 		imageStore(out_temporal_reproj_depth, pix, vec4(depth, current_roughness, temporal_shading_normal.x, temporal_shading_normal.y));
-#endif // ifndef DISABLE_TEMPORAL_DENOISER
 	}
-
 
 	diffuse += flashlight_diffuse;
 	specular += flashlight_specular;
