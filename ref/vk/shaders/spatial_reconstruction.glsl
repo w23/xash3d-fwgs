@@ -184,7 +184,7 @@ float normalDistribution_GGX(float NdotH, float alphaRoughness) {
 	return a2 / max(PI * f * f, 1e-9);
 }
 
-vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight, vec3 coneDirection, RayNeighborhoodStats neighborhoodStats) {
+vec2 computeWeightRayLengthCommon(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight, vec3 coneDirection, RayNeighborhoodStats neighborhoodStats, bool useCone) {
 	vec3 rayDirection;
 	float rayLength;
 	float PDF;
@@ -200,12 +200,22 @@ vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float Nd
 	float D = normalDistribution_GGX(NdotH, alphaRoughness);
 	float localBRDF = vis * D * NdotL;
 	localBRDF *= computeGaussianWeight(weight);
-	localBRDF *= computeSoftConeWeight(coneDirection, rayDirection, neighborhoodStats);
+	if (useCone) {
+		localBRDF *= computeSoftConeWeight(coneDirection, rayDirection, neighborhoodStats);
+	}
 	float rcpRayLength = rayLength == 0.0 ? 0.0 : 1.0 / rayLength;
 	if (localBRDF <= 0.0) {
 		return vec2(0.0, rcpRayLength);
 	}
 	return vec2(max(localBRDF / max(PDF, 1.0e-5f), 1e-6), rcpRayLength);
+}
+
+vec2 computeWeightRayLength(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight, vec3 coneDirection, RayNeighborhoodStats neighborhoodStats) {
+	return computeWeightRayLengthCommon(pix, V, N, roughness, NdotV, weight, coneDirection, neighborhoodStats, true);
+}
+
+vec2 computeWeightRayLengthFallback(ivec2 pix, vec3 V, vec3 N, float roughness, float NdotV, float weight, vec3 coneDirection, RayNeighborhoodStats neighborhoodStats) {
+	return computeWeightRayLengthCommon(pix, V, N, roughness, NdotV, weight, coneDirection, neighborhoodStats, false);
 }
 
 void computeWeightedVariance(inout PixelAreaStatistic stat, vec3 sampleColor, float weight) {
@@ -292,6 +302,10 @@ void main() {
 	vec3 centerReflectionDirection = normalize(reflect(-V, shading_normal));
 	RayNeighborhoodStats neighborhoodStats = sampleRayNeighborhoodStats(pix, res, centerReflectionDirection);
 
+	vec3 centerRadiance = clampSpecular(imageLoad(SPECULAR_INPUT_IMAGE, pix).xyz, SPECULAR_CLAMPING_MAX);
+	float centerRayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
+	float centerLightConfidence = imageLoad(reflection_confidence, pix).y;
+
 	PixelAreaStatistic pixelAreaStat;
 	pixelAreaStat.colorSum = vec4(0.0);
 	pixelAreaStat.weightSum = 0.0;
@@ -302,15 +316,25 @@ void main() {
 	float weights_sum = 0.0;
 	float ray_length_sum = 0.0;
 	float reflection_confidence_sum = 0.0;
+	vec3 fallbackRadianceSum = vec3(0.0);
+	float fallbackRadianceWeightSum = 0.0;
+	float fallbackRayLengthSum = 0.0;
+	float fallbackConfidenceSum = 0.0;
+	float fallbackWeightSum = 0.0;
 	
 	for (int i = 0; i < SPATIAL_RECONSTRUCTION_SAMPLES; i++) {
 		ivec2 p = max(ivec2(0), min(ivec2(res) - ivec2(1), ivec2(pix + radius * poisson[i].xy)));
 		float weightS = computeSpatialWeight(poisson[i].z * poisson[i].z, SPATIAL_RECONSTRUCTION_SIGMA);
 		vec2 weightLength = computeWeightRayLength(p, V, shading_normal, roughness, NdotV, weightS, centerReflectionDirection, neighborhoodStats);
+		vec2 fallbackWeightLength = computeWeightRayLengthFallback(p, V, shading_normal, roughness, NdotV, weightS, centerReflectionDirection, neighborhoodStats);
 		vec3 sampleColor = clampSpecular(imageLoad(SPECULAR_INPUT_IMAGE, p).xyz, SPECULAR_CLAMPING_MAX);
 		computeWeightedVariance(pixelAreaStat, sampleColor, weightLength.x);
 		if (weightLength.x > 1.0e-6) {
 			nearestSurfaceHitDistance = max(weightLength.y, nearestSurfaceHitDistance);
+		}
+		if (fallbackWeightLength.x > 1.0e-6) {
+			fallbackRadianceSum += sampleColor * fallbackWeightLength.x;
+			fallbackRadianceWeightSum += fallbackWeightLength.x;
 		}
 		float sampleRayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(p);
 		if (sampleRayLength > 0.0) {
@@ -318,12 +342,17 @@ void main() {
 			ray_length_sum += sampleRayLength * weightLength.x;
 			reflection_confidence_sum += imageLoad(reflection_confidence, p).y * weightLength.x;
 			weights_sum += weightLength.x;
+			fallbackRayLengthSum += sampleRayLength * fallbackWeightLength.x;
+			fallbackConfidenceSum += imageLoad(reflection_confidence, p).y * fallbackWeightLength.x;
+			fallbackWeightSum += fallbackWeightLength.x;
 		}
 	}
 
-	float resolvedRayLength = weights_sum > 0.0 ? ray_length_sum / weights_sum : 0.0;
-	float resolvedLightConfidence = clamp(weights_sum > 0.0 ? reflection_confidence_sum / weights_sum : imageLoad(reflection_confidence, pix).y, 0.0, 1.0);
-	vec4 resolvedRadiance = pixelAreaStat.colorSum / max(pixelAreaStat.weightSum, 1e-6f);
+	bool useCenterFallback = pixelAreaStat.weightSum <= 1.0e-6 || weights_sum <= 0.0;
+	bool useSoftFallback = useCenterFallback && roughness >= 0.02 && fallbackRadianceWeightSum > 1.0e-6 && fallbackWeightSum > 0.0;
+	float resolvedRayLength = useSoftFallback ? (fallbackRayLengthSum / fallbackWeightSum) : (useCenterFallback ? centerRayLength : (ray_length_sum / weights_sum));
+	float resolvedLightConfidence = clamp(useSoftFallback ? (fallbackConfidenceSum / fallbackWeightSum) : (useCenterFallback ? centerLightConfidence : (reflection_confidence_sum / weights_sum)), 0.0, 1.0);
+	vec4 resolvedRadiance = useSoftFallback ? vec4(fallbackRadianceSum / fallbackRadianceWeightSum, 0.0) : (useCenterFallback ? vec4(centerRadiance, 0.0) : (pixelAreaStat.colorSum / pixelAreaStat.weightSum));
 	float resolvedVariance = pixelAreaStat.variance / max(pixelAreaStat.weightSum, 1e-6f);
 	float resolvedDepth = computeResolvedDepth(origin, position, nearestSurfaceHitDistance);
 		
