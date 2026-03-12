@@ -58,7 +58,6 @@ layout(set = 0, binding = 4, rgba16f) uniform readonly image2D SPECULAR_INPUT_IM
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D reflection_direction_pdf;
 
 layout(set = 0, binding = 6) uniform UBO { UniformBuffer ubo; } ubo;
-layout(set = 0, binding = 9, rgba16f) uniform readonly image2D reflection_confidence;
 
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 layout(set = 0, binding = 7, rgba16f) uniform writeonly image2D out_indirect_specular_ray_length;
@@ -273,7 +272,7 @@ void main() {
 		float rayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 		imageStore(out_indirect_specular_ray_length, pix, vec4(rayLength, 0.0, 0.0, 0.0));
-		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, imageLoad(reflection_confidence, pix).y));
+		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, 1.0));
 #else
 		imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(passthrough.rgb, rayLength));
 #endif
@@ -304,7 +303,6 @@ void main() {
 
 	vec3 centerRadiance = clampSpecular(imageLoad(SPECULAR_INPUT_IMAGE, pix).xyz, SPECULAR_CLAMPING_MAX);
 	float centerRayLength = SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix);
-	float centerLightConfidence = imageLoad(reflection_confidence, pix).y;
 
 	PixelAreaStatistic pixelAreaStat;
 	pixelAreaStat.colorSum = vec4(0.0);
@@ -315,11 +313,9 @@ void main() {
 	float nearestSurfaceHitDistance = 0.0;
 	float weights_sum = 0.0;
 	float ray_length_sum = 0.0;
-	float reflection_confidence_sum = 0.0;
 	vec3 fallbackRadianceSum = vec3(0.0);
 	float fallbackRadianceWeightSum = 0.0;
 	float fallbackRayLengthSum = 0.0;
-	float fallbackConfidenceSum = 0.0;
 	float fallbackWeightSum = 0.0;
 	
 	for (int i = 0; i < SPATIAL_RECONSTRUCTION_SAMPLES; i++) {
@@ -340,10 +336,8 @@ void main() {
 		if (sampleRayLength > 0.0) {
 			// Keep ray-length accumulation weighted by the exact same sample weights as radiance.
 			ray_length_sum += sampleRayLength * weightLength.x;
-			reflection_confidence_sum += imageLoad(reflection_confidence, p).y * weightLength.x;
 			weights_sum += weightLength.x;
 			fallbackRayLengthSum += sampleRayLength * fallbackWeightLength.x;
-			fallbackConfidenceSum += imageLoad(reflection_confidence, p).y * fallbackWeightLength.x;
 			fallbackWeightSum += fallbackWeightLength.x;
 		}
 	}
@@ -351,7 +345,6 @@ void main() {
 	bool useCenterFallback = pixelAreaStat.weightSum <= 1.0e-6 || weights_sum <= 0.0;
 	bool useSoftFallback = useCenterFallback && roughness >= 0.02 && fallbackRadianceWeightSum > 1.0e-6 && fallbackWeightSum > 0.0;
 	float resolvedRayLength = useSoftFallback ? (fallbackRayLengthSum / fallbackWeightSum) : (useCenterFallback ? centerRayLength : (ray_length_sum / weights_sum));
-	float resolvedLightConfidence = clamp(useSoftFallback ? (fallbackConfidenceSum / fallbackWeightSum) : (useCenterFallback ? centerLightConfidence : (reflection_confidence_sum / weights_sum)), 0.0, 1.0);
 	vec4 resolvedRadiance = useSoftFallback ? vec4(fallbackRadianceSum / fallbackRadianceWeightSum, 0.0) : (useCenterFallback ? vec4(centerRadiance, 0.0) : (pixelAreaStat.colorSum / pixelAreaStat.weightSum));
 	float resolvedVariance = pixelAreaStat.variance / max(pixelAreaStat.weightSum, 1e-6f);
 	float resolvedDepth = computeResolvedDepth(origin, position, nearestSurfaceHitDistance);
@@ -359,9 +352,8 @@ void main() {
 #if SPATIAL_RECONSTRUCTION_FINAL_PASS
 	float previousRayLength = imageLoad(prev_indirect_specular_ray_length, pix).r;
 	float rayLengthConfidence = computeRayLengthConfidence(resolvedRayLength, previousRayLength, neighborhoodStats);
-	float combinedConfidence = resolvedLightConfidence * rayLengthConfidence;
 	imageStore(out_indirect_specular_ray_length, pix, vec4(resolvedRayLength, 0.0, 0.0, 0.0));
-	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, combinedConfidence));
+	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, rayLengthConfidence));
 #else
 	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, resolvedRayLength));
 #endif

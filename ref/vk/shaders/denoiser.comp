@@ -1032,8 +1032,16 @@ void main() {
 
 		if (has_indirect_specular_history) {
 			float indirect_specular_variance_gate = mix(0.35, 1.0, computeVarianceGate(current_indirect_specular_stats, history_indirect_specular_stats));
-			float indirect_specular_reset_factor = indirect_specular_confidence_temporal * mix(1.0, softenVarianceConfidence(indirect_specular_variance_confidence), 0.45);
+			float indirect_specular_base_confidence = mix(0.55, 1.0, indirect_diffuse_direct_confidence);
+			float indirect_specular_reset_factor = indirect_specular_base_confidence * mix(1.0, softenVarianceConfidence(indirect_specular_variance_confidence), 0.45);
 			indirect_specular_reset_factor = applyVarianceSoftReset(indirect_specular_reset_factor, indirect_specular_variance_gate, 0.30);
+			float direct_confidence_boost = mix(0.35, 1.0, indirect_diffuse_direct_confidence);
+			float direct_variance_reset = 1.0 - direct_variance_reset_boost * direct_confidence_boost;
+			indirect_specular_reset_factor = min(indirect_specular_reset_factor, direct_variance_reset);
+			if (direct_hard_reset) {
+				indirect_specular_reset_factor = 0.0;
+			}
+			indirect_specular_reset_factor *= direct_specular_confidence;
 			vec4 accumulated_indirect_specular = accumulateTemporalRadiance(indirect_specular, history_indirect_specular, indirect_specular_history_samples, indirect_specular_reset_factor);
 			indirect_specular = accumulated_indirect_specular.rgb;
 			indirect_specular_history_samples = accumulated_indirect_specular.a;

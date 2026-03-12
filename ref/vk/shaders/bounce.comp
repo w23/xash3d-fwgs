@@ -29,29 +29,11 @@ layout(set = 0, binding = 10, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 11, rgba16f) uniform readonly image2D normals_gs;
 layout(set = 0, binding = 12, rgba8) uniform readonly image2D material_rmxx;
 layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
-layout(set = 0, binding = 14, rgba32f) uniform readonly image2D geometry_prev_position;
 
 layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_indirect_diffuse;
 layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
 layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_first_bounce_direction; // for spherical harmonics denoising
 layout(set = 0, binding = 23, rgba32f) uniform writeonly image2D out_reflection_direction_pdf; // for spatial reconstruction
-layout(set = 0, binding = 24, rgba16f) uniform writeonly image2D out_temporal_reflection_0;
-layout(set = 0, binding = 25, rgba16f) uniform readonly image2D prev_temporal_reflection_0;
-layout(set = 0, binding = 26, rgba16f) uniform writeonly image2D out_temporal_reflection_1;
-layout(set = 0, binding = 27, rgba16f) uniform readonly image2D prev_temporal_reflection_1;
-layout(set = 0, binding = 28, rgba32f) uniform writeonly image2D out_temporal_reflection_normal_roughness;
-layout(set = 0, binding = 37, rgba16f) uniform writeonly image2D out_temporal_reflection_2;
-layout(set = 0, binding = 38, rgba16f) uniform readonly image2D prev_temporal_reflection_2;
-layout(set = 0, binding = 39, rgba16f) uniform writeonly image2D out_temporal_reflection_3;
-layout(set = 0, binding = 40, rgba16f) uniform readonly image2D prev_temporal_reflection_3;
-layout(set = 0, binding = 41, rgba16f) uniform writeonly image2D out_temporal_reflection_4;
-layout(set = 0, binding = 42, rgba16f) uniform readonly image2D prev_temporal_reflection_4;
-layout(set = 0, binding = 43, rgba16f) uniform writeonly image2D out_temporal_reflection_5;
-layout(set = 0, binding = 44, rgba16f) uniform readonly image2D prev_temporal_reflection_5;
-layout(set = 0, binding = 29, rgba32f) uniform readonly image2D prev_temporal_reflection_normal_roughness;
-layout(set = 0, binding = 34, rgba16f) uniform writeonly image2D out_reflection_confidence;
-layout(set = 0, binding = 35, rgba32f) uniform writeonly image2D out_temporal_reflection_hit;
-layout(set = 0, binding = 36, rgba32f) uniform readonly image2D prev_temporal_reflection_hit;
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
@@ -66,13 +48,10 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #define LIGHT_POLYGON 1
 #define LIGHT_POINT 1
 
-
 #include "light.glsl"
 
 #include "trace_simple_blending.glsl"
 #include "skybox.glsl"
-#define LOAD_REFLECTION_RAY_LENGTH(pix) 0.0
-#include "temporal_reprojection.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
@@ -80,85 +59,6 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
-struct TemporalReflectionLuminancePacked {
-	vec4 diffuse0;
-	vec4 diffuse1;
-	vec4 specular0;
-	vec4 specular1;
-};
-
-struct TemporalReflectionIndexPacked {
-	vec4 index0;
-	vec4 index1;
-};
-
-uvec4 decodeTemporalIndexPacked(vec4 packed) {
-	return uvec4(
-		packed.x < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.x)),
-		packed.y < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.y)),
-		packed.z < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.z)),
-		packed.w < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.w)));
-}
-
-vec4 encodeTemporalIndexPacked(uvec4 indices) {
-	return vec4(
-		indices.x == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.x),
-		indices.y == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.y),
-		indices.z == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.z),
-		indices.w == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.w));
-}
-
-void loadPrevTemporalReflectionBrightest(ivec2 p, out BrightestLights brightest) {
-	TemporalReflectionLuminancePacked luminancePacked;
-	TemporalReflectionIndexPacked indexPacked;
-	luminancePacked.diffuse0 = imageLoad(prev_temporal_reflection_0, p);
-	luminancePacked.diffuse1 = imageLoad(prev_temporal_reflection_1, p);
-	luminancePacked.specular0 = imageLoad(prev_temporal_reflection_2, p);
-	luminancePacked.specular1 = imageLoad(prev_temporal_reflection_3, p);
-	indexPacked.index0 = imageLoad(prev_temporal_reflection_4, p);
-	indexPacked.index1 = imageLoad(prev_temporal_reflection_5, p);
-
-	brightest.diffuse_luminance0 = luminancePacked.diffuse0;
-	brightest.diffuse_luminance1 = luminancePacked.diffuse1;
-	brightest.specular_luminance0 = luminancePacked.specular0;
-	brightest.specular_luminance1 = luminancePacked.specular1;
-	brightest.indices0 = decodeTemporalIndexPacked(indexPacked.index0);
-	brightest.indices1 = decodeTemporalIndexPacked(indexPacked.index1);
-}
-
-void storeTemporalReflectionBrightest(ivec2 p, BrightestLights brightest, bool confidence_disabled) {
-	TemporalReflectionLuminancePacked luminancePacked;
-	TemporalReflectionIndexPacked indexPacked;
-	if (confidence_disabled) {
-		luminancePacked.diffuse0 = vec4(0.0);
-		luminancePacked.diffuse1 = vec4(0.0);
-		luminancePacked.specular0 = vec4(0.0);
-		luminancePacked.specular1 = vec4(0.0);
-		indexPacked.index0 = vec4(-1.0);
-		indexPacked.index1 = vec4(-1.0);
-	} else {
-		luminancePacked.diffuse0 = brightest.diffuse_luminance0;
-		luminancePacked.diffuse1 = brightest.diffuse_luminance1;
-		luminancePacked.specular0 = brightest.specular_luminance0;
-		luminancePacked.specular1 = brightest.specular_luminance1;
-		indexPacked.index0 = encodeTemporalIndexPacked(brightest.indices0);
-		indexPacked.index1 = encodeTemporalIndexPacked(brightest.indices1);
-	}
-
-	imageStore(out_temporal_reflection_0, p, luminancePacked.diffuse0);
-	imageStore(out_temporal_reflection_1, p, luminancePacked.diffuse1);
-	imageStore(out_temporal_reflection_2, p, luminancePacked.specular0);
-	imageStore(out_temporal_reflection_3, p, luminancePacked.specular1);
-	imageStore(out_temporal_reflection_4, p, indexPacked.index0);
-	imageStore(out_temporal_reflection_5, p, indexPacked.index1);
-}
-const int kMaxBounces = 1;
-const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
-const float kBounceRayNormalOffset = .02;
-const float kBounceRayMinT = .005;
-const float kBounceLightingNormalOffset = .01;
-
-ivec2 pix;
 vec3 offsetRayOrigin(vec3 pos, vec3 geometry_normal, vec3 ray_dir, float eps) {
 	const float normal_sign = dot(geometry_normal, ray_dir) >= 0.0 ? 1.0 : -1.0;
 	return pos + geometry_normal * (eps * normal_sign);
@@ -174,7 +74,7 @@ bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
 		;
 
 	const float L = 10000.; // TODO Why 10k? Use the real max distance, as in ray_primary.comp
-	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST, origin, kBounceRayMinT, direction, L);
+	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST, origin, 0., direction, L);
 	while (rayQueryProceedEXT(rq)) {
 		if (0 != (rayQueryGetRayFlagsEXT(rq) & gl_RayFlagsOpaqueEXT))
 			continue;
@@ -222,30 +122,18 @@ struct MaterialEx {
 	//TODO float alpha;
 };
 
+const int kMaxBounces = 1;
+const vec3 kThrougputExtinctionThreshold = vec3(1e-3);
+const float kRayNormalOffsetFudge = .01;
+const float kBounceRayMinT = .005;
+const float kBounceLightingNormalOffset = .01;
 
-void computeBounces(
-	MaterialEx mat,
-	vec3 pos,
-	vec3 direction,
-	int bouncesCount,
-	inout vec3 diffuse,
-	inout vec3 specular,
-	inout vec3 first_bounce_direction,
-	bool track_first_bounce_temporal,
-	inout vec3 first_bounce_hit_position,
-	inout vec3 first_bounce_lighting_position,
-	inout vec3 first_bounce_shading_normal,
-	inout float first_bounce_roughness,
-	inout BrightestLights first_bounce_brightest_lights,
-	out bool first_bounce_did_hit) {
+ivec2 pix;
+void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, inout vec3 diffuse, inout vec3 specular, inout vec3 first_bounce_direction) {
 	vec3 throughput = vec3(1.);
 
 	// TODO split into two distinct passes, see #734
 	int first_brdf_type = BRDF_TYPE_NONE;
-	first_bounce_did_hit = false;
-	if (track_first_bounce_temporal) {
-		initBrightestLights(first_bounce_brightest_lights);
-	}
 
 	for (int i = 0; i < bouncesCount; ++i) {
 		vec3 bounce_direction;
@@ -289,7 +177,7 @@ void computeBounces(
 		payload.normals_gs = vec4(0.);
 
 		vec3 contribution = vec3(0.);
-		const vec3 ray_origin = offsetRayOrigin(pos, mat.geometry_normal, bounce_direction, kBounceRayNormalOffset);
+		const vec3 ray_origin = offsetRayOrigin(pos, mat.geometry_normal, bounce_direction, kRayNormalOffsetFudge);
 
 		vec3 hit_color = vec3(0.);
 		// FIXME figure out how could this happen, see https://github.com/w23/xash3d-fwgs/issues/771
@@ -300,8 +188,6 @@ void computeBounces(
 		const vec3 hit_pos = payload.hit_t.xyz;
 		const vec3 hit_geometry_normal = normalDecode(payload.normals_gs.xy);
 		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
-		const bool track_brightest_lights = track_first_bounce_temporal && i == 0;
-		BrightestLights bounce_brightest_lights;
 		if (did_hit) {
 			vec3 ldiffuse = vec3(0.);
 			vec3 lspecular = vec3(0.);
@@ -317,7 +203,7 @@ void computeBounces(
 		}
 #endif
 			const vec3 hit_lighting_pos = hit_pos + hit_geometry_normal * kBounceLightingNormalOffset;
-			computeLighting(hit_lighting_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular, bounce_brightest_lights, track_brightest_lights);
+			computeLighting(hit_lighting_pos, hit_shading_normal, -bounce_direction, hit_material, ldiffuse, lspecular);
 
 			if (IS_INVALIDV(ldiffuse)) {
 #ifdef SHADER_DEBUG_ENABLE
@@ -349,22 +235,8 @@ void computeBounces(
 		else
 			specular += contribution;
 
-		if (i == 0) {
+		if (i == 0)
 			first_bounce_direction = hit_pos - pos;
-			if (track_first_bounce_temporal) {
-				first_bounce_did_hit = did_hit;
-				if (did_hit) {
-					first_bounce_hit_position = hit_pos;
-					first_bounce_lighting_position = hit_pos + hit_geometry_normal * kBounceLightingNormalOffset;
-					first_bounce_shading_normal = hit_shading_normal;
-					first_bounce_roughness = hit_material.roughness;
-					if (track_brightest_lights) {
-						first_bounce_brightest_lights = bounce_brightest_lights;
-						finalizeBrightestLightsWeights(first_bounce_brightest_lights, first_bounce_lighting_position, first_bounce_shading_normal, normalize(pos - first_bounce_lighting_position), first_bounce_roughness);
-					}
-				}
-			}
-		}
 
 		if (!did_hit)
 			break;
@@ -404,13 +276,6 @@ void main() {
 	const vec4 pos_t = imageLoad(position_t, pix * INDIRECT_SCALE);
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
 	vec3 first_bounce_direction = vec3(0.), reflection_direction = vec3(0.);
-	bool confidence_disabled = (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
-	vec2 reflection_confidence = vec2(1.0);
-	vec3 reflection_hit_position = vec3(0.0);
-	vec3 reflection_shading_normal = vec3(0.0);
-	float reflection_roughness = 0.0;
-	BrightestLights reflection_brightest_lights;
-	initBrightestLights(reflection_brightest_lights);
 	if (pos_t.w > 0.) {
 		const vec3 origin    = (ubo.ubo.inv_view * vec4(0, 0, 0, 1)).xyz;
 		const vec4 target    = ubo.ubo.inv_proj * vec4(uv.x, uv.y, 1, 1);
@@ -437,14 +302,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 		}
 
-		vec3 unused_hit_position = vec3(0.0);
-		vec3 unused_lighting_position = vec3(0.0);
-		vec3 unused_shading_normal = vec3(0.0);
-		float unused_roughness = 0.0;
-		BrightestLights unused_brightest_lights;
-		initBrightestLights(unused_brightest_lights);
-		bool unused_did_hit = false;
-		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, first_bounce_direction, false, unused_hit_position, unused_lighting_position, unused_shading_normal, unused_roughness, unused_brightest_lights, unused_did_hit);
+		computeBounces(mat, pos_t.xyz, direction, kMaxBounces, diffuse, specular, first_bounce_direction);
 
 		if ((ubo.ubo.renderer_flags & RENDERER_FLAG_ONLY_DIFFUSE_GI) != 0) {
 			diffuse += specular;
@@ -459,62 +317,7 @@ void main() {
 			mat.prop.roughness = material_data.r;
 
 			vec3 unusedDiffuse = vec3(0.);
-			vec3 reflection_lighting_position = vec3(0.0);
-			bool reflection_did_hit = false;
-			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, reflection_direction, !confidence_disabled, reflection_hit_position, reflection_lighting_position, reflection_shading_normal, reflection_roughness, reflection_brightest_lights, reflection_did_hit);
-
-			const float reflection_ray_length = length(reflection_direction);
-			if (reflection_did_hit && !confidence_disabled && reflection_ray_length > 0.0) {
-				float current_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-				float prev_diffuse_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-				float current_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-				float prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-				for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-					current_diffuse_weights[i] = 0.0;
-					prev_diffuse_weights[i] = 0.0;
-					current_specular_weights[i] = 0.0;
-					prev_specular_weights[i] = 0.0;
-				}
-
-				processTemporalDiffuseLightEntries(reflection_brightest_lights, reflection_lighting_position, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_position), reflection_roughness, current_diffuse_weights);
-				processTemporalSpecularLightEntries(reflection_brightest_lights, reflection_lighting_position, reflection_shading_normal, normalize(pos_t.xyz - reflection_lighting_position), reflection_roughness, current_specular_weights);
-
-				const vec3 prev_position = imageLoad(geometry_prev_position, pix * INDIRECT_SCALE).xyz;
-				ivec2 reproj_pix = ivec2(-1);
-				float reproj_depth_necessary = 0.0;
-				float reproj_depth_threshold = 0.0;
-				if (reprojectToPrevFramePixel(prev_position, res, reproj_pix, reproj_depth_necessary, reproj_depth_threshold)) {
-					BrightestLights prev_brightest_lights;
-					initBrightestLights(prev_brightest_lights);
-					loadPrevTemporalReflectionBrightest(reproj_pix, prev_brightest_lights);
-					vec3 prev_shading_normal = vec3(0.0);
-					float prev_roughness = 0.0;
-					unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
-					const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, reproj_pix).xyz;
-					processTemporalDiffuseLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, prev_diffuse_weights);
-					reflection_confidence.x = computeTemporalDiffuseConfidence(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness);
-				}
-
-				const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-				ivec2 parallax_pix = ivec2(-1);
-				if (parallaxReprojectToPrevFramePixel(pos_t.xyz, prev_position, geometry_normal, origin, prev_origin, reflection_ray_length, res, parallax_pix)) {
-					BrightestLights prev_brightest_lights;
-					initBrightestLights(prev_brightest_lights);
-					loadPrevTemporalReflectionBrightest(parallax_pix, prev_brightest_lights);
-					vec3 prev_shading_normal = vec3(0.0);
-					float prev_roughness = 0.0;
-					unpackTemporalNormalRoughness(imageLoad(prev_temporal_reflection_normal_roughness, parallax_pix), prev_shading_normal, prev_roughness);
-					const vec3 prev_hit_position = imageLoad(prev_temporal_reflection_hit, parallax_pix).xyz;
-					float current_prev_specular_weights[BRIGHTEST_LIGHTS_PER_TEXEL];
-					for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-						BrightestLightEntry prev_entry = getBrightestLightEntry(prev_brightest_lights, i);
-						prev_specular_weights[i] = max(prev_entry.specular_luminance, 0.0);
-						current_prev_specular_weights[i] = 0.0;
-					}
-					processTemporalSpecularLightEntries(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness, current_prev_specular_weights);
-					reflection_confidence.y = computeTemporalSpecularConfidence(prev_brightest_lights, prev_hit_position, prev_shading_normal, normalize(pos_t.xyz - prev_hit_position), prev_roughness);
-				}
-			}
+			computeBounces(mat, pos_t.xyz, direction, 1, unusedDiffuse, specular, reflection_direction);
 		}
 	}
 
@@ -537,10 +340,6 @@ void main() {
 		reflection_direction = first_bounce_direction;
 	}
 
-	storeTemporalReflectionBrightest(pix, reflection_brightest_lights, confidence_disabled);
-	imageStore(out_temporal_reflection_normal_roughness, pix, packTemporalNormalRoughness(reflection_shading_normal, reflection_roughness));
-	imageStore(out_temporal_reflection_hit, pix, vec4(reflection_hit_position, 0.0));
-	imageStore(out_reflection_confidence, pix, confidence_disabled ? vec4(1.0, 1.0, 0.0, 0.0) : vec4(reflection_confidence, 0.0, 0.0));
 	imageStore(out_indirect_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_indirect_specular, pix, vec4(specular, 0.f));
 	imageStore(out_first_bounce_direction, pix, vec4(first_bounce_direction, 0.f)); // for spherical harmonics denoising
