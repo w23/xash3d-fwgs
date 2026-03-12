@@ -210,111 +210,6 @@ void updateBrightestLights(
 #endif
 }
 
-float packBrightnessEntryDiffuse(BrightestLightEntry entry)
-{
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
-		return -1.0;
-	}
-	return entry.diffuse_luminance;
-}
-
-float packBrightnessEntrySpecular(BrightestLightEntry entry)
-{
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
-		return 0.0;
-	}
-	return entry.specular_luminance;
-}
-float packBrightnessEntryIndex(BrightestLightEntry entry)
-{
-	if (entry.index == BRIGHTEST_LIGHT_INVALID_INDEX) {
-		return -1.0;
-	}
-	return float(entry.index);
-}
-
-BrightestLightEntry unpackBrightnessEntry(float packed_diffuse, float packed_specular, float packed_index)
-{
-	BrightestLightEntry entry;
-	if (packed_index < 0.0) {
-		entry.index = BRIGHTEST_LIGHT_INVALID_INDEX;
-		entry.diffuse_luminance = -1.0;
-		entry.specular_luminance = -1.0;
-		return entry;
-	}
-
-	entry.index = uint(floor(packed_index));
-	entry.diffuse_luminance = packed_diffuse;
-	entry.specular_luminance = packed_specular;
-	return entry;
-}
-
-void packBrightestLights(
-	BrightestLights brightest,
-	out vec4 packed0,
-	out vec4 packed1,
-	out vec4 packed2,
-	out vec4 packed3,
-	out vec4 packed4,
-	out vec4 packed5)
-{
-	packed0 = vec4(
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 0)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 1)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 2)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 3)));
-	packed1 = vec4(
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 4)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 5)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 6)),
-		packBrightnessEntryDiffuse(getBrightestLightEntry(brightest, 7)));
-	packed2 = vec4(
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 0)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 1)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 2)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 3)));
-	packed3 = vec4(
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 4)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 5)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 6)),
-		packBrightnessEntrySpecular(getBrightestLightEntry(brightest, 7)));
-	packed4 = vec4(
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 0)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 1)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 2)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 3)));
-	packed5 = vec4(
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 4)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 5)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 6)),
-		packBrightnessEntryIndex(getBrightestLightEntry(brightest, 7)));
-}
-
-void unpackBrightestLights(
-	vec4 packed0,
-	vec4 packed1,
-	vec4 packed2,
-	vec4 packed3,
-	vec4 packed4,
-	vec4 packed5,
-	out BrightestLights brightest)
-{
-	BrightestLightEntry entry0 = unpackBrightnessEntry(packed0.x, packed2.x, packed4.x);
-	BrightestLightEntry entry1 = unpackBrightnessEntry(packed0.y, packed2.y, packed4.y);
-	BrightestLightEntry entry2 = unpackBrightnessEntry(packed0.z, packed2.z, packed4.z);
-	BrightestLightEntry entry3 = unpackBrightnessEntry(packed0.w, packed2.w, packed4.w);
-	BrightestLightEntry entry4 = unpackBrightnessEntry(packed1.x, packed3.x, packed5.x);
-	BrightestLightEntry entry5 = unpackBrightnessEntry(packed1.y, packed3.y, packed5.y);
-	BrightestLightEntry entry6 = unpackBrightnessEntry(packed1.z, packed3.z, packed5.z);
-	BrightestLightEntry entry7 = unpackBrightnessEntry(packed1.w, packed3.w, packed5.w);
-	brightest.indices0 = uvec4(entry0.index, entry1.index, entry2.index, entry3.index);
-	brightest.indices1 = uvec4(entry4.index, entry5.index, entry6.index, entry7.index);
-	brightest.diffuse_luminance0 = vec4(entry0.diffuse_luminance, entry1.diffuse_luminance, entry2.diffuse_luminance, entry3.diffuse_luminance);
-	brightest.diffuse_luminance1 = vec4(entry4.diffuse_luminance, entry5.diffuse_luminance, entry6.diffuse_luminance, entry7.diffuse_luminance);
-	brightest.specular_luminance0 = vec4(entry0.specular_luminance, entry1.specular_luminance, entry2.specular_luminance, entry3.specular_luminance);
-	brightest.specular_luminance1 = vec4(entry4.specular_luminance, entry5.specular_luminance, entry6.specular_luminance, entry7.specular_luminance);
-}
-
 vec4 packTemporalNormalRoughness(vec3 shading_normal, float roughness)
 {
 	return vec4(shading_normal, roughness);
@@ -336,22 +231,8 @@ vec2 lightPolygonWeightCalculation(
 	vec3 P, vec3 N, vec3 V,
 	float roughness);
 
-float computeTemporalIndexedConfidenceByChannel(
-	BrightestLights current_brightest,
+float computeTemporalStoredConfidenceByChannel(
 	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	vec3 P,
-	vec3 N,
-	vec3 V,
-	float roughness,
-	int channel);
-
-float computeTemporalConfidenceByChannel(
-	BrightestLights current_brightest,
-	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	vec3 P,
 	vec3 N,
 	vec3 V,
@@ -561,85 +442,8 @@ float invalidEntryMagnitudeByChannel(BrightestLightEntry entry, int channel)
 	return max(brightestLightEntryChannelLuminance(entry, channel), 0.0);
 }
 
-void extractSortedPositiveWeights(
-	float weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	out float sorted_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
-{
-	float eps = confidenceWeightEpsilon();
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		sorted_weights[i] = weights[i] > eps ? weights[i] : 0.0;
-	}
-
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL - 1; ++i) {
-		for (int j = i + 1; j < BRIGHTEST_LIGHTS_PER_TEXEL; ++j) {
-			if (sorted_weights[j] > sorted_weights[i]) {
-				float tmp = sorted_weights[i];
-				sorted_weights[i] = sorted_weights[j];
-				sorted_weights[j] = tmp;
-			}
-		}
-	}
-}
-
-float computeTemporalWeightProfileConfidence(
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
-{
-	float current_sorted[BRIGHTEST_LIGHTS_PER_TEXEL];
-	float prev_sorted[BRIGHTEST_LIGHTS_PER_TEXEL];
-	extractSortedPositiveWeights(current_weights, current_sorted);
-	extractSortedPositiveWeights(prev_weights, prev_sorted);
-
-	float diff_sum = 0.0;
-	float ref_sum = 0.0;
-	for (int i = 0; i < BRIGHTEST_LIGHTS_PER_TEXEL; ++i) {
-		diff_sum += abs(current_sorted[i] - prev_sorted[i]);
-		ref_sum += max(current_sorted[i], prev_sorted[i]);
-	}
-
-	if (ref_sum <= confidenceWeightEpsilon()) {
-		return 1.0;
-	}
-
-	return 1.0 - clamp(diff_sum / ref_sum, 0.0, 1.0);
-}
-
-float computeTemporalBrightnessConfidence(
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL])
-{
-	return computeTemporalWeightProfileConfidence(
-		current_weights,
-		prev_weights);
-}
-
-float computeTemporalIndexedConfidence(
-	BrightestLights current_brightest,
+float computeTemporalStoredConfidenceByChannel(
 	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	vec3 P,
-	vec3 N,
-	vec3 V,
-	float roughness)
-{
-	return computeTemporalIndexedConfidenceByChannel(
-		current_brightest,
-		prev_brightest,
-		current_weights,
-		prev_weights,
-		P,
-		N,
-		V,
-		roughness,
-		BRIGHTEST_LIGHT_CHANNEL_TOTAL);
-}
-
-float computeTemporalIndexedConfidenceByChannel(
-	BrightestLights current_brightest,
-	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	vec3 P,
 	vec3 N,
 	vec3 V,
@@ -656,11 +460,9 @@ float computeTemporalIndexedConfidenceByChannel(
 			continue;
 		}
 
-		bool prev_is_valid = isBrightestLightEntryIndexValid(prev);
 		float prev_magnitude = invalidEntryMagnitudeByChannel(prev, channel);
-
 		float current_magnitude = 0.0;
-		if (prev_is_valid) {
+		if (isBrightestLightEntryIndexValid(prev)) {
 			vec2 current_weight = lightWeightFromIndex(prev.index, P, N, V, roughness);
 			if (channel == BRIGHTEST_LIGHT_CHANNEL_DIFFUSE) {
 				current_magnitude = current_weight.x;
@@ -682,75 +484,15 @@ float computeTemporalIndexedConfidenceByChannel(
 	return 1.0 - clamp(diff_sum / ref_sum, 0.0, 1.0);
 }
 
-float computeTemporalConfidence(
-	BrightestLights current_brightest,
-	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	vec3 P,
-	vec3 N,
-	vec3 V,
-	float roughness)
-{
-	return computeTemporalConfidenceByChannel(
-		current_brightest,
-		prev_brightest,
-		current_weights,
-		prev_weights,
-		P,
-		N,
-		V,
-		roughness,
-		BRIGHTEST_LIGHT_CHANNEL_TOTAL);
-}
-
-float computeTemporalConfidenceByChannel(
-	BrightestLights current_brightest,
-	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	vec3 P,
-	vec3 N,
-	vec3 V,
-	float roughness,
-	int channel)
-{
-	float indexed_confidence = computeTemporalIndexedConfidenceByChannel(
-		current_brightest,
-		prev_brightest,
-		current_weights,
-		prev_weights,
-		P,
-		N,
-		V,
-		roughness,
-		channel);
-
-#if TEMPORAL_CONFIDENCE_INCLUDE_BRIGHTNESS_SUM_DIFF
-	float brightness_confidence = computeTemporalWeightProfileConfidence(
-		current_weights,
-		prev_weights);
-	return min(indexed_confidence, brightness_confidence);
-#else
-	return indexed_confidence;
-#endif
-}
-
 float computeTemporalDiffuseConfidence(
-	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	vec3 P,
 	vec3 N,
 	vec3 V,
 	float roughness)
 {
-	return computeTemporalConfidenceByChannel(
-		current_brightest,
+	return computeTemporalStoredConfidenceByChannel(
 		prev_brightest,
-		current_weights,
-		prev_weights,
 		P,
 		N,
 		V,
@@ -759,20 +501,14 @@ float computeTemporalDiffuseConfidence(
 }
 
 float computeTemporalSpecularConfidence(
-	BrightestLights current_brightest,
 	BrightestLights prev_brightest,
-	float current_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
-	float prev_weights[BRIGHTEST_LIGHTS_PER_TEXEL],
 	vec3 P,
 	vec3 N,
 	vec3 V,
 	float roughness)
 {
-	return computeTemporalConfidenceByChannel(
-		current_brightest,
+	return computeTemporalStoredConfidenceByChannel(
 		prev_brightest,
-		current_weights,
-		prev_weights,
 		P,
 		N,
 		V,

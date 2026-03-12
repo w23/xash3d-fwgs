@@ -322,16 +322,8 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights, true);
 }
 
-
-
-
-
-
-
-
 #if LIGHT_POINT
 void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights) {
 	computeLightingPointDirect(P, N, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, true);
 }
 #endif
-

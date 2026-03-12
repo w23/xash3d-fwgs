@@ -753,7 +753,7 @@ void main() {
 		vec2 point_confidence = imageLoad(light_point_confidence, pix).rg;
 		vec2 confidence = min(polygon_confidence, point_confidence);
 		float indirect_specular_confidence = imageLoad(indirect_specular_reconstructed, pix / INDIRECT_SCALE).a;
-		imageStore(out_dest, pix, vec4(indirect_specular_confidence));
+		imageStore(out_dest, pix, vec4(confidence.x, confidence.y, indirect_specular_confidence, 0.0));
 		return;
 	}
 
@@ -1102,35 +1102,3 @@ void main() {
 
 	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

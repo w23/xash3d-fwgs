@@ -16,6 +16,54 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
+uvec4 decodeTemporalIndices(vec4 packed) {
+	return uvec4(
+		packed.x < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.x)),
+		packed.y < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.y)),
+		packed.z < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.z)),
+		packed.w < 0.0 ? BRIGHTEST_LIGHT_INVALID_INDEX : uint(floor(packed.w)));
+}
+
+vec4 encodeTemporalIndices(uvec4 indices) {
+	return vec4(
+		indices.x == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.x),
+		indices.y == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.y),
+		indices.z == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.z),
+		indices.w == BRIGHTEST_LIGHT_INVALID_INDEX ? -1.0 : float(indices.w));
+}
+
+void loadPrevTemporalBrightest(ivec2 p, out BrightestLights brightest) {
+	brightest.diffuse_luminance0 = imageLoad(prev_temporal_0, p);
+	brightest.diffuse_luminance1 = imageLoad(prev_temporal_1, p);
+	brightest.specular_luminance0 = imageLoad(prev_temporal_2, p);
+	brightest.specular_luminance1 = imageLoad(prev_temporal_3, p);
+	brightest.indices0 = decodeTemporalIndices(imageLoad(prev_temporal_4, p));
+	brightest.indices1 = decodeTemporalIndices(imageLoad(prev_temporal_5, p));
+}
+
+void storeTemporalBrightest(ivec2 p, BrightestLights brightest, bool confidence_disabled) {
+	vec4 out0 = vec4(0.0);
+	vec4 out1 = vec4(0.0);
+	vec4 out2 = vec4(0.0);
+	vec4 out3 = vec4(0.0);
+	vec4 out4 = vec4(-1.0);
+	vec4 out5 = vec4(-1.0);
+	if (!confidence_disabled) {
+		out0 = brightest.diffuse_luminance0;
+		out1 = brightest.diffuse_luminance1;
+		out2 = brightest.specular_luminance0;
+		out3 = brightest.specular_luminance1;
+		out4 = encodeTemporalIndices(brightest.indices0);
+		out5 = encodeTemporalIndices(brightest.indices1);
+	}
+	imageStore(out_temporal_0, p, out0);
+	imageStore(out_temporal_1, p, out1);
+	imageStore(out_temporal_2, p, out2);
+	imageStore(out_temporal_3, p, out3);
+	imageStore(out_temporal_4, p, out4);
+	imageStore(out_temporal_5, p, out5);
+}
+
 void main() {
 #ifdef RAY_TRACE
 	const ivec2 res = ivec2(gl_LaunchSizeEXT.xy);
@@ -69,12 +117,6 @@ void main() {
 	bool confidence_disabled = (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_CONFIDENCE) != 0;
 	float diffuse_confidence = 1.0;
 	float specular_confidence = 1.0;
-        vec4 packed_brightest_0 = vec4(0.0);
-    vec4 packed_brightest_1 = vec4(0.0);
-    vec4 packed_brightest_2 = vec4(0.0);
-    vec4 packed_brightest_3 = vec4(0.0);
-    vec4 packed_brightest_4 = vec4(-1.0);
-    vec4 packed_brightest_5 = vec4(-1.0);
 
 	initBrightestLights(brightest_lights);
 	initBrightestLights(prev_brightest_lights);
@@ -121,12 +163,12 @@ void main() {
 				prev_diffuse_weights[i] = 0.0;
 				prev_specular_weights[i] = 0.0;
 			}
-			unpackBrightestLights(imageLoad(prev_temporal_0, reproj_pix), imageLoad(prev_temporal_1, reproj_pix), imageLoad(prev_temporal_2, reproj_pix), imageLoad(prev_temporal_3, reproj_pix), imageLoad(prev_temporal_4, reproj_pix), imageLoad(prev_temporal_5, reproj_pix), prev_brightest_lights);
+			loadPrevTemporalBrightest(reproj_pix, prev_brightest_lights);
 			unpackTemporalNormalRoughness(imageLoad(prev_temporal_normal_roughness, reproj_pix), prev_shading_normal, prev_roughness);
 			processTemporalDiffuseLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_diffuse_weights);
-			diffuse_confidence = computeTemporalDiffuseConfidence(brightest_lights, prev_brightest_lights, current_diffuse_weights, prev_diffuse_weights, lighting_position, prev_shading_normal, -direction, prev_roughness);
+			diffuse_confidence = computeTemporalDiffuseConfidence(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness);
 			processTemporalSpecularLightEntries(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness, prev_specular_weights);
-			specular_confidence = computeTemporalSpecularConfidence(brightest_lights, prev_brightest_lights, current_specular_weights, prev_specular_weights, lighting_position, prev_shading_normal, -direction, prev_roughness);
+			specular_confidence = computeTemporalSpecularConfidence(prev_brightest_lights, lighting_position, prev_shading_normal, -direction, prev_roughness);
 		}
 
 		}
@@ -135,15 +177,7 @@ void main() {
 	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
 	DEBUG_VALIDATE_RANGE_VEC3("direct.specular", specular, 0., 1e6);
 
-	if (!confidence_disabled) {
-	packBrightestLights(brightest_lights, packed_brightest_0, packed_brightest_1, packed_brightest_2, packed_brightest_3, packed_brightest_4, packed_brightest_5);
-	}
-	imageStore(out_temporal_0, pix, packed_brightest_0);
-	imageStore(out_temporal_1, pix, packed_brightest_1);
-	imageStore(out_temporal_2, pix, packed_brightest_2);
-	imageStore(out_temporal_3, pix, packed_brightest_3);
-	imageStore(out_temporal_4, pix, packed_brightest_4);
-	imageStore(out_temporal_5, pix, packed_brightest_5);
+	storeTemporalBrightest(pix, brightest_lights, confidence_disabled);
 	imageStore(out_temporal_normal_roughness, pix, packTemporalNormalRoughness(shading_normal, material.roughness));
 	imageStore(out_confidence, pix, confidence_disabled ? vec4(1.0, 1.0, 0.0, 0.0) : vec4(diffuse_confidence, specular_confidence, 0.0, 0.0));
 

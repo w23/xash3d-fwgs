@@ -230,9 +230,3 @@ struct UniformBuffer {
 #endif
 
 #endif // RAY_INTEROP_H_INCLUDED
-
-
-
-
-
-
