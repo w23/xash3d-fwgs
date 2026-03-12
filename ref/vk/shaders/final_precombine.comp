@@ -17,14 +17,14 @@ layout(set = 0, binding = 6, rgba16f) uniform readonly image2D light_point_confi
 layout(set = 0, binding = 7, rgba16f) uniform readonly image2D light_point_flashlight_diffuse;
 layout(set = 0, binding = 8, rgba16f) uniform readonly image2D light_point_flashlight_specular;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_specular_reconstructed;
-layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
-layout(set = 0, binding = 16, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
 
-layout(set = 0, binding = 10, rgba16f) uniform writeonly image2D out_precombined_direct_diffuse;
-layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_precombined_direct_specular;
-layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_precombined_indirect_specular;
-layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_precombined_flashlight_diffuse;
-layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_precombined_flashlight_specular;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_precombined_direct_diffuse;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_precombined_direct_specular;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_precombined_indirect_specular;
+layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_precombined_flashlight_diffuse;
+layout(set = 0, binding = 16, rgba16f) uniform writeonly image2D out_precombined_flashlight_specular;
 layout(set = 0, binding = 17, rgba16f) uniform writeonly image2D out_precombined_indirect_diffuse;
 
 const int INDIRECT_SCALE = 2;

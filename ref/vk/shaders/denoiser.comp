@@ -22,62 +22,48 @@ layout(set = 0, binding = 0, rgba16f) uniform image2D out_dest;
 
 layout(set = 0, binding = 1, rgba8) uniform readonly image2D base_color_a;
 
-layout(set = 0, binding = 2, rgba16f) uniform readonly image2D light_poly_diffuse;
-layout(set = 0, binding = 3, rgba16f) uniform readonly image2D light_poly_specular;
 
-layout(set = 0, binding = 4, rgba16f) uniform readonly image2D light_point_diffuse;
-layout(set = 0, binding = 5, rgba16f) uniform readonly image2D light_point_specular;
-layout(set = 0, binding = 6, rgba16f) uniform readonly image2D emissive;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D emissive;
 
-layout(set = 0, binding = 7, rgba32f) uniform readonly image2D position_t;
-layout(set = 0, binding = 8, rgba16f) uniform readonly image2D normals_gs;
-layout(set = 0, binding = 9, rgba8) uniform readonly image2D material_rmxx;
-layout(set = 0, binding = 10, rgba32f) uniform readonly image2D geometry_prev_position;
+layout(set = 0, binding = 3, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 5, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 6, rgba32f) uniform readonly image2D geometry_prev_position;
 
-layout(set = 0, binding = 11) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 7) uniform UBO { UniformBuffer ubo; } ubo;
 
-layout(set = 0, binding = 12, rgba16f) uniform readonly image2D indirect_diffuse;
-layout(set = 0, binding = 13, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
-layout(set = 0, binding = 14, rgba16f) uniform readonly image2D indirect_specular_reconstructed;
-layout(set = 0, binding = 15, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
-layout(set = 0, binding = 16, rgba32f) uniform readonly image2D reflection_direction_pdf;
-layout(set = 0, binding = 27, rgba16f) uniform readonly image2D indirect_specular_ray_length;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D indirect_specular_ray_length;
 
-layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_diffuse;
-layout(set = 0, binding = 18, rgba16f) uniform image2D prev_temporal_diffuse;
+layout(set = 0, binding = 9, rgba16f) uniform image2D out_temporal_diffuse;
+layout(set = 0, binding = 10, rgba16f) uniform image2D prev_temporal_diffuse;
 
-layout(set = 0, binding = 19, rgba16f) uniform image2D out_temporal_specular;
-layout(set = 0, binding = 20, rgba16f) uniform image2D prev_temporal_specular;
-layout(set = 0, binding = 28, rgba16f) uniform image2D out_temporal_indirect_specular;
-layout(set = 0, binding = 29, rgba16f) uniform image2D prev_temporal_indirect_specular;
-layout(set = 0, binding = 30, rgba16f) uniform image2D out_temporal_reproj_depth;
-layout(set = 0, binding = 31, rgba16f) uniform readonly image2D prev_temporal_reproj_depth;
-layout(set = 0, binding = 32, rgba16f) uniform image2D out_temporal_indirect_diffuse;
-layout(set = 0, binding = 33, rgba16f) uniform readonly image2D prev_temporal_indirect_diffuse;
+layout(set = 0, binding = 11, rgba16f) uniform image2D out_temporal_specular;
+layout(set = 0, binding = 12, rgba16f) uniform image2D prev_temporal_specular;
+layout(set = 0, binding = 13, rgba16f) uniform image2D out_temporal_indirect_specular;
+layout(set = 0, binding = 14, rgba16f) uniform image2D prev_temporal_indirect_specular;
+layout(set = 0, binding = 15, rgba16f) uniform image2D out_temporal_reproj_depth;
+layout(set = 0, binding = 16, rgba16f) uniform readonly image2D prev_temporal_reproj_depth;
+layout(set = 0, binding = 17, rgba16f) uniform image2D out_temporal_indirect_diffuse;
+layout(set = 0, binding = 18, rgba16f) uniform readonly image2D prev_temporal_indirect_diffuse;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
-layout(set = 0, binding = 21) uniform sampler3D blue_noise_texture;
+layout(set = 0, binding = 29) uniform sampler3D blue_noise_texture;
 #include "bluenoise.glsl"
 #endif
 
-layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
-layout(set = 0, binding = 23, rgba16f) uniform readonly image2D light_polygon_confidence;
-layout(set = 0, binding = 24, rgba16f) uniform readonly image2D light_point_confidence;
-layout(set = 0, binding = 25, rgba16f) uniform readonly image2D light_point_flashlight_diffuse;
-layout(set = 0, binding = 26, rgba16f) uniform readonly image2D light_point_flashlight_specular;
-layout(set = 0, binding = 34, rgba16f) uniform readonly image2D final_atrous_direct_diffuse;
-layout(set = 0, binding = 35, rgba16f) uniform readonly image2D final_atrous_direct_specular;
-layout(set = 0, binding = 36, rgba16f) uniform readonly image2D final_atrous_indirect_specular;
-layout(set = 0, binding = 37, rgba16f) uniform readonly image2D precombined_indirect_diffuse;
-layout(set = 0, binding = 38, rgba16f) uniform readonly image2D final_atrous_flashlight_diffuse;
-layout(set = 0, binding = 39, rgba16f) uniform readonly image2D final_atrous_flashlight_specular;
-layout(set = 0, binding = 40, rgba32f) uniform readonly image2D final_atrous_direct_stats;
-layout(set = 0, binding = 41, rgba32f) uniform readonly image2D final_atrous_indirect_specular_stats;
+layout(set = 0, binding = 19, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 20, rgba16f) uniform readonly image2D final_atrous_direct_diffuse;
+layout(set = 0, binding = 21, rgba16f) uniform readonly image2D final_atrous_direct_specular;
+layout(set = 0, binding = 22, rgba16f) uniform readonly image2D final_atrous_indirect_specular;
+layout(set = 0, binding = 23, rgba16f) uniform readonly image2D precombined_indirect_diffuse;
+layout(set = 0, binding = 24, rgba16f) uniform readonly image2D final_atrous_flashlight_diffuse;
+layout(set = 0, binding = 25, rgba16f) uniform readonly image2D final_atrous_flashlight_specular;
+layout(set = 0, binding = 26, rgba32f) uniform readonly image2D final_atrous_direct_stats;
+layout(set = 0, binding = 27, rgba32f) uniform readonly image2D final_atrous_indirect_specular_stats;
 
-//layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
+//layout(set = 0, binding = 28) uniform sampler2D textures[MAX_TEXTURES];
 
-#include "atrous.glsl"
 #define LOAD_REFLECTION_RAY_LENGTH(pix) imageLoad(indirect_specular_ray_length, pix).r
 #include "temporal_reprojection.glsl"
 const int INDIRECT_SCALE = 2;
@@ -153,19 +139,6 @@ vec3 closestColor(vec3 color1, vec3 color2, vec3 sampleColor) {
     return (dist1 < dist2) ? color1 : color2;
 }
 
-vec2 sampleCombinedDirectConfidence9Tap(ivec2 center, ivec2 res) {
-	vec2 total = vec2(0.0);
-	float weight = 0.0;
-	for (int y = -1; y <= 1; ++y) {
-		for (int x = -1; x <= 1; ++x) {
-			ivec2 p = clamp(center + ivec2(x, y), ivec2(0), res - 1);
-			total.x += imageLoad(final_atrous_direct_diffuse, p).a;
-			total.y += imageLoad(final_atrous_direct_specular, p).a;
-			weight += 1.0;
-		}
-	}
-	return weight > 0.0 ? total / weight : vec2(0.0);
-}
 
 struct LuminanceStats {
 	float mean;
@@ -392,8 +365,7 @@ void main() {
 	}
 
 	const float direct_diffuse_confidence = clamp(pre_temporal_direct_diffuse_sample.a, 0.0, 1.0);
-	const vec2 direct_confidence_9tap = sampleCombinedDirectConfidence9Tap(pix, res);
-	const float indirect_diffuse_direct_confidence = clamp(min(direct_diffuse_confidence, direct_confidence_9tap.x), 0.0, 1.0);
+	const float indirect_diffuse_direct_confidence = direct_diffuse_confidence;
 	const float direct_specular_confidence = clamp(pre_temporal_direct_specular_sample.a, 0.0, 1.0);
 	const float indirect_specular_confidence = clamp(pre_temporal_indirect_specular_sample.a, 0.0, 1.0);
 
@@ -520,7 +492,7 @@ void main() {
 				float parallax_roughness_delta = abs(parallax_history_meta.g - current_roughness);
 				float parallax_normal_match = 1.0 - smoothstep(TEMPORAL_PARALLAX_SHADING_NORMAL_THRESHOLD, TEMPORAL_PARALLAX_SHADING_NORMAL_THRESHOLD * 2.0, parallax_normal_delta);
 				float parallax_roughness_match = 1.0 - smoothstep(TEMPORAL_PARALLAX_ROUGHNESS_THRESHOLD, TEMPORAL_PARALLAX_ROUGHNESS_THRESHOLD * 2.0, parallax_roughness_delta);
-				use_indirect_specular_parallax = (parallax_depth_offset < depth_treshold) && (parallax_normal_match > 0.0) && (parallax_roughness_match > 0.0);
+				use_indirect_specular_parallax = (parallax_depth_offset < depth_treshold * 1.35) && (parallax_normal_match > 0.0) && (parallax_roughness_match > 0.0);
 			}
 		}
 		if (has_base_history) {
@@ -530,7 +502,7 @@ void main() {
 			const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_indirect_specular, indirect_specular_history_pix);
 			history_indirect_specular = history_indirect_specular_sample.xyz;
 			indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
-			indirect_specular_confidence_temporal = indirect_specular_confidence;
+			indirect_specular_confidence_temporal = indirect_diffuse_direct_confidence * indirect_specular_confidence;
 			history_indirect_specular_stats = sampleHistoryIndirectSpecularStats3x3(indirect_specular_history_pix, res);
 			indirect_specular_variance_confidence = computeVarianceConfidence(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
 		}
@@ -622,7 +594,6 @@ void main() {
 			if (direct_hard_reset) {
 				indirect_specular_reset_factor = 0.0;
 			}
-			indirect_specular_reset_factor *= direct_specular_confidence;
 			indirect_specular_reset_factor *= indirect_specular_confidence_temporal;
 			if (indirect_specular_confidence_temporal <= 0.01) {
 				indirect_specular_reset_factor = 0.0;

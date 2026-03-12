@@ -24,13 +24,13 @@ layout(set = 0, binding = 7, rgba16f) uniform readonly image2D precombined_flash
 layout(set = 0, binding = 8, rgba16f) uniform readonly image2D indirect_diffuse;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
 
-layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_final_atrous_direct_diffuse;
-layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_final_atrous_direct_specular;
-layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_final_atrous_indirect_specular;
-layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_diffuse;
-layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_specular;
-layout(set = 0, binding = 17, rgba32f) uniform writeonly image2D out_final_atrous_direct_stats;
-layout(set = 0, binding = 18, rgba32f) uniform writeonly image2D out_final_atrous_indirect_specular_stats;
+layout(set = 0, binding = 10, rgba16f) uniform writeonly image2D out_final_atrous_direct_diffuse;
+layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_final_atrous_direct_specular;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_final_atrous_indirect_specular;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_diffuse;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_specular;
+layout(set = 0, binding = 15, rgba32f) uniform writeonly image2D out_final_atrous_direct_stats;
+layout(set = 0, binding = 16, rgba32f) uniform writeonly image2D out_final_atrous_indirect_specular_stats;
 
 #define ATROUS_KERNEL_WIDTH 5
 #define ATROUS_KERNEL_HALF 2
