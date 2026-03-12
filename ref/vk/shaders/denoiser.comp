@@ -404,7 +404,10 @@ void main() {
 	const vec3 flashlight_specular = imageLoad(final_atrous_flashlight_specular, pix).rgb;
 
 	vec3 direct_diffuse = pre_temporal_direct_diffuse_sample.rgb;
-	vec3 indirect_diffuse = imageLoad(final_atrous_indirect_diffuse, pix).rgb;
+	const bool use_sh_indirect_diffuse = (ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0;
+	vec3 indirect_diffuse = use_sh_indirect_diffuse
+		? imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb
+		: imageLoad(final_atrous_indirect_diffuse, pix).rgb;
 	vec3 diffuse = direct_diffuse + indirect_diffuse;
 	vec3 specular = pre_temporal_direct_specular_sample.rgb + restoreSpecular(pre_temporal_indirect_specular_sample.rgb, base_color, metalness);
 
