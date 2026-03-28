@@ -334,7 +334,7 @@ static qboolean createPipelines( void )
 				return false;
 		}
 
-				{
+		{
 			spec_data.alpha_test_threshold = 0.f;
 			ci.depthWriteEnable = VK_FALSE;
 			ci.depthTestEnable = VK_TRUE;
