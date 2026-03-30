@@ -257,6 +257,24 @@ void R_SceneMapDestroy( void ) {
 	R_BrushModelDestroyAll();
 }
 
+static void R_ClearModelDecalChains( void )
+{
+	int i, j;
+	model_t *m;
+
+	for( i = 0; i < gp_cl->nummodels; i++ )
+	{
+		if(( m = R_ModelHandle( i + 1 )) == NULL )
+			continue;
+
+		if( m->name[0] == '*' || m->type != mod_brush )
+			continue;
+
+		for( j = 0; j < m->numsurfaces; j++ )
+			m->surfaces[j].pdecals = NULL;
+	}
+}
+
 // tell the renderer what new map is started
 void R_NewMap( void ) {
 	const model_t *const map = WORLDMODEL;
@@ -273,6 +291,7 @@ void R_NewMap( void ) {
 	VK_EntityDataClear();
 
 	R_ClearDecals();
+	R_ClearModelDecalChains();
 
 	RT_FrameDiscontinuity();
 

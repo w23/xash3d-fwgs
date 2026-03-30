@@ -636,7 +636,7 @@ static void R_DecalSurface( msurface_t *surf, decalinfo_t *decalinfo )
 	{
 		// NOTE: we may have the decal on this surface that come from another level.
 		// check duplicate with same position and texture
-		while( decal != NULL && decal != decal->pnext ) // fix infinite loop
+		while( decal != NULL )
 		{
 			if( VectorCompare( decal->position, decalinfo->m_Position ) && decal->texture == decalinfo->m_iTexture )
 				return; // decal already exists, don't place it again
