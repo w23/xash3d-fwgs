@@ -12,8 +12,9 @@ void traceDecals(inout RayPayloadPrimary payload) {
 
 	const vec3 geometry_normal = normalDecode(payload.normals_gs.xy);
 
-	const vec3 pos = payload.hit_t.xyz;
-	const vec3 dir = geometry_normal;
+	// trace from outside to polygon for right face culling
+	const vec3 pos = payload.hit_t.xyz + geometry_normal * MAX_DECALS_DISTANCE;
+	const vec3 dir = -geometry_normal;
 	const float L = MAX_DECALS_DISTANCE;
 
 	struct DecalEntry {
