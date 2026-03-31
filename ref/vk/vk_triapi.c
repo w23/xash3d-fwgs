@@ -96,9 +96,24 @@ void TriBegin( int primitive_mode ) {
 	g_triapi.num_vertices = 0;
 }
 
-/* static int genTrianglesIndices(void) { */
-/* 	return 0; */
-/* } */
+static int genTrianglesIndices(void) {
+	int num_indices = 0;
+	uint16_t *const dst_idx = g_triapi.indices;
+	const int num_vertices = g_triapi.num_vertices - (g_triapi.num_vertices % 3);
+
+	for (int i = 0; i < num_vertices; i += 3) {
+		if (num_indices > MAX_TRIAPI_INDICES - 3) {
+			gEngine.Con_Printf(S_ERROR "Triapi ran out of indices space, max %d (vertices=%d)\n", MAX_TRIAPI_INDICES, g_triapi.num_vertices);
+			break;
+		}
+
+		dst_idx[num_indices++] = i;
+		dst_idx[num_indices++] = i + 1;
+		dst_idx[num_indices++] = i + 2;
+	}
+
+	return num_indices;
+}
 
 static int genQuadsIndices(void) {
 	int num_indices = 0;
@@ -186,9 +201,7 @@ void TriEndEx( const vec4_t color, const char* name ) {
 
 	int num_indices = 0;
 	switch(g_triapi.primitive_mode - 1) {
-		/* case TRI_TRIANGLES: */
-		/* 	num_indices = genTrianglesIndices(); */
-		/* 	break; */
+		case TRI_TRIANGLES: num_indices = genTrianglesIndices(); break;
 		case TRI_TRIANGLE_STRIP: num_indices = genTriangleStripIndices(); break;
 		case TRI_QUADS: num_indices = genQuadsIndices(); break;
 		case TRI_POLYGON: num_indices = genPolygonIndices(); break;

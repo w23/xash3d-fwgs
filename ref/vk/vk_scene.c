@@ -741,6 +741,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 	}
 	APROF_SCOPE_END(draw_opaques);
+	R_DecalsFlush();
 
 	// Draw opaque beams
 	APROF_SCOPE_BEGIN(draw_opaque_beams);
@@ -764,6 +765,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 		APROF_SCOPE_END(draw_translucent);
 	}
+	R_DecalsFlush();
 
 	// Draw transparent beams
 	APROF_SCOPE_BEGIN(draw_transparent_beams);

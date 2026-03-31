@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "vk_scene.h"
 #include "vk_triapi.h"
 #include "vk_render.h"
+#include "vk_cvar.h"
 #include "r_decals.h"
 #include "r_textures.h"
 #include "xash3d_mathlib.h"
@@ -36,6 +37,7 @@ GNU General Public License for more details.
 #define MAX_DECALCLIPVERT		32	// produced vertexes of fragmented decal
 #define DECAL_CACHEENTRY		256	// MUST BE POWER OF 2 or code below needs to change!
 #define DECAL_TRANSPARENT_THRESHOLD	230	// transparent decals draw with GL_MODULATE
+#define DECAL_BATCH_VERTEX_BUDGET 900
 
 // empirically determined constants for minimizing overalpping decals
 #define MAX_OVERLAP_DECALS		6
@@ -72,12 +74,52 @@ static int	gDecalCount;
 
 matrix4x4 gDecalTransform;
 
+static struct {
+	int decals_total;
+	int batches_total;
+	qboolean initialized;
+} g_decal_stats;
+
+typedef struct {
+	decal_t *decal;
+	msurface_t *surf;
+	int lightmap;
+	int texture;
+	matrix4x4 transform;
+} vk_decal_draw_item_t;
+
+static struct {
+	vk_decal_draw_item_t items[MAX_RENDER_DECALS];
+	int count;
+} g_decal_queue;
+
+void R_DecalsFrameBegin( void )
+{
+	if( !g_decal_stats.initialized )
+	{
+		g_decal_stats.initialized = true;
+		g_decal_stats.decals_total = 0;
+		g_decal_stats.batches_total = 0;
+		return;
+	}
+
+	if( vk_decals_stats && vk_decals_stats->value != 0.0f )
+	{
+		gEngine.Con_Printf( "vk/decals: total=%d batches=%d\n", g_decal_stats.decals_total, g_decal_stats.batches_total );
+	}
+
+	g_decal_stats.decals_total = 0;
+	g_decal_stats.batches_total = 0;
+	g_decal_queue.count = 0;
+}
+
 void R_ClearDecals( void )
 {
 	memset( gDecalPool, 0, sizeof( gDecalPool ));
 	gDecalCount = 0;
 
 	Matrix4x4_LoadIdentity(gDecalTransform);
+	g_decal_queue.count = 0;
 }
 
 // unlink pdecal from any surface it's attached to
@@ -933,37 +975,161 @@ void R_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 	TriEndEx( color, "single decal" );
 }
 
-void R_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
+static int R_DecalEmitTrianglesToBatch( decal_t *pDecal, msurface_t *fa )
 {
-	decal_t		*p;
+	float *v;
+	int i, numVerts;
+	vec3_t normal, offset, bumpedPos, worldPos;
+	float sign;
 
-	if( !fa->pdecals ) return;
+	v = R_DecalSetupVerts( pDecal, fa, pDecal->texture, &numVerts );
+	if( numVerts < 3 )
+		return 0;
+
+	sign = (pDecal->psurface->flags & SURF_PLANEBACK) ? 1.0f : -1.0f;
+	VectorScale( pDecal->psurface->plane->normal, sign, normal );
+	VectorScale( normal, DECAL_DEPTH_OFFSET, offset );
+
+	for( i = 1; i < numVerts - 1; ++i )
+	{
+		float *const v0 = v;
+		float *const v1 = v + i * VERTEXSIZE;
+		float *const v2 = v + ( i + 1 ) * VERTEXSIZE;
+		float *const tri[3] = { v0, v1, v2 };
+
+		for( int k = 0; k < 3; ++k )
+		{
+			float *const tv = tri[k];
+			VectorAdd( tv, offset, bumpedPos );
+			Matrix3x4_VectorTransform( gDecalTransform, bumpedPos, worldPos );
+
+			TriTexCoord2f( tv[3], tv[4] );
+			TriLightmapCoord2f( tv[5], tv[6] );
+			TriVertex3fv( worldPos );
+			TriNormal3fv( normal );
+		}
+	}
+
+	return ( numVerts - 2 ) * 3;
+}
+
+static int R_DecalDrawItemCompare( const void *a, const void *b )
+{
+	const vk_decal_draw_item_t *da = (const vk_decal_draw_item_t *)a;
+	const vk_decal_draw_item_t *db = (const vk_decal_draw_item_t *)b;
+
+	if( da->lightmap < db->lightmap ) return -1;
+	if( da->lightmap > db->lightmap ) return 1;
+	if( da->texture < db->texture ) return -1;
+	if( da->texture > db->texture ) return 1;
+	return 0;
+}
+
+static void R_DecalQueuePush( decal_t *decal, msurface_t *fa )
+{
+	if( !decal || !decal->texture )
+		return;
+
+	if( g_decal_queue.count >= MAX_RENDER_DECALS )
+	{
+		WARN_THROTTLED( 10, "decal queue overflow, dropping decals\n" );
+		return;
+	}
+
+	vk_decal_draw_item_t *const item = &g_decal_queue.items[g_decal_queue.count++];
+	item->decal = decal;
+	item->surf = fa;
+	item->lightmap = fa->lightmaptexturenum + 1;
+	item->texture = decal->texture;
+	Matrix4x4_Copy( item->transform, gDecalTransform );
+}
+
+void R_DecalsFlush( void )
+{
+	int current_lightmap = -1;
+	int current_texture = -1;
+	int batch_vertices = 0;
+	qboolean batch_open = false;
+	const vec4_t batch_color = { 1, 1, 1, 1 };
+
+	if( g_decal_queue.count <= 0 )
+		return;
+
+	qsort( g_decal_queue.items, g_decal_queue.count, sizeof( g_decal_queue.items[0] ), R_DecalDrawItemCompare );
 
 	TriRenderType( kVkRenderType_Decal );
-	TriSetLightmap( fa->lightmaptexturenum + 1 );
+
+	for( int i = 0; i < g_decal_queue.count; ++i )
+	{
+		const vk_decal_draw_item_t *const item = &g_decal_queue.items[i];
+		const qboolean split =
+			current_lightmap != item->lightmap ||
+			current_texture != item->texture ||
+			batch_vertices >= DECAL_BATCH_VERTEX_BUDGET;
+
+		if( split )
+		{
+			if( batch_open )
+				TriEndEx( batch_color, "batched decals" );
+
+			if( current_lightmap != item->lightmap )
+			{
+				TriSetLightmap( item->lightmap );
+				current_lightmap = item->lightmap;
+			}
+
+			TriSetTexture( item->texture );
+			TriColor4f( 1, 1, 1, 1 );
+			TriBegin( TRI_TRIANGLES );
+			current_texture = item->texture;
+			batch_vertices = 0;
+			batch_open = true;
+			++g_decal_stats.batches_total;
+		}
+
+		Matrix4x4_Copy( gDecalTransform, item->transform );
+		{
+			const int emitted = R_DecalEmitTrianglesToBatch( item->decal, item->surf );
+			if( emitted > 0 )
+			{
+				batch_vertices += emitted;
+				++g_decal_stats.decals_total;
+			}
+		}
+	}
+
+	if( batch_open )
+		TriEndEx( batch_color, "batched decals" );
+
+	TriSetLightmap( 0 );
+	TriRenderMode( kRenderNormal );
+	g_decal_queue.count = 0;
+}
+
+void R_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
+{
+	decal_t *p;
+	(void)single;
+
+	if( !fa || !fa->pdecals )
+		return;
 
 	if( reverse )
 	{
-		decal_t	*list[1024];
-		int	i, count;
+		decal_t *list[1024];
+		int i, count;
 
 		for( p = fa->pdecals, count = 0; p && count < 1024; p = p->pnext )
 			if( p->texture ) list[count++] = p;
 
-		for( i = count - 1; i >= 0; i-- )
-			R_DrawSingleDecal( list[i], fa );
+		for( i = count - 1; i >= 0; --i )
+			R_DecalQueuePush( list[i], fa );
 	}
 	else
 	{
 		for( p = fa->pdecals; p; p = p->pnext )
-		{
-			if( !p->texture ) continue;
-			R_DrawSingleDecal( p, fa );
-		}
+			R_DecalQueuePush( p, fa );
 	}
-
-	TriSetLightmap( 0 );
-	TriRenderMode( kRenderNormal );
 }
 
 /*

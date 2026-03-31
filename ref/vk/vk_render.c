@@ -18,6 +18,7 @@
 #include "std/profiler.h"
 #include "r_speeds.h"
 #include "camera.h"
+#include "r_decals.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -502,6 +503,7 @@ void VK_RenderBegin( qboolean ray_tracing ) {
 	g_render_state.current_frame_is_ray_traced = ray_tracing;
 
 	R_GeometryBuffer_Flip();
+	R_DecalsFrameBegin();
 
 	if (ray_tracing)
 		VK_RayFrameBegin();
