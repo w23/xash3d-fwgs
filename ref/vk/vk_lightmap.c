@@ -30,6 +30,7 @@ xvk_lightmap_state_t g_lightmap;
 static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3]; // This is just a temp HDR-ish buffer for lightmap generation
 static qboolean g_force_full_rebuild = false;
 static qboolean g_prev_dlights_active = false;
+static qboolean g_prev_lm_dlights_mode = true;
 
 static qboolean LM_HasActiveDlights( void )
 {
@@ -257,7 +258,7 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 	}
 
 	// add all the dynamic lights
-	if( dynamic )
+	if( dynamic && CVAR_TO_BOOL( vk_lightmap_dlights ) )
 		R_AddDynamicLights( surf, smax, tmax, (float)sample_size );
 
 	// Put into texture format
@@ -341,6 +342,7 @@ void VK_ClearLightmap( void )
 	gl_lms.current_lightmap_texture = 0;
 	g_force_full_rebuild = false;
 	g_prev_dlights_active = false;
+	g_prev_lm_dlights_mode = true;
 
 	LM_InitBlock();
 }
@@ -380,7 +382,16 @@ void VK_UpdateLightmapsIfNeeded( void )
 		return;
 
 	qboolean have_dirty = false;
-	const qboolean have_active_dlights = LM_HasActiveDlights();
+	const qboolean use_lm_dlights = CVAR_TO_BOOL( vk_lightmap_dlights );
+	const qboolean have_active_dlights = use_lm_dlights ? LM_HasActiveDlights() : false;
+
+	if( use_lm_dlights != g_prev_lm_dlights_mode )
+	{
+		for( int atlas = 0; atlas < atlas_count; ++atlas )
+			gl_lms.dirty_atlas[atlas] = true;
+		have_dirty = true;
+		g_prev_dlights_active = false;
+	}
 
 	if( g_force_full_rebuild )
 	{
@@ -407,13 +418,17 @@ void VK_UpdateLightmapsIfNeeded( void )
 		}
 	}
 
-	if( have_active_dlights || g_prev_dlights_active )
+	if( use_lm_dlights && ( have_active_dlights || g_prev_dlights_active ) )
 	{
 		for( int atlas = 0; atlas < atlas_count; ++atlas )
 			gl_lms.dirty_atlas[atlas] = true;
 		have_dirty = true;
 	}
-	g_prev_dlights_active = have_active_dlights;
+	if( use_lm_dlights )
+		g_prev_dlights_active = have_active_dlights;
+	else
+		g_prev_dlights_active = false;
+	g_prev_lm_dlights_mode = use_lm_dlights;
 
 	if( !have_dirty )
 		return;

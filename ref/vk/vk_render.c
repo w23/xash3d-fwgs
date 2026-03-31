@@ -607,6 +607,7 @@ static uint32_t writeDlightsToUBO( void )
 {
 	vk_ubo_lights_t* ubo_lights;
 	int num_lights = 0;
+	const qboolean use_lightmap_dlights = CVAR_TO_BOOL( vk_lightmap_dlights );
 	const uint32_t ubo_lights_offset = allocUniform(sizeof(*ubo_lights), 4);
 	if (ubo_lights_offset == UINT32_MAX) {
 		gEngine.Con_Printf(S_ERROR "Cannot allocate UBO for DLights\n");
@@ -614,25 +615,26 @@ static uint32_t writeDlightsToUBO( void )
 	}
 	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
 
-	// TODO this should not be here (where? vk_scene?)
-	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
-		const dlight_t *l = globals.dlights + i;
-		if( !l || l->die < gp_cl->time || !l->radius )
-			continue;
-		Vector4Set(
-			ubo_lights->light[num_lights].color,
-			l->color.r / 255.f,
-			l->color.g / 255.f,
-			l->color.b / 255.f,
-			1.f);
-		Vector4Set(
-			ubo_lights->light[num_lights].pos_r,
-			l->origin[0],
-			l->origin[1],
-			l->origin[2],
-			l->radius);
+	if( !use_lightmap_dlights && globals.dlights ) {
+		for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
+			const dlight_t *l = globals.dlights + i;
+			if( !l || l->die < gp_cl->time || !l->radius )
+				continue;
+			Vector4Set(
+				ubo_lights->light[num_lights].color,
+				l->color.r / 255.f,
+				l->color.g / 255.f,
+				l->color.b / 255.f,
+				l->minlight);
+			Vector4Set(
+				ubo_lights->light[num_lights].pos_r,
+				l->origin[0],
+				l->origin[1],
+				l->origin[2],
+				l->radius);
 
-		num_lights++;
+			num_lights++;
+		}
 	}
 
 	ubo_lights->num_lights = num_lights;
