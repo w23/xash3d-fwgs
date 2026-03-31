@@ -364,42 +364,22 @@ static void LM_RebuildAtlas( const model_t *world, int atlas )
 		LM_SetCacheState( surf );
 	}
 }
-
-void VK_ForceRebuildLightmaps( void )
+static qboolean LM_MarkAllAtlasesDirty( int atlas_count )
 {
-	// Used when switching RT->raster to prepare a fresh fallback lightmap.
-	g_force_full_rebuild = true;
+	qboolean marked = false;
+	for( int atlas = 0; atlas < atlas_count; ++atlas )
+	{
+		if( gl_lms.dirty_atlas[atlas] )
+			continue;
+		gl_lms.dirty_atlas[atlas] = true;
+		marked = true;
+	}
+	return marked;
 }
 
-void VK_UpdateLightmapsIfNeeded( void )
+static qboolean LM_MarkDirtyByLightstyles( const model_t *world, int atlas_count )
 {
-	const model_t *const world = WORLDMODEL;
-	if( !world || !world->lightdata )
-		return;
-
-	const int atlas_count = gl_lms.current_lightmap_texture;
-	if( atlas_count <= 0 )
-		return;
-
 	qboolean have_dirty = false;
-	const qboolean use_lm_dlights = CVAR_TO_BOOL( vk_lightmap_dlights );
-	const qboolean have_active_dlights = use_lm_dlights ? LM_HasActiveDlights() : false;
-
-	if( use_lm_dlights != g_prev_lm_dlights_mode )
-	{
-		for( int atlas = 0; atlas < atlas_count; ++atlas )
-			gl_lms.dirty_atlas[atlas] = true;
-		have_dirty = true;
-		g_prev_dlights_active = false;
-	}
-
-	if( g_force_full_rebuild )
-	{
-		for( int atlas = 0; atlas < atlas_count; ++atlas )
-			gl_lms.dirty_atlas[atlas] = true;
-		have_dirty = true;
-		g_force_full_rebuild = false;
-	}
 
 	for( int i = 0; i < world->numsurfaces; ++i )
 	{
@@ -411,28 +391,18 @@ void VK_UpdateLightmapsIfNeeded( void )
 		if( atlas < 0 || atlas >= atlas_count )
 			continue;
 
-		if( LM_IsSurfaceDirty( surf ) )
-		{
-			gl_lms.dirty_atlas[atlas] = true;
-			have_dirty = true;
-		}
-	}
+		if( !LM_IsSurfaceDirty( surf ) )
+			continue;
 
-	if( use_lm_dlights && ( have_active_dlights || g_prev_dlights_active ) )
-	{
-		for( int atlas = 0; atlas < atlas_count; ++atlas )
-			gl_lms.dirty_atlas[atlas] = true;
+		gl_lms.dirty_atlas[atlas] = true;
 		have_dirty = true;
 	}
-	if( use_lm_dlights )
-		g_prev_dlights_active = have_active_dlights;
-	else
-		g_prev_dlights_active = false;
-	g_prev_lm_dlights_mode = use_lm_dlights;
 
-	if( !have_dirty )
-		return;
+	return have_dirty;
+}
 
+static void LM_UploadDirtyAtlases( const model_t *world, int atlas_count )
+{
 	for( int atlas = 0; atlas < atlas_count; ++atlas )
 	{
 		if( !gl_lms.dirty_atlas[atlas] )
@@ -450,6 +420,44 @@ void VK_UpdateLightmapsIfNeeded( void )
 		tglob.lightmapTextures[atlas] = tex;
 		gl_lms.dirty_atlas[atlas] = false;
 	}
+}
+
+void VK_ForceRebuildLightmaps( void )
+{
+	// Used when switching RT->raster to prepare a fresh fallback lightmap.
+	g_force_full_rebuild = true;
+}
+
+void VK_UpdateLightmapsIfNeeded( void )
+{
+	const model_t *const world = WORLDMODEL;
+	if( !world || !world->lightdata )
+		return;
+
+	const int atlas_count = gl_lms.current_lightmap_texture;
+	if( atlas_count <= 0 )
+		return;
+
+	const qboolean use_lm_dlights = CVAR_TO_BOOL( vk_lightmap_dlights );
+	const qboolean have_active_dlights = use_lm_dlights ? LM_HasActiveDlights() : false;
+	const qboolean dlight_mode_changed = use_lm_dlights != g_prev_lm_dlights_mode;
+	const qboolean dlight_activity_changed = use_lm_dlights && ( have_active_dlights || g_prev_dlights_active );
+	const qboolean need_full_dirty = g_force_full_rebuild || dlight_mode_changed || dlight_activity_changed;
+
+	qboolean have_dirty = false;
+	if( need_full_dirty )
+		have_dirty |= LM_MarkAllAtlasesDirty( atlas_count );
+
+	have_dirty |= LM_MarkDirtyByLightstyles( world, atlas_count );
+
+	g_force_full_rebuild = false;
+	g_prev_dlights_active = use_lm_dlights ? have_active_dlights : false;
+	g_prev_lm_dlights_mode = use_lm_dlights;
+
+	if( !have_dirty )
+		return;
+
+	LM_UploadDirtyAtlases( world, atlas_count );
 }
 
 void VK_RunLightStyles( lightstyle_t *styles )
@@ -515,3 +523,5 @@ void VK_RunLightStyles( lightstyle_t *styles )
 		g_lightmap.lightstylevalue[i] = (int)l * scale;
 	}
 }
+
+

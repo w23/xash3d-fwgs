@@ -25,7 +25,6 @@ void VK_LoadCvars( void )
 	cl_lightstyle_lerping = gEngine.pfnGetCvarPointer( "cl_lightstyle_lerping", 0 );
 	r_lightmap = gEngine.Cvar_Get( "r_lightmap", "0", FCVAR_CHEAT, "lightmap debugging tool" );
 	vk_lightmap_dlights = gEngine.Cvar_Get( "vk_lightmap_dlights", "0", FCVAR_ARCHIVE, "Upload dlights with lightmap altas every frame (1) or apply dlights in shader (0)" );
-	vk_lightmap_update_full_atlas = gEngine.Cvar_Get( "vk_lightmap_update_full_atlas", "0", FCVAR_ARCHIVE, "Use full-atlas lightmap updates (1) instead of region updates (0)" );
 	r_infotool = gEngine.Cvar_Get( "r_infotool", "0", FCVAR_CHEAT, "DEBUG: print entity info under crosshair" );
 	rt_force_disable = gEngine.Cvar_Get( "rt_force_disable", "0", FCVAR_GLCONFIG, "Force disable Ray Tracing" );
 	vk_device_target_id = gEngine.Cvar_Get( "vk_device_target_id", "", FCVAR_GLCONFIG, "Selected video device id" );
