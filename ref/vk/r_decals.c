@@ -21,12 +21,14 @@ GNU General Public License for more details.
 #include "vk_scene.h"
 #include "vk_triapi.h"
 #include "vk_render.h"
-#include "vk_cvar.h"
+#include "r_speeds.h"
 #include "r_decals.h"
 #include "r_textures.h"
 #include "xash3d_mathlib.h"
 
 #include <stdlib.h>
+
+#define MODULE_NAME "decals"
 
 // increase on z-fighting
 #define DECAL_DEPTH_OFFSET -0.2f
@@ -100,12 +102,9 @@ void R_DecalsFrameBegin( void )
 		g_decal_stats.initialized = true;
 		g_decal_stats.decals_total = 0;
 		g_decal_stats.batches_total = 0;
+		R_SPEEDS_COUNTER( g_decal_stats.decals_total, "decals unique", kSpeedsMetricCount );
+		R_SPEEDS_COUNTER( g_decal_stats.batches_total, "decals batches", kSpeedsMetricCount );
 		return;
-	}
-
-	if( vk_decals_stats && vk_decals_stats->value != 0.0f )
-	{
-		gEngine.Con_Printf( "vk/decals: total=%d batches=%d\n", g_decal_stats.decals_total, g_decal_stats.batches_total );
 	}
 
 	g_decal_stats.decals_total = 0;
