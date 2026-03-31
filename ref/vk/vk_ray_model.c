@@ -251,7 +251,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	RT_VkAccelAddDrawInstance(&draw_instance);
 }
 
-#define MAX_RT_DYNAMIC_GEOMETRIES 256
+#define MAX_RT_DYNAMIC_GEOMETRIES 4096
 #define MAX_RT_DYNAMIC_GEOMETRIES_VERTICES 256
 #define MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES 256
 
@@ -366,7 +366,7 @@ void RT_FrameAddOnce( rt_frame_add_once_t args ) {
 
 	for (int i = 0; i < args.geometries_count; ++i) {
 		if (dyn->geometries_count == MAX_RT_DYNAMIC_GEOMETRIES) {
-			ERROR_THROTTLED(1, "Too many dynamic geometries for mode %s\n", group_names[material_mode]);
+			ERROR_THROTTLED(1, "Too many (>%d) dynamic geometries for mode %s\n", MAX_RT_DYNAMIC_GEOMETRIES, group_names[material_mode]);
 			break;
 		}
 

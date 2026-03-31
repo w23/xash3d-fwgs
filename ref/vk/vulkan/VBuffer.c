@@ -100,7 +100,7 @@ void R_DEBuffer_Flip(r_debuffer_t* debuf) {
 }
 
 #define MAX_STAGING_BUFFERS 16
-#define MAX_STAGING_ENTRIES 2048
+#define MAX_STAGING_ENTRIES 4096
 
 // TODO this should be part of the vk_buffer_t object itself
 typedef struct {
