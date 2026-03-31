@@ -13,6 +13,10 @@ typedef struct
 {
 	int		allocated[BLOCK_SIZE_MAX];
 	int		current_lightmap_texture;
+	int		textures[MAX_LIGHTMAPS][2];
+	byte		active_bank[MAX_LIGHTMAPS];
+	byte		dirty_atlas[MAX_LIGHTMAPS];
+	char		texture_names[MAX_LIGHTMAPS][2][24];
 	//msurface_t	*dynamic_surfaces;
 	//msurface_t	*lightmap_surfaces[MAX_LIGHTMAPS];
 	byte		lightmap_buffer[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*4];
@@ -24,6 +28,129 @@ xvk_lightmap_state_t g_lightmap;
 
 // TODO this doesn't really need to be this huge
 static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3]; // This is just a temp HDR-ish buffer for lightmap generation
+static qboolean g_force_full_rebuild = false;
+static qboolean g_prev_dlights_active = false;
+
+static qboolean LM_HasActiveDlights( void )
+{
+	if( !globals.dlights )
+		return false;
+
+	for( int i = 0; i < MAX_DLIGHTS; ++i )
+	{
+		const dlight_t *const dl = globals.dlights + i;
+		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
+			continue;
+		return true;
+	}
+
+	return false;
+}
+
+static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, float sample_size )
+{
+	const mextrasurf_t *const info = surf->info;
+
+	if( !globals.dlights )
+		return;
+
+	for( int lnum = 0; lnum < MAX_DLIGHTS; ++lnum )
+	{
+		const dlight_t *const dl = globals.dlights + lnum;
+		vec3_t impact;
+
+		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
+			continue;
+
+		float rad = dl->radius;
+		const float dist_plane = PlaneDiff( dl->origin, surf->plane );
+		rad -= fabsf( dist_plane );
+
+		float minlight = dl->minlight;
+		if( rad < minlight )
+			continue;
+		minlight = rad - minlight;
+
+		if( surf->plane->type < 3 )
+		{
+			VectorCopy( dl->origin, impact );
+			impact[surf->plane->type] -= dist_plane;
+		}
+		else
+		{
+			VectorMA( dl->origin, -dist_plane, surf->plane->normal, impact );
+		}
+
+		const float sl = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
+		const float tl = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
+
+		for( int t = 0; t < tmax; ++t )
+		{
+			int td = (int)(tl - sample_size * t);
+			if( td < 0 )
+				td = -td;
+
+			for( int s = 0; s < smax; ++s )
+			{
+				int sd = (int)(sl - sample_size * s);
+				if( sd < 0 )
+					sd = -sd;
+
+				const float dist = sd > td ? (float)(sd + (td >> 1)) : (float)(td + (sd >> 1));
+				if( dist >= minlight )
+					continue;
+
+				uint *const bl = &r_blocklights[(s + (t * smax)) * 3];
+				const int add = (int)((rad - dist) * 256.f);
+				bl[0] += (add * dl->color.r) / 256;
+				bl[1] += (add * dl->color.g) / 256;
+				bl[2] += (add * dl->color.b) / 256;
+			}
+		}
+	}
+}
+static void LM_SetCacheState( msurface_t *surf )
+{
+	for( int maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++ )
+		surf->cached_light[maps] = g_lightmap.lightstylevalue[surf->styles[maps]];
+}
+
+static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
+{
+	for( int maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++ )
+	{
+		const int style = surf->styles[maps];
+		if( g_lightmap.lightstylevalue[style] != surf->cached_light[maps] )
+			return true;
+	}
+
+	return false;
+}
+
+static int LM_UploadAtlas( int atlas, int bank, qboolean update_only )
+{
+	rgbdata_t	r_lightmap;
+	memset( &r_lightmap, 0, sizeof( r_lightmap ));
+
+	r_lightmap.width = BLOCK_SIZE;
+	r_lightmap.height = BLOCK_SIZE;
+	r_lightmap.type = PF_RGBA_32;
+	r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
+	r_lightmap.flags = IMAGE_HAS_COLOR;
+	r_lightmap.buffer = gl_lms.lightmap_buffer;
+
+	const int tex = R_TextureUploadFromBuffer(
+		gl_lms.texture_names[atlas][bank],
+		&r_lightmap,
+		TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP,
+		update_only
+	);
+
+	if( tex > 0 )
+		gl_lms.textures[atlas][bank] = tex;
+
+	return tex;
+}
 
 static void LM_InitBlock( void )
 {
@@ -66,58 +193,26 @@ static int LM_AllocBlock( int w, int h, int *x, int *y )
 	return true;
 }
 
-/*
-static void LM_UploadDynamicBlock( void )
-{
-	int	height = 0, i;
-
-	for( i = 0; i < BLOCK_SIZE; i++ )
-	{
-		if( gl_lms.allocated[i] > height )
-			height = gl_lms.allocated[i];
-	}
-
-	gEngine.Con_Printf(S_ERROR "VK NOT IMPLEMENTED %s\n", __FUNCTION__);
-	//pglTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, BLOCK_SIZE, height, GL_RGBA, GL_UNSIGNED_BYTE, gl_lms.lightmap_buffer );
-}
-*/
-
 static void LM_UploadBlock( qboolean dynamic )
 {
-	int	i;
-
 	if( dynamic )
 	{
-		int	height = 0;
-
-		for( i = 0; i < BLOCK_SIZE; i++ )
-		{
-			if( gl_lms.allocated[i] > height )
-				height = gl_lms.allocated[i];
-		}
-
-		gEngine.Con_Printf(S_ERROR "VK NOT IMPLEMENTED %s dynamic \n", __FUNCTION__);
-		/* GL_Bind( XASH_TEXTURE0, gl_lms.dlightTexture ); */
-		/* pglTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, BLOCK_SIZE, height, GL_RGBA, GL_UNSIGNED_BYTE, gl_lms.lightmap_buffer ); */
+		// Dynamic updates are done by VK_UpdateLightmapsIfNeeded().
+		return;
 	}
 	else
 	{
-		rgbdata_t	r_lightmap;
-		char	lmName[16];
+		int i = gl_lms.current_lightmap_texture;
 
-		i = gl_lms.current_lightmap_texture;
+		Q_snprintf( gl_lms.texture_names[i][0], sizeof( gl_lms.texture_names[i][0] ), "*lightmap%i", i );
+		Q_snprintf( gl_lms.texture_names[i][1], sizeof( gl_lms.texture_names[i][1] ), "*lightmap%i_b", i );
+		gl_lms.active_bank[i] = 0;
+		gl_lms.dirty_atlas[i] = false;
+		gl_lms.textures[i][1] = 0;
 
-		// upload static lightmaps only during loading
-		memset( &r_lightmap, 0, sizeof( r_lightmap ));
-		Q_snprintf( lmName, sizeof( lmName ), "*lightmap%i", i );
-
-		r_lightmap.width = BLOCK_SIZE;
-		r_lightmap.height = BLOCK_SIZE;
-		r_lightmap.type = PF_RGBA_32;
-		r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
-		r_lightmap.flags = IMAGE_HAS_COLOR;
-		r_lightmap.buffer = gl_lms.lightmap_buffer;
-		tglob.lightmapTextures[i] = R_TextureUploadFromBuffer( lmName, &r_lightmap, TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP, false );
+		tglob.lightmapTextures[i] = LM_UploadAtlas( i, 0, false );
+		if( tglob.lightmapTextures[i] <= 0 )
+			gEngine.Host_Error( "%s: failed to upload lightmap atlas %d\n", __FUNCTION__, i );
 
 		if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 			gEngine.Host_Error( "AllocBlock: full\n" );
@@ -161,11 +256,9 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 		}
 	}
 
-	/* TODO
 	// add all the dynamic lights
-	if( surf->dlightframe == gl_lms.framecount && dynamic )
-		R_AddDynamicLights( surf );
-	*/
+	if( dynamic )
+		R_AddDynamicLights( surf, smax, tmax, (float)sample_size );
 
 	// Put into texture format
 	stride -= (smax << 2);
@@ -217,8 +310,8 @@ void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel )
 	base = gl_lms.lightmap_buffer;
 	base += ( surf->light_t * BLOCK_SIZE + surf->light_s ) * 4;
 
-	// FIXME R_SetCacheState( surf );
 	R_BuildLightMap( surf, base, BLOCK_SIZE * 4, false );
+	LM_SetCacheState( surf );
 }
 
 void VK_UploadLightmap( void )
@@ -229,10 +322,119 @@ void VK_UploadLightmap( void )
 void VK_ClearLightmap( void )
 {
 	for (int i = 0; i < gl_lms.current_lightmap_texture; ++i)
-		R_TextureFree(tglob.lightmapTextures[i]);
+	{
+		for( int bank = 0; bank < 2; ++bank )
+		{
+			const int tex = gl_lms.textures[i][bank];
+			if( tex > 0 )
+				R_TextureFree( tex );
+		}
+
+		tglob.lightmapTextures[i] = 0;
+		gl_lms.textures[i][0] = 0;
+		gl_lms.textures[i][1] = 0;
+		gl_lms.active_bank[i] = 0;
+		gl_lms.dirty_atlas[i] = false;
+		gl_lms.texture_names[i][0][0] = '\0';
+		gl_lms.texture_names[i][1][0] = '\0';
+	}
 	gl_lms.current_lightmap_texture = 0;
+	g_force_full_rebuild = false;
+	g_prev_dlights_active = false;
 
 	LM_InitBlock();
+}
+
+static void LM_RebuildAtlas( const model_t *world, int atlas )
+{
+	memset( gl_lms.lightmap_buffer, 0, sizeof( gl_lms.lightmap_buffer ));
+
+	for( int i = 0; i < world->numsurfaces; ++i )
+	{
+		msurface_t *surf = world->surfaces + i;
+		if( FBitSet( surf->flags, SURF_DRAWTILED ) || !surf->samples )
+			continue;
+		if( surf->lightmaptexturenum != atlas )
+			continue;
+
+		byte *base = gl_lms.lightmap_buffer + ( surf->light_t * BLOCK_SIZE + surf->light_s ) * 4;
+		R_BuildLightMap( surf, base, BLOCK_SIZE * 4, true );
+		LM_SetCacheState( surf );
+	}
+}
+
+void VK_ForceRebuildLightmaps( void )
+{
+	// Used when switching RT->raster to prepare a fresh fallback lightmap.
+	g_force_full_rebuild = true;
+}
+
+void VK_UpdateLightmapsIfNeeded( void )
+{
+	const model_t *const world = WORLDMODEL;
+	if( !world || !world->lightdata )
+		return;
+
+	const int atlas_count = gl_lms.current_lightmap_texture;
+	if( atlas_count <= 0 )
+		return;
+
+	qboolean have_dirty = false;
+	const qboolean have_active_dlights = LM_HasActiveDlights();
+
+	if( g_force_full_rebuild )
+	{
+		for( int atlas = 0; atlas < atlas_count; ++atlas )
+			gl_lms.dirty_atlas[atlas] = true;
+		have_dirty = true;
+		g_force_full_rebuild = false;
+	}
+
+	for( int i = 0; i < world->numsurfaces; ++i )
+	{
+		const msurface_t *const surf = world->surfaces + i;
+		if( FBitSet( surf->flags, SURF_DRAWTILED ) || !surf->samples )
+			continue;
+
+		const int atlas = surf->lightmaptexturenum;
+		if( atlas < 0 || atlas >= atlas_count )
+			continue;
+
+		if( LM_IsSurfaceDirty( surf ) )
+		{
+			gl_lms.dirty_atlas[atlas] = true;
+			have_dirty = true;
+		}
+	}
+
+	if( have_active_dlights || g_prev_dlights_active )
+	{
+		for( int atlas = 0; atlas < atlas_count; ++atlas )
+			gl_lms.dirty_atlas[atlas] = true;
+		have_dirty = true;
+	}
+	g_prev_dlights_active = have_active_dlights;
+
+	if( !have_dirty )
+		return;
+
+	for( int atlas = 0; atlas < atlas_count; ++atlas )
+	{
+		if( !gl_lms.dirty_atlas[atlas] )
+			continue;
+
+		LM_RebuildAtlas( world, atlas );
+
+		const int upload_bank = gl_lms.active_bank[atlas] ^ 1;
+		const qboolean update_only = gl_lms.textures[atlas][upload_bank] > 0;
+		const int tex = LM_UploadAtlas( atlas, upload_bank, update_only );
+		if( tex <= 0 )
+			continue;
+
+		gl_lms.active_bank[atlas] = upload_bank;
+		tglob.lightmapTextures[atlas] = tex;
+		gl_lms.dirty_atlas[atlas] = false;
+	}
 }
 
 void VK_RunLightStyles( lightstyle_t *styles )
