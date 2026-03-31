@@ -924,6 +924,7 @@ void R_DrawSingleDecal( decal_t *pDecal, msurface_t *fa )
 		Matrix3x4_VectorTransform(gDecalTransform, bumpedPos, worldPos);
 
 		TriTexCoord2f( v[3], v[4] );
+		TriLightmapCoord2f( v[5], v[6] );
 		TriVertex3fv( worldPos );
 		TriNormal3fv( normal );
 	}
@@ -939,6 +940,7 @@ void R_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 	if( !fa->pdecals ) return;
 
 	TriRenderType( kVkRenderType_Decal );
+	TriSetLightmap( fa->lightmaptexturenum + 1 );
 
 	if( reverse )
 	{
@@ -960,6 +962,7 @@ void R_DrawSurfaceDecals( msurface_t *fa, qboolean single, qboolean reverse )
 		}
 	}
 
+	TriSetLightmap( 0 );
 	TriRenderMode( kRenderNormal );
 }
 

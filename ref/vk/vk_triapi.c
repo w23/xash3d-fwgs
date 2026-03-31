@@ -16,6 +16,7 @@ static struct {
 	int num_vertices;
 	int primitive_mode;
 	int texture_index;
+	int lightmap_index;
 
 	vk_render_type_e render_type;
 
@@ -23,7 +24,11 @@ static struct {
 } g_triapi = {0};
 
 void TriSetTexture( int texture_index ) {
-	g_triapi.texture_index = texture_index;
+	 g_triapi.texture_index = texture_index;
+}
+
+void TriSetLightmap( int lightmap_index ) {
+	 g_triapi.lightmap_index = lightmap_index;
 }
 
 int TriSpriteTexture( model_t *pSpriteModel, int frame )
@@ -202,6 +207,7 @@ void TriEndEx( const vec4_t color, const char* name ) {
 			.render_type = g_triapi.render_type,
 			.material = R_VkMaterialGetForTexture(g_triapi.texture_index),
 			.ye_olde_texture = g_triapi.texture_index,
+			.lightmap = g_triapi.lightmap_index,
 			.emissive = (const vec4_t*)color,
 			.color = (const vec4_t*)color,
 		});
@@ -214,6 +220,11 @@ void TriEndEx( const vec4_t color, const char* name ) {
 void TriTexCoord2f( float u, float v ) {
 	vk_vertex_t *const ve = g_triapi.vertices + g_triapi.num_vertices;
 	Vector2Set(ve->gl_tc, u, v);
+}
+
+void TriLightmapCoord2f( float u, float v ) {
+	vk_vertex_t *const ve = g_triapi.vertices + g_triapi.num_vertices;
+	Vector2Set(ve->lm_tc, u, v);
 }
 
 void TriVertex3fv( const float *v ) {

@@ -160,6 +160,7 @@ typedef struct {
 	int render_type;
 	r_vk_material_t material;
 	int ye_olde_texture;
+	int lightmap;
 	const vec4_t *emissive;
 	const vec4_t *color;
 } r_draw_once_t;

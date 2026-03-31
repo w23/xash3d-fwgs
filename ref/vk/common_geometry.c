@@ -1,4 +1,5 @@
 #include "vk_common.h"
+#include "vk_lightmap.h"
 
 #include "xash3d_types.h"
 #include "const.h"
@@ -8,11 +9,6 @@
 
 #define SUBDIVIDE_SIZE	64
 
-// FIXME this is defined dynamically based on if( FBitSet( ENGINE_GET_PARM( PARM_FEATURES ), ENGINE_LARGE_LIGHTMAPS ))
-// tr.block_size = BLOCK_SIZE_MAX; else tr.block_size = BLOCK_SIZE_DEFAULT;
-#define BLOCK_SIZE BLOCK_SIZE_DEFAULT
-#define BLOCK_SIZE_DEFAULT	128		// for keep backward compatibility
-#define BLOCK_SIZE_MAX	1024
 
 static void BoundPoly( int numverts, float *verts, vec3_t mins, vec3_t maxs )
 {

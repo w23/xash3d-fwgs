@@ -1069,7 +1069,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 		Matrix4x4_LoadIdentity(identity);
 		submitToTraditionalRender((trad_submit_t){
 			.debug_name = args.name,
-			.lightmap = 0,
+			.lightmap = args.lightmap,
 			.geometries = &geometry,
 			.geometries_count = 1,
 			.transform = &identity,
