@@ -62,6 +62,11 @@ typedef struct {
 
 	int bodyparts_count;
 	r_studio_submodel_render_t **bodyparts;
+
+	qboolean dlight_touched_prev_frame;
+	qboolean transform_initialized;
+	vec3_t prev_origin;
+	vec3_t prev_angles;
 } r_studio_entity_model_t;
 
 void VK_StudioModelInit(void);

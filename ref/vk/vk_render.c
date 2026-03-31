@@ -40,6 +40,8 @@ PROFILER_SCOPES(SCOPE_DECLARE)
 typedef struct {
 	matrix4x4 mvp;
 	vec4_t color;
+	float lighting_mode;
+	float pad_[3];
 } uniform_data_t;
 
 typedef struct {
@@ -896,6 +898,7 @@ typedef struct {
 	const vec4_t *color;
 	int render_type;
 	int textures_override;
+	vk_lighting_mode_e lighting_mode;
 } trad_submit_t;
 
 static void submitToTraditionalRender( trad_submit_t args ) {
@@ -907,6 +910,7 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+	g_render_state.dirty_uniform_data.lighting_mode = (float)args.lighting_mode;
 
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
@@ -943,13 +947,13 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 					});
 				} else {
 					render_draw_t draw = {
-						.lightmap = lightmap,
-						.texture = current_texture,
-						.pipeline_index = args.render_type,
-						.element_count = element_count,
-						.vertex_offset = vertex_offset,
-						.index_offset = index_offset,
-					};
+				.lightmap = lightmap,
+				.texture = current_texture,
+				.pipeline_index = args.render_type,
+				.element_count = element_count,
+				.vertex_offset = vertex_offset,
+				.index_offset = index_offset,
+			};
 
 					drawCmdPushDraw( &draw );
 				}
@@ -1017,6 +1021,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = args.override.old_texture,
+			.lighting_mode = args.lighting_mode,
 		});
 	}
 }
@@ -1063,6 +1068,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 			.geometries = &geometry,
 			.geometries_count = 1,
 			.transform = &identity,
+			.lighting_mode = kVkLightingMode_Brush,
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = -1,

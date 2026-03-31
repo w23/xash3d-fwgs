@@ -12,6 +12,7 @@
 #include "vk_studio_model.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
+#include "vk_lightmap.h"
 
 #include "xash3d_mathlib.h"
 #include "const.h"
@@ -107,7 +108,7 @@ typedef struct
 	int		numlocallights;
 	int		lightage[MAXSTUDIOBONES];
 	dlight_t		*locallight[MAX_LOCALLIGHTS];
-	color24		locallightcolor[MAX_LOCALLIGHTS];
+	int			locallightcolor[MAX_LOCALLIGHTS][3];
 	vec4_t		lightpos[MAXSTUDIOVERTS][MAX_LOCALLIGHTS];
 	vec3_t		lightbonepos[MAXSTUDIOBONES][MAX_LOCALLIGHTS];
 	float		locallightR2[MAX_LOCALLIGHTS];
@@ -152,6 +153,15 @@ static struct {
 	r_studio_entity_model_t *entmodel;
 	int bodypart_index;
 } g_studio_current;
+
+typedef struct {
+	int lightstyle[MAX_LIGHTSTYLES];
+	float skycolor[3];
+	float skyvec[3];
+} studio_ambient_state_t;
+
+static studio_ambient_state_t g_studio_prev_ambient_state;
+static qboolean g_studio_prev_ambient_state_initialized = false;
 
 /*
 ================
@@ -1152,13 +1162,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
 
-			light.r = LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
-			light.g = LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
-			light.b = LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
+			light.r = mv->skycolor_r;
+			light.g = mv->skycolor_g;
+			light.b = mv->skycolor_b;
 		}
 	}
 
-	if(( light.r + light.g + light.b ) < 16 ) // TESTTEST
+	if(( light.r + light.g + light.b ) == 0 )
 	{
 		colorVec	gcolor;
 		float	grad[4];
@@ -1237,9 +1247,9 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 			VectorAdd( lightDir, dist, lightDir );
 
-			finalLight[0] += LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
-			finalLight[1] += LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
-			finalLight[2] += LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
+			finalLight[0] += dl->color.r * ( add / 256.0f );
+			finalLight[1] += dl->color.g * ( add / 256.0f );
+			finalLight[2] += dl->color.b * ( add / 256.0f );
 		}
 	}
 
@@ -1340,9 +1350,9 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k].r = LightToTexGamma( el->color.r );
-				g_studio.locallightcolor[k].g = LightToTexGamma( el->color.g );
-				g_studio.locallightcolor[k].b = LightToTexGamma( el->color.b );
+				g_studio.locallightcolor[k][0] = LinearGammaTable( el->color.r << 2 );
+				g_studio.locallightcolor[k][1] = LinearGammaTable( el->color.g << 2 );
+				g_studio.locallightcolor[k][2] = LinearGammaTable( el->color.b << 2 );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;
@@ -1439,7 +1449,7 @@ static void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
 	}
 
 	illum = Q_min( illum, 255.0f );
-	*lv = illum * (1.0f / 255.0f);
+	*lv = LightToTexGamma( illum * 4 ) / 1023.0f;
 }
 
 static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, const vec3_t color, byte *out )
@@ -1453,17 +1463,18 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 		return;
 	}
 
-	VectorCopy( color, finalLight );
+	VectorSet( finalLight, 0, 0, 0 );
 
 	for( i = 0; i < g_studio.numlocallights; i++ )
 	{
 		float	r;
 
 		r = DotProduct( normal, light[i] );
-#if 0 // VKTODO
-		if( likely( !tr.fFlipViewModel ))
+
+		// Keep lighting sign consistent for mirrored (left-handed) viewmodel rendering.
+		const qboolean flip_viewmodel = ((cl_righthand && cl_righthand->value > 0 && RI.currententity == globals.viewent) || g_iBackFaceCull);
+		if( likely( !flip_viewmodel ))
 			r = -r;
-#endif
 
 		if( r > 0.0f )
 		{
@@ -1479,21 +1490,29 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 				else light[i][3] = 0.0001f;
 			}
 
-			temp = Q_min( r * light[i][3] / 255.0f, 1.0f );
+			temp = r * light[i][3];
 
-			localLight[0] = (float)g_studio.locallightcolor[i].r * temp;
-			localLight[1] = (float)g_studio.locallightcolor[i].g * temp;
-			localLight[2] = (float)g_studio.locallightcolor[i].b * temp;
-
+			VectorAddScalar( g_studio.locallightcolor[i], temp, localLight );
 			VectorAdd( finalLight, localLight, finalLight );
 		}
 	}
 
-	VectorScale( finalLight, 255.0f, finalLight );
+	if( !VectorIsNull( finalLight ))
+	{
+		for( i = 0; i < 3; i++ )
+		{
+			float c = finalLight[i] + LinearGammaTable( color[i] * 1023.0f );
 
-	out[0] = Q_min( (int)( finalLight[0] ), 255 );
-	out[1] = Q_min( (int)( finalLight[1] ), 255 );
-	out[2] = Q_min( (int)( finalLight[2] ), 255 );
+			if( c > 1023.0f )
+				out[i] = 255;
+			else
+				out[i] = ScreenGammaTable( c ) >> 2;
+		}
+	}
+	else
+	{
+		VectorScale( color, 255.0f, out );
+	}
 }
 
 static void R_StudioSetColorArray(const short *ptricmds, const vec3_t *pstudionorms, byte *color )
@@ -2354,6 +2373,7 @@ static void R_StudioDrawPoints( void ) {
 		.render_type = render_type,
 		.material_mode = material_mode,
 		.material_flags = kMaterialFlag_CullBackFace_Bit, // TODO for transparent only?
+		.lighting_mode = kVkLightingMode_Studio,
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
@@ -3655,6 +3675,176 @@ void VK_StudioShutdown( void )
 	R_StudioCacheClear();
 }
 
+static void R_StudioCaptureAmbientState( studio_ambient_state_t *state )
+{
+	ASSERT( state );
+
+	for( int i = 0; i < MAX_LIGHTSTYLES; ++i )
+		state->lightstyle[i] = g_lightmap.lightstylevalue[i];
+
+	const movevars_t *mv = MOVEVARS;
+	state->skycolor[0] = mv->skycolor_r;
+	state->skycolor[1] = mv->skycolor_g;
+	state->skycolor[2] = mv->skycolor_b;
+	state->skyvec[0] = mv->skyvec_x;
+	state->skyvec[1] = mv->skyvec_y;
+	state->skyvec[2] = mv->skyvec_z;
+}
+
+static qboolean R_StudioAmbientStateChanged( void )
+{
+	studio_ambient_state_t cur;
+	R_StudioCaptureAmbientState( &cur );
+
+	if( !g_studio_prev_ambient_state_initialized )
+	{
+		g_studio_prev_ambient_state = cur;
+		g_studio_prev_ambient_state_initialized = true;
+		return false;
+	}
+
+	for( int i = 0; i < MAX_LIGHTSTYLES; ++i )
+	{
+		if( g_studio_prev_ambient_state.lightstyle[i] != cur.lightstyle[i] )
+		{
+			g_studio_prev_ambient_state = cur;
+			return true;
+		}
+	}
+
+	for( int i = 0; i < 3; ++i )
+	{
+		if( g_studio_prev_ambient_state.skycolor[i] != cur.skycolor[i] )
+		{
+			g_studio_prev_ambient_state = cur;
+			return true;
+		}
+
+		if( g_studio_prev_ambient_state.skyvec[i] != cur.skyvec[i] )
+		{
+			g_studio_prev_ambient_state = cur;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void R_StudioMarkModelSubmodelsDynamic( r_studio_model_info_t *model_info )
+{
+	if( !model_info )
+		return;
+
+	for( int i = 0; i < model_info->submodels_count; ++i )
+		model_info->submodels[i].is_dynamic = true;
+}
+
+static qboolean R_StudioEntityTransformChanged( const cl_entity_t *ent, const r_studio_entity_model_t *entmodel )
+{
+	if( !ent || !entmodel || !entmodel->transform_initialized )
+		return false;
+
+	const float eps = 0.01f;
+	for( int i = 0; i < 3; ++i )
+	{
+		float d = ent->origin[i] - entmodel->prev_origin[i];
+		if( d < 0.0f ) d = -d;
+		if( d > eps )
+			return true;
+
+		d = ent->angles[i] - entmodel->prev_angles[i];
+		if( d < 0.0f ) d = -d;
+		if( d > eps )
+			return true;
+	}
+
+	return false;
+}
+
+static qboolean R_StudioEntityTouchedByDlights( const cl_entity_t *ent )
+{
+	if( !ent || !ent->model )
+		return false;
+
+	vec3_t center_local, center_world, bbox_size;
+	VectorAverage( ent->model->mins, ent->model->maxs, center_local );
+	VectorAdd( ent->origin, center_local, center_world );
+	VectorSubtract( ent->model->maxs, ent->model->mins, bbox_size );
+	const float model_radius = 0.5f * VectorLength( bbox_size );
+
+	for( int i = 0; i < MAX_DLIGHTS; ++i )
+	{
+		const dlight_t *const dl = globals.dlights + i;
+		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
+			continue;
+
+		vec3_t d;
+		VectorSubtract( center_world, dl->origin, d );
+		const float touch_radius = dl->radius + model_radius;
+		if( DotProduct( d, d ) <= touch_radius * touch_radius )
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * R_StudioInvalidateStaticForRelight
+ *
+ * Why this exists:
+ * - Studio submodels may be cached as "static" and then reused for many frames.
+ * - That cache is good for truly static cases (e.g. non-animated entities), but it can hold stale
+ *   baked lighting if the environment changed after the cache was built.
+ *
+ * What can make cached studio lighting stale:
+ * 1) Dynamic lights overlap model bounds in this frame.
+ * 2) Dynamic lights overlapped in previous frame, but not now.
+ *    We still need one more rebuild to remove the old dynamic contribution.
+ * 3) Model transform changed (position/angles), so light probe / BSP ambient sample can differ.
+ * 4) Global ambient state changed (lightstyles / sky ambient params), which affects sampled
+ *    background lighting even for non-moving entities.
+ *
+ * How we invalidate:
+ * - We DO NOT clear the global studio cache at runtime here (unsafe during frame; can trip
+ *   render_refcount assertions if submodels are still referenced by in-flight rendering).
+ * - Instead, we switch this model's submodels to dynamic rebuild path by setting
+ *   model_info->submodels[i].is_dynamic = true.
+ *   This reuses existing upload/rebuild flow and keeps synchronization/lifetime rules intact.
+ *
+ * Notes:
+ * - dlight_touched_now is returned to caller so VK_StudioDrawModel can store it into
+ *   entmodel->dlight_touched_prev_frame after draw.
+ * - Ambient state compare is done by direct per-field comparison (lightstyles + sky params).
+ */
+static qboolean R_StudioInvalidateStaticForRelight(
+	const cl_entity_t *ent,
+	r_studio_entity_model_t *entmodel,
+	qboolean *dlight_touched_now_out )
+{
+	ASSERT( dlight_touched_now_out );
+	*dlight_touched_now_out = false;
+
+	if( !ent || !ent->model )
+		return false;
+
+	const qboolean dlight_touched_now = R_StudioEntityTouchedByDlights( ent );
+	const qboolean dlight_touched_prev = entmodel ? entmodel->dlight_touched_prev_frame : false;
+	const qboolean entity_moved = R_StudioEntityTransformChanged( ent, entmodel );
+
+	const qboolean ambient_changed = R_StudioAmbientStateChanged();
+
+	*dlight_touched_now_out = dlight_touched_now;
+
+	if( !( dlight_touched_now || dlight_touched_prev || entity_moved || ambient_changed ))
+		return false;
+
+	r_studio_model_info_t *const model_info = entmodel
+		? (r_studio_model_info_t*)entmodel->model_info
+		: (r_studio_model_info_t*)getStudioModelInfo( ent->model );
+	R_StudioMarkModelSubmodelsDynamic( model_info );
+
+	return true;
+}
 void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
 {
 	RI.currententity = ent;
@@ -3663,7 +3853,21 @@ void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
 
 	g_studio.blend = blend;
 
+
+	r_studio_entity_model_t *const entmodel = (r_studio_entity_model_t*)VK_EntityDataGet(ent);
+	qboolean dlight_touched_now = false;
+	R_StudioInvalidateStaticForRelight( ent, entmodel, &dlight_touched_now );
+
 	R_DrawStudioModel( ent );
+
+	r_studio_entity_model_t *const entmodel_after = (r_studio_entity_model_t*)VK_EntityDataGet(ent);
+	if( entmodel_after )
+	{
+		entmodel_after->dlight_touched_prev_frame = dlight_touched_now;
+		VectorCopy( ent->origin, entmodel_after->prev_origin );
+		VectorCopy( ent->angles, entmodel_after->prev_angles );
+		entmodel_after->transform_initialized = true;
+	}
 
 	RI.currentmodel = NULL;
 	RI.currententity = NULL;

@@ -22,6 +22,7 @@ GNU General Public License for more details.
 #include "ref_params.h"
 
 #include "vk_common.h"
+#include "vk_lightmap.h"
 
 /*
 =======================================================================
@@ -148,8 +149,7 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 
 		for( map = 0; map < MAXLIGHTMAPS && surf->styles[map] != 255; map++ )
 		{
-			// FIXME VK uint	scale = tr.lightstylevalue[surf->styles[map]];
-            uint scale = 255;
+			uint scale = g_lightmap.lightstylevalue[surf->styles[map]];
 
 			/* FIXME VK if( tr.ignore_lightgamma )
 			{
@@ -159,9 +159,9 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			}
 			else */
 			{
-				cv->r += LightToTexGamma( lm->r ) * scale;
-				cv->g += LightToTexGamma( lm->g ) * scale;
-				cv->b += LightToTexGamma( lm->b ) * scale;
+				cv->r += lm->r * scale;
+				cv->g += lm->g * scale;
+				cv->b += lm->b * scale;
 			}
 			lm += size; // skip to next lightmap
 

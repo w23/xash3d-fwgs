@@ -14,15 +14,22 @@ struct Light {
 layout(set=3,binding=0) uniform UBO {
 	uint num_lights;
 	uint debug_r_lightmap;
+	uvec2 padding_;
 	Light lights[max_dlights];
 } ubo;
 
 layout(location=0) in vec3 vPos;
+layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 vTexture0;
 layout(location=3) in vec2 vLightmapUV;
 layout(location=4) in vec4 vColor;
+layout(location=5) flat in uint vLightingMode;
 
 layout(location=0) out vec4 outColor;
+
+// Keep in sync with ref/vk/vk_render.h (vk_lighting_mode_e).
+const uint kVkLightingMode_Brush = 0u;
+const uint kVkLightingMode_Studio = 1u;
 
 // Exact legacy behavior:
 // lightmap packing converts r_blocklights with >> 7 (divide by 128).
@@ -40,24 +47,32 @@ void main() {
 		discard;
 
 	outColor.a = baseColor.a;
-	outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
-	// Exact dlight emulation, equivalent to adding them into the lightmap.
-	for (uint i = 0; i < ubo.num_lights; ++i) {
-		const vec4 light_pos_r = ubo.lights[i].pos_r;
-		const vec3 light_color = ubo.lights[i].color.rgb;
-		const float minlight = ubo.lights[i].color.a;
+	if (vLightingMode == kVkLightingMode_Brush) {
+		outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
-		const float dist = length(light_pos_r.xyz - vPos);
-		const float add = light_pos_r.w - dist;
-		if (add <= minlight)
-			continue;
+		// Exact dlight emulation for BSP brush geometry, equivalent to adding them into the lightmap.
+		for (uint i = 0; i < ubo.num_lights; ++i) {
+			const vec4 light_pos_r = ubo.lights[i].pos_r;
+			const vec3 light_color = ubo.lights[i].color.rgb;
+			const float minlight = ubo.lights[i].color.a;
 
-		outColor.rgb += light_color * (add / lightmap_block_to_tex_scale);
+			const float dist = length(light_pos_r.xyz - vPos);
+			const float add = light_pos_r.w - dist;
+			if (add <= minlight)
+				continue;
+
+			outColor.rgb += light_color * (add / lightmap_block_to_tex_scale);
+		}
+
+		outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
+
+		if (ubo.debug_r_lightmap == 0)
+			outColor.rgb *= baseColor.rgb;
+	} else if (vLightingMode == kVkLightingMode_Studio) {
+		// Studio lighting (including local elights) is computed on CPU to match ref/gl behavior.
+		outColor.rgb = clamp(baseColor.rgb, vec3(0.0), vec3(1.0));
+	} else {
+		outColor.rgb = baseColor.rgb;
 	}
-
-	outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));
-
-	if (ubo.debug_r_lightmap == 0)
-		outColor.rgb *= baseColor.rgb;
 }
