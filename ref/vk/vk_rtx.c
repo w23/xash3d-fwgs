@@ -458,7 +458,3 @@ void RT_FrameDiscontinuity( void ) {
 	DEBUG("%s", __FUNCTION__);
 	g_rtx.discontinuity = true;
 }
-
-
-
-
