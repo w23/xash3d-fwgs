@@ -59,9 +59,9 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	shading_normal = normalDecode(n.zw);
 }
 
-vec3 offsetBounceRayOrigin(vec3 pos, vec3 geometry_normal, vec3 ray_dir, float eps) {
-	const float normal_sign = dot(geometry_normal, ray_dir) >= 0.0 ? 1.0 : -1.0;
-	return pos + geometry_normal * (eps * normal_sign);
+vec3 offsetBounceRayOrigin(vec3 hit_pos, vec3 geometry_normal, vec3 bounce_dir, float eps) {
+	const float normal_sign = dot(geometry_normal, bounce_dir) >= 0.0 ? 1.0 : -1.0;
+	return hit_pos + geometry_normal * (eps * normal_sign);
 }
 
 bool getHit(vec3 origin, vec3 direction, inout RayPayloadPrimary payload) {
