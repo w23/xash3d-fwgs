@@ -22,9 +22,9 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
-#define MAX_SCRATCH_BUFFER (64*1024*1024)
+#define MAX_SCRATCH_BUFFER (128*1024*1024)
 // FIXME compute this by lazily allocating #define MAX_ACCELS_BUFFER (128*1024*1024)
-#define MAX_ACCELS_BUFFER (256*1024*1024)
+#define MAX_ACCELS_BUFFER (512*1024*1024)
 
 typedef struct rt_blas_s {
 	const char *debug_name;
@@ -383,6 +383,7 @@ static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress ge
 			case MATERIAL_MODE_BLEND_ADD:
 			case MATERIAL_MODE_BLEND_MIX:
 			case MATERIAL_MODE_BLEND_GLOW:
+			case MATERIAL_MODE_DECAL:
 				inst[i].mask = GEOMETRY_BIT_BLEND;
 				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_ADDITIVE,
 				// Force no-culling because these should be visible from any angle

@@ -22,6 +22,7 @@
 #include "vk_speeds.h"
 #include "vk_sprite.h"
 #include "vk_beams.h"
+#include "r_decals.h"
 #include "vulkan/VCombuf.h"
 #include "vk_entity_data.h"
 #include "vk_logs.h"
@@ -411,6 +412,8 @@ qboolean R_VkInit( void )
 
 	R_SpriteInit();
 	R_BeamInit();
+
+	R_ClearDecals();
 
 	INFO("R_VkInit done");
 	return true;

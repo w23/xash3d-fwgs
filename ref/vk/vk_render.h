@@ -23,7 +23,7 @@ typedef struct vk_render_geometry_s {
 	// Non-null only for brush models
 	// Used for updating animated textures for brush models
 	// Remove: have an explicit list of surfaces with animated textures
-	const struct msurface_s *surf_deprecate;
+	struct msurface_s *surf_deprecate;
 
 	// If this geometry is special, it will have a material type override
 	r_vk_material_t material;
@@ -75,6 +75,9 @@ typedef enum {
 	// Set by:
 	// - studio: kRenderTransAdd
 	kVkRenderType_1_1_R,    // blend: src + dst, depth test
+
+	// Decals changing diffuse and rmxx of surface material
+	kVkRenderType_Decal,    // blend: src*a + dst (1-a), depth test, no depth write
 
 	kVkRenderType_COUNT
 } vk_render_type_e;
@@ -163,6 +166,7 @@ typedef struct {
 	int render_type;
 	r_vk_material_t material;
 	int ye_olde_texture;
+	int lightmap;
 	const vec4_t *emissive;
 	const vec4_t *color;
 } r_draw_once_t;
