@@ -34,6 +34,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "ray_primary_hit.glsl"
 
 #include "trace_simple_blending.glsl"
+#include "trace_decals.glsl"
 #include "skybox.glsl"
 
 struct Ray {
@@ -115,6 +116,8 @@ void main() {
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
 		L = rayQueryGetIntersectionTEXT(rq, true);
+
+		traceDecals(payload);
 	} else {
 		// Draw skybox when nothing is hit
 		payload.emissive.rgb = sampleSkybox(ray.direction);

@@ -51,6 +51,7 @@ layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } v
 #include "light.glsl"
 
 #include "trace_simple_blending.glsl"
+#include "trace_decals.glsl"
 #include "skybox.glsl"
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
@@ -189,6 +190,8 @@ void computeBounces(MaterialEx mat, vec3 pos, vec3 direction, int bouncesCount, 
 		const vec3 hit_geometry_normal = normalDecode(payload.normals_gs.xy);
 		const vec3 hit_shading_normal = normalDecode(payload.normals_gs.zw);
 		if (did_hit) {
+			traceDecals(payload);
+
 			vec3 ldiffuse = vec3(0.);
 			vec3 lspecular = vec3(0.);
 			hit_material.base_color = payload.base_color_a.rgb;

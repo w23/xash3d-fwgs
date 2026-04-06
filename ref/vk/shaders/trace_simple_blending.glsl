@@ -34,6 +34,10 @@ vec4 traceLegacyBlending(vec3 pos, vec3 dir, float L) {
 		const MiniGeometry geom = readCandidateMiniGeometry(rq);
 		const int model_index = rayQueryGetIntersectionInstanceIdEXT(rq, false);
 		const ModelHeader model = getModelHeader(model_index);
+		
+		if (model.mode == MATERIAL_MODE_DECAL)
+			continue; // TODO: move decals to separated queue
+		
 		const Kusok kusok = getKusok(geom.kusok_index);
 		const float hit_t = rayQueryGetIntersectionTEXT(rq, false);
 
