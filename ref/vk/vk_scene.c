@@ -10,6 +10,7 @@
 #include "vk_core.h"
 #include "vk_sprite.h"
 #include "vk_beams.h"
+#include "r_decals.h"
 #include "vk_light.h"
 #include "vk_rtx.h"
 #include "r_textures.h"
@@ -154,6 +155,52 @@ static void reloadPatches( void ) {
 	loadMap(map, force_reload);
 }
 
+cl_entity_t* R_GetEntityByIndex(int index)
+{
+	if (index > 0 && index < globals.max_entities)
+		return globals.entities + index;
+
+	return NULL;
+}
+
+model_t* R_ModelHandle(int index)
+{
+	if (index > 0 && index < gp_cl->nummodels)
+		return gp_cl->models[index];
+
+	return NULL;
+}
+
+void R_InitModelsPolys ( void )
+{
+	// copypaste from GL_BuildLightmaps
+	int	i, j = 0;
+	model_t	*m;
+
+	for( i = 0; i < gp_cl->nummodels; i++ )
+	{
+		if(( m = R_ModelHandle( i + 1 )) == NULL )
+			continue;
+
+		if( m->name[0] == '*' || m->type != mod_brush )
+			continue;
+
+		for( j = 0; j < m->numsurfaces; j++ )
+		{
+			// clearing all decal chains
+			m->surfaces[j].pdecals = NULL;
+			m->surfaces[j].visframe = 0;
+
+			//GL_CreateSurfaceLightmap( m->surfaces + j, m ); // TODO: it is really needed?
+
+			if( m->surfaces[j].flags & SURF_DRAWTURB )
+				continue;
+
+			R_BuildPolygonFromSurface( m, m->surfaces + j );
+		}
+	}
+}
+
 void VK_SceneInit( void )
 {
 	PROFILER_SCOPES(APROF_SCOPE_INIT);
@@ -210,6 +257,24 @@ void R_SceneMapDestroy( void ) {
 	R_BrushModelDestroyAll();
 }
 
+static void R_ClearModelDecalChains( void )
+{
+	int i, j;
+	model_t *m;
+
+	for( i = 0; i < gp_cl->nummodels; i++ )
+	{
+		if(( m = R_ModelHandle( i + 1 )) == NULL )
+			continue;
+
+		if( m->name[0] == '*' || m->type != mod_brush )
+			continue;
+
+		for( j = 0; j < m->numsurfaces; j++ )
+			m->surfaces[j].pdecals = NULL;
+	}
+}
+
 // tell the renderer what new map is started
 void R_NewMap( void ) {
 	const model_t *const map = WORLDMODEL;
@@ -225,6 +290,9 @@ void R_NewMap( void ) {
 	// Make sure that EntityData doesn't accidentally reference old pointers.
 	VK_EntityDataClear();
 
+	R_ClearDecals();
+	R_ClearModelDecalChains();
+
 	RT_FrameDiscontinuity();
 
 	// Skip clearing already loaded data if the map hasn't changed.
@@ -237,6 +305,8 @@ void R_NewMap( void ) {
 	loadMap(map, force_reload);
 
 	R_StudioResetPlayerModels();
+
+	R_InitModelsPolys();
 }
 
 qboolean R_AddEntity( struct cl_entity_s *clent, int type )
@@ -671,6 +741,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 	}
 	APROF_SCOPE_END(draw_opaques);
+	R_DecalsFlush();
 
 	// Draw opaque beams
 	APROF_SCOPE_BEGIN(draw_opaque_beams);
@@ -694,6 +765,7 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		}
 		APROF_SCOPE_END(draw_translucent);
 	}
+	R_DecalsFlush();
 
 	// Draw transparent beams
 	APROF_SCOPE_BEGIN(draw_transparent_beams);
