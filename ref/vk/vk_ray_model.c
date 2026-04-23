@@ -251,7 +251,7 @@ void RT_FrameAddModel( struct rt_model_s *model, rt_frame_add_model_t args ) {
 	RT_VkAccelAddDrawInstance(&draw_instance);
 }
 
-#define MAX_RT_DYNAMIC_GEOMETRIES 1024
+#define MAX_RT_DYNAMIC_GEOMETRIES 128
 #define MAX_RT_DYNAMIC_GEOMETRIES_VERTICES 256
 #define MAX_RT_DYNAMIC_GEOMETRIES_PRIMITIVES 256
 
