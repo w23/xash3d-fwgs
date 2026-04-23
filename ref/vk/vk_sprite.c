@@ -99,7 +99,8 @@ static qboolean createQuadModel(void) {
 	R_GeometryRangeUnlock( &lock );
 
 	g_sprite.quad.geometry = (vk_render_geometry_t){
-		.max_vertex = 4,
+		// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+		.max_vertex = g_sprite.quad.geom.vertices.unit_offset + 4,
 		.vertex_offset = g_sprite.quad.geom.vertices.unit_offset,
 
 		.element_count = 6,

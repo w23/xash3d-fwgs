@@ -1796,7 +1796,9 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 		.ye_olde_texture = args.texture,
 
 		.vertex_offset = args.vertices_offset,
-		.max_vertex = num_vertices,
+		// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+		// firstVertex = vertex_offset, indices are relative (0..num_vertices-1)
+		.max_vertex = args.vertices_offset + num_vertices,
 
 		.index_offset = args.indices_offset,
 		.element_count = num_indices,

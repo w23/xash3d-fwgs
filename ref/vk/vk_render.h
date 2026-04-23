@@ -18,6 +18,7 @@ typedef struct vk_render_geometry_s {
 	uint32_t element_count;
 
 	// Maximum index of vertex used for this geometry; needed for ray tracing BLAS building
+	// FIXME currently its value is *GLOBAL*, relative to the beginning of the global geometry buffer singleton. It should not be like that, it should be local, relative to vertex_offset of the current geometry.
 	uint32_t max_vertex;
 
 	// Non-null only for brush models
