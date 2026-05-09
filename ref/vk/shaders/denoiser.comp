@@ -22,10 +22,10 @@ layout(set = 0, binding = 4, rgba8) uniform readonly image2D material_rmxx;
 
 layout(set = 0, binding = 5) uniform UBO { UniformBuffer ubo; } ubo;
 
-layout(set = 0, binding = 6, rgba16f) uniform readonly image2D asvgf_direct_diffuse;
-layout(set = 0, binding = 7, rgba16f) uniform readonly image2D asvgf_direct_specular;
-layout(set = 0, binding = 8, rgba16f) uniform readonly image2D asvgf_indirect_specular;
-layout(set = 0, binding = 9, rgba16f) uniform readonly image2D asvgf_indirect_diffuse;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D temporal_asvgf_direct_diffuse;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D temporal_asvgf_direct_specular;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D temporal_asvgf_indirect_specular;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D temporal_asvgf_indirect_diffuse;
 
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D legacy_blend;
 layout(set = 0, binding = 11, rgba16f) uniform readonly image2D final_atrous_flashlight_diffuse;
@@ -129,10 +129,10 @@ void main() {
 	return;
 #endif
 
-	const vec4 asvgf_direct_diffuse_sample = imageLoad(asvgf_direct_diffuse, pix);
-	const vec4 asvgf_direct_specular_sample = imageLoad(asvgf_direct_specular, pix);
-	const vec4 asvgf_indirect_specular_sample = imageLoad(asvgf_indirect_specular, pix);
-	const vec4 asvgf_indirect_diffuse_sample = imageLoad(asvgf_indirect_diffuse, pix);
+	const vec4 asvgf_direct_diffuse_sample = imageLoad(temporal_asvgf_direct_diffuse, pix);
+	const vec4 asvgf_direct_specular_sample = imageLoad(temporal_asvgf_direct_specular, pix);
+	const vec4 asvgf_indirect_specular_sample = imageLoad(temporal_asvgf_indirect_specular, pix);
+	const vec4 asvgf_indirect_diffuse_sample = imageLoad(temporal_asvgf_indirect_diffuse, pix);
 	const vec3 flashlight_diffuse = imageLoad(final_atrous_flashlight_diffuse, pix).rgb;
 	const vec3 flashlight_specular = imageLoad(final_atrous_flashlight_specular, pix).rgb;
 
