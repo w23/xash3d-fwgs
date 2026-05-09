@@ -71,6 +71,9 @@
 	"final_atrous": {
 		"comp": "final_atrous"
 	},
+	"asvgf": {
+		"comp": "asvgf"
+	},
 	"denoiser": {
 		"comp": "denoiser"
 	},

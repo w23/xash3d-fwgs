@@ -32,6 +32,37 @@ bool reprojectToPrevFramePixel(vec3 prev_position, ivec2 res, out ivec2 reproj_p
 	return true;
 }
 
+bool computePlaneDepthInPrevFrame(ivec2 prev_pix, ivec2 res, vec3 plane_point, vec3 plane_normal, out float depth) {
+	vec2 uv = ((vec2(prev_pix) + vec2(0.5)) / vec2(res)) * 2.0 - vec2(1.0);
+	vec4 clip_near = vec4(uv, 0.0, 1.0);
+	vec4 clip_far = vec4(uv, 1.0, 1.0);
+	vec4 view_near = ubo.ubo.prev_inv_proj * clip_near;
+	vec4 view_far = ubo.ubo.prev_inv_proj * clip_far;
+	if (abs(view_near.w) <= 1e-6 || abs(view_far.w) <= 1e-6) {
+		depth = 0.0;
+		return false;
+	}
+
+	vec3 world_near = (ubo.ubo.prev_inv_view * vec4(view_near.xyz / view_near.w, 1.0)).xyz;
+	vec3 world_far = (ubo.ubo.prev_inv_view * vec4(view_far.xyz / view_far.w, 1.0)).xyz;
+	vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	vec3 ray_dir = normalize(world_far - world_near);
+	float denom = dot(plane_normal, ray_dir);
+	if (abs(denom) <= 1e-5) {
+		depth = 0.0;
+		return false;
+	}
+
+	float t = dot(plane_normal, plane_point - prev_origin) / denom;
+	if (t <= 0.0) {
+		depth = 0.0;
+		return false;
+	}
+
+	depth = t;
+	return true;
+}
+
 float sampleAverageReflectionRayLength(ivec2 pix, ivec2 res, int indirect_scale, int kernel_radius) {
 	float average_ray_length = 0.0;
 	float ray_length_samples_count = 0.0;
