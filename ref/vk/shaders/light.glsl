@@ -6,7 +6,6 @@ const float shadow_offset_fudge = .1;
 
 #include "brdf.glsl"
 #include "light_common.glsl"
-#include "light_weight.glsl"
 
 #if LIGHT_POLYGON
 #include "light_polygon.glsl"
@@ -17,19 +16,7 @@ const float shadow_offset_fudge = .1;
 // 1. Spherical lights
 // 2. Spotlights
 // 3. Env|dir lights
-void computePointLightsSplitFlashlight(
-	vec3 P,
-	vec3 N,
-	uint cluster_index,
-	vec3 view_dir,
-	MaterialProperties material,
-	out vec3 diffuse,
-	out vec3 specular,
-	out vec3 flashlight_diffuse,
-	out vec3 flashlight_specular,
-	inout BrightestLights brightest_lights,
-	bool track_brightest_lights,
-	bool separate_flashlight) {
+void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular) {
 	diffuse = specular = vec3(0.);
 	flashlight_diffuse = flashlight_specular = vec3(0.);
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
@@ -48,22 +35,21 @@ void computePointLightsSplitFlashlight(
 #endif
 
 		const PointLight point_light = lights.m.point_lights[i];
-		const vec3 spotlight_dir = point_light.dir_stopdot2.xyz;
+		const vec3 spotlight_dir = lights.m.point_lights[i].dir_stopdot2.xyz;
 		const bool is_flashlight = (point_light.flashlight != 0u);
-		const bool is_environment = (point_light.environment != 0u);
-		
+		const bool is_environment = (lights.m.point_lights[i].environment != 0);
 
 		// TODO blue noise
 		const vec2 rnd = vec2(rand01(), rand01());
 
 		vec3 light_dir;
-		vec3 color = point_light.color_stopdot.rgb;
+		vec3 color = lights.m.point_lights[i].color_stopdot.rgb;
 		float light_dist = 0.;
 		float one_over_pdf = 1.;
 		if (is_environment) {
 			// Environment/directional light
 			// FIXME extract, it is rather different from other point/sphere/spotlights
-			const float cos_theta_max = point_light.dir_stopdot2.a;
+			const float cos_theta_max = lights.m.point_lights[i].dir_stopdot2.a;
 			const vec3 dir_sample_z = sampleConeZ(rnd, cos_theta_max);
 			light_dir = normalize(orthonormalBasisZ(spotlight_dir) * dir_sample_z);
 
@@ -75,8 +61,8 @@ void computePointLightsSplitFlashlight(
 			one_over_pdf = 2. * kPi * max(0., 1. - cos_theta_max);
 		} /* is_environment */ else {
 			// Spherical lights
-			const vec3 light_pos = point_light.origin_r2.xyz;
-			const float light_r2 = point_light.origin_r2.w;
+			const vec3 light_pos = lights.m.point_lights[i].origin_r2.xyz;
+			const float light_r2 = lights.m.point_lights[i].origin_r2.w;
 
 #ifdef DEBUG_VALIDATE_EXTRA
 			if (IS_INVALID(light_r2) || light_r2 <= 0.) {
@@ -147,11 +133,11 @@ void computePointLightsSplitFlashlight(
 			// Check for angles early
 			// TODO split into separate spotlights and point lights arrays
 			const float spot_dot = dot(light_dir, spotlight_dir);
-			const float stopdot2 = point_light.dir_stopdot2.a;
+			const float stopdot2 = lights.m.point_lights[i].dir_stopdot2.a;
 			if (spot_dot < stopdot2)
 				continue;
 
-			const float stopdot = point_light.color_stopdot.a;
+			const float stopdot = lights.m.point_lights[i].color_stopdot.a;
 
 			// For non-spotlighths stopdot will be -1.. spot_dot can never be less than that
 			if (spot_dot < stopdot) {
@@ -198,63 +184,22 @@ void computePointLightsSplitFlashlight(
 			if (shadowed(P, light_dir, light_dist + shadow_offset_fudge))
 				continue;
 		}
-
-		if (is_flashlight && separate_flashlight) {
+		
+		if (is_flashlight) {
 			flashlight_diffuse += ldiffuse;
 			flashlight_specular += lspecular;
 			continue;
 		}
 
-		if (track_brightest_lights) {
-			updateBrightestLights(ldiffuse, lspecular, i, brightest_lights);
-		}
 		diffuse += ldiffuse;
 		specular += lspecular;
 	} // for all lights
 }
 #endif
 
-#if LIGHT_POINT
-void computePointLights(
-	vec3 P,
-	vec3 N,
-	uint cluster_index,
-	vec3 view_dir,
-	MaterialProperties material,
-	out vec3 diffuse,
-	out vec3 specular,
-	inout BrightestLights brightest_lights,
-	bool track_brightest_lights) {
-	vec3 flashlight_diffuse, flashlight_specular;
-	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, track_brightest_lights, false);
-	diffuse += flashlight_diffuse;
-	specular += flashlight_specular;
-}
-
-void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights, bool track_brightest_lights) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular) {
 	diffuse = specular = vec3(0.);
 	flashlight_diffuse = flashlight_specular = vec3(0.);
-	initBrightestLights(brightest_lights);
-
-	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
-		return;
-	}
-
-	const ivec3 light_cell = ivec3(floor(P / LIGHT_GRID_CELL_SIZE)) - lights.m.grid_min_cell;
-	const uint cluster_index = uint(dot(light_cell, ivec3(1, lights.m.grid_size.x, lights.m.grid_size.x * lights.m.grid_size.y)));
-
-#ifdef USE_CLUSTERS
-	if (any(greaterThanEqual(light_cell, lights.m.grid_size)) || cluster_index >= MAX_LIGHT_CLUSTERS) {
-		return;
-	}
-#endif
-
-	computePointLightsSplitFlashlight(P, N, cluster_index, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, track_brightest_lights, true);
-}
-#endif
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out BrightestLights brightest_lights, bool track_brightest_lights) {
-	diffuse = specular = vec3(0.);
-	initBrightestLights(brightest_lights);
 
 	// No direct lighting for white furnace mode. The only light sources is no-hit|SURF_SKY bounce indirect light.
 	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
@@ -291,14 +236,17 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	//C += .3 * fract(vec3(light_cell) / 4.);
 
 #if LIGHT_POLYGON
-	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular, brightest_lights, track_brightest_lights);
+	sampleEmissiveSurfaces(P, N, view_dir, material, cluster_index, diffuse, specular);
 #endif
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
-	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, brightest_lights, track_brightest_lights);
+	vec3 flashlight_ldiffuse = vec3(0.), flashlight_lspecular = vec3(0.);
+	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, flashlight_ldiffuse, flashlight_lspecular);
 	diffuse += ldiffuse;
 	specular += lspecular;
+	flashlight_diffuse += flashlight_ldiffuse;
+	flashlight_specular += flashlight_lspecular;
 #endif
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -315,15 +263,3 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 	}
 #endif
 }
-
-
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
-	BrightestLights brightest_lights;
-	computeLighting(P, N, view_dir, material, diffuse, specular, brightest_lights, true);
-}
-
-#if LIGHT_POINT
-void computeLightingPointDirect(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular, out BrightestLights brightest_lights) {
-	computeLightingPointDirect(P, N, view_dir, material, diffuse, specular, flashlight_diffuse, flashlight_specular, brightest_lights, true);
-}
-#endif

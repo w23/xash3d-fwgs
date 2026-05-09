@@ -110,18 +110,18 @@ vec3 clampSpecularLuminance(vec3 specular, float max_luminance) {
 	return specular * (clamped / lum);
 }
 
-float computeVarianceConfidence(float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
+float computeVarianceCompatibility(float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
 	float expected_sigma = sqrt(max(max(current_stats.variance, history_stats.variance), 0.0));
 	float expected_delta = max(expected_sigma + 0.1 * max(current_stats.mean, history_stats.mean), 0.02);
 	float mismatch = max(abs(current_luma - history_luma), abs(current_stats.mean - history_stats.mean)) / expected_delta;
 	return 1.0 - smoothstep(2.0, 6.0, mismatch);
 }
 
-float softenVarianceConfidence(float confidence) {
-	if (confidence <= 0.2) {
+float softenVarianceCompatibility(float compatibility) {
+	if (compatibility <= 0.2) {
 		return 0.0;
 	}
-	return mix(1.0, confidence, 0.35);
+	return mix(1.0, compatibility, 0.35);
 }
 
 float computeVarianceGate(LuminanceStats current_stats, LuminanceStats history_stats) {
@@ -139,12 +139,12 @@ float applyVarianceSoftReset(float reset_factor, float variance_gate, float min_
 	return clamp(scaled_reset, 0.0, 1.0);
 }
 
-float computeIndirectDiffuseVarianceConfidence(float current_luma, float history_luma) {
+float computeIndirectDiffuseVarianceCompatibility(float current_luma, float history_luma) {
 	float signal = max(max(current_luma, history_luma), 0.05);
 	float expected_delta = max(0.18, 0.45 * signal);
 	float mismatch = abs(current_luma - history_luma) / expected_delta;
-	float confidence = 1.0 - smoothstep(2.0, 10.0, mismatch);
-	return max(confidence, 0.60);
+	float compatibility = 1.0 - smoothstep(2.0, 10.0, mismatch);
+	return max(compatibility, 0.60);
 }
 
 float computeIndirectDiffuseVarianceGate(float current_luma, float history_luma) {
@@ -161,7 +161,7 @@ float computeEffectiveHistorySamples(float history_samples, float reset_factor) 
 	return min(max(history_samples, 0.0) * clamped_reset_factor, max_effective_history_samples);
 }
 
-float computeAnalyticalVarianceConfidence(LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
+float computeAnalyticalVarianceCompatibility(LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
 	float effective_history_samples = computeEffectiveHistorySamples(history_samples, reset_factor);
 	float total_samples = effective_history_samples + 1.0;
 	float history_mix = effective_history_samples / total_samples;
@@ -176,11 +176,11 @@ float computeAnalyticalVarianceConfidence(LuminanceStats current_stats, Luminanc
 	float signal = max(max(current_stats.mean, history_stats.mean), 0.02);
 	float variance_floor = pow(0.015 + 0.025 * signal, 2.0);
 	float variance_ratio = (observed_variance + variance_floor) / (expected_variance + variance_floor);
-	float ratio_confidence = 1.0 - smoothstep(2.0, 10.0, variance_ratio);
+	float ratio_compatibility = 1.0 - smoothstep(2.0, 10.0, variance_ratio);
 
 	float delta_sigma = abs(mean_delta) / sqrt(max(current_variance + history_variance + variance_floor, 1e-8));
-	float mean_confidence = 1.0 - smoothstep(2.5, 7.5, delta_sigma);
-	return clamp(min(ratio_confidence, mean_confidence), 0.0, 1.0);
+	float mean_compatibility = 1.0 - smoothstep(2.5, 7.5, delta_sigma);
+	return clamp(min(ratio_compatibility, mean_compatibility), 0.0, 1.0);
 }
 
 LuminanceStats accumulateHistoryStats(LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
@@ -271,15 +271,15 @@ void main() {
 		direct_specular_history_samples = 1.0;
 		indirect_specular_history_samples = 1.0;
 
-		float diffuse_confidence = 0.0;
-		float indirect_diffuse_history_confidence = 0.0;
-		float direct_specular_history_confidence = 0.0;
-		float indirect_specular_history_confidence = 0.0;
+		float diffuse_compatibility = 0.0;
+		float indirect_diffuse_history_compatibility = 0.0;
+		float direct_specular_history_compatibility = 0.0;
+		float indirect_specular_history_compatibility = 0.0;
 
-		float diffuse_variance_confidence = 1.0;
-		float indirect_diffuse_variance_confidence = 1.0;
-		float direct_specular_variance_confidence = 1.0;
-		float indirect_specular_variance_confidence = 1.0;
+		float diffuse_variance_compatibility = 1.0;
+		float indirect_diffuse_variance_compatibility = 1.0;
+		float direct_specular_variance_compatibility = 1.0;
+		float indirect_specular_variance_compatibility = 1.0;
 
 		float direct_specular_history_outlier = 0.0;
 		float direct_specular_history_luma_cap = DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP;
@@ -295,10 +295,10 @@ void main() {
 		const float current_direct_specular_luma = luminance(direct_specular);
 		const float current_indirect_specular_luma = luminance(indirect_specular);
 
-		const float direct_diffuse_confidence = clamp(pre_asvgf_direct_diffuse_sample.a, 0.0, 1.0);
-		const float indirect_diffuse_direct_confidence = direct_diffuse_confidence;
-		const float direct_specular_confidence = clamp(pre_asvgf_direct_specular_sample.a, 0.0, 1.0);
-		const float indirect_specular_confidence = clamp(pre_asvgf_indirect_specular_sample.a, 0.0, 1.0);
+		const float direct_diffuse_compatibility = 1.0;
+		const float indirect_diffuse_direct_compatibility = direct_diffuse_compatibility;
+		const float direct_specular_compatibility = 1.0;
+		const float indirect_specular_compatibility = clamp(pre_asvgf_indirect_specular_sample.a, 0.0, 1.0);
 		const bool mirror_surface = (metalness >= 0.999) && (current_roughness <= 0.001);
 
 		if (all(greaterThanEqual(reproj_pix, ivec2(0))) && all(lessThan(reproj_pix, res))) {
@@ -312,16 +312,16 @@ void main() {
 				history_indirect_diffuse = history_indirect_diffuse_sample.rgb;
 				diffuse_history_samples = max(history_diffuse_sample.a, 0.0);
 				indirect_diffuse_history_samples = max(history_indirect_diffuse_sample.a, 0.0);
-				diffuse_confidence = direct_diffuse_confidence;
-				indirect_diffuse_history_confidence = indirect_diffuse_direct_confidence;
+				diffuse_compatibility = direct_diffuse_compatibility;
+				indirect_diffuse_history_compatibility = indirect_diffuse_direct_compatibility;
 				history_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_diffuse_stats, reproj_pix));
 				history_indirect_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_diffuse_stats, reproj_pix));
-				diffuse_variance_confidence = computeVarianceConfidence(current_diffuse_luma, current_direct_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
-				diffuse_variance_confidence = min(diffuse_variance_confidence,
-					computeAnalyticalVarianceConfidence(current_direct_diffuse_stats, history_diffuse_stats, diffuse_history_samples, diffuse_confidence));
-				indirect_diffuse_variance_confidence = computeVarianceConfidence(current_indirect_diffuse_luma, current_indirect_diffuse_stats, luminance(history_indirect_diffuse), history_indirect_diffuse_stats);
-				indirect_diffuse_variance_confidence = min(indirect_diffuse_variance_confidence,
-					computeAnalyticalVarianceConfidence(current_indirect_diffuse_stats, history_indirect_diffuse_stats, indirect_diffuse_history_samples, indirect_diffuse_history_confidence));
+				diffuse_variance_compatibility = computeVarianceCompatibility(current_diffuse_luma, current_direct_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
+				diffuse_variance_compatibility = min(diffuse_variance_compatibility,
+					computeAnalyticalVarianceCompatibility(current_direct_diffuse_stats, history_diffuse_stats, diffuse_history_samples, diffuse_compatibility));
+				indirect_diffuse_variance_compatibility = computeVarianceCompatibility(current_indirect_diffuse_luma, current_indirect_diffuse_stats, luminance(history_indirect_diffuse), history_indirect_diffuse_stats);
+				indirect_diffuse_variance_compatibility = min(indirect_diffuse_variance_compatibility,
+					computeAnalyticalVarianceCompatibility(current_indirect_diffuse_stats, history_indirect_diffuse_stats, indirect_diffuse_history_samples, indirect_diffuse_history_compatibility));
 			}
 		}
 
@@ -336,11 +336,11 @@ void main() {
 			history_direct_specular = history_direct_specular_sample.xyz;
 			history_direct_specular = clampSpecularLuminance(history_direct_specular, DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
 			direct_specular_history_samples = max(history_direct_specular_sample.a, 0.0);
-			direct_specular_history_confidence = direct_specular_confidence;
+			direct_specular_history_compatibility = direct_specular_compatibility;
 			history_direct_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_specular_stats, direct_specular_history_pix));
-			direct_specular_variance_confidence = computeVarianceConfidence(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
-			direct_specular_variance_confidence = min(direct_specular_variance_confidence,
-				computeAnalyticalVarianceConfidence(current_direct_specular_stats, history_direct_specular_stats, direct_specular_history_samples, direct_specular_history_confidence));
+			direct_specular_variance_compatibility = computeVarianceCompatibility(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
+			direct_specular_variance_compatibility = min(direct_specular_variance_compatibility,
+				computeAnalyticalVarianceCompatibility(current_direct_specular_stats, history_direct_specular_stats, direct_specular_history_samples, direct_specular_history_compatibility));
 			float current_direct_sigma = sqrt(max(current_direct_specular_stats.variance, 0.0));
 			float direct_noise_norm = current_direct_sigma / (current_direct_specular_stats.mean + 0.05);
 			direct_specular_noise_gate = smoothstep(0.08, 0.45, direct_noise_norm);
@@ -355,8 +355,8 @@ void main() {
 			if (direct_specular_history_outlier > 0.0) {
 				history_direct_specular = clampSpecularLuminance(history_direct_specular, direct_specular_history_luma_cap);
 			}
-			float direct_confidence_attenuation = mix(0.85, 0.35, direct_specular_noise_gate);
-			direct_specular_history_confidence *= (1.0 - direct_confidence_attenuation * direct_specular_history_outlier);
+			float direct_compatibility_attenuation = mix(0.85, 0.35, direct_specular_noise_gate);
+			direct_specular_history_compatibility *= (1.0 - direct_compatibility_attenuation * direct_specular_history_outlier);
 		}
 
 		ivec2 indirect_parallax_pix = ivec2(-1);
@@ -400,11 +400,11 @@ void main() {
 			const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_asvgf_indirect_specular, indirect_specular_history_pix);
 			history_indirect_specular = history_indirect_specular_sample.xyz;
 			indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
-			indirect_specular_history_confidence = indirect_diffuse_direct_confidence * indirect_specular_confidence;
+			indirect_specular_history_compatibility = indirect_diffuse_direct_compatibility * indirect_specular_compatibility;
 			history_indirect_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_specular_stats, indirect_specular_history_pix));
-			indirect_specular_variance_confidence = computeVarianceConfidence(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
-			indirect_specular_variance_confidence = min(indirect_specular_variance_confidence,
-				computeAnalyticalVarianceConfidence(current_indirect_specular_stats, history_indirect_specular_stats, indirect_specular_history_samples, indirect_specular_history_confidence));
+			indirect_specular_variance_compatibility = computeVarianceCompatibility(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
+			indirect_specular_variance_compatibility = min(indirect_specular_variance_compatibility,
+				computeAnalyticalVarianceCompatibility(current_indirect_specular_stats, history_indirect_specular_stats, indirect_specular_history_samples, indirect_specular_history_compatibility));
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -424,12 +424,12 @@ void main() {
 
 		if (has_diffuse_history) {
 			float diffuse_variance_gate = computeVarianceGate(current_direct_diffuse_stats, history_diffuse_stats);
-			float diffuse_reset_factor = diffuse_confidence * softenVarianceConfidence(diffuse_variance_confidence);
+			float diffuse_reset_factor = diffuse_compatibility * softenVarianceCompatibility(diffuse_variance_compatibility);
 			diffuse_reset_factor = applyVarianceSoftReset(diffuse_reset_factor, diffuse_variance_gate, 0.22);
 			direct_diffuse_reset_factor = diffuse_reset_factor;
 			direct_variance_reset_boost = smoothstep(0.10, 0.55, diffuse_variance_gate * (1.0 - diffuse_reset_factor));
-			direct_hard_reset = (diffuse_confidence <= 0.01)
-				|| ((diffuse_variance_gate >= 0.95) && (diffuse_variance_confidence <= 0.20))
+			direct_hard_reset = (diffuse_compatibility <= 0.01)
+				|| ((diffuse_variance_gate >= 0.95) && (diffuse_variance_compatibility <= 0.20))
 				|| (diffuse_reset_factor <= 0.06);
 			float previous_diffuse_history_samples = diffuse_history_samples;
 			vec4 accumulated_diffuse = accumulateHistoryRadiance(direct_diffuse, history_diffuse, previous_diffuse_history_samples, diffuse_reset_factor);
@@ -448,17 +448,17 @@ void main() {
 			float indirect_diffuse_variance_gate = max(
 				computeIndirectDiffuseVarianceGate(current_indirect_diffuse_luma, luminance(history_indirect_diffuse)),
 				computeVarianceGate(current_indirect_diffuse_stats, history_indirect_diffuse_stats));
-			float indirect_diffuse_base_confidence = mix(0.55, 1.0, indirect_diffuse_history_confidence);
-			float indirect_diffuse_reset_factor = indirect_diffuse_base_confidence * mix(1.0, softenVarianceConfidence(indirect_diffuse_variance_confidence), 0.35);
+			float indirect_diffuse_base_compatibility = mix(0.55, 1.0, indirect_diffuse_history_compatibility);
+			float indirect_diffuse_reset_factor = indirect_diffuse_base_compatibility * mix(1.0, softenVarianceCompatibility(indirect_diffuse_variance_compatibility), 0.35);
 			float direct_history_luma = luminance(history_diffuse);
 			float direct_signal = max(max(current_diffuse_luma, direct_history_luma), 0.05);
 			float direct_relight_norm = abs(current_diffuse_luma - direct_history_luma) / (direct_signal + 0.03);
 			float direct_relight_boost = smoothstep(0.12, 0.55, direct_relight_norm);
 			indirect_diffuse_reset_factor = applyVarianceSoftReset(indirect_diffuse_reset_factor, indirect_diffuse_variance_gate, 0.92);
-			float direct_confidence_boost = mix(0.35, 1.0, indirect_diffuse_direct_confidence);
-			float direct_relight_reset = 1.0 - direct_relight_boost * direct_confidence_boost;
+			float direct_compatibility_boost = mix(0.35, 1.0, indirect_diffuse_direct_compatibility);
+			float direct_relight_reset = 1.0 - direct_relight_boost * direct_compatibility_boost;
 			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_relight_reset);
-			float direct_variance_gate_boost = direct_variance_reset_boost * direct_confidence_boost;
+			float direct_variance_gate_boost = direct_variance_reset_boost * direct_compatibility_boost;
 			float direct_variance_reset = 1.0 - direct_variance_gate_boost;
 			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_variance_reset);
 			float direct_diffuse_reset_carry = 1.0 - smoothstep(0.20, 0.85, 1.0 - direct_diffuse_reset_factor);
@@ -483,7 +483,7 @@ void main() {
 
 		if (has_direct_specular_history) {
 			float direct_specular_variance_gate = computeVarianceGate(current_direct_specular_stats, history_direct_specular_stats);
-			float direct_specular_reset_factor = direct_specular_history_confidence * mix(1.0, softenVarianceConfidence(direct_specular_variance_confidence), 0.65);
+			float direct_specular_reset_factor = direct_specular_history_compatibility * mix(1.0, softenVarianceCompatibility(direct_specular_variance_compatibility), 0.65);
 			direct_specular_reset_factor *= mix(1.0, mix(0.15, 0.55, direct_specular_noise_gate), direct_specular_history_outlier);
 			direct_specular_reset_factor = applyVarianceSoftReset(direct_specular_reset_factor, direct_specular_variance_gate, 0.18);
 			float previous_direct_specular_history_samples = direct_specular_history_samples;
@@ -501,17 +501,17 @@ void main() {
 
 		if (has_indirect_specular_history) {
 			float indirect_specular_variance_gate = mix(0.35, 1.0, computeVarianceGate(current_indirect_specular_stats, history_indirect_specular_stats));
-			float indirect_specular_base_confidence = mix(0.55, 1.0, indirect_diffuse_direct_confidence);
-			float indirect_specular_reset_factor = indirect_specular_base_confidence * mix(1.0, softenVarianceConfidence(indirect_specular_variance_confidence), 0.45);
+			float indirect_specular_base_compatibility = mix(0.55, 1.0, indirect_diffuse_direct_compatibility);
+			float indirect_specular_reset_factor = indirect_specular_base_compatibility * mix(1.0, softenVarianceCompatibility(indirect_specular_variance_compatibility), 0.45);
 			indirect_specular_reset_factor = applyVarianceSoftReset(indirect_specular_reset_factor, indirect_specular_variance_gate, 0.30);
-			float direct_confidence_boost = mix(0.35, 1.0, indirect_diffuse_direct_confidence);
-			float direct_variance_reset = 1.0 - direct_variance_reset_boost * direct_confidence_boost;
+			float direct_compatibility_boost = mix(0.35, 1.0, indirect_diffuse_direct_compatibility);
+			float direct_variance_reset = 1.0 - direct_variance_reset_boost * direct_compatibility_boost;
 			indirect_specular_reset_factor = min(indirect_specular_reset_factor, direct_variance_reset);
 			if (direct_hard_reset) {
 				indirect_specular_reset_factor = 0.0;
 			}
-			indirect_specular_reset_factor *= indirect_specular_history_confidence;
-			if (indirect_specular_history_confidence <= 0.01) {
+			indirect_specular_reset_factor *= indirect_specular_history_compatibility;
+			if (indirect_specular_history_compatibility <= 0.01) {
 				indirect_specular_reset_factor = 0.0;
 			}
 			if (legacy_bounce) {

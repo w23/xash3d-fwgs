@@ -381,9 +381,3 @@ void main() {
 	imageStore(SPECULAR_OUTPUT_IMAGE, pix, vec4(resolvedRadiance.xyz, resolvedRayLength));
 #endif
 }
-
-
-
-
-
-

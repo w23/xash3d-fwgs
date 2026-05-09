@@ -30,9 +30,6 @@ layout(set = 0, binding = 9, rgba16f) uniform readonly image2D temporal_asvgf_in
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D legacy_blend;
 layout(set = 0, binding = 11, rgba16f) uniform readonly image2D final_atrous_flashlight_diffuse;
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D final_atrous_flashlight_specular;
-layout(set = 0, binding = 13, rgba16f) uniform readonly image2D final_atrous_direct_diffuse;
-layout(set = 0, binding = 14, rgba16f) uniform readonly image2D final_atrous_direct_specular;
-layout(set = 0, binding = 15, rgba16f) uniform readonly image2D final_atrous_indirect_specular;
 
 //#define DEBUG_NOISE
 #ifdef DEBUG_NOISE
@@ -116,11 +113,6 @@ void main() {
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NGEOM) {
 		imageStore(out_dest, pix, vec4(0.5 + geometry_normal * 0.5, 0.0));
-		return;
-	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_CONFIDENCE) {
-		vec2 confidence = vec2(imageLoad(final_atrous_direct_diffuse, pix).a, imageLoad(final_atrous_direct_specular, pix).a);
-		float indirect_specular_confidence = imageLoad(final_atrous_indirect_specular, pix).a;
-		imageStore(out_dest, pix, vec4(confidence.x, confidence.y, indirect_specular_confidence, 0.0));
 		return;
 	}
 

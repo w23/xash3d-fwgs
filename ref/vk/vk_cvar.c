@@ -43,7 +43,6 @@ void VK_LoadCvarsAfterInit( void )
 		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
 		rt_legacy_bounce = gEngine.Cvar_Get("rt_legacy_bounce", "0", FCVAR_GLCONFIG, "Enable legacy bounce mode: random diffuse/specular per texel and permanently applied base color");
 		rt_disable_gi = gEngine.Cvar_Get("rt_disable_gi", "0", FCVAR_GLCONFIG, "Disable global illumination calculation");
-		rt_disable_confidence = gEngine.Cvar_Get("rt_disable_confidence", "0", FCVAR_GLCONFIG, "Disable confidence masks and brightest-lights tracking for direct/reflection");
 		rt_disable_reconstruction = gEngine.Cvar_Get("rt_disable_reconstruction", "0", FCVAR_GLCONFIG, "Disable spatial reconstruction pass for indirect specular");
 		rt_disable_sh_gi_denoising = gEngine.Cvar_Get("rt_disable_sh_gi_denoising", "0", FCVAR_GLCONFIG, "Disable SH-based denoising for indirect diffuse GI");
 		rt_disable_reprojection = gEngine.Cvar_Get("rt_disable_reprojection", "0", FCVAR_GLCONFIG, "Disable temporal reprojection in denoiser");
@@ -51,5 +50,4 @@ void VK_LoadCvarsAfterInit( void )
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}
 }
-
 
