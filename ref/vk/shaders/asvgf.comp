@@ -8,12 +8,6 @@
 #include "ray_interop.h"
 #undef GLSL
 
-#define ASVGF_HISTORY_SAMPLES_MAX 16.0
-#define ASVGF_HISTORY_CURRENT_WEIGHT_MIN 0.1
-#define ASVGF_PARALLAX_ROUGHNESS_THRESHOLD 0.1
-#define ASVGF_PARALLAX_SHADING_NORMAL_THRESHOLD 0.01
-#define DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP 2.0
-
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_temporal_asvgf_direct_diffuse;
@@ -51,9 +45,11 @@ layout(set = 0, binding = 29, rgba32f) uniform readonly image2D prev_temporal_as
 layout(set = 0, binding = 30, rgba32f) uniform readonly image2D final_atrous_indirect_diffuse_stats;
 
 #define LOAD_REFLECTION_RAY_LENGTH(pix) imageLoad(indirect_specular_ray_length, pix).r
+#define ASVGF_REPROJECTION_PARAMS ubo.ubo.asvgf.direct_diffuse
 #include "temporal_reprojection.glsl"
 
 const int ASVGF_INDIRECT_SCALE = 2;
+#define ASVGF ubo.ubo.asvgf
 
 void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 	const vec4 n = imageLoad(normals_gs, uv);
@@ -71,6 +67,34 @@ struct CurrentLuminanceStats {
 	LuminanceStats direct_specular;
 	LuminanceStats indirect_diffuse;
 	LuminanceStats indirect_specular;
+};
+
+struct AsvgfGateState {
+	float reset_factor;
+	bool hard_reset;
+};
+
+struct AsvgfLobeContext {
+	vec3 current_color;
+	vec3 history_color;
+	LuminanceStats current_stats;
+	LuminanceStats history_stats;
+	float history_samples;
+	bool history_valid;
+};
+
+struct AsvgfLobeReprojectionInput {
+	AsvgfLobeContext lobe;
+	AsvgfGateState external_gate;
+	AsvgfGateState direct_diffuse_gate;
+	bool allow_direct_diffuse_reset_gate;
+};
+
+struct AsvgfLobeReprojectionResult {
+	vec3 color;
+	LuminanceStats stats;
+	float history_samples;
+	AsvgfGateState gate;
 };
 
 LuminanceStats decodeLuminanceStats(vec4 packed) {
@@ -110,59 +134,95 @@ vec3 clampSpecularLuminance(vec3 specular, float max_luminance) {
 	return specular * (clamped / lum);
 }
 
-float computeVarianceCompatibility(float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
-	float expected_sigma = sqrt(max(max(current_stats.variance, history_stats.variance), 0.0));
-	float expected_delta = max(expected_sigma + 0.1 * max(current_stats.mean, history_stats.mean), 0.02);
-	float mismatch = max(abs(current_luma - history_luma), abs(current_stats.mean - history_stats.mean)) / expected_delta;
-	return 1.0 - smoothstep(2.0, 6.0, mismatch);
+AsvgfGateState makeGate(float reset_factor, bool hard_reset) {
+	AsvgfGateState gate;
+	gate.reset_factor = clamp(reset_factor, 0.0, 1.0);
+	gate.hard_reset = hard_reset;
+	return gate;
 }
 
-float softenVarianceCompatibility(float compatibility) {
-	if (compatibility <= 0.2) {
+AsvgfGateState makeNeutralGate() {
+	return makeGate(1.0, false);
+}
+
+AsvgfGateState makeHardResetGate() {
+	return makeGate(0.0, true);
+}
+
+AsvgfGateState combineGate(AsvgfGateState a, AsvgfGateState b) {
+	AsvgfGateState result;
+	result.reset_factor = min(a.reset_factor, b.reset_factor);
+	result.hard_reset = a.hard_reset || b.hard_reset;
+	return result;
+}
+
+AsvgfLobeContext makeLobeContext(vec3 current_color, vec3 history_color, LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, bool history_valid) {
+	AsvgfLobeContext ctx;
+	ctx.current_color = max(current_color, vec3(0.0));
+	ctx.history_color = max(history_color, vec3(0.0));
+	ctx.current_stats = current_stats;
+	ctx.history_stats = history_stats;
+	ctx.history_samples = max(history_samples, 0.0);
+	ctx.history_valid = history_valid;
+	return ctx;
+}
+
+AsvgfLobeReprojectionInput makeLobeReprojectionInput(AsvgfLobeContext lobe, AsvgfGateState external_gate, AsvgfGateState direct_diffuse_gate, bool allow_direct_diffuse_reset_gate) {
+	AsvgfLobeReprojectionInput input_value;
+	input_value.lobe = lobe;
+	input_value.external_gate = external_gate;
+	input_value.direct_diffuse_gate = direct_diffuse_gate;
+	input_value.allow_direct_diffuse_reset_gate = allow_direct_diffuse_reset_gate;
+	return input_value;
+}
+
+float computeVarianceCompatibility(AsvgfReprojectionParams params, float current_luma, LuminanceStats current_stats, float history_luma, LuminanceStats history_stats) {
+	float expected_sigma = sqrt(max(max(current_stats.variance, history_stats.variance), 0.0));
+	float expected_delta = max(expected_sigma + params.variance_compatibility.x * max(current_stats.mean, history_stats.mean), params.variance_compatibility.y);
+	float mismatch = max(abs(current_luma - history_luma), abs(current_stats.mean - history_stats.mean)) / expected_delta;
+	return 1.0 - smoothstep(params.variance_compatibility.z, params.variance_compatibility.w, mismatch);
+}
+
+float softenVarianceCompatibility(AsvgfReprojectionParams params, float compatibility) {
+	if (compatibility <= params.variance_gate.z) {
 		return 0.0;
 	}
-	return mix(1.0, compatibility, 0.35);
+	return mix(1.0, compatibility, params.variance_gate.w);
 }
 
-float computeVarianceGate(LuminanceStats current_stats, LuminanceStats history_stats) {
+float computeVarianceGate(AsvgfReprojectionParams params, LuminanceStats current_stats, LuminanceStats history_stats) {
 	float current_sigma = sqrt(max(current_stats.variance, 0.0));
 	float history_sigma = sqrt(max(history_stats.variance, 0.0));
 	float sigma = max(current_sigma, history_sigma);
-	float signal = max(max(current_stats.mean, history_stats.mean), 0.02);
+	float signal = max(max(current_stats.mean, history_stats.mean), params.analytical_variance.x);
 	float normalized_sigma = sigma / (signal + 1e-4);
-	return smoothstep(0.04, 0.35, normalized_sigma);
+	return smoothstep(params.variance_gate.x, params.variance_gate.y, normalized_sigma);
 }
 
-float applyVarianceSoftReset(float reset_factor, float variance_gate, float min_reset_scale) {
+float applyVarianceSoftReset(AsvgfReprojectionParams params, float reset_factor, float variance_gate) {
 	float gate = clamp(variance_gate, 0.0, 1.0);
-	float scaled_reset = reset_factor * mix(min_reset_scale, 1.0, gate);
+	float scaled_reset = reset_factor * mix(params.reset.x, 1.0, gate);
 	return clamp(scaled_reset, 0.0, 1.0);
 }
 
-float computeIndirectDiffuseVarianceCompatibility(float current_luma, float history_luma) {
-	float signal = max(max(current_luma, history_luma), 0.05);
-	float expected_delta = max(0.18, 0.45 * signal);
-	float mismatch = abs(current_luma - history_luma) / expected_delta;
-	float compatibility = 1.0 - smoothstep(2.0, 10.0, mismatch);
-	return max(compatibility, 0.60);
+float computeLumaDeltaGate(AsvgfReprojectionParams params, float current_luma, float history_luma) {
+	float signal = max(max(current_luma, history_luma), params.analytical_variance.x);
+	float normalized_delta = abs(current_luma - history_luma) / (signal + params.variance_compatibility.y);
+	return smoothstep(params.variance_compatibility.z, params.variance_compatibility.w, normalized_delta);
 }
 
-float computeIndirectDiffuseVarianceGate(float current_luma, float history_luma) {
-	float signal = max(max(current_luma, history_luma), 0.05);
-	float normalized_delta = abs(current_luma - history_luma) / (signal + 0.25);
-	return smoothstep(2.0, 7.0, normalized_delta);
-}
-
-float computeEffectiveHistorySamples(float history_samples, float reset_factor) {
+float computeEffectiveHistorySamples(AsvgfReprojectionParams params, float history_samples, float reset_factor) {
 	float clamped_reset_factor = clamp(reset_factor, 0.0, 1.0);
+	float history_samples_max = max(params.history.x, 1.0);
+	float current_weight_min = clamp(params.history.y, 1e-4, 1.0);
 	float max_effective_history_samples = min(
-		ASVGF_HISTORY_SAMPLES_MAX - 1.0,
-		(1.0 / ASVGF_HISTORY_CURRENT_WEIGHT_MIN) - 1.0);
+		history_samples_max - 1.0,
+		(1.0 / current_weight_min) - 1.0);
 	return min(max(history_samples, 0.0) * clamped_reset_factor, max_effective_history_samples);
 }
 
-float computeAnalyticalVarianceCompatibility(LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
-	float effective_history_samples = computeEffectiveHistorySamples(history_samples, reset_factor);
+float computeAnalyticalVarianceCompatibility(AsvgfReprojectionParams params, LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
+	float effective_history_samples = computeEffectiveHistorySamples(params, history_samples, reset_factor);
 	float total_samples = effective_history_samples + 1.0;
 	float history_mix = effective_history_samples / total_samples;
 	float current_mix = 1.0 / total_samples;
@@ -173,18 +233,18 @@ float computeAnalyticalVarianceCompatibility(LuminanceStats current_stats, Lumin
 	float mean_delta = current_stats.mean - history_stats.mean;
 	float observed_variance = expected_variance + history_mix * current_mix * mean_delta * mean_delta;
 
-	float signal = max(max(current_stats.mean, history_stats.mean), 0.02);
-	float variance_floor = pow(0.015 + 0.025 * signal, 2.0);
+	float signal = max(max(current_stats.mean, history_stats.mean), params.analytical_variance.x);
+	float variance_floor = pow(params.analytical_variance.y + params.analytical_variance.z * signal, 2.0);
 	float variance_ratio = (observed_variance + variance_floor) / (expected_variance + variance_floor);
-	float ratio_compatibility = 1.0 - smoothstep(2.0, 10.0, variance_ratio);
+	float ratio_compatibility = 1.0 - smoothstep(params.analytical_variance.w, params.analytical_variance2.x, variance_ratio);
 
 	float delta_sigma = abs(mean_delta) / sqrt(max(current_variance + history_variance + variance_floor, 1e-8));
-	float mean_compatibility = 1.0 - smoothstep(2.5, 7.5, delta_sigma);
+	float mean_compatibility = 1.0 - smoothstep(params.analytical_variance2.y, params.analytical_variance2.z, delta_sigma);
 	return clamp(min(ratio_compatibility, mean_compatibility), 0.0, 1.0);
 }
 
-LuminanceStats accumulateHistoryStats(LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
-	float effective_history_samples = computeEffectiveHistorySamples(history_samples, reset_factor);
+LuminanceStats accumulateHistoryStats(AsvgfReprojectionParams params, LuminanceStats current_stats, LuminanceStats history_stats, float history_samples, float reset_factor) {
+	float effective_history_samples = computeEffectiveHistorySamples(params, history_samples, reset_factor);
 	float total_samples = effective_history_samples + 1.0;
 	float history_mix = effective_history_samples / total_samples;
 	float current_mix = 1.0 / total_samples;
@@ -197,12 +257,67 @@ LuminanceStats accumulateHistoryStats(LuminanceStats current_stats, LuminanceSta
 	return accumulated_stats;
 }
 
-vec4 accumulateHistoryRadiance(vec3 current, vec3 history, float history_samples, float reset_factor) {
-	float effective_history_samples = computeEffectiveHistorySamples(history_samples, reset_factor);
+vec4 accumulateHistoryRadiance(AsvgfReprojectionParams params, vec3 current, vec3 history, float history_samples, float reset_factor) {
+	float effective_history_samples = computeEffectiveHistorySamples(params, history_samples, reset_factor);
 	float total_samples = effective_history_samples + 1.0;
 	float history_mix = effective_history_samples / total_samples;
 	vec3 accumulated = mix(current, history, history_mix);
-	return vec4(accumulated, min(total_samples, ASVGF_HISTORY_SAMPLES_MAX));
+	return vec4(accumulated, min(total_samples, max(params.history.x, 1.0)));
+}
+
+AsvgfLobeReprojectionResult makeFreshLobeResult(vec3 current_color, LuminanceStats current_stats) {
+	AsvgfLobeReprojectionResult result;
+	result.color = max(current_color, vec3(0.0));
+	result.stats = current_stats;
+	result.history_samples = 1.0;
+	result.gate = makeHardResetGate();
+	return result;
+}
+
+AsvgfLobeReprojectionResult reprojectAsvgfLobe(AsvgfReprojectionParams params, AsvgfLobeReprojectionInput input_value) {
+	AsvgfLobeContext lobe = input_value.lobe;
+	if (!lobe.history_valid) {
+		return makeFreshLobeResult(lobe.current_color, lobe.current_stats);
+	}
+
+	float current_luma = luminance(lobe.current_color);
+	float history_luma = luminance(lobe.history_color);
+	float variance_compatibility = computeVarianceCompatibility(params, current_luma, lobe.current_stats, history_luma, lobe.history_stats);
+	float softened_variance_compatibility = softenVarianceCompatibility(params, variance_compatibility);
+	float variance_gate = computeVarianceGate(params, lobe.current_stats, lobe.history_stats);
+	float analytical_compatibility = computeAnalyticalVarianceCompatibility(params, lobe.current_stats, lobe.history_stats, lobe.history_samples, softened_variance_compatibility);
+
+	AsvgfGateState gate = makeNeutralGate();
+	gate.reset_factor = min(gate.reset_factor, softened_variance_compatibility);
+	gate.reset_factor = min(gate.reset_factor, analytical_compatibility);
+	gate = combineGate(gate, input_value.external_gate);
+
+	if (input_value.allow_direct_diffuse_reset_gate && params.use_direct_diffuse_reset_as_gate != 0u) {
+		gate = combineGate(gate, input_value.direct_diffuse_gate);
+	}
+
+	bool variance_hard_reset =
+		(variance_gate >= params.reset.y)
+		&& (variance_compatibility <= params.reset.z);
+
+	if (gate.hard_reset || variance_hard_reset) {
+		gate.hard_reset = true;
+		gate.reset_factor = 0.0;
+	} else {
+		gate.reset_factor = applyVarianceSoftReset(params, gate.reset_factor, variance_gate);
+		if (gate.reset_factor <= params.reset.w) {
+			gate.hard_reset = true;
+			gate.reset_factor = 0.0;
+		}
+	}
+
+	vec4 accumulated = accumulateHistoryRadiance(params, lobe.current_color, lobe.history_color, lobe.history_samples, gate.reset_factor);
+	AsvgfLobeReprojectionResult result;
+	result.color = accumulated.rgb;
+	result.history_samples = accumulated.a;
+	result.stats = accumulateHistoryStats(params, lobe.current_stats, lobe.history_stats, lobe.history_samples, gate.reset_factor);
+	result.gate = gate;
+	return result;
 }
 
 void main() {
@@ -282,7 +397,7 @@ void main() {
 		float indirect_specular_variance_compatibility = 1.0;
 
 		float direct_specular_history_outlier = 0.0;
-		float direct_specular_history_luma_cap = DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP;
+		float direct_specular_history_luma_cap = 1e6;
 		float direct_specular_noise_gate = 0.0;
 
 		LuminanceStats history_diffuse_stats = current_direct_diffuse_stats;
@@ -316,12 +431,12 @@ void main() {
 				indirect_diffuse_history_compatibility = indirect_diffuse_direct_compatibility;
 				history_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_diffuse_stats, reproj_pix));
 				history_indirect_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_diffuse_stats, reproj_pix));
-				diffuse_variance_compatibility = computeVarianceCompatibility(current_diffuse_luma, current_direct_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
+				diffuse_variance_compatibility = computeVarianceCompatibility(ASVGF.direct_diffuse, current_diffuse_luma, current_direct_diffuse_stats, luminance(history_diffuse), history_diffuse_stats);
 				diffuse_variance_compatibility = min(diffuse_variance_compatibility,
-					computeAnalyticalVarianceCompatibility(current_direct_diffuse_stats, history_diffuse_stats, diffuse_history_samples, diffuse_compatibility));
-				indirect_diffuse_variance_compatibility = computeVarianceCompatibility(current_indirect_diffuse_luma, current_indirect_diffuse_stats, luminance(history_indirect_diffuse), history_indirect_diffuse_stats);
+					computeAnalyticalVarianceCompatibility(ASVGF.direct_diffuse, current_direct_diffuse_stats, history_diffuse_stats, diffuse_history_samples, diffuse_compatibility));
+				indirect_diffuse_variance_compatibility = computeVarianceCompatibility(ASVGF.indirect_diffuse, current_indirect_diffuse_luma, current_indirect_diffuse_stats, luminance(history_indirect_diffuse), history_indirect_diffuse_stats);
 				indirect_diffuse_variance_compatibility = min(indirect_diffuse_variance_compatibility,
-					computeAnalyticalVarianceCompatibility(current_indirect_diffuse_stats, history_indirect_diffuse_stats, indirect_diffuse_history_samples, indirect_diffuse_history_compatibility));
+					computeAnalyticalVarianceCompatibility(ASVGF.indirect_diffuse, current_indirect_diffuse_stats, history_indirect_diffuse_stats, indirect_diffuse_history_samples, indirect_diffuse_history_compatibility));
 			}
 		}
 
@@ -334,29 +449,13 @@ void main() {
 		if (has_base_history) {
 			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_asvgf_direct_specular, direct_specular_history_pix);
 			history_direct_specular = history_direct_specular_sample.xyz;
-			history_direct_specular = clampSpecularLuminance(history_direct_specular, DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
+			history_direct_specular = clampSpecularLuminance(history_direct_specular, 1e6);
 			direct_specular_history_samples = max(history_direct_specular_sample.a, 0.0);
 			direct_specular_history_compatibility = direct_specular_compatibility;
 			history_direct_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_specular_stats, direct_specular_history_pix));
-			direct_specular_variance_compatibility = computeVarianceCompatibility(current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
+			direct_specular_variance_compatibility = computeVarianceCompatibility(ASVGF.direct_specular, current_direct_specular_luma, current_direct_specular_stats, luminance(history_direct_specular), history_direct_specular_stats);
 			direct_specular_variance_compatibility = min(direct_specular_variance_compatibility,
-				computeAnalyticalVarianceCompatibility(current_direct_specular_stats, history_direct_specular_stats, direct_specular_history_samples, direct_specular_history_compatibility));
-			float current_direct_sigma = sqrt(max(current_direct_specular_stats.variance, 0.0));
-			float direct_noise_norm = current_direct_sigma / (current_direct_specular_stats.mean + 0.05);
-			direct_specular_noise_gate = smoothstep(0.08, 0.45, direct_noise_norm);
-			float direct_envelope_sigma_scale = mix(2.5, 5.5, direct_specular_noise_gate);
-			float direct_envelope_mean_scale = mix(0.15, 0.45, direct_specular_noise_gate);
-			float direct_history_envelope = max(current_direct_sigma * direct_envelope_sigma_scale + direct_envelope_mean_scale * current_direct_specular_stats.mean, 0.03);
-			float direct_history_delta = abs(luminance(history_direct_specular) - current_direct_specular_stats.mean);
-			float direct_outlier_lo = mix(1.0, 1.4, direct_specular_noise_gate);
-			float direct_outlier_hi = mix(2.5, 4.2, direct_specular_noise_gate);
-			direct_specular_history_outlier = smoothstep(direct_outlier_lo, direct_outlier_hi, direct_history_delta / direct_history_envelope);
-			direct_specular_history_luma_cap = max(current_direct_specular_stats.mean + direct_history_envelope * mix(1.0, 1.6, direct_specular_noise_gate), DIRECT_SPECULAR_FALLBACK_HISTORY_LUMA_CLAMP);
-			if (direct_specular_history_outlier > 0.0) {
-				history_direct_specular = clampSpecularLuminance(history_direct_specular, direct_specular_history_luma_cap);
-			}
-			float direct_compatibility_attenuation = mix(0.85, 0.35, direct_specular_noise_gate);
-			direct_specular_history_compatibility *= (1.0 - direct_compatibility_attenuation * direct_specular_history_outlier);
+				computeAnalyticalVarianceCompatibility(ASVGF.direct_specular, current_direct_specular_stats, history_direct_specular_stats, direct_specular_history_samples, direct_specular_history_compatibility));
 		}
 
 		ivec2 indirect_parallax_pix = ivec2(-1);
@@ -386,9 +485,9 @@ void main() {
 				vec3 parallax_prev_shading_normal = normalDecode(parallax_history_meta.ba);
 				float parallax_normal_delta = 1.0 - saturate(dot(shading_normal, parallax_prev_shading_normal));
 				float parallax_roughness_delta = abs(parallax_history_meta.g - current_roughness);
-				float parallax_normal_match = 1.0 - smoothstep(ASVGF_PARALLAX_SHADING_NORMAL_THRESHOLD, ASVGF_PARALLAX_SHADING_NORMAL_THRESHOLD * 2.0, parallax_normal_delta);
-				float parallax_roughness_match = 1.0 - smoothstep(ASVGF_PARALLAX_ROUGHNESS_THRESHOLD, ASVGF_PARALLAX_ROUGHNESS_THRESHOLD * 2.0, parallax_roughness_delta);
-				use_indirect_specular_parallax = (parallax_depth_offset < depth_treshold * 1.35) && (parallax_normal_match > 0.0) && (parallax_roughness_match > 0.0);
+				float parallax_normal_match = 1.0 - smoothstep(ASVGF.indirect_specular.parallax.y, ASVGF.indirect_specular.parallax.y * 2.0, parallax_normal_delta);
+				float parallax_roughness_match = 1.0 - smoothstep(ASVGF.indirect_specular.parallax.x, ASVGF.indirect_specular.parallax.x * 2.0, parallax_roughness_delta);
+				use_indirect_specular_parallax = (parallax_depth_offset < depth_treshold * ASVGF.indirect_specular.history.w) && (parallax_normal_match > 0.0) && (parallax_roughness_match > 0.0);
 			}
 		}
 
@@ -402,9 +501,9 @@ void main() {
 			indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
 			indirect_specular_history_compatibility = indirect_diffuse_direct_compatibility * indirect_specular_compatibility;
 			history_indirect_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_specular_stats, indirect_specular_history_pix));
-			indirect_specular_variance_compatibility = computeVarianceCompatibility(current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
+			indirect_specular_variance_compatibility = computeVarianceCompatibility(ASVGF.indirect_specular, current_indirect_specular_luma, current_indirect_specular_stats, luminance(history_indirect_specular), history_indirect_specular_stats);
 			indirect_specular_variance_compatibility = min(indirect_specular_variance_compatibility,
-				computeAnalyticalVarianceCompatibility(current_indirect_specular_stats, history_indirect_specular_stats, indirect_specular_history_samples, indirect_specular_history_compatibility));
+				computeAnalyticalVarianceCompatibility(ASVGF.indirect_specular, current_indirect_specular_stats, history_indirect_specular_stats, indirect_specular_history_samples, indirect_specular_history_compatibility));
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
@@ -418,114 +517,86 @@ void main() {
 		bool has_indirect_diffuse_history = has_base_history;
 		bool has_direct_specular_history = has_base_history;
 		bool has_indirect_specular_history = has_base_history;
-		float direct_variance_reset_boost = 0.0;
-		float direct_diffuse_reset_factor = 1.0;
-		bool direct_hard_reset = false;
 
-		if (has_diffuse_history) {
-			float diffuse_variance_gate = computeVarianceGate(current_direct_diffuse_stats, history_diffuse_stats);
-			float diffuse_reset_factor = diffuse_compatibility * softenVarianceCompatibility(diffuse_variance_compatibility);
-			diffuse_reset_factor = applyVarianceSoftReset(diffuse_reset_factor, diffuse_variance_gate, 0.22);
-			direct_diffuse_reset_factor = diffuse_reset_factor;
-			direct_variance_reset_boost = smoothstep(0.10, 0.55, diffuse_variance_gate * (1.0 - diffuse_reset_factor));
-			direct_hard_reset = (diffuse_compatibility <= 0.01)
-				|| ((diffuse_variance_gate >= 0.95) && (diffuse_variance_compatibility <= 0.20))
-				|| (diffuse_reset_factor <= 0.06);
-			float previous_diffuse_history_samples = diffuse_history_samples;
-			vec4 accumulated_diffuse = accumulateHistoryRadiance(direct_diffuse, history_diffuse, previous_diffuse_history_samples, diffuse_reset_factor);
-			asvgf_direct_diffuse_stats = accumulateHistoryStats(current_direct_diffuse_stats, history_diffuse_stats, previous_diffuse_history_samples, diffuse_reset_factor);
-			direct_diffuse = accumulated_diffuse.rgb;
-			diffuse_history_samples = accumulated_diffuse.a;
-		} else {
-			diffuse_history_samples = 1.0;
-			asvgf_direct_diffuse_stats = current_direct_diffuse_stats;
-			direct_variance_reset_boost = 0.0;
-			direct_diffuse_reset_factor = 1.0;
-			direct_hard_reset = false;
-		}
+		AsvgfGateState neutral_gate = makeNeutralGate();
+		AsvgfGateState direct_diffuse_external_gate = makeGate(diffuse_compatibility, diffuse_compatibility <= 0.01);
+		AsvgfGateState direct_specular_external_gate = makeGate(direct_specular_history_compatibility, false);
+		AsvgfGateState indirect_diffuse_external_gate = makeGate(indirect_diffuse_history_compatibility, false);
+		AsvgfGateState indirect_specular_external_gate = makeGate(indirect_specular_history_compatibility, false);
 
-		if (has_indirect_diffuse_history) {
-			float indirect_diffuse_variance_gate = max(
-				computeIndirectDiffuseVarianceGate(current_indirect_diffuse_luma, luminance(history_indirect_diffuse)),
-				computeVarianceGate(current_indirect_diffuse_stats, history_indirect_diffuse_stats));
-			float indirect_diffuse_base_compatibility = mix(0.55, 1.0, indirect_diffuse_history_compatibility);
-			float indirect_diffuse_reset_factor = indirect_diffuse_base_compatibility * mix(1.0, softenVarianceCompatibility(indirect_diffuse_variance_compatibility), 0.35);
-			float direct_history_luma = luminance(history_diffuse);
-			float direct_signal = max(max(current_diffuse_luma, direct_history_luma), 0.05);
-			float direct_relight_norm = abs(current_diffuse_luma - direct_history_luma) / (direct_signal + 0.03);
-			float direct_relight_boost = smoothstep(0.12, 0.55, direct_relight_norm);
-			indirect_diffuse_reset_factor = applyVarianceSoftReset(indirect_diffuse_reset_factor, indirect_diffuse_variance_gate, 0.92);
-			float direct_compatibility_boost = mix(0.35, 1.0, indirect_diffuse_direct_compatibility);
-			float direct_relight_reset = 1.0 - direct_relight_boost * direct_compatibility_boost;
-			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_relight_reset);
-			float direct_variance_gate_boost = direct_variance_reset_boost * direct_compatibility_boost;
-			float direct_variance_reset = 1.0 - direct_variance_gate_boost;
-			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_variance_reset);
-			float direct_diffuse_reset_carry = 1.0 - smoothstep(0.20, 0.85, 1.0 - direct_diffuse_reset_factor);
-			indirect_diffuse_reset_factor = min(indirect_diffuse_reset_factor, direct_diffuse_reset_carry);
-			float direct_off_ratio = current_diffuse_luma / (direct_history_luma + 1e-4);
-			bool hard_direct_off = (direct_history_luma > 0.03) && (current_diffuse_luma < 0.004 || direct_off_ratio < 0.06);
-			if (hard_direct_off || direct_hard_reset) {
-				indirect_diffuse_reset_factor = 0.0;
-			}
-			if (legacy_bounce) {
-				indirect_diffuse_reset_factor = 1.0;
-			}
-			float previous_indirect_diffuse_history_samples = indirect_diffuse_history_samples;
-			vec4 accumulated_indirect_diffuse = accumulateHistoryRadiance(indirect_diffuse, history_indirect_diffuse, previous_indirect_diffuse_history_samples, indirect_diffuse_reset_factor);
-			asvgf_indirect_diffuse_stats = accumulateHistoryStats(current_indirect_diffuse_stats, history_indirect_diffuse_stats, previous_indirect_diffuse_history_samples, indirect_diffuse_reset_factor);
-			indirect_diffuse = accumulated_indirect_diffuse.rgb;
-			indirect_diffuse_history_samples = accumulated_indirect_diffuse.a;
-		} else {
-			indirect_diffuse_history_samples = 1.0;
-			asvgf_indirect_diffuse_stats = current_indirect_diffuse_stats;
-		}
+		AsvgfLobeReprojectionResult direct_diffuse_result = reprojectAsvgfLobe(
+			ASVGF.direct_diffuse,
+			makeLobeReprojectionInput(
+				makeLobeContext(
+					direct_diffuse,
+					history_diffuse,
+					current_direct_diffuse_stats,
+					history_diffuse_stats,
+					diffuse_history_samples,
+					has_diffuse_history),
+				direct_diffuse_external_gate,
+				neutral_gate,
+				false));
 
-		if (has_direct_specular_history) {
-			float direct_specular_variance_gate = computeVarianceGate(current_direct_specular_stats, history_direct_specular_stats);
-			float direct_specular_reset_factor = direct_specular_history_compatibility * mix(1.0, softenVarianceCompatibility(direct_specular_variance_compatibility), 0.65);
-			direct_specular_reset_factor *= mix(1.0, mix(0.15, 0.55, direct_specular_noise_gate), direct_specular_history_outlier);
-			direct_specular_reset_factor = applyVarianceSoftReset(direct_specular_reset_factor, direct_specular_variance_gate, 0.18);
-			float previous_direct_specular_history_samples = direct_specular_history_samples;
-			vec4 accumulated_direct_specular = accumulateHistoryRadiance(direct_specular, history_direct_specular, previous_direct_specular_history_samples, direct_specular_reset_factor);
-			asvgf_direct_specular_stats = accumulateHistoryStats(current_direct_specular_stats, history_direct_specular_stats, previous_direct_specular_history_samples, direct_specular_reset_factor);
-			direct_specular = accumulated_direct_specular.rgb;
-			if (direct_specular_history_outlier > 0.0) {
-				direct_specular = clampSpecularLuminance(direct_specular, direct_specular_history_luma_cap * mix(1.1, 1.45, direct_specular_noise_gate));
-			}
-			direct_specular_history_samples = accumulated_direct_specular.a;
-		} else {
-			direct_specular_history_samples = 1.0;
-			asvgf_direct_specular_stats = current_direct_specular_stats;
-		}
+		AsvgfLobeReprojectionResult direct_specular_result = reprojectAsvgfLobe(
+			ASVGF.direct_specular,
+			makeLobeReprojectionInput(
+				makeLobeContext(
+					direct_specular,
+					history_direct_specular,
+					current_direct_specular_stats,
+					history_direct_specular_stats,
+					direct_specular_history_samples,
+					has_direct_specular_history),
+				direct_specular_external_gate,
+				direct_diffuse_result.gate,
+				true));
 
-		if (has_indirect_specular_history) {
-			float indirect_specular_variance_gate = mix(0.35, 1.0, computeVarianceGate(current_indirect_specular_stats, history_indirect_specular_stats));
-			float indirect_specular_base_compatibility = mix(0.55, 1.0, indirect_diffuse_direct_compatibility);
-			float indirect_specular_reset_factor = indirect_specular_base_compatibility * mix(1.0, softenVarianceCompatibility(indirect_specular_variance_compatibility), 0.45);
-			indirect_specular_reset_factor = applyVarianceSoftReset(indirect_specular_reset_factor, indirect_specular_variance_gate, 0.30);
-			float direct_compatibility_boost = mix(0.35, 1.0, indirect_diffuse_direct_compatibility);
-			float direct_variance_reset = 1.0 - direct_variance_reset_boost * direct_compatibility_boost;
-			indirect_specular_reset_factor = min(indirect_specular_reset_factor, direct_variance_reset);
-			if (direct_hard_reset) {
-				indirect_specular_reset_factor = 0.0;
-			}
-			indirect_specular_reset_factor *= indirect_specular_history_compatibility;
-			if (indirect_specular_history_compatibility <= 0.01) {
-				indirect_specular_reset_factor = 0.0;
-			}
-			if (legacy_bounce) {
-				indirect_specular_reset_factor = 1.0;
-			}
-			float previous_indirect_specular_history_samples = indirect_specular_history_samples;
-			vec4 accumulated_indirect_specular = accumulateHistoryRadiance(indirect_specular, history_indirect_specular, previous_indirect_specular_history_samples, indirect_specular_reset_factor);
-			asvgf_indirect_specular_stats = accumulateHistoryStats(current_indirect_specular_stats, history_indirect_specular_stats, previous_indirect_specular_history_samples, indirect_specular_reset_factor);
-			indirect_specular = accumulated_indirect_specular.rgb;
-			indirect_specular_history_samples = accumulated_indirect_specular.a;
-		} else {
-			indirect_specular_history_samples = 1.0;
-			asvgf_indirect_specular_stats = current_indirect_specular_stats;
-		}
+		AsvgfGateState indirect_direct_diffuse_gate = legacy_bounce ? neutral_gate : direct_diffuse_result.gate;
+
+		AsvgfLobeReprojectionResult indirect_diffuse_result = reprojectAsvgfLobe(
+			ASVGF.indirect_diffuse,
+			makeLobeReprojectionInput(
+				makeLobeContext(
+					indirect_diffuse,
+					history_indirect_diffuse,
+					current_indirect_diffuse_stats,
+					history_indirect_diffuse_stats,
+					indirect_diffuse_history_samples,
+					has_indirect_diffuse_history),
+				legacy_bounce ? neutral_gate : indirect_diffuse_external_gate,
+				indirect_direct_diffuse_gate,
+				true));
+
+		AsvgfLobeReprojectionResult indirect_specular_result = reprojectAsvgfLobe(
+			ASVGF.indirect_specular,
+			makeLobeReprojectionInput(
+				makeLobeContext(
+					indirect_specular,
+					history_indirect_specular,
+					current_indirect_specular_stats,
+					history_indirect_specular_stats,
+					indirect_specular_history_samples,
+					has_indirect_specular_history),
+				legacy_bounce ? neutral_gate : indirect_specular_external_gate,
+				indirect_direct_diffuse_gate,
+				true));
+
+		direct_diffuse = direct_diffuse_result.color;
+		diffuse_history_samples = direct_diffuse_result.history_samples;
+		asvgf_direct_diffuse_stats = direct_diffuse_result.stats;
+
+		direct_specular = direct_specular_result.color;
+		direct_specular_history_samples = direct_specular_result.history_samples;
+		asvgf_direct_specular_stats = direct_specular_result.stats;
+
+		indirect_diffuse = indirect_diffuse_result.color;
+		indirect_diffuse_history_samples = indirect_diffuse_result.history_samples;
+		asvgf_indirect_diffuse_stats = indirect_diffuse_result.stats;
+
+		indirect_specular = indirect_specular_result.color;
+		indirect_specular_history_samples = indirect_specular_result.history_samples;
+		asvgf_indirect_specular_stats = indirect_specular_result.stats;
 	}
 
 	DEBUG_VALIDATE_RANGE_VEC3("asvgf.direct_diffuse", direct_diffuse, 0.0, 1e6);

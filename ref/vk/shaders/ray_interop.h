@@ -203,6 +203,45 @@ struct LightCluster {
 #define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
 #define RENDERER_FLAG_DISABLE_REPROJECTION (1<<6)
 
+struct AsvgfReprojectionParams {
+	// x: history_samples_max, y: history_current_weight_min,
+	// z: reprojection_depth_threshold_scale, w: parallax_depth_threshold_scale
+	vec4 history;
+
+	// x: luma_scale, y: delta_floor, z: smooth_min, w: smooth_max
+	vec4 variance_compatibility;
+
+	// x: min, y: max, z: soften_threshold, w: soften_mix
+	vec4 variance_gate;
+
+	// x: min_reset_scale,
+	// y: hard_variance_gate,
+	// z: hard_variance_compatibility,
+	// w: hard_reset_factor
+	vec4 reset;
+
+	// x: signal_floor, y: floor_base, z: floor_signal_scale, w: ratio_min
+	vec4 analytical_variance;
+
+	// x: ratio_max, y: mean_min, z: mean_max
+	vec4 analytical_variance2;
+
+	// x: roughness_threshold, y: shading_normal_threshold
+	vec4 parallax;
+
+	// The only intentional cross-lobe dependency. The direct-diffuse lobe itself
+	// must pass a neutral gate and disable this path at the call site.
+	uint use_direct_diffuse_reset_as_gate;
+	PAD(3)
+};
+
+struct AsvgfParams {
+	STRUCT AsvgfReprojectionParams direct_diffuse;
+	STRUCT AsvgfReprojectionParams direct_specular;
+	STRUCT AsvgfReprojectionParams indirect_diffuse;
+	STRUCT AsvgfReprojectionParams indirect_specular;
+};
+
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
@@ -216,6 +255,9 @@ struct UniformBuffer {
 	uint debug_flags;
 
 	uint renderer_flags;
+	PAD(3)
+
+	STRUCT AsvgfParams asvgf;
 };
 
 #undef PAD

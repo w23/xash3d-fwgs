@@ -21,6 +21,7 @@
 
 #include "xash3d_mathlib.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #define LOG_MODULE rt
@@ -55,6 +56,8 @@ static struct {
 
 	int max_frame_width, max_frame_height;
 
+	struct AsvgfParams asvgf_params;
+
 	struct {
 		cvar_t *rt_debug_display_only;
 		uint32_t rt_debug_display_only_value;
@@ -65,6 +68,246 @@ static struct {
 		cvar_t *rt_debug_fixed_random_seed;
 	} debug;
 } g_rtx = {0};
+
+#define LIST_ASVGF_REPROJECTION_FLOAT_PARAMS(X) \
+	X(history_samples_max, history, 0, 16.0f) \
+	X(history_current_weight_min, history, 1, 0.1f) \
+	X(reprojection_depth_threshold_scale, history, 2, 0.01f) \
+	X(parallax_depth_threshold_scale, history, 3, 1.35f) \
+	X(variance_compatibility_luma_scale, variance_compatibility, 0, 0.1f) \
+	X(variance_compatibility_delta_floor, variance_compatibility, 1, 0.02f) \
+	X(variance_compatibility_smooth_min, variance_compatibility, 2, 2.0f) \
+	X(variance_compatibility_smooth_max, variance_compatibility, 3, 6.0f) \
+	X(variance_gate_min, variance_gate, 0, 0.04f) \
+	X(variance_gate_max, variance_gate, 1, 0.35f) \
+	X(variance_soften_threshold, variance_gate, 2, 0.2f) \
+	X(variance_soften_mix, variance_gate, 3, 0.35f) \
+	X(reset_min_scale, reset, 0, 0.22f) \
+	X(reset_hard_variance_gate, reset, 1, 0.95f) \
+	X(reset_hard_compatibility, reset, 2, 0.20f) \
+	X(reset_hard_factor, reset, 3, 0.06f) \
+	X(variance_signal_floor, analytical_variance, 0, 0.02f) \
+	X(analytical_variance_floor_base, analytical_variance, 1, 0.015f) \
+	X(analytical_variance_floor_signal_scale, analytical_variance, 2, 0.025f) \
+	X(analytical_variance_ratio_min, analytical_variance, 3, 2.0f) \
+	X(analytical_variance_ratio_max, analytical_variance2, 0, 10.0f) \
+	X(analytical_variance_mean_min, analytical_variance2, 1, 2.5f) \
+	X(analytical_variance_mean_max, analytical_variance2, 2, 7.5f) \
+	X(parallax_roughness_threshold, parallax, 0, 0.1f) \
+	X(parallax_shading_normal_threshold, parallax, 1, 0.01f)
+
+typedef enum {
+	ASVGF_REPROJECTION_PARAM_FLOAT,
+	ASVGF_REPROJECTION_PARAM_BOOL,
+} asvgf_reprojection_param_type_t;
+
+typedef struct {
+	const char *name;
+	size_t offset;
+	int component;
+	asvgf_reprojection_param_type_t type;
+	float default_float_value;
+	uint32_t default_uint_value;
+} asvgf_reprojection_param_desc_t;
+
+static const asvgf_reprojection_param_desc_t asvgf_reprojection_param_descs[] = {
+#define X(name, field, component, default_value) \
+	{ #name, offsetof(struct AsvgfReprojectionParams, field), component, ASVGF_REPROJECTION_PARAM_FLOAT, default_value, 0 },
+	LIST_ASVGF_REPROJECTION_FLOAT_PARAMS(X)
+#undef X
+	{ "use_direct_diffuse_reset_as_gate", offsetof(struct AsvgfReprojectionParams, use_direct_diffuse_reset_as_gate), 0, ASVGF_REPROJECTION_PARAM_BOOL, 0.0f, 0 },
+};
+
+static float *asvgfReprojectionFloatParamValue(struct AsvgfReprojectionParams *params, const asvgf_reprojection_param_desc_t *desc) {
+	return PTR_CAST(float, (char*)params + desc->offset) + desc->component;
+}
+
+static uint32_t *asvgfReprojectionBoolParamValue(struct AsvgfReprojectionParams *params, const asvgf_reprojection_param_desc_t *desc) {
+	return PTR_CAST(uint32_t, (char*)params + desc->offset);
+}
+
+static qboolean asvgfReprojectionParamIsResetMinScale(const asvgf_reprojection_param_desc_t *desc) {
+	return desc->type == ASVGF_REPROJECTION_PARAM_FLOAT
+		&& desc->offset == offsetof(struct AsvgfReprojectionParams, reset)
+		&& desc->component == 0;
+}
+
+static float asvgfReprojectionDefaultFloat(const asvgf_reprojection_param_desc_t *desc, float default_reset_min_scale) {
+	return asvgfReprojectionParamIsResetMinScale(desc) ? default_reset_min_scale : desc->default_float_value;
+}
+
+static uint32_t asvgfReprojectionDefaultUint(const asvgf_reprojection_param_desc_t *desc, qboolean default_use_direct_diffuse_reset_as_gate) {
+	if (desc->type == ASVGF_REPROJECTION_PARAM_BOOL
+		&& desc->offset == offsetof(struct AsvgfReprojectionParams, use_direct_diffuse_reset_as_gate)) {
+		return default_use_direct_diffuse_reset_as_gate ? 1u : 0u;
+	}
+
+	return desc->default_uint_value;
+}
+
+static const asvgf_reprojection_param_desc_t *findAsvgfReprojectionParam(const char *name) {
+	for (size_t i = 0; i < COUNTOF(asvgf_reprojection_param_descs); ++i) {
+		if (0 == Q_stricmp(name, asvgf_reprojection_param_descs[i].name)) {
+			return asvgf_reprojection_param_descs + i;
+		}
+	}
+
+	return NULL;
+}
+
+static qboolean parseAsvgfBool(const char *value, uint32_t *out_value) {
+	if (0 == Q_stricmp(value, "1") || 0 == Q_stricmp(value, "true") || 0 == Q_stricmp(value, "yes") || 0 == Q_stricmp(value, "on")) {
+		*out_value = 1u;
+		return true;
+	}
+
+	if (0 == Q_stricmp(value, "0") || 0 == Q_stricmp(value, "false") || 0 == Q_stricmp(value, "no") || 0 == Q_stricmp(value, "off")) {
+		*out_value = 0u;
+		return true;
+	}
+
+	return false;
+}
+
+static void resetAsvgfReprojectionParams(struct AsvgfReprojectionParams *params, qboolean default_use_direct_diffuse_reset_as_gate, float default_reset_min_scale) {
+	memset(params, 0, sizeof(*params));
+
+	for (size_t i = 0; i < COUNTOF(asvgf_reprojection_param_descs); ++i) {
+		const asvgf_reprojection_param_desc_t *const desc = asvgf_reprojection_param_descs + i;
+		if (desc->type == ASVGF_REPROJECTION_PARAM_FLOAT) {
+			*asvgfReprojectionFloatParamValue(params, desc) = asvgfReprojectionDefaultFloat(desc, default_reset_min_scale);
+		} else {
+			*asvgfReprojectionBoolParamValue(params, desc) = asvgfReprojectionDefaultUint(desc, default_use_direct_diffuse_reset_as_gate);
+		}
+	}
+}
+
+static void resetAsvgfParams( void ) {
+	resetAsvgfReprojectionParams(&g_rtx.asvgf_params.direct_diffuse, false, 0.22f);
+	resetAsvgfReprojectionParams(&g_rtx.asvgf_params.direct_specular, false, 0.18f);
+	resetAsvgfReprojectionParams(&g_rtx.asvgf_params.indirect_diffuse, true, 0.92f);
+	resetAsvgfReprojectionParams(&g_rtx.asvgf_params.indirect_specular, false, 0.30f);
+}
+
+static void printAsvgfReprojectionParams(const char *lobe_name, struct AsvgfReprojectionParams *params, qboolean default_use_direct_diffuse_reset_as_gate, float default_reset_min_scale) {
+	gEngine.Con_Printf("ASVGF %s reprojection params:\n", lobe_name);
+
+	for (size_t i = 0; i < COUNTOF(asvgf_reprojection_param_descs); ++i) {
+		const asvgf_reprojection_param_desc_t *const desc = asvgf_reprojection_param_descs + i;
+		if (desc->type == ASVGF_REPROJECTION_PARAM_FLOAT) {
+			gEngine.Con_Printf("\t%s = %g (default %g)\n",
+				desc->name,
+				*asvgfReprojectionFloatParamValue(params, desc),
+				asvgfReprojectionDefaultFloat(desc, default_reset_min_scale));
+		} else {
+			const uint32_t default_value = asvgfReprojectionDefaultUint(desc, default_use_direct_diffuse_reset_as_gate);
+			gEngine.Con_Printf("\t%s = %s (default %s)\n",
+				desc->name,
+				*asvgfReprojectionBoolParamValue(params, desc) ? "true" : "false",
+				default_value ? "true" : "false");
+		}
+	}
+}
+
+static void denoiserLobeParamCmd(const char *command_name, const char *lobe_name, struct AsvgfReprojectionParams *params, qboolean default_use_direct_diffuse_reset_as_gate, float default_reset_min_scale) {
+	const int argc = gEngine.Cmd_Argc();
+	const char *const arg = argc >= 2 ? gEngine.Cmd_Argv(1) : "list";
+
+	if (argc == 1 || (argc == 2 && 0 == Q_stricmp(arg, "list"))) {
+		gEngine.Con_Printf("Usage:\n");
+		gEngine.Con_Printf("\t%s list\n", command_name);
+		gEngine.Con_Printf("\t%s reset\n", command_name);
+		gEngine.Con_Printf("\t%s <paramName> [value]\n", command_name);
+		printAsvgfReprojectionParams(lobe_name, params, default_use_direct_diffuse_reset_as_gate, default_reset_min_scale);
+		return;
+	}
+
+	if (argc == 2 && 0 == Q_stricmp(arg, "reset")) {
+		resetAsvgfReprojectionParams(params, default_use_direct_diffuse_reset_as_gate, default_reset_min_scale);
+		g_rtx.discontinuity = true;
+		gEngine.Con_Printf("ASVGF %s reprojection params reset to defaults\n", lobe_name);
+		return;
+	}
+
+	const asvgf_reprojection_param_desc_t *const desc = findAsvgfReprojectionParam(arg);
+	if (!desc) {
+		gEngine.Con_Printf("Unknown ASVGF reprojection param \"%s\". Valid params:\n", arg);
+		printAsvgfReprojectionParams(lobe_name, params, default_use_direct_diffuse_reset_as_gate, default_reset_min_scale);
+		return;
+	}
+
+	if (argc == 2) {
+		if (desc->type == ASVGF_REPROJECTION_PARAM_FLOAT) {
+			gEngine.Con_Printf("%s.%s = %g (default %g)\n",
+				lobe_name, desc->name,
+				*asvgfReprojectionFloatParamValue(params, desc),
+				asvgfReprojectionDefaultFloat(desc, default_reset_min_scale));
+		} else {
+			const uint32_t default_value = asvgfReprojectionDefaultUint(desc, default_use_direct_diffuse_reset_as_gate);
+			gEngine.Con_Printf("%s.%s = %s (default %s)\n",
+				lobe_name, desc->name,
+				*asvgfReprojectionBoolParamValue(params, desc) ? "true" : "false",
+				default_value ? "true" : "false");
+		}
+		return;
+	}
+
+	if (argc != 3) {
+		gEngine.Con_Printf("Usage: %s <paramName> [value]\n", command_name);
+		return;
+	}
+
+	if (desc->type == ASVGF_REPROJECTION_PARAM_FLOAT) {
+		*asvgfReprojectionFloatParamValue(params, desc) = Q_atof(gEngine.Cmd_Argv(2));
+		gEngine.Con_Printf("%s.%s = %g\n", lobe_name, desc->name, *asvgfReprojectionFloatParamValue(params, desc));
+	} else {
+		uint32_t bool_value;
+		if (!parseAsvgfBool(gEngine.Cmd_Argv(2), &bool_value)) {
+			gEngine.Con_Printf("Expected boolean value for %s.%s\n", lobe_name, desc->name);
+			return;
+		}
+
+		*asvgfReprojectionBoolParamValue(params, desc) = bool_value;
+		gEngine.Con_Printf("%s.%s = %s\n", lobe_name, desc->name, bool_value ? "true" : "false");
+	}
+
+	g_rtx.discontinuity = true;
+}
+
+static void denoiserDirectDiffuseParamCmd( void ) {
+	denoiserLobeParamCmd("rt_denoiser_direct_diffuse", "direct_diffuse", &g_rtx.asvgf_params.direct_diffuse, false, 0.22f);
+}
+
+static void denoiserDirectSpecularParamCmd( void ) {
+	denoiserLobeParamCmd("rt_denoiser_direct_specular", "direct_specular", &g_rtx.asvgf_params.direct_specular, false, 0.18f);
+}
+
+static void denoiserIndirectDiffuseParamCmd( void ) {
+	denoiserLobeParamCmd("rt_denoiser_indirect_diffuse", "indirect_diffuse", &g_rtx.asvgf_params.indirect_diffuse, true, 0.92f);
+}
+
+static void denoiserIndirectSpecularParamCmd( void ) {
+	denoiserLobeParamCmd("rt_denoiser_indirect_specular", "indirect_specular", &g_rtx.asvgf_params.indirect_specular, false, 0.30f);
+}
+
+static void denoiserParamCmd( void ) {
+	const int argc = gEngine.Cmd_Argc();
+
+	if (argc == 2 && 0 == Q_stricmp(gEngine.Cmd_Argv(1), "reset")) {
+		resetAsvgfParams();
+		g_rtx.discontinuity = true;
+		gEngine.Con_Printf("ASVGF denoiser params reset to defaults\n");
+		return;
+	}
+
+	gEngine.Con_Printf("rt_denoiser_param is deprecated. Use:\n");
+	gEngine.Con_Printf("\trt_denoiser_direct_diffuse\n");
+	gEngine.Con_Printf("\trt_denoiser_direct_specular\n");
+	gEngine.Con_Printf("\trt_denoiser_indirect_diffuse\n");
+	gEngine.Con_Printf("\trt_denoiser_indirect_specular\n");
+}
+
+#undef LIST_ASVGF_REPROJECTION_FLOAT_PARAMS
 
 void VK_RayNewMapBegin( void ) {
 	// TODO it seems like these are unnecessary leftovers. Moreover, they are actively harmful,
@@ -217,6 +460,8 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 					  (CVAR_TO_BOOL(rt_disable_gi) ? RENDERER_FLAG_DISABLE_GI : 0) |
 					  (CVAR_TO_BOOL(rt_disable_reprojection) ? RENDERER_FLAG_DISABLE_REPROJECTION : 0);
 #undef SET_RENDERER_FLAG
+
+	ret.asvgf = g_rtx.asvgf_params;
 
 	return ret;
 }
@@ -379,6 +624,8 @@ qboolean VK_RayInit( void )
 	ASSERT(vk_core.rtx);
 	// TODO complain and cleanup on failure
 
+	resetAsvgfParams();
+
 	g_rtx.max_frame_width = MIN_FRAME_WIDTH;
 	g_rtx.max_frame_height = MIN_FRAME_HEIGHT;
 
@@ -425,6 +672,11 @@ qboolean VK_RayInit( void )
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_diffuse", denoiserDirectDiffuseParamCmd, "List, get, set or reset ASVGF direct diffuse reprojection parameters");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "List, get, set or reset ASVGF direct specular reprojection parameters");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "List, get, set or reset ASVGF indirect diffuse reprojection parameters");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "List, get, set or reset ASVGF indirect specular reprojection parameters");
+	gEngine.Cmd_AddCommand("rt_denoiser_param", denoiserParamCmd, "Deprecated ASVGF command");
 
 #define X(name, info) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,
