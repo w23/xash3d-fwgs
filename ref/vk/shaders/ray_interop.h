@@ -203,36 +203,106 @@ struct LightCluster {
 #define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
 #define RENDERER_FLAG_DISABLE_REPROJECTION (1<<6)
 
+#define ASVGF_COMPATIBILITY_STATS 0u
+#define ASVGF_COMPATIBILITY_LUMA_DELTA 1u
+
+#define ASVGF_HISTORY_FILTER_NONE 0u
+#define ASVGF_HISTORY_FILTER_LUMA_OUTLIER_CLAMP 1u
+
+#define ASVGF_DEPENDENCY_NONE 0u
+#define ASVGF_DEPENDENCY_COMBINE_MIN 1u
+#define ASVGF_DEPENDENCY_RELIGHT_CARRY 2u
+#define ASVGF_DEPENDENCY_VARIANCE_CARRY 3u
+
 struct AsvgfReprojectionParams {
-	// x: history_samples_max, y: history_current_weight_min,
-	// z: reprojection_depth_threshold_scale, w: parallax_depth_threshold_scale
-	vec4 history;
+	float history_samples_max;
+	float history_current_weight_min;
+	float reprojection_depth_threshold_scale;
+	float parallax_depth_threshold_scale;
 
-	// x: luma_scale, y: delta_floor, z: smooth_min, w: smooth_max
-	vec4 variance_compatibility;
+	float variance_compatibility_luma_scale;
+	float variance_compatibility_delta_floor;
+	float variance_compatibility_signal_floor;
+	float variance_compatibility_smooth_min;
+	float variance_compatibility_smooth_max;
+	float variance_compatibility_floor;
 
-	// x: min, y: max, z: soften_threshold, w: soften_mix
-	vec4 variance_gate;
+	float variance_gate_min;
+	float variance_gate_max;
+	float variance_gate_floor;
+	float variance_soften_threshold;
+	float variance_soften_mix;
+	float variance_stage_mix;
 
-	// x: min_reset_scale,
-	// y: hard_variance_gate,
-	// z: hard_variance_compatibility,
-	// w: hard_reset_factor
-	vec4 reset;
+	float reset_min_scale;
+	float reset_hard_variance_gate;
+	float reset_hard_compatibility;
+	float reset_hard_factor;
+	float variance_reset_boost_smooth_min;
+	float variance_reset_boost_smooth_max;
 
-	// x: signal_floor, y: floor_base, z: floor_signal_scale, w: ratio_min
-	vec4 analytical_variance;
+	float analytical_variance_signal_floor;
+	float analytical_variance_floor_base;
+	float analytical_variance_floor_signal_scale;
+	float analytical_variance_ratio_min;
+	float analytical_variance_ratio_max;
+	float analytical_variance_mean_min;
+	float analytical_variance_mean_max;
 
-	// x: ratio_max, y: mean_min, z: mean_max
-	vec4 analytical_variance2;
+	float luma_delta_gate_signal_floor;
+	float luma_delta_gate_denominator_offset;
+	float luma_delta_gate_smooth_min;
+	float luma_delta_gate_smooth_max;
+	float luma_delta_gate_mix;
 
-	// x: roughness_threshold, y: shading_normal_threshold
-	vec4 parallax;
+	float external_gate_floor;
+	float external_gate_mix;
+	float external_gate_hard_threshold;
 
-	// The only intentional cross-lobe dependency. The direct-diffuse lobe itself
-	// must pass a neutral gate and disable this path at the call site.
-	uint use_direct_diffuse_reset_as_gate;
-	PAD(3)
+	float dependency_gate_floor;
+	float dependency_gate_soft_min;
+	float dependency_gate_soft_max;
+	float dependency_gate_mix;
+
+	float dependency_luma_signal_floor;
+	float dependency_luma_denominator_offset;
+	float dependency_luma_smooth_min;
+	float dependency_luma_smooth_max;
+	float dependency_luma_mix;
+
+	float dependency_off_history_min;
+	float dependency_off_current_max;
+	float dependency_off_ratio_min;
+
+	float history_luma_clamp;
+	float history_outlier_noise_mean_floor;
+	float history_outlier_noise_gate_min;
+	float history_outlier_noise_gate_max;
+	float history_outlier_envelope_sigma_min;
+	float history_outlier_envelope_sigma_max;
+	float history_outlier_envelope_mean_min;
+	float history_outlier_envelope_mean_max;
+	float history_outlier_envelope_min;
+	float history_outlier_threshold_low_min;
+	float history_outlier_threshold_low_max;
+	float history_outlier_threshold_high_min;
+	float history_outlier_threshold_high_max;
+	float history_outlier_luma_cap_min;
+	float history_outlier_luma_cap_scale_min;
+	float history_outlier_luma_cap_scale_max;
+	float history_outlier_external_gate_attenuation_min;
+	float history_outlier_external_gate_attenuation_max;
+	float history_outlier_accumulated_luma_scale_min;
+	float history_outlier_accumulated_luma_scale_max;
+
+	float parallax_roughness_threshold;
+	float parallax_shading_normal_threshold;
+
+	uint variance_compatibility_strategy;
+	uint history_filter_strategy;
+	uint dependency_strategy;
+	uint use_dependency_reset_as_gate;
+	PAD(1)
 };
 
 struct AsvgfParams {

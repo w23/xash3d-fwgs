@@ -32,7 +32,7 @@ bool reprojectToPrevFramePixel(vec3 prev_position, ivec2 res, out ivec2 reproj_p
 
 	const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	depth_necessary = length(prev_position - prev_origin);
-	depth_threshold = ASVGF_REPROJECTION_PARAMS.history.z * clip_w;
+	depth_threshold = ASVGF_REPROJECTION_PARAMS.reprojection_depth_threshold_scale * clip_w;
 	return true;
 }
 
