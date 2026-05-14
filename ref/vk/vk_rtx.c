@@ -228,21 +228,38 @@ static void makeDefaultAsvgfLobeParams(asvgf_lobe_id_t lobe, struct AsvgfReproje
 		break;
 
 	case ASVGF_LOBE_INDIRECT_DIFFUSE:
+		// Indirect diffuse is the noisiest lobe and should prefer temporal
+		// stability over fast response. These defaults keep the old stable
+		// luma-delta compatibility path, but make partial reset and
+		// direct-diffuse dependency less sensitive to frame-to-frame noise.
+		params->history_samples_max = 32.0f;
+		params->history_current_weight_min = 0.04f;
+
 		params->variance_compatibility_strategy = ASVGF_COMPATIBILITY_LUMA_DELTA;
 		params->variance_compatibility_luma_scale = 0.45f;
 		params->variance_compatibility_delta_floor = 0.18f;
 		params->variance_compatibility_signal_floor = 0.05f;
 		params->variance_compatibility_smooth_min = 2.0f;
 		params->variance_compatibility_smooth_max = 10.0f;
-		params->variance_compatibility_floor = 0.60f;
+		params->variance_compatibility_floor = 0.75f;
+
 		params->luma_delta_gate_mix = 1.0f;
+		params->variance_gate_floor = 0.15f;
 		params->variance_stage_mix = 0.35f;
-		params->reset_min_scale = 0.92f;
+
+		params->reset_min_scale = 0.965f;
 		params->reset_hard_variance_gate = 1.01f;
 		params->reset_hard_compatibility = 0.0f;
 		params->reset_hard_factor = -1.0f;
-		params->external_gate_floor = 0.55f;
+
+		params->external_gate_floor = 0.70f;
 		params->dependency_strategy = ASVGF_DEPENDENCY_RELIGHT_CARRY;
+		params->dependency_gate_floor = 0.50f;
+		params->dependency_gate_mix = 0.65f;
+		params->dependency_luma_denominator_offset = 0.06f;
+		params->dependency_luma_smooth_min = 0.20f;
+		params->dependency_luma_smooth_max = 0.80f;
+		params->dependency_luma_mix = 0.65f;
 		params->use_dependency_reset_as_gate = 1u;
 		break;
 
