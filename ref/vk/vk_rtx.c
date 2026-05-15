@@ -445,24 +445,6 @@ static void denoiserIndirectSpecularParamCmd( void ) {
 	denoiserLobeParamCmd("rt_denoiser_indirect_specular", "indirect_specular", ASVGF_LOBE_INDIRECT_SPECULAR, &g_rtx.asvgf_params.indirect_specular);
 }
 
-static void denoiserParamCmd( void ) {
-	const int argc = gEngine.Cmd_Argc();
-
-	if (argc == 2 && 0 == Q_stricmp(gEngine.Cmd_Argv(1), "reset")) {
-		resetAsvgfParams();
-		g_rtx.discontinuity = true;
-		gEngine.Con_Printf("ASVGF denoiser params reset to defaults\n");
-		return;
-	}
-
-	gEngine.Con_Printf("rt_denoiser_param is deprecated. Use:\n");
-	gEngine.Con_Printf("\trt_denoiser_direct_diffuse\n");
-	gEngine.Con_Printf("\trt_denoiser_direct_specular\n");
-	gEngine.Con_Printf("\trt_denoiser_indirect_diffuse\n");
-	gEngine.Con_Printf("\trt_denoiser_indirect_specular\n");
-	printStrategyHelp();
-}
-
 #undef LIST_ASVGF_REPROJECTION_FLOAT_PARAMS
 #undef LIST_ASVGF_REPROJECTION_UINT_PARAMS
 #undef LIST_ASVGF_REPROJECTION_BOOL_PARAMS
@@ -830,11 +812,10 @@ qboolean VK_RayInit( void )
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
-	gEngine.Cmd_AddCommand("rt_denoiser_direct_diffuse", denoiserDirectDiffuseParamCmd, "ASVGF direct diffuse params; default stats compatibility, reset_min_scale 0.22, deflicker off");
-	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "ASVGF direct specular params; default outlier history filter, luma clamp 2.0, deflicker off");
-	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "ASVGF indirect diffuse params; default stable luma-delta, 32 samples, deflicker 0.10..0.25 on");
-	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "ASVGF indirect specular params; default variance dependency carry, parallax validation, deflicker off");
-	gEngine.Cmd_AddCommand("rt_denoiser_param", denoiserParamCmd, "Deprecated ASVGF command");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_diffuse", denoiserDirectDiffuseParamCmd, "Denoiser direct diffuse params");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "Denoiser direct specular params");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "Denoiser indirect diffuse params");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "Denoiser indirect specular params");
 
 #define X(name, info) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,

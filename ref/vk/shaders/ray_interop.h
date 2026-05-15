@@ -295,8 +295,6 @@ struct AsvgfReprojectionParams {
 	float history_outlier_accumulated_luma_scale_min;
 	float history_outlier_accumulated_luma_scale_max;
 
-	// Post-ASVGF temporal luminance stabilizer. The previous stabilized
-	// luminance is stored in the temporal stats texture z component.
 	float deflicker_threshold_min;
 	float deflicker_threshold_max;
 
