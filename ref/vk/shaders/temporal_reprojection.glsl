@@ -22,6 +22,42 @@ bool projectWorldToPrevFramePixel(vec3 world_position, ivec2 res, out ivec2 repr
 	return all(greaterThanEqual(reproj_pix, ivec2(0))) && all(lessThan(reproj_pix, res));
 }
 
+bool isValidReprojectionDepth(float depth) {
+	return depth > 0.0 && !isnan(depth) && !isinf(depth);
+}
+
+// Keep metric reprojection depth in an rgba16f temporal target without losing
+// far surfaces to half-float range. Stored .r is depth / 64; shader logic works
+// only with decoded metric depth.
+const float ASVGF_REPROJECTION_DEPTH_STORAGE_SCALE = 1.0 / 64.0;
+
+float encodeReprojectionDepth(float metric_depth) {
+	return max(metric_depth, 0.0) * ASVGF_REPROJECTION_DEPTH_STORAGE_SCALE;
+}
+
+float decodeReprojectionDepth(float stored_depth) {
+	if (!(stored_depth > 0.0) || isnan(stored_depth) || isinf(stored_depth)) {
+		return 0.0;
+	}
+	return stored_depth / ASVGF_REPROJECTION_DEPTH_STORAGE_SCALE;
+}
+
+float makeReprojectionDepthThreshold(float expected_depth, float stored_depth, float base_threshold) {
+	float reference_depth = max(max(abs(expected_depth), abs(stored_depth)), 1.0);
+	float relative_threshold = max(base_threshold, ASVGF_REPROJECTION_PARAMS.reprojection_depth_threshold_scale * reference_depth);
+
+	// The encoded history depth is kept in an rgba16f target. A small relative
+	// floor covers fp16 quantization after depth/64 encoding and fp32
+	// world-position cancellation on large coordinates.
+	float storage_precision_floor = max(0.05, reference_depth * 0.003);
+
+	// At distance, a one-pixel reprojection roundoff covers a larger world-space
+	// footprint. This mostly affects slanted planes and parallax validation.
+	float pixel_footprint_floor = reference_depth * max(ubo.ubo.ray_cone_width * 2.0, 0.0);
+
+	return max(relative_threshold, max(storage_precision_floor, pixel_footprint_floor));
+}
+
 bool reprojectToPrevFramePixel(vec3 prev_position, ivec2 res, out ivec2 reproj_pix, out float depth_necessary, out float depth_threshold) {
 	float clip_w = 0.0;
 	if (!projectWorldToPrevFramePixel(prev_position, res, reproj_pix, clip_w)) {
@@ -32,39 +68,62 @@ bool reprojectToPrevFramePixel(vec3 prev_position, ivec2 res, out ivec2 reproj_p
 
 	const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	depth_necessary = length(prev_position - prev_origin);
-	depth_threshold = ASVGF_REPROJECTION_PARAMS.reprojection_depth_threshold_scale * clip_w;
+
+	// depth_necessary/history_depth are metric camera distances. clip_w can be a
+	// poor proxy for that metric with the current projection setup, so seed the
+	// threshold with the larger of both and let makeReprojectionDepthThreshold add
+	// storage/pixel-footprint tolerance.
+	float projected_depth = max(depth_necessary, abs(clip_w));
+	float base_threshold = ASVGF_REPROJECTION_PARAMS.reprojection_depth_threshold_scale * projected_depth;
+	depth_threshold = makeReprojectionDepthThreshold(depth_necessary, projected_depth, base_threshold);
 	return true;
 }
 
 bool computePlaneDepthInPrevFrame(ivec2 prev_pix, ivec2 res, vec3 plane_point, vec3 plane_normal, out float depth) {
 	vec2 uv = ((vec2(prev_pix) + vec2(0.5)) / vec2(res)) * 2.0 - vec2(1.0);
-	vec4 clip_near = vec4(uv, 0.0, 1.0);
 	vec4 clip_far = vec4(uv, 1.0, 1.0);
-	vec4 view_near = ubo.ubo.prev_inv_proj * clip_near;
 	vec4 view_far = ubo.ubo.prev_inv_proj * clip_far;
-	if (abs(view_near.w) <= 1e-6 || abs(view_far.w) <= 1e-6) {
+	if (abs(view_far.w) <= 1e-6) {
 		depth = 0.0;
 		return false;
 	}
 
-	vec3 world_near = (ubo.ubo.prev_inv_view * vec4(view_near.xyz / view_near.w, 1.0)).xyz;
-	vec3 world_far = (ubo.ubo.prev_inv_view * vec4(view_far.xyz / view_far.w, 1.0)).xyz;
+	vec3 ray_dir = view_far.xyz / view_far.w;
+	float ray_dir_len = length(ray_dir);
+	if (ray_dir_len <= 1e-6) {
+		depth = 0.0;
+		return false;
+	}
+	ray_dir /= ray_dir_len;
+
+	// Do the plane test in previous-view space. The old world-space variant built
+	// world_near/world_far and then subtracted large values again, which made far
+	// planar surfaces fail validation even when the temporal history existed.
 	vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	vec3 ray_dir = normalize(world_far - world_near);
-	float denom = dot(plane_normal, ray_dir);
+	mat3 world_to_prev_view_rotation = transpose(mat3(ubo.ubo.prev_inv_view));
+	vec3 plane_point_view = world_to_prev_view_rotation * (plane_point - prev_origin);
+	vec3 plane_normal_view = world_to_prev_view_rotation * plane_normal;
+	float plane_normal_len = length(plane_normal_view);
+	if (plane_normal_len <= 1e-6) {
+		depth = 0.0;
+		return false;
+	}
+	plane_normal_view /= plane_normal_len;
+
+	float denom = dot(plane_normal_view, ray_dir);
 	if (abs(denom) <= 1e-5) {
 		depth = 0.0;
 		return false;
 	}
 
-	float t = dot(plane_normal, plane_point - prev_origin) / denom;
+	float t = dot(plane_normal_view, plane_point_view) / denom;
 	if (t <= 0.0) {
 		depth = 0.0;
 		return false;
 	}
 
-	depth = t;
-	return true;
+	depth = length(ray_dir * t);
+	return isValidReprojectionDepth(depth);
 }
 
 float sampleAverageReflectionRayLength(ivec2 pix, ivec2 res, int indirect_scale, int kernel_radius) {

@@ -37,8 +37,9 @@ layout(set = 0, binding = 18, rgba32f) uniform writeonly image2D out_final_atrou
 #define ATROUS_KERNEL_WIDTH 5
 #define ATROUS_KERNEL_HALF 2
 
-const float EDGE_INV_STEP_SQ = 1.0;
-const float EDGE_POS_GATE_SCALE = 1.0;
+const float EDGE_NORMAL_MIN_DOT = 0.98;
+const float EDGE_POSITION_MIN_RADIUS = 1.0;
+const float EDGE_POSITION_RAY_CONE_SCALE = 3.0;
 
 float linearKernelOffsetWeight(ivec2 offset) {
 	ivec2 d = offset - ivec2(ATROUS_KERNEL_HALF);
@@ -50,14 +51,19 @@ float linearKernelOffsetWeight(ivec2 offset) {
 
 float computeLinearEdgeWeight(ivec2 p, vec3 center_pos, vec3 center_shading_normal) {
 	vec3 sample_shading_normal = normalDecode(imageLoad(normals_gs, p).zw);
-	if (dot(sample_shading_normal, center_shading_normal) < 0.98) {
+	if (dot(sample_shading_normal, center_shading_normal) < EDGE_NORMAL_MIN_DOT) {
 		return 0.0;
 	}
 
 	vec3 sample_position = imageLoad(position_t, p).xyz;
 	vec3 p_diff = sample_position - center_pos;
-	float p_dist2 = dot(p_diff, p_diff) * EDGE_INV_STEP_SQ;
-	return 1.0 - clamp(p_dist2 * EDGE_POS_GATE_SCALE, 0.0, 1.0);
+	vec3 origin = (ubo.ubo.inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float center_depth = max(length(center_pos - origin), 1.0);
+	float position_radius = max(
+		EDGE_POSITION_MIN_RADIUS,
+		center_depth * max(ubo.ubo.ray_cone_width, 1e-6) * EDGE_POSITION_RAY_CONE_SCALE);
+	float p_dist2 = dot(p_diff, p_diff) / max(position_radius * position_radius, 1e-6);
+	return 1.0 - clamp(p_dist2, 0.0, 1.0);
 }
 
 void main() {
