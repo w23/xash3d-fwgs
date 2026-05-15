@@ -140,6 +140,8 @@ static struct {
 	X(history_outlier_external_gate_attenuation_max, 0.35f) \
 	X(history_outlier_accumulated_luma_scale_min, 1.1f) \
 	X(history_outlier_accumulated_luma_scale_max, 1.45f) \
+	X(deflicker_threshold_min, 0.10f) \
+	X(deflicker_threshold_max, 0.25f) \
 	X(parallax_roughness_threshold, 0.1f) \
 	X(parallax_shading_normal_threshold, 0.01f)
 
@@ -149,7 +151,8 @@ static struct {
 	X(dependency_strategy, ASVGF_DEPENDENCY_NONE)
 
 #define LIST_ASVGF_REPROJECTION_BOOL_PARAMS(X) \
-	X(use_dependency_reset_as_gate, 0u)
+	X(use_dependency_reset_as_gate, 0u) \
+	X(deflicker_enabled, 0u)
 
 typedef enum {
 	ASVGF_REPROJECTION_PARAM_FLOAT,
@@ -260,6 +263,9 @@ static void makeDefaultAsvgfLobeParams(asvgf_lobe_id_t lobe, struct AsvgfReproje
 		params->dependency_luma_smooth_min = 0.20f;
 		params->dependency_luma_smooth_max = 0.80f;
 		params->dependency_luma_mix = 0.65f;
+		params->deflicker_enabled = 1u;
+		params->deflicker_threshold_min = 0.10f;
+		params->deflicker_threshold_max = 0.25f;
 		params->use_dependency_reset_as_gate = 1u;
 		break;
 
@@ -313,6 +319,7 @@ static void printStrategyHelp( void ) {
 	gEngine.Con_Printf("\tvariance_compatibility_strategy: 0 stats, 1 luma_delta\n");
 	gEngine.Con_Printf("\thistory_filter_strategy: 0 none, 1 luma_outlier_clamp\n");
 	gEngine.Con_Printf("\tdependency_strategy: 0 none, 1 combine_min, 2 relight_carry, 3 variance_carry\n");
+	gEngine.Con_Printf("\tdeflicker_enabled: false/true; thresholds are relative luminance delta, defaults 0.10..0.25, enabled by default only for indirect_diffuse\n");
 }
 
 static void printAsvgfReprojectionParams(const char *lobe_name, asvgf_lobe_id_t lobe, struct AsvgfReprojectionParams *params) {
@@ -823,10 +830,10 @@ qboolean VK_RayInit( void )
 	RT_RayModel_Clear();
 
 	gEngine.Cmd_AddCommand("rt_debug_reload_pipelines", reloadPipeline, "Reload RT pipelines");
-	gEngine.Cmd_AddCommand("rt_denoiser_direct_diffuse", denoiserDirectDiffuseParamCmd, "List, get, set or reset ASVGF direct diffuse reprojection parameters");
-	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "List, get, set or reset ASVGF direct specular reprojection parameters");
-	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "List, get, set or reset ASVGF indirect diffuse reprojection parameters");
-	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "List, get, set or reset ASVGF indirect specular reprojection parameters");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_diffuse", denoiserDirectDiffuseParamCmd, "ASVGF direct diffuse params; default stats compatibility, reset_min_scale 0.22, deflicker off");
+	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "ASVGF direct specular params; default outlier history filter, luma clamp 2.0, deflicker off");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "ASVGF indirect diffuse params; default stable luma-delta, 32 samples, deflicker 0.10..0.25 on");
+	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "ASVGF indirect specular params; default variance dependency carry, parallax validation, deflicker off");
 	gEngine.Cmd_AddCommand("rt_denoiser_param", denoiserParamCmd, "Deprecated ASVGF command");
 
 #define X(name, info) #name ", "

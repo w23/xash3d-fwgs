@@ -60,6 +60,7 @@ void readNormals(ivec2 uv, out vec3 geometry_normal, out vec3 shading_normal) {
 struct LuminanceStats {
 	float mean;
 	float variance;
+	float deflicker_luma;
 };
 
 struct CurrentLuminanceStats {
@@ -109,15 +110,29 @@ struct AsvgfLobeReprojectionResult {
 	AsvgfGateState gate;
 };
 
+struct AsvgfDeflickerResult {
+	vec3 color;
+	float stored_luma;
+};
+
+LuminanceStats makeLuminanceStats(float mean, float variance) {
+	LuminanceStats stats;
+	stats.mean = max(mean, 0.0);
+	stats.variance = max(variance, 0.0);
+	stats.deflicker_luma = stats.mean;
+	return stats;
+}
+
 LuminanceStats decodeLuminanceStats(vec4 packed) {
 	LuminanceStats stats;
 	stats.mean = max(packed.x, 0.0);
 	stats.variance = max(packed.y, 0.0);
+	stats.deflicker_luma = packed.z > 0.0 ? packed.z : stats.mean;
 	return stats;
 }
 
 vec4 encodeLuminanceStats(LuminanceStats stats) {
-	return vec4(max(stats.mean, 0.0), max(stats.variance, 0.0), 0.0, 0.0);
+	return vec4(max(stats.mean, 0.0), max(stats.variance, 0.0), max(stats.deflicker_luma, 0.0), 0.0);
 }
 
 CurrentLuminanceStats loadCurrentStatsFromBuffer(ivec2 pix) {
@@ -126,13 +141,10 @@ CurrentLuminanceStats loadCurrentStatsFromBuffer(ivec2 pix) {
 	const vec4 indirect_spec_stats = imageLoad(final_atrous_indirect_specular_stats, pix);
 
 	CurrentLuminanceStats stats;
-	stats.direct_diffuse.mean = direct_stats.x;
-	stats.direct_diffuse.variance = max(direct_stats.y, 0.0);
-	stats.direct_specular.mean = direct_stats.z;
-	stats.direct_specular.variance = max(direct_stats.w, 0.0);
-	stats.indirect_diffuse = decodeLuminanceStats(indirect_diff_stats);
-	stats.indirect_specular.mean = indirect_spec_stats.x;
-	stats.indirect_specular.variance = max(indirect_spec_stats.y, 0.0);
+	stats.direct_diffuse = makeLuminanceStats(direct_stats.x, direct_stats.y);
+	stats.direct_specular = makeLuminanceStats(direct_stats.z, direct_stats.w);
+	stats.indirect_diffuse = makeLuminanceStats(indirect_diff_stats.x, indirect_diff_stats.y);
+	stats.indirect_specular = makeLuminanceStats(indirect_spec_stats.x, indirect_spec_stats.y);
 	return stats;
 }
 
@@ -403,10 +415,48 @@ AsvgfGateState applyDependencyStrategy(AsvgfReprojectionParams params, AsvgfGate
 	return gate;
 }
 
+vec3 setLuminancePreserveChromaticity(vec3 color, float target_luma) {
+	float current_luma = luminance(color);
+	if (current_luma <= 1e-6) {
+		return color;
+	}
+
+	return max(color * (max(target_luma, 0.0) / current_luma), vec3(0.0));
+}
+
+AsvgfDeflickerResult applyLobeDeflicker(AsvgfReprojectionParams params, vec3 color, float previous_stabilized_luma, bool reset_memory) {
+	AsvgfDeflickerResult result;
+	result.color = max(color, vec3(0.0));
+	result.stored_luma = luminance(result.color);
+
+	if (params.deflicker_enabled == 0u || reset_memory) {
+		return result;
+	}
+
+	float previous_luma = max(previous_stabilized_luma, 0.0);
+	float current_luma = max(result.stored_luma, 0.0);
+	if (previous_luma <= 0.0 || current_luma <= 0.0) {
+		result.stored_luma = current_luma;
+		return result;
+	}
+
+	float signal = max(max(previous_luma, current_luma), max(params.analytical_variance_signal_floor, 1e-6));
+	float relative_delta = abs(current_luma - previous_luma) / signal;
+	float threshold_min = min(params.deflicker_threshold_min, params.deflicker_threshold_max);
+	float threshold_max = max(max(params.deflicker_threshold_min, params.deflicker_threshold_max), threshold_min + 1e-5);
+	float accept_new = smoothstep(threshold_min, threshold_max, relative_delta);
+	float stabilized_luma = mix(previous_luma, current_luma, accept_new);
+
+	result.color = setLuminancePreserveChromaticity(result.color, stabilized_luma);
+	result.stored_luma = stabilized_luma;
+	return result;
+}
+
 AsvgfLobeReprojectionResult makeFreshLobeResult(vec3 current_color, LuminanceStats current_stats) {
 	AsvgfLobeReprojectionResult result;
 	result.color = max(current_color, vec3(0.0));
 	result.stats = current_stats;
+	result.stats.deflicker_luma = luminance(result.color);
 	result.history_samples = 1.0;
 	result.gate = makeHardResetGate();
 	result.gate.current_luma = luminance(result.color);
@@ -438,8 +488,11 @@ AsvgfLobeReprojectionResult reprojectAsvgfLobe(AsvgfReprojectionParams params, A
 
 		AsvgfLobeReprojectionResult forced_result;
 		forced_result.color = forced_accumulated.rgb;
+		AsvgfDeflickerResult forced_deflicker = applyLobeDeflicker(params, forced_result.color, lobe.history_stats.deflicker_luma, false);
+		forced_result.color = forced_deflicker.color;
 		forced_result.history_samples = forced_accumulated.a;
 		forced_result.stats = accumulateHistoryStats(params, lobe.current_stats, lobe.history_stats, lobe.history_samples, gate.reset_factor);
+		forced_result.stats.deflicker_luma = forced_deflicker.stored_luma;
 		forced_result.gate = gate;
 		return forced_result;
 	}
@@ -496,8 +549,12 @@ AsvgfLobeReprojectionResult reprojectAsvgfLobe(AsvgfReprojectionParams params, A
 		result.color = clampSpecularLuminance(result.color, history_filter.accumulated_luma_cap);
 	}
 
+	bool reset_deflicker = gate.hard_reset || (input_value.allow_dependency_gate && input_value.dependency_gate.hard_reset);
+	AsvgfDeflickerResult deflicker_result = applyLobeDeflicker(params, result.color, lobe.history_stats.deflicker_luma, reset_deflicker);
+	result.color = deflicker_result.color;
 	result.history_samples = accumulated.a;
 	result.stats = accumulateHistoryStats(params, lobe.current_stats, lobe.history_stats, lobe.history_samples, gate.reset_factor);
+	result.stats.deflicker_luma = deflicker_result.stored_luma;
 	result.gate = gate;
 	return result;
 }

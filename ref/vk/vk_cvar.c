@@ -50,4 +50,3 @@ void VK_LoadCvarsAfterInit( void )
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}
 }
-
