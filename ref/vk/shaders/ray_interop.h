@@ -306,8 +306,8 @@ struct AsvgfReprojectionParams {
 	uint dependency_strategy;
 	uint use_dependency_reset_as_gate;
 
-	uint use_deflicker;
-	PAD(3)
+	uint deflicker_enabled;
+	PAD(2)
 };
 
 struct AsvgfParams {
