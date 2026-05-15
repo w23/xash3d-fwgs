@@ -33,7 +33,7 @@ layout(set = 0, binding = 18, rgba16f) uniform readonly image2D indirect_specula
 layout(set = 0, binding = 19, rgba32f) uniform readonly image2D final_atrous_direct_stats;
 layout(set = 0, binding = 20, rgba32f) uniform readonly image2D final_atrous_indirect_specular_stats;
 
-layout(set = 0, binding = 21) uniform UBO { UniformBuffer ubo; } ubo;
+layout(std140, set = 0, binding = 21) uniform UBO { UniformBuffer ubo; } ubo;
 layout(set = 0, binding = 22, rgba32f) uniform writeonly image2D out_temporal_asvgf_direct_diffuse_stats;
 layout(set = 0, binding = 23, rgba32f) uniform readonly image2D prev_temporal_asvgf_direct_diffuse_stats;
 layout(set = 0, binding = 24, rgba32f) uniform writeonly image2D out_temporal_asvgf_direct_specular_stats;
