@@ -141,7 +141,7 @@ static struct {
 	X(history_outlier_accumulated_luma_scale_min, 1.1f) \
 	X(history_outlier_accumulated_luma_scale_max, 1.45f) \
 	X(deflicker_threshold_min, 0.10f) \
-	X(deflicker_threshold_max, 0.25f) \
+	X(deflicker_threshold_max, 0.35f) \
 	X(parallax_roughness_threshold, 0.1f) \
 	X(parallax_shading_normal_threshold, 0.01f)
 
@@ -265,7 +265,7 @@ static void makeDefaultAsvgfLobeParams(asvgf_lobe_id_t lobe, struct AsvgfReproje
 		params->dependency_luma_mix = 0.65f;
 		params->deflicker_enabled = 1u;
 		params->deflicker_threshold_min = 0.10f;
-		params->deflicker_threshold_max = 0.25f;
+		params->deflicker_threshold_max = 0.35f;
 		params->use_dependency_reset_as_gate = 1u;
 		break;
 
@@ -319,7 +319,7 @@ static void printStrategyHelp( void ) {
 	gEngine.Con_Printf("\tvariance_compatibility_strategy: 0 stats, 1 luma_delta\n");
 	gEngine.Con_Printf("\thistory_filter_strategy: 0 none, 1 luma_outlier_clamp\n");
 	gEngine.Con_Printf("\tdependency_strategy: 0 none, 1 combine_min, 2 relight_carry, 3 variance_carry\n");
-	gEngine.Con_Printf("\tdeflicker_enabled: false/true; thresholds are relative luminance delta, defaults 0.10..0.25, enabled by default only for indirect_diffuse\n");
+	gEngine.Con_Printf("\tdeflicker_enabled: false/true; thresholds are relative luminance delta, defaults 0.10..0.35, enabled by default only for indirect_diffuse\n");
 }
 
 static void printAsvgfReprojectionParams(const char *lobe_name, asvgf_lobe_id_t lobe, struct AsvgfReprojectionParams *params) {
