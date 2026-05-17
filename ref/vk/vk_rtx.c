@@ -307,11 +307,26 @@ static qboolean parseAsvgfBool(const char *value, uint32_t *out_value) {
 	return false;
 }
 
+static void makeDefaultAsvgfParams(struct AsvgfParams *params) {
+	makeDefaultAsvgfLobeParams(ASVGF_LOBE_DIRECT_DIFFUSE, &params->direct_diffuse);
+	makeDefaultAsvgfLobeParams(ASVGF_LOBE_DIRECT_SPECULAR, &params->direct_specular);
+	makeDefaultAsvgfLobeParams(ASVGF_LOBE_INDIRECT_DIFFUSE, &params->indirect_diffuse);
+	makeDefaultAsvgfLobeParams(ASVGF_LOBE_INDIRECT_SPECULAR, &params->indirect_specular);
+}
+
 static void resetAsvgfParams( void ) {
-	makeDefaultAsvgfLobeParams(ASVGF_LOBE_DIRECT_DIFFUSE, &g_rtx.asvgf_params.direct_diffuse);
-	makeDefaultAsvgfLobeParams(ASVGF_LOBE_DIRECT_SPECULAR, &g_rtx.asvgf_params.direct_specular);
-	makeDefaultAsvgfLobeParams(ASVGF_LOBE_INDIRECT_DIFFUSE, &g_rtx.asvgf_params.indirect_diffuse);
-	makeDefaultAsvgfLobeParams(ASVGF_LOBE_INDIRECT_SPECULAR, &g_rtx.asvgf_params.indirect_specular);
+	makeDefaultAsvgfParams(&g_rtx.asvgf_params);
+}
+
+static void denoiserConsoleSetupResetCmd( void ) {
+	if (gEngine.Cmd_Argc() != 1) {
+		gEngine.Con_Printf("Usage: rt_denoiser_console_setup_reset\n");
+		return;
+	}
+
+	resetAsvgfParams();
+	g_rtx.discontinuity = true;
+	gEngine.Con_Printf("Reset all denoiser settings to default\n");
 }
 
 static void printStrategyHelp( void ) {
@@ -601,7 +616,11 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 					  (CVAR_TO_BOOL(rt_disable_reprojection) ? RENDERER_FLAG_DISABLE_REPROJECTION : 0);
 #undef SET_RENDERER_FLAG
 
-	ret.asvgf = g_rtx.asvgf_params;
+	if (CVAR_TO_BOOL(rt_denoiser_console_setup_enable)) {
+		ret.asvgf = g_rtx.asvgf_params;
+	} else {
+		makeDefaultAsvgfParams(&ret.asvgf);
+	}
 
 	return ret;
 }
@@ -816,6 +835,7 @@ qboolean VK_RayInit( void )
 	gEngine.Cmd_AddCommand("rt_denoiser_direct_specular", denoiserDirectSpecularParamCmd, "Denoiser direct specular params");
 	gEngine.Cmd_AddCommand("rt_denoiser_indirect_diffuse", denoiserIndirectDiffuseParamCmd, "Denoiser indirect diffuse params");
 	gEngine.Cmd_AddCommand("rt_denoiser_indirect_specular", denoiserIndirectSpecularParamCmd, "Denoiser indirect specular params");
+	gEngine.Cmd_AddCommand("rt_denoiser_console_setup_reset", denoiserConsoleSetupResetCmd, "Reset all denoiser settings to default");
 
 #define X(name, info) #name ", "
 	g_rtx.debug.rt_debug_display_only = gEngine.Cvar_Get("rt_debug_display_only", "", FCVAR_GLCONFIG,

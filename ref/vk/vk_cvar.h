@@ -31,6 +31,7 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_disable_reconstruction) \
 	X(rt_disable_sh_gi_denoising) \
 	X(rt_disable_reprojection) \
+	X(rt_denoiser_console_setup_enable) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)
