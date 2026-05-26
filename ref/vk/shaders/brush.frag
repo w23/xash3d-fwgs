@@ -23,7 +23,7 @@ layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 vTexture0;
 layout(location=3) in vec2 vLightmapUV;
 layout(location=4) in vec4 vColor;
-layout(location=5) flat in uint vLightingMode;
+layout(location=5) flat in float vLightingMode;
 
 layout(location=0) out vec4 outColor;
 
@@ -48,7 +48,7 @@ void main() {
 
 	outColor.a = baseColor.a;
 
-	if (vLightingMode == kVkLightingMode_Brush) {
+	if (uint(vLightingMode) == kVkLightingMode_Brush) {
 		outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
 		// Exact dlight emulation for BSP brush geometry, equivalent to adding them into the lightmap.
@@ -69,9 +69,6 @@ void main() {
 
 		if (ubo.debug_r_lightmap == 0)
 			outColor.rgb *= baseColor.rgb;
-	} else if (vLightingMode == kVkLightingMode_Studio) {
-		// Studio lighting (including local elights) is computed on CPU to match ref/gl behavior.
-		outColor.rgb = clamp(baseColor.rgb, vec3(0.0), vec3(1.0));
 	} else {
 		outColor.rgb = baseColor.rgb;
 	}

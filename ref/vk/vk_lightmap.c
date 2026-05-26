@@ -530,4 +530,3 @@ void VK_RunLightStyles( lightstyle_t *styles )
 		g_lightmap.lightstylevalue[i] = (int)l * scale;
 	}
 }
-

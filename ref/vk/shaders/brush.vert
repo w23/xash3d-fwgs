@@ -18,7 +18,7 @@ layout(location=1) out vec3 vNormal;
 layout(location=2) out vec2 vTexture0;
 layout(location=3) out vec2 vLightmapUV;
 layout(location=4) out vec4 vColor;
-layout(location=5) flat out uint vLightingMode;
+layout(location=5) flat out float vLightingMode;
 
 void main() {
 	vPos = aPos.xyz;
@@ -27,6 +27,6 @@ void main() {
 	vTexture0 = aTexture0;
 	vLightmapUV = aLightmapUV;
 	vColor = ubo.color * aLightColor;
-	vLightingMode = uint(ubo.lighting_mode + 0.5);
+	vLightingMode = ubo.lighting_mode;
 	gl_Position = ubo.mvp * vec4(aPos.xyz, 1.);
 }
