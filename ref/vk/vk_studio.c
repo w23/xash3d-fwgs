@@ -56,6 +56,11 @@ typedef struct sortedmesh_s
 	int		flags;			// face flags
 } sortedmesh_t;
 
+typedef struct color_gamma_indices_s
+{
+	uint16_t	r, g, b;
+} color_gamma_indices_t;
+
 typedef struct
 {
 	double		time;
@@ -107,7 +112,7 @@ typedef struct
 	int		numlocallights;
 	int		lightage[MAXSTUDIOBONES];
 	dlight_t		*locallight[MAX_LOCALLIGHTS];
-	int			locallightcolor[MAX_LOCALLIGHTS][3];
+	color_gamma_indices_t	locallightcolor[MAX_LOCALLIGHTS];
 	vec4_t		lightpos[MAXSTUDIOVERTS][MAX_LOCALLIGHTS];
 	vec3_t		lightbonepos[MAXSTUDIOBONES][MAX_LOCALLIGHTS];
 	float		locallightR2[MAX_LOCALLIGHTS];
@@ -1341,9 +1346,9 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k][0] = LinearGammaTable( el->color.r << 2 );
-				g_studio.locallightcolor[k][1] = LinearGammaTable( el->color.g << 2 );
-				g_studio.locallightcolor[k][2] = LinearGammaTable( el->color.b << 2 );
+				g_studio.locallightcolor[k].r = LinearGammaTable( el->color.r << 2 );
+				g_studio.locallightcolor[k].g = LinearGammaTable( el->color.g << 2 );
+				g_studio.locallightcolor[k].b = LinearGammaTable( el->color.b << 2 );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;
@@ -1483,7 +1488,9 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 
 			temp = r * light[i][3];
 
-			VectorAddScalar( g_studio.locallightcolor[i], temp, localLight );
+			localLight[0] = (float)g_studio.locallightcolor[i].r + temp;
+			localLight[1] = (float)g_studio.locallightcolor[i].g + temp;
+			localLight[2] = (float)g_studio.locallightcolor[i].b + temp;
 			VectorAdd( finalLight, localLight, finalLight );
 		}
 	}
