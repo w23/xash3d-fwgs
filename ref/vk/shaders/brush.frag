@@ -14,7 +14,7 @@ struct Light {
 layout(set=3,binding=0) uniform UBO {
 	uint num_lights;
 	uint debug_r_lightmap;
-	uvec2 padding_;
+	uvec2 padding_unused_;
 	Light lights[max_dlights];
 } ubo;
 
@@ -23,18 +23,14 @@ layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 vTexture0;
 layout(location=3) in vec2 vLightmapUV;
 layout(location=4) in vec4 vColor;
-layout(location=5) flat in float vLightingMode;
+layout(location=5) flat in float vIgnoreLightmapAndLights;
 
 layout(location=0) out vec4 outColor;
-
-// Keep in sync with ref/vk/vk_render.h (vk_lighting_mode_e).
-const uint kVkLightingMode_Brush = 0u;
-const uint kVkLightingMode_Studio = 1u;
 
 // Exact legacy behavior:
 // lightmap packing converts r_blocklights with >> 7 (divide by 128).
 // Keep this as a compile-time constant to match classic dlight-in-lightmap exactly.
-const float lightmap_block_to_tex_scale = 128.0;
+const float kLlightmapBlockToTexScale = 128.0;
 
 void main() {
 	outColor = vec4(0.);
@@ -48,7 +44,7 @@ void main() {
 
 	outColor.a = baseColor.a;
 
-	if (uint(vLightingMode) == kVkLightingMode_Brush) {
+	if (uint(vIgnoreLightmapAndLights) == 0) {
 		outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
 		// Exact dlight emulation for BSP brush geometry, equivalent to adding them into the lightmap.
@@ -62,7 +58,7 @@ void main() {
 			if (add <= minlight)
 				continue;
 
-			outColor.rgb += light_color * (add / lightmap_block_to_tex_scale);
+			outColor.rgb += light_color * (add / kLlightmapBlockToTexScale);
 		}
 
 		outColor.rgb = clamp(outColor.rgb, vec3(0.0), vec3(1.0));

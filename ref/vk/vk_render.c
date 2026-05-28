@@ -41,7 +41,7 @@ PROFILER_SCOPES(SCOPE_DECLARE)
 typedef struct {
 	matrix4x4 mvp;
 	vec4_t color;
-	float lighting_mode;
+	float ignore_lightmap_and_lights;
 	float pad_[3];
 } uniform_data_t;
 
@@ -912,7 +912,7 @@ typedef struct {
 	const vec4_t *color;
 	int render_type;
 	int textures_override;
-	vk_lighting_mode_e lighting_mode;
+	qboolean ignore_lightmap_and_lights;
 } trad_submit_t;
 
 static void submitToTraditionalRender( trad_submit_t args ) {
@@ -924,7 +924,7 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
-	g_render_state.dirty_uniform_data.lighting_mode = (float)args.lighting_mode;
+	g_render_state.dirty_uniform_data.ignore_lightmap_and_lights = (float)args.ignore_lightmap_and_lights;
 
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;
@@ -1035,7 +1035,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = args.override.old_texture,
-			.lighting_mode = args.lighting_mode,
+			.ignore_lightmap_and_lights = args.ignore_lightmap_and_lights,
 		});
 	}
 }
@@ -1082,7 +1082,7 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 			.geometries = &geometry,
 			.geometries_count = 1,
 			.transform = &identity,
-			.lighting_mode = kVkLightingMode_Brush,
+			.ignore_lightmap_and_lights = 0,
 			.color = args.color,
 			.render_type = args.render_type,
 			.textures_override = -1,

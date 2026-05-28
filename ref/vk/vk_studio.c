@@ -2371,7 +2371,7 @@ static void R_StudioDrawPoints( void ) {
 		.render_type = render_type,
 		.material_mode = material_mode,
 		.material_flags = kMaterialFlag_CullBackFace_Bit, // TODO for transparent only?
-		.lighting_mode = kVkLightingMode_Studio,
+		.ignore_lightmap_and_lights = 1,
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
@@ -3680,6 +3680,7 @@ void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend )
 	RI.drawWorld = true;
 
 	g_studio.blend = blend;
+
 	R_DrawStudioModel( ent );
 
 	RI.currentmodel = NULL;
