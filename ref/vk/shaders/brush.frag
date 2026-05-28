@@ -23,7 +23,7 @@ layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 vTexture0;
 layout(location=3) in vec2 vLightmapUV;
 layout(location=4) in vec4 vColor;
-layout(location=5) flat in float vIgnoreLightmapAndLights;
+layout(location=5) flat in uint vIgnoreLightmapAndLights;
 
 layout(location=0) out vec4 outColor;
 
@@ -44,7 +44,7 @@ void main() {
 
 	outColor.a = baseColor.a;
 
-	if (uint(vIgnoreLightmapAndLights) == 0) {
+	if (vIgnoreLightmapAndLights == 0) {
 		outColor.rgb = texture(sLightmap, vLightmapUV).rgb;
 
 		// Exact dlight emulation for BSP brush geometry, equivalent to adding them into the lightmap.

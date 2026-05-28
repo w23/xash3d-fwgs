@@ -41,7 +41,7 @@ PROFILER_SCOPES(SCOPE_DECLARE)
 typedef struct {
 	matrix4x4 mvp;
 	vec4_t color;
-	float ignore_lightmap_and_lights;
+	uint ignore_lightmap_and_lights;
 	float pad_[3];
 } uniform_data_t;
 
@@ -924,7 +924,7 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
-	g_render_state.dirty_uniform_data.ignore_lightmap_and_lights = (float)args.ignore_lightmap_and_lights;
+	g_render_state.dirty_uniform_data.ignore_lightmap_and_lights = (uint)args.ignore_lightmap_and_lights;
 
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;

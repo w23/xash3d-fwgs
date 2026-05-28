@@ -3,7 +3,7 @@
 layout(set=0,binding=0) uniform UBO {
 	mat4 mvp;
 	vec4 color;
-	float ignore_lightmap_and_lights;
+	uint ignore_lightmap_and_lights;
 	vec3 padding_unused_;
 } ubo;
 
@@ -18,7 +18,7 @@ layout(location=1) out vec3 vNormal;
 layout(location=2) out vec2 vTexture0;
 layout(location=3) out vec2 vLightmapUV;
 layout(location=4) out vec4 vColor;
-layout(location=5) flat out float vIgnoreLightmapAndLights;
+layout(location=5) flat out uint vIgnoreLightmapAndLights;
 
 void main() {
 	vPos = aPos.xyz;
