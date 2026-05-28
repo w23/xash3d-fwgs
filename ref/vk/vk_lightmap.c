@@ -12,9 +12,8 @@
 
 typedef struct lightmap_atlas_vk_s
 {
-	int texture[2]; // ping-pong textures
-	byte current_texture_id; // index into texture[]
-	char texture_name[2][24]; // debug names of lightmaps
+	int texture;
+	char name[24]; // debug name of lightmap
 } lightmap_atlas_vk_t;
 
 typedef struct
@@ -53,9 +52,19 @@ static qboolean LM_HasActiveDlights( void )
 	return false;
 }
 
-static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, float sample_size )
+/*
+=================
+R_AddDynamicLightsToLightmap
+
+Accumulates active dynamic light contributions for surface into r_blocklights.
+R_BuildLightMap already filled r_blocklights with static/lightstyle samples;
+this function adds dlight RGB values in-place for each lightmap sample.
+=================
+*/
+static void R_AddDynamicLightsToLightmap( const msurface_t *surface,
+	int lightmap_width, int lightmap_height, float lightmap_sample_size )
 {
-	const mextrasurf_t *const info = surf->info;
+	const mextrasurf_t *const info = surface->info;
 
 	if( !globals.dlights )
 		return;
@@ -69,7 +78,7 @@ static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, floa
 			continue;
 
 		float rad = dl->radius;
-		const float dist_plane = PlaneDiff( dl->origin, surf->plane );
+		const float dist_plane = PlaneDiff( dl->origin, surface->plane );
 		rad -= fabsf( dist_plane );
 
 		float minlight = dl->minlight;
@@ -77,28 +86,28 @@ static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, floa
 			continue;
 		minlight = rad - minlight;
 
-		if( surf->plane->type < 3 )
+		if( surface->plane->type < 3 )
 		{
 			VectorCopy( dl->origin, impact );
-			impact[surf->plane->type] -= dist_plane;
+			impact[surface->plane->type] -= dist_plane;
 		}
 		else
 		{
-			VectorMA( dl->origin, -dist_plane, surf->plane->normal, impact );
+			VectorMA( dl->origin, -dist_plane, surface->plane->normal, impact );
 		}
 
 		const float sl = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
 		const float tl = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
 
-		for( int t = 0; t < tmax; ++t )
+		for( int t = 0; t < lightmap_height; ++t )
 		{
-			int td = (int)(tl - sample_size * t);
+			int td = (int)(tl - lightmap_sample_size * t);
 			if( td < 0 )
 				td = -td;
 
-			for( int s = 0; s < smax; ++s )
+			for( int s = 0; s < lightmap_width; ++s )
 			{
-				int sd = (int)(sl - sample_size * s);
+				int sd = (int)(sl - lightmap_sample_size * s);
 				if( sd < 0 )
 					sd = -sd;
 
@@ -106,7 +115,7 @@ static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, floa
 				if( dist >= minlight )
 					continue;
 
-				uint *const bl = &r_blocklights[(s + (t * smax)) * 3];
+				uint *const bl = &r_blocklights[(s + (t * lightmap_width)) * 3];
 				const int add = (int)((rad - dist) * 256.f);
 				bl[0] += (add * dl->color.r) / 256;
 				bl[1] += (add * dl->color.g) / 256;
@@ -115,6 +124,7 @@ static void R_AddDynamicLights( const msurface_t *surf, int smax, int tmax, floa
 		}
 	}
 }
+
 static void LM_SetCacheState( msurface_t *surf )
 {
 	for( int maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++ )
@@ -133,7 +143,7 @@ static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
 	return false;
 }
 
-static int LM_UploadAtlas( int atlas_index, int texture_id, qboolean update_only )
+static int LM_UploadAtlas( int atlas_index, qboolean update_only )
 {
 	rgbdata_t	r_lightmap;
 	lightmap_atlas_vk_t *atlas = &gl_lms.atlases[atlas_index];
@@ -147,14 +157,14 @@ static int LM_UploadAtlas( int atlas_index, int texture_id, qboolean update_only
 	r_lightmap.buffer = gl_lms.lightmap_buffer;
 
 	const int tex = R_TextureUploadFromBuffer(
-		atlas->texture_name[texture_id],
+		atlas->name,
 		&r_lightmap,
 		TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP,
 		update_only
 	);
 
 	if( tex > 0 )
-		atlas->texture[texture_id] = tex;
+		atlas->texture = tex;
 
 	return tex;
 }
@@ -212,13 +222,10 @@ static void LM_UploadBlock( qboolean dynamic )
 		int i = gl_lms.current_lightmap_texture;
 		lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
 
-		Q_snprintf( atlas->texture_name[0], sizeof( atlas->texture_name[0] ), "*lightmap%i", i );
-		Q_snprintf( atlas->texture_name[1], sizeof( atlas->texture_name[1] ), "*lightmap%i_b", i );
-		atlas->current_texture_id = 0;
-		atlas->texture[0] = 0;
-		atlas->texture[1] = 0;
+		Q_snprintf( atlas->name, sizeof( atlas->name ), "*lightmap%i", i );
+		atlas->texture = 0;
 
-		tglob.lightmapTextures[i] = LM_UploadAtlas( i, atlas->current_texture_id, false );
+		tglob.lightmapTextures[i] = LM_UploadAtlas( i, false );
 		if( tglob.lightmapTextures[i] <= 0 )
 			gEngine.Host_Error( "%s: failed to upload lightmap atlas %d\n", __FUNCTION__, i );
 
@@ -266,7 +273,7 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 
 	// add all the dynamic lights
 	if( dynamic && CVAR_TO_BOOL( vk_lightmap_dlights ) )
-		R_AddDynamicLights( surf, smax, tmax, (float)sample_size );
+		R_AddDynamicLightsToLightmap( surf, smax, tmax, (float)sample_size );
 
 	// Put into texture format
 	stride -= (smax << 2);
@@ -333,12 +340,8 @@ void VK_ClearLightmap( void )
 	{
 		lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
 
-		for( int texture_id = 0; texture_id < 2; ++texture_id )
-		{
-			const int tex = atlas->texture[texture_id];
-			if( tex > 0 )
-				R_TextureFree( tex );
-		}
+		if( atlas->texture > 0 )
+			R_TextureFree( atlas->texture );
 
 		tglob.lightmapTextures[i] = 0;
 		memset( atlas, 0, sizeof( *atlas ));
