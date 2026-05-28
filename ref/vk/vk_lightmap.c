@@ -1,6 +1,7 @@
 #include "vk_lightmap.h"
 #include "vk_common.h"
 #include "r_textures.h"
+#include "vk_textures.h"
 #include "vk_cvar.h"
 
 #include "com_strings.h"
@@ -13,7 +14,6 @@ typedef struct lightmap_atlas_vk_s
 {
 	int texture[2]; // ping-pong textures
 	byte current_texture_id; // index into texture[]
-	byte dirty; // need to rebuild/reload
 	char texture_name[2][24]; // debug names of lightmaps
 } lightmap_atlas_vk_t;
 
@@ -215,7 +215,6 @@ static void LM_UploadBlock( qboolean dynamic )
 		Q_snprintf( atlas->texture_name[0], sizeof( atlas->texture_name[0] ), "*lightmap%i", i );
 		Q_snprintf( atlas->texture_name[1], sizeof( atlas->texture_name[1] ), "*lightmap%i_b", i );
 		atlas->current_texture_id = 0;
-		atlas->dirty = false;
 		atlas->texture[0] = 0;
 		atlas->texture[1] = 0;
 
@@ -352,81 +351,73 @@ void VK_ClearLightmap( void )
 	LM_InitBlock();
 }
 
-static void LM_RebuildAtlas( const model_t *world, int atlas )
+static void LM_SurfaceSize( const msurface_t *surf, int *smax, int *tmax )
 {
-	memset( gl_lms.lightmap_buffer, 0, sizeof( gl_lms.lightmap_buffer ));
+	const int sample_size = gEngine.Mod_SampleSizeForFace( surf );
+	const mextrasurf_t *const info = surf->info;
+
+	*smax = ( info->lightextents[0] / sample_size ) + 1;
+	*tmax = ( info->lightextents[1] / sample_size ) + 1;
+}
+
+static qboolean LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qboolean dynamic )
+{
+	int smax, tmax;
+	LM_SurfaceSize( surf, &smax, &tmax );
+
+	const int atlas = surf->lightmaptexturenum;
+	if( atlas < 0 || atlas >= atlas_count )
+		return false;
+
+	if( surf->light_s < 0 || surf->light_t < 0 ||
+		surf->light_s + smax > BLOCK_SIZE || surf->light_t + tmax > BLOCK_SIZE )
+	{
+		gEngine.Host_Error( "%s: invalid lightmap region atlas=%d pos=(%d,%d) size=(%d,%d)\n",
+			__FUNCTION__, atlas, surf->light_s, surf->light_t, smax, tmax );
+		return false;
+	}
+
+	const int texnum = tglob.lightmapTextures[atlas];
+	if( texnum <= 0 )
+		return false;
+
+	vk_texture_t *const texture = R_TextureGetByIndex( texnum );
+	if( !texture || texture->vk.image.image == VK_NULL_HANDLE )
+		return false;
+
+	R_BuildLightMap( surf, gl_lms.lightmap_buffer, smax * 4, dynamic );
+	R_VkImageUploadRegion( &texture->vk.image, &(r_vk_image_upload_region_t) {
+		.layer = 0,
+		.mip = 0,
+		.x = surf->light_s,
+		.y = surf->light_t,
+		.width = smax,
+		.height = tmax,
+		.src_row_stride = smax * 4,
+		.data = gl_lms.lightmap_buffer,
+	});
+	LM_SetCacheState( surf );
+
+	return true;
+}
+
+static qboolean LM_UploadSurfaceRegions( const model_t *world, int atlas_count, qboolean all_surfaces, qboolean dynamic )
+{
+	qboolean uploaded = false;
 
 	for( int i = 0; i < world->numsurfaces; ++i )
 	{
-		msurface_t *surf = world->surfaces + i;
-		if( FBitSet( surf->flags, SURF_DRAWTILED ) || !surf->samples )
-			continue;
-		if( surf->lightmaptexturenum != atlas )
-			continue;
-
-		byte *base = gl_lms.lightmap_buffer + ( surf->light_t * BLOCK_SIZE + surf->light_s ) * 4;
-		R_BuildLightMap( surf, base, BLOCK_SIZE * 4, true );
-		LM_SetCacheState( surf );
-	}
-}
-static qboolean LM_MarkAllAtlasesDirty( int atlas_count )
-{
-	qboolean marked = false;
-	for( int atlas = 0; atlas < atlas_count; ++atlas )
-	{
-		if( gl_lms.atlases[atlas].dirty )
-			continue;
-		gl_lms.atlases[atlas].dirty = true;
-		marked = true;
-	}
-	return marked;
-}
-
-static qboolean LM_MarkDirtyByLightstyles( const model_t *world, int atlas_count )
-{
-	qboolean have_dirty = false;
-
-	for( int i = 0; i < world->numsurfaces; ++i )
-	{
-		const msurface_t *const surf = world->surfaces + i;
+		msurface_t *const surf = world->surfaces + i;
 		if( FBitSet( surf->flags, SURF_DRAWTILED ) || !surf->samples )
 			continue;
 
-		const int atlas = surf->lightmaptexturenum;
-		if( atlas < 0 || atlas >= atlas_count )
+		if( !all_surfaces && !LM_IsSurfaceDirty( surf ) )
 			continue;
 
-		if( !LM_IsSurfaceDirty( surf ) )
-			continue;
-
-		gl_lms.atlases[atlas].dirty = true;
-		have_dirty = true;
+		uploaded |= LM_UploadSurfaceRegion( surf, atlas_count, dynamic );
 	}
 
-	return have_dirty;
-}
-
-static void LM_UploadDirtyAtlases( const model_t *world, int atlas_count )
-{
-	for( int atlas = 0; atlas < atlas_count; ++atlas )
-	{
-		lightmap_atlas_vk_t *atlas_state = &gl_lms.atlases[atlas];
-
-		if( !atlas_state->dirty )
-			continue;
-
-		LM_RebuildAtlas( world, atlas );
-
-		const int upload_texture_id = atlas_state->current_texture_id ^ 1;
-		const qboolean update_only = atlas_state->texture[upload_texture_id] > 0;
-		const int tex = LM_UploadAtlas( atlas, upload_texture_id, update_only );
-		if( tex <= 0 )
-			continue;
-
-		atlas_state->current_texture_id = upload_texture_id;
-		tglob.lightmapTextures[atlas] = tex;
-		atlas_state->dirty = false;
-	}
+	return uploaded;
 }
 
 void VK_ForceRebuildLightmaps( void )
@@ -449,22 +440,13 @@ void VK_UpdateLightmapsIfNeeded( void )
 	const qboolean have_active_dlights = use_lm_dlights ? LM_HasActiveDlights() : false;
 	const qboolean dlight_mode_changed = use_lm_dlights != g_prev_lm_dlights_mode;
 	const qboolean dlight_activity_changed = use_lm_dlights && ( have_active_dlights || g_prev_dlights_active );
-	const qboolean need_full_dirty = g_force_full_rebuild || dlight_mode_changed || dlight_activity_changed;
-
-	qboolean have_dirty = false;
-	if( need_full_dirty )
-		have_dirty |= LM_MarkAllAtlasesDirty( atlas_count );
-
-	have_dirty |= LM_MarkDirtyByLightstyles( world, atlas_count );
+	const qboolean update_all_surfaces = g_force_full_rebuild || dlight_mode_changed || dlight_activity_changed;
 
 	g_force_full_rebuild = false;
 	g_prev_dlights_active = use_lm_dlights ? have_active_dlights : false;
 	g_prev_lm_dlights_mode = use_lm_dlights;
 
-	if( !have_dirty )
-		return;
-
-	LM_UploadDirtyAtlases( world, atlas_count );
+	LM_UploadSurfaceRegions( world, atlas_count, update_all_surfaces, use_lm_dlights );
 }
 
 void VK_RunLightStyles( lightstyle_t *styles )

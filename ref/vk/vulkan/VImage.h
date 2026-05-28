@@ -69,5 +69,17 @@ void R_VkImageUploadBegin( r_vk_image_t *img );
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
 void R_VkImageUploadEnd( r_vk_image_t *img );
 
+typedef struct {
+	int layer;
+	int mip;
+	int x, y;
+	int width, height;
+	int src_row_stride;
+	const void *data;
+} r_vk_image_upload_region_t;
+
+// Expects *img and data contents to remain valid only for the duration of the call.
+void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region );
+
 // Upload all enqueued images using the given command buffer
-void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );
+void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 dst_stages );
