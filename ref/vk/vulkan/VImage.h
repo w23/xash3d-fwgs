@@ -82,4 +82,4 @@ typedef struct {
 void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region );
 
 // Upload all enqueued images using the given command buffer
-void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 dst_stages );
+void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

@@ -249,7 +249,7 @@ static struct {
 
 static void imageStagingPush(void* userptr, struct vk_combuf_s *combuf, uint32_t allocations) {
 	(void)userptr;
-	const VkPipelineStageFlags2 assume_stage
+	const VkPipelineStageFlagBits assume_stage
 		= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 	R_VkImageUploadCommit(combuf, assume_stage);
 }
@@ -279,11 +279,13 @@ void R_VkImageShutdown(void) {
 	arrayDynamicDestroyT(&g_image_upload.barriers);
 }
 
-void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 dst_stages ) {
+void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages ) {
 	const int images_count = g_image_upload.images.count;
 	const int regions_count = g_image_upload.regions.count;
 	if( images_count == 0 && regions_count == 0 )
 		return;
+
+	const VkPipelineStageFlags2 dst_stages2 = (VkPipelineStageFlags2)dst_stages;
 
 	DEBUG("Uploading %d images, %d image regions", images_count, regions_count);
 
@@ -378,7 +380,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 ds
 			// Update image tracking state
 			up->image->sync.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			up->image->sync.read.access = VK_ACCESS_2_SHADER_READ_BIT;
-			up->image->sync.read.stage = dst_stages;
+			up->image->sync.read.stage = dst_stages2;
 			/* SUPPOSEDLY: Write state is no longer relevant due to layout transfer below.
 			 * At least this fixes validation woes. */
 			/* up->image->sync.write.access = VK_ACCESS_2_TRANSFER_WRITE_BIT; */
@@ -415,7 +417,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 ds
 		// 3.b Submit the barriers
 		// It's a massive set of barriers (1e3+), so using manual barriers instead of automatic combuf ones
 		vkCmdPipelineBarrier(combuf->cmdbuf,
-			VK_PIPELINE_STAGE_TRANSFER_BIT, (VkPipelineStageFlags)dst_stages,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, dst_stages,
 			0, 0, NULL, 0, NULL,
 			barriers_count, (VkImageMemoryBarrier*)g_image_upload.barriers.items
 		);
@@ -423,7 +425,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlags2 ds
 		R_VkStagingUnlockBulk(g_image_upload.staging, barriers_count);
 	}
 
-	uploadRegionCommit( combuf, dst_stages );
+	uploadRegionCommit( combuf, dst_stages2 );
 
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
 

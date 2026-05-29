@@ -28,22 +28,6 @@ static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3]; // This is just a t
 static qboolean g_force_full_rebuild = false;
 static qboolean g_prev_dlights_active = false;
 
-static qboolean LM_HasActiveDlights( void )
-{
-	if( !globals.dlights )
-		return false;
-
-	for( int i = 0; i < MAX_DLIGHTS; ++i )
-	{
-		const dlight_t *const dl = globals.dlights + i;
-		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
-			continue;
-		return true;
-	}
-
-	return false;
-}
-
 /*
 =================
 R_AddDynamicLightsToLightmap
@@ -378,6 +362,30 @@ void VK_ForceRebuildLightmaps( void )
 {
 	// Used when switching RT->raster to prepare a fresh fallback lightmap.
 	g_force_full_rebuild = true;
+}
+
+/*
+=================
+LM_HasActiveDlights
+
+Checks whether the map currently has live dynamic lights. This avoids
+refreshing every lightmap region when the dlight array is empty or stale.
+=================
+*/
+static qboolean LM_HasActiveDlights( void )
+{
+	if( !globals.dlights )
+		return false;
+
+	for( int i = 0; i < MAX_DLIGHTS; ++i )
+	{
+		const dlight_t *const dl = globals.dlights + i;
+		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
+			continue;
+		return true;
+	}
+
+	return false;
 }
 
 void VK_UpdateLightmapsIfNeeded( void )
