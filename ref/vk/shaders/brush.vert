@@ -3,7 +3,7 @@
 layout(set=0,binding=0) uniform UBO {
 	mat4 mvp;
 	vec4 color;
-	uint ignore_lightmap_and_lights;
+	uint ignore_lightmap;
 	vec3 padding_unused_;
 } ubo;
 
@@ -21,6 +21,6 @@ void main() {
 	vTexture0 = aTexture0;
 	vLightmapUV = aLightmapUV;
 	vColor = ubo.color * aLightColor;
-	vIgnoreLightmap = ubo.ignore_lightmap_and_lights;
+	vIgnoreLightmap = ubo.ignore_lightmap;
 	gl_Position = ubo.mvp * vec4(aPos.xyz, 1.);
 }

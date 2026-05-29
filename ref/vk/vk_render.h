@@ -138,7 +138,7 @@ typedef struct {
 	vk_render_type_e render_type; // TODO rename legacy
 	material_mode_e material_mode;
 	uint32_t material_flags; // material_flag_bits_e
-	qboolean ignore_lightmap_and_lights;
+	qboolean ignore_lightmap;
 
 	// These are "consumed": copied into internal storage and can be pointers to stack vars
 	const vec4_t *color;

@@ -142,7 +142,7 @@ static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
 	return false;
 }
 
-static int LM_UploadAtlas( int atlas_index, qboolean update_only )
+static int LM_UploadAtlas( int atlas_index )
 {
 	rgbdata_t	r_lightmap;
 	lightmap_atlas_vk_t *atlas = &gl_lms.atlases[atlas_index];
@@ -159,7 +159,7 @@ static int LM_UploadAtlas( int atlas_index, qboolean update_only )
 		atlas->name,
 		&r_lightmap,
 		TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP,
-		update_only
+		false
 	);
 
 	if( tex > 0 )
@@ -209,28 +209,20 @@ static int LM_AllocBlock( int w, int h, int *x, int *y )
 	return true;
 }
 
-static void LM_UploadBlock( qboolean dynamic )
+static void LM_UploadBlock( void )
 {
-	if( dynamic )
-	{
-		// Dynamic updates are done by VK_UpdateLightmapsIfNeeded().
-		return;
-	}
-	else
-	{
-		int i = gl_lms.current_lightmap_texture;
-		lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
+	int i = gl_lms.current_lightmap_texture;
+	lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
 
-		Q_snprintf( atlas->name, sizeof( atlas->name ), "*lightmap%i", i );
-		atlas->texture = 0;
+	Q_snprintf( atlas->name, sizeof( atlas->name ), "*lightmap%i", i );
+	atlas->texture = 0;
 
-		tglob.lightmapTextures[i] = LM_UploadAtlas( i, false );
-		if( tglob.lightmapTextures[i] <= 0 )
-			gEngine.Host_Error( "%s: failed to upload lightmap atlas %d\n", __FUNCTION__, i );
+	tglob.lightmapTextures[i] = LM_UploadAtlas( i );
+	if( tglob.lightmapTextures[i] <= 0 )
+		gEngine.Host_Error( "%s: failed to upload lightmap atlas %d\n", __FUNCTION__, i );
 
-		if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
-			gEngine.Host_Error( "AllocBlock: full\n" );
-	}
+	if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
+		gEngine.Host_Error( "AllocBlock: full\n" );
 }
 
 /*
@@ -312,7 +304,7 @@ void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel )
 
 	if( !LM_AllocBlock( smax, tmax, &surf->light_s, &surf->light_t ))
 	{
-		LM_UploadBlock( false );
+		LM_UploadBlock();
 		LM_InitBlock();
 
 		if( !LM_AllocBlock( smax, tmax, &surf->light_s, &surf->light_t ))
@@ -330,7 +322,7 @@ void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel )
 
 void VK_UploadLightmap( void )
 {
-	LM_UploadBlock( false );
+	LM_UploadBlock();
 }
 
 void VK_ClearLightmap( void )
@@ -361,30 +353,30 @@ static void LM_SurfaceSize( const msurface_t *surf, int *smax, int *tmax )
 	*tmax = ( info->lightextents[1] / sample_size ) + 1;
 }
 
-static qboolean LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qboolean dynamic )
+static void LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qboolean dynamic )
 {
 	int smax, tmax;
 	LM_SurfaceSize( surf, &smax, &tmax );
 
 	const int atlas = surf->lightmaptexturenum;
 	if( atlas < 0 || atlas >= atlas_count )
-		return false;
+		return;
 
 	if( surf->light_s < 0 || surf->light_t < 0 ||
 		surf->light_s + smax > BLOCK_SIZE || surf->light_t + tmax > BLOCK_SIZE )
 	{
 		gEngine.Host_Error( "%s: invalid lightmap region atlas=%d pos=(%d,%d) size=(%d,%d)\n",
 			__FUNCTION__, atlas, surf->light_s, surf->light_t, smax, tmax );
-		return false;
+		return;
 	}
 
 	const int texnum = tglob.lightmapTextures[atlas];
 	if( texnum <= 0 )
-		return false;
+		return;
 
 	vk_texture_t *const texture = R_TextureGetByIndex( texnum );
 	if( !texture || texture->vk.image.image == VK_NULL_HANDLE )
-		return false;
+		return;
 
 	R_BuildLightMap( surf, gl_lms.lightmap_buffer, smax * 4, dynamic );
 	R_VkImageUploadRegion( &texture->vk.image, &(r_vk_image_upload_region_t) {
@@ -398,14 +390,10 @@ static qboolean LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qbool
 		.data = gl_lms.lightmap_buffer,
 	});
 	LM_SetCacheState( surf );
-
-	return true;
 }
 
-static qboolean LM_UploadSurfaceRegions( const model_t *world, int atlas_count, qboolean all_surfaces, qboolean dynamic )
+static void LM_UploadSurfaceRegions( const model_t *world, int atlas_count, qboolean all_surfaces, qboolean dynamic )
 {
-	qboolean uploaded = false;
-
 	for( int i = 0; i < world->numsurfaces; ++i )
 	{
 		msurface_t *const surf = world->surfaces + i;
@@ -415,10 +403,8 @@ static qboolean LM_UploadSurfaceRegions( const model_t *world, int atlas_count, 
 		if( !all_surfaces && !LM_IsSurfaceDirty( surf ) )
 			continue;
 
-		uploaded |= LM_UploadSurfaceRegion( surf, atlas_count, dynamic );
+		LM_UploadSurfaceRegion( surf, atlas_count, dynamic );
 	}
-
-	return uploaded;
 }
 
 void VK_ForceRebuildLightmaps( void )
