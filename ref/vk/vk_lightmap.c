@@ -10,17 +10,10 @@
 
 #include <memory.h>
 
-typedef struct lightmap_atlas_vk_s
-{
-	int texture;
-	char name[24]; // debug name of lightmap
-} lightmap_atlas_vk_t;
-
 typedef struct
 {
 	int		allocated[BLOCK_SIZE_MAX];
 	int		current_lightmap_texture;
-	lightmap_atlas_vk_t	atlases[MAX_LIGHTMAPS];
 	//msurface_t	*dynamic_surfaces;
 	//msurface_t	*lightmap_surfaces[MAX_LIGHTMAPS];
 	byte		lightmap_buffer[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*4];
@@ -142,32 +135,6 @@ static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
 	return false;
 }
 
-static int LM_UploadAtlas( int atlas_index )
-{
-	rgbdata_t	r_lightmap;
-	lightmap_atlas_vk_t *atlas = &gl_lms.atlases[atlas_index];
-	memset( &r_lightmap, 0, sizeof( r_lightmap ));
-
-	r_lightmap.width = BLOCK_SIZE;
-	r_lightmap.height = BLOCK_SIZE;
-	r_lightmap.type = PF_RGBA_32;
-	r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
-	r_lightmap.flags = IMAGE_HAS_COLOR;
-	r_lightmap.buffer = gl_lms.lightmap_buffer;
-
-	const int tex = R_TextureUploadFromBuffer(
-		atlas->name,
-		&r_lightmap,
-		TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP,
-		false
-	);
-
-	if( tex > 0 )
-		atlas->texture = tex;
-
-	return tex;
-}
-
 static void LM_InitBlock( void )
 {
 	memset( gl_lms.allocated, 0, sizeof( gl_lms.allocated ));
@@ -211,15 +178,23 @@ static int LM_AllocBlock( int w, int h, int *x, int *y )
 
 static void LM_UploadBlock( void )
 {
-	int i = gl_lms.current_lightmap_texture;
-	lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
+	rgbdata_t	r_lightmap;
+	char	lmName[16];
+	int	i;
 
-	Q_snprintf( atlas->name, sizeof( atlas->name ), "*lightmap%i", i );
-	atlas->texture = 0;
+	i = gl_lms.current_lightmap_texture;
 
-	tglob.lightmapTextures[i] = LM_UploadAtlas( i );
-	if( tglob.lightmapTextures[i] <= 0 )
-		gEngine.Host_Error( "%s: failed to upload lightmap atlas %d\n", __FUNCTION__, i );
+	memset( &r_lightmap, 0, sizeof( r_lightmap ));
+	Q_snprintf( lmName, sizeof( lmName ), "*lightmap%i", i );
+
+	r_lightmap.width = BLOCK_SIZE;
+	r_lightmap.height = BLOCK_SIZE;
+	r_lightmap.type = PF_RGBA_32;
+	r_lightmap.size = r_lightmap.width * r_lightmap.height * 4;
+	r_lightmap.flags = IMAGE_HAS_COLOR;
+	r_lightmap.buffer = gl_lms.lightmap_buffer;
+
+	tglob.lightmapTextures[i] = R_TextureUploadFromBuffer( lmName, &r_lightmap, TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP, false );
 
 	if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
 		gEngine.Host_Error( "AllocBlock: full\n" );
@@ -328,15 +303,7 @@ void VK_UploadLightmap( void )
 void VK_ClearLightmap( void )
 {
 	for (int i = 0; i < gl_lms.current_lightmap_texture; ++i)
-	{
-		lightmap_atlas_vk_t *atlas = &gl_lms.atlases[i];
-
-		if( atlas->texture > 0 )
-			R_TextureFree( atlas->texture );
-
-		tglob.lightmapTextures[i] = 0;
-		memset( atlas, 0, sizeof( *atlas ));
-	}
+		R_TextureFree(tglob.lightmapTextures[i]);
 	gl_lms.current_lightmap_texture = 0;
 	g_force_full_rebuild = false;
 	g_prev_dlights_active = false;
