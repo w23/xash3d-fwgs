@@ -19,7 +19,6 @@ void VK_LoadCvarsAfterInit( void );
 	X(cl_lightstyle_lerping) \
 	X(r_lighting_modulate) \
 	X(r_lightmap) \
-	X(vk_lightmap_dlights) \
 	X(r_infotool) \
 	X(vk_device_target_id) \
 	X(vk_debug_log) \

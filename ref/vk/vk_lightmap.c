@@ -34,7 +34,6 @@ xvk_lightmap_state_t g_lightmap;
 static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3]; // This is just a temp HDR-ish buffer for lightmap generation
 static qboolean g_force_full_rebuild = false;
 static qboolean g_prev_dlights_active = false;
-static qboolean g_prev_lm_dlights_mode = true;
 
 static qboolean LM_HasActiveDlights( void )
 {
@@ -272,7 +271,7 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 	}
 
 	// add all the dynamic lights
-	if( dynamic && CVAR_TO_BOOL( vk_lightmap_dlights ) )
+	if( dynamic )
 		R_AddDynamicLightsToLightmap( surf, smax, tmax, (float)sample_size );
 
 	// Put into texture format
@@ -349,7 +348,6 @@ void VK_ClearLightmap( void )
 	gl_lms.current_lightmap_texture = 0;
 	g_force_full_rebuild = false;
 	g_prev_dlights_active = false;
-	g_prev_lm_dlights_mode = true;
 
 	LM_InitBlock();
 }
@@ -439,17 +437,14 @@ void VK_UpdateLightmapsIfNeeded( void )
 	if( atlas_count <= 0 )
 		return;
 
-	const qboolean use_lm_dlights = CVAR_TO_BOOL( vk_lightmap_dlights );
-	const qboolean have_active_dlights = use_lm_dlights ? LM_HasActiveDlights() : false;
-	const qboolean dlight_mode_changed = use_lm_dlights != g_prev_lm_dlights_mode;
-	const qboolean dlight_activity_changed = use_lm_dlights && ( have_active_dlights || g_prev_dlights_active );
-	const qboolean update_all_surfaces = g_force_full_rebuild || dlight_mode_changed || dlight_activity_changed;
+	const qboolean have_active_dlights = LM_HasActiveDlights();
+	const qboolean dlight_activity_changed = have_active_dlights || g_prev_dlights_active;
+	const qboolean update_all_surfaces = g_force_full_rebuild || dlight_activity_changed;
 
 	g_force_full_rebuild = false;
-	g_prev_dlights_active = use_lm_dlights ? have_active_dlights : false;
-	g_prev_lm_dlights_mode = use_lm_dlights;
+	g_prev_dlights_active = have_active_dlights;
 
-	LM_UploadSurfaceRegions( world, atlas_count, update_all_surfaces, use_lm_dlights );
+	LM_UploadSurfaceRegions( world, atlas_count, update_all_surfaces, have_active_dlights );
 }
 
 void VK_RunLightStyles( lightstyle_t *styles )
