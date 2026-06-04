@@ -23,7 +23,6 @@ static qboolean avi_initialized;
 static poolhandle_t avi_mempool;
 
 #if XASH_AVI == AVI_FFMPEG
-#define XASH_FFMPEG_DLOPEN 1
 #include "avi_ffmpeg.h"
 
 struct movie_state_s
@@ -196,7 +195,6 @@ static int AVI_OpenCodecContext( AVCodecContext **dst_dec_ctx, AVFormatContext *
 		AVI_SpewError( quiet, S_ERROR "Failed to allocate %s codec context", dec->name );
 		return AVERROR( ENOMEM );
 	}
-
 	if(( ret = pavcodec_parameters_to_context( dec_ctx, st->codecpar )) < 0 )
 	{
 		AVI_SpewAvError( quiet, "avcodec_parameters_to_context", ret );
@@ -218,11 +216,6 @@ static int AVI_OpenCodecContext( AVCodecContext **dst_dec_ctx, AVFormatContext *
 }
 
 int AVI_GetVideoFrameNumber( movie_state_t *Avi, float time )
-{
-	return 0;
-}
-
-int AVI_TimeToSoundPosition( movie_state_t *Avi, int time )
 {
 	return 0;
 }
@@ -257,13 +250,12 @@ byte *AVI_GetVideoFrame( movie_state_t *Avi, int target )
 
 static void AVI_StreamAudio( movie_state_t *Avi )
 {
-	int buffer_samples, file_samples, file_bytes;
-	rawchan_t *ch = NULL;
+	rawchan_t *ch;
 
 	// keep the same semantics, when S_RAW_SOUND_SOUNDTRACK doesn't play if S_StartStreaming wasn't enabled
-	qboolean disable_stream = Avi->entnum == S_RAW_SOUND_SOUNDTRACK ? !s_listener.streaming : false;
+	qboolean disable_stream = Avi->entnum == S_RAW_SOUND_SOUNDTRACK ? !snd.streaming : false;
 
-	if( !dma.initialized || disable_stream || s_listener.paused || !Avi->cached_audio )
+	if( !snd.initialized || disable_stream || cl.paused || !Avi->cached_audio )
 		return;
 
 	ch = S_FindRawChannel( Avi->entnum, true );
@@ -274,16 +266,16 @@ static void AVI_StreamAudio( movie_state_t *Avi )
 	ch->master_vol = Avi->volume;
 	ch->dist_mult = (Avi->attn / SND_CLIP_DISTANCE);
 
-	if( ch->s_rawend < soundtime )
-		ch->s_rawend = soundtime;
+	if( ch->s_rawend < snd.soundtime )
+		ch->s_rawend = snd.soundtime;
 
-	while( ch->s_rawend < soundtime + ch->max_samples )
+	while( ch->s_rawend < snd.soundtime + ch->max_samples )
 	{
+		int buffer_samples = ch->max_samples - (ch->s_rawend - snd.soundtime);
+		int file_samples = buffer_samples * ((float)Avi->rate / SOUND_DMA_SPEED);
+		int file_bytes;
 		size_t copy;
 
-		buffer_samples = ch->max_samples - (ch->s_rawend - soundtime);
-
-		file_samples = buffer_samples * ((float)Avi->rate / SOUND_DMA_SPEED);
 		if( file_samples <= 1 ) return; // no more samples need
 
 		file_bytes = file_samples * pav_get_bytes_per_sample( Avi->s_fmt ) * Avi->channels;
@@ -314,8 +306,6 @@ static void AVI_HandleAudio( movie_state_t *Avi, const AVFrame *frame )
 {
 	int samples = frame->nb_samples;
 	size_t len = samples * pav_get_bytes_per_sample( Avi->s_fmt ) * Avi->channels;
-	int outsamples;
-	uint8_t *ptr;
 
 	// allocate data
 	if( !Avi->cached_audio )
@@ -343,8 +333,8 @@ static void AVI_HandleAudio( movie_state_t *Avi, const AVFrame *frame )
 		}
 	}
 
-	ptr = Avi->cached_audio + Avi->cached_audio_len;
-	outsamples = pswr_convert( Avi->swr_ctx, &ptr, samples, (void *)frame->data, samples );
+	uint8_t *ptr = Avi->cached_audio + Avi->cached_audio_len;
+	int outsamples = pswr_convert( Avi->swr_ctx, &ptr, samples, (void *)frame->data, samples );
 	Avi->cached_audio_len += outsamples * pav_get_bytes_per_sample( Avi->s_fmt ) * Avi->channels;
 
 	// Con_Printf( "%s: got audio chunk of size %d samples\n", __func__, outsamples );
@@ -355,6 +345,10 @@ qboolean AVI_Think( movie_state_t *Avi )
 	qboolean decoded = false;
 	qboolean flushing = false;
 	qboolean redraw = false;
+
+	if( !Avi->video_ctx )
+		return false;
+
 	const double timebase = (double)Avi->video_ctx->pkt_timebase.den / Avi->video_ctx->pkt_timebase.num;
 	int64_t curtime = round( Platform_DoubleTime() * timebase );
 
@@ -384,7 +378,7 @@ qboolean AVI_Think( movie_state_t *Avi )
 
 		if(( res = pav_read_frame( Avi->fmt_ctx, Avi->pkt )) >= 0 )
 		{
-			if( Avi->pkt->stream_index == Avi->audio_stream )
+			if( Avi->pkt->stream_index == Avi->audio_stream && Avi->audio_ctx )
 			{
 				res = pavcodec_send_packet( Avi->audio_ctx, Avi->pkt );
 				if( res < 0 )
@@ -446,13 +440,16 @@ qboolean AVI_Think( movie_state_t *Avi )
 
 	if( Avi->texture == 0 )
 	{
+		int cinTexture = SCR_GetCinematicTexture();
 		int w = Avi->w >= 0 ? Avi->w : refState.width;
 		int h = Avi->h >= 0 ? Avi->h : refState.height;
 
-		ref.dllFuncs.R_DrawStretchRaw( Avi->x, Avi->y, w, h, Avi->xres, Avi->yres, Avi->dst, redraw );
+		if( redraw )
+			ref.dllFuncs.GL_UpdateTexture( cinTexture, Avi->xres, Avi->yres, Avi->xres, Avi->yres, Avi->dst, PF_BGRA_32 );
+		ref.dllFuncs.R_DrawStretchPic( Avi->x, Avi->y, w, h, 0, 0, 1, 1, cinTexture );
 	}
 	else if( redraw && Avi->texture > 0 )
-		ref.dllFuncs.AVI_UploadRawFrame( Avi->texture, Avi->xres, Avi->yres, Avi->w, Avi->h, Avi->dst );
+		ref.dllFuncs.GL_UpdateTexture( Avi->texture, Avi->xres, Avi->yres, Avi->w, Avi->h, Avi->dst, PF_BGRA_32 );
 
 	if( flushing && !decoded )
 		return false; // probably hit an EOF
@@ -462,8 +459,6 @@ qboolean AVI_Think( movie_state_t *Avi )
 
 void AVI_OpenVideo( movie_state_t *Avi, const char *filename, qboolean load_audio, int quiet )
 {
-	byte *dst[4];
-	int dst_linesize[4];
 	int ret;
 
 	if( Avi->active )
@@ -528,6 +523,8 @@ void AVI_OpenVideo( movie_state_t *Avi, const char *filename, qboolean load_audi
 		return;
 	}
 
+	byte *dst[4];
+	int dst_linesize[4];
 	if(( ret = pav_image_alloc( dst, dst_linesize, Avi->xres, Avi->yres, AV_PIX_FMT_BGR0, 1 )) < 0 )
 	{
 		AVI_SpewAvError( quiet, "av_image_alloc", ret );
@@ -840,11 +837,6 @@ qboolean AVI_HaveAudioTrack( const movie_state_t *Avi )
 void AVI_OpenVideo( movie_state_t *Avi, const char *filename, qboolean load_audio, int quiet )
 {
 	;
-}
-
-int AVI_TimeToSoundPosition( movie_state_t *Avi, int time )
-{
-	return 0;
 }
 
 void AVI_CloseVideo( movie_state_t *Avi )

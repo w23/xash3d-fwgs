@@ -23,7 +23,6 @@ GNU General Public License for more details.
 #include <stddef.h>
 #include <stdio.h>
 #include "xash3d_types.h"
-#include "const.h"
 #include "com_model.h"
 #include "gameinfo.h"
 
@@ -32,8 +31,8 @@ extern "C"
 {
 #endif // __cplusplus
 
-#define FS_API_VERSION 4 // not stable yet!
-#define FS_API_CREATEINTERFACE_TAG   "XashFileSystem004" // follow FS_API_VERSION!!!
+#define FS_API_VERSION 6 // not stable yet!
+#define FS_API_CREATEINTERFACE_TAG   "XashFileSystem006" // follow FS_API_VERSION!!!
 #define FILESYSTEM_INTERFACE_VERSION "VFileSystem009" // never change this!
 
 // search path flags
@@ -44,14 +43,17 @@ enum
 	FS_GAMEDIR_PATH   = BIT( 2 ), // just a marker for gamedir path
 	FS_CUSTOM_PATH    = BIT( 3 ), // gamedir but with custom/mod data
 	FS_GAMERODIR_PATH = BIT( 4 ), // gamedir but read-only
+	FS_EXEC_PATH      = BIT( 5 ), // this directory is allowed to have executable code
 
-	FS_SKIP_ARCHIVED_WADS = BIT( 5 ), // don't mount wads inside archives automatically
-	FS_LOAD_PACKED_WAD = BIT( 6 ), // this wad is packed inside other archive
+	FS_SKIP_ARCHIVED_WADS = BIT( 16 ), // don't mount wads inside archives automatically
+	FS_LOAD_PACKED_WAD    = BIT( 17 ), // this wad is packed inside other archive
 
-	FS_MOUNT_HD    = BIT( 7 ), // mount high definition content folder
-	FS_MOUNT_LV    = BIT( 8 ), // mount low violence content folder
-	FS_MOUNT_ADDON = BIT( 9 ), // mount addon folder
-	FS_MOUNT_L10N  = BIT( 10 ), // mount localization folder
+	FS_MOUNT_HD    = BIT( 24 ), // mount high definition content folder
+	FS_MOUNT_LV    = BIT( 25 ), // mount low violence content folder
+	FS_MOUNT_ADDON = BIT( 26 ), // mount addon folder
+	FS_MOUNT_L10N  = BIT( 27 ), // mount localization folder
+
+	FS_MOUNT_FLAGS = FS_MOUNT_HD | FS_MOUNT_LV | FS_MOUNT_ADDON | FS_MOUNT_L10N,
 
 	FS_GAMEDIRONLY_SEARCH_FLAGS = FS_GAMEDIR_PATH | FS_CUSTOM_PATH | FS_GAMERODIR_PATH
 };
@@ -143,7 +145,7 @@ typedef struct fs_dllinfo_t
 
 typedef struct fs_globals_t
 {
-	gameinfo_t	*GameInfo;	// current GameInfo
+	const gameinfo_t *GameInfo;	// current GameInfo
 	gameinfo_t	*games[MAX_MODS];	// environment games (founded at each engine start)
 	int		numgames;
 } fs_globals_t;
@@ -175,8 +177,8 @@ typedef struct fs_api_t
 	fs_offset_t (*Write)( file_t *file, const void *data, size_t datasize );
 	fs_offset_t (*Read)( file_t *file, void *buffer, size_t buffersize );
 	int (*Seek)( file_t *file, fs_offset_t offset, int whence );
-	fs_offset_t (*Tell)( file_t *file );
-	qboolean (*Eof)( file_t *file );
+	fs_offset_t (*Tell)( const file_t *file );
+	qboolean (*Eof)( const file_t *file );
 	int (*Flush)( file_t *file );
 	int (*Close)( file_t *file );
 	int (*Gets)( file_t *file, char *string, size_t bufsize );
@@ -185,7 +187,7 @@ typedef struct fs_api_t
 	int (*VPrintf)( file_t *file, const char *format, va_list ap );
 	int (*Printf)( file_t *file, const char *format, ... ) FORMAT_CHECK( 2 );
 	int (*Print)( file_t *file, const char *msg );
-	fs_offset_t (*FileLength)( file_t *f );
+	fs_offset_t (*FileLength)( const file_t *f );
 	qboolean (*FileCopy)( file_t *pOutput, file_t *pInput, int fileSize );
 
 	// file buffer ops
@@ -239,6 +241,7 @@ typedef struct fs_api_t
 	qboolean (*GetRootDirectory)( char *path, size_t size );
 
 	void (*MakeGameInfo)( void );
+	void (*FindFile_f)( const char *filename );
 } fs_api_t;
 
 typedef struct fs_interface_t
@@ -251,7 +254,7 @@ typedef struct fs_interface_t
 	void    (*_Sys_Error)( const char *fmt, ... ) FORMAT_CHECK( 1 );
 
 	// memory
-	poolhandle_t (*_Mem_AllocPool)( const char *name, const char *filename, int fileline );
+	poolhandle_t (*_Mem_AllocPool)( const char *name, unsigned int flags, const char *filename, int fileline );
 	void  (*_Mem_FreePool)( poolhandle_t *poolptr, const char *filename, int fileline );
 	void *(*_Mem_Alloc)( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
 		ALLOC_CHECK( 2 ) WARN_UNUSED_RESULT;

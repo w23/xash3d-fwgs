@@ -45,17 +45,11 @@ void GAME_EXPORT Platform_GetMousePos( int *x, int *y )
 {
 	SDL_GetMouseState( x, y );
 
-	if( x && window_width.value && window_width.value != refState.width )
-	{
-		float factor = refState.width / window_width.value;
-		*x = *x * factor;
-	}
+	if( x )
+		*x *= refState.scale_x;
 
-	if( y && window_height.value && window_height.value != refState.height )
-	{
-		float factor = refState.height / window_height.value;
-		*y = *y * factor;
-	}
+	if( y )
+		*y *= refState.scale_y;
 }
 
 /*
@@ -91,12 +85,12 @@ Platform_GetClipobardText
 */
 int Platform_GetClipboardText( char *buffer, size_t size )
 {
-	int textLength;
 	char *sdlbuffer = SDL_GetClipboardText();
 
 	if( !sdlbuffer )
 		return 0;
 
+	int textLength;
 	if (buffer && size > 0)
 	{
 		textLength = Q_strncpy( buffer, sdlbuffer, size );
@@ -170,9 +164,7 @@ SDLash_FreeCursors
 */
 void SDLash_FreeCursors( void )
 {
-	int i = 0;
-
-	for( ; i < ARRAYSIZE( cursors.cursors ); i++ )
+	for( int i = 0; i < ARRAYSIZE( cursors.cursors ); i++ )
 	{
 		if( cursors.cursors[i] )
 			SDL_FreeCursor( cursors.cursors[i] );
@@ -220,7 +212,7 @@ void Platform_SetCursorType( VGUI_DefaultCursor type )
 		// restore the last mouse position
 		if( in_visible_cursor_pos.pushed )
 		{
-			SDL_WarpMouseInWindow( host.hWnd, in_visible_cursor_pos.x, in_visible_cursor_pos.y );
+			Platform_SetMousePos( in_visible_cursor_pos.x, in_visible_cursor_pos.y );
 			in_visible_cursor_pos.pushed = false;
 		}
 	}
@@ -230,7 +222,7 @@ void Platform_SetCursorType( VGUI_DefaultCursor type )
 		if( !in_visible_cursor_pos.pushed )
 		{
 			SDL_GetMouseState( &in_visible_cursor_pos.x, &in_visible_cursor_pos.y );
-			SDL_WarpMouseInWindow( host.hWnd, host.window_center_x, host.window_center_y );
+			Platform_SetMousePos( host.window_center_x, host.window_center_y );
 			in_visible_cursor_pos.pushed = true;
 		}
 
@@ -266,11 +258,8 @@ Platform_GetKeyModifiers
 */
 key_modifier_t Platform_GetKeyModifiers( void )
 {
-	SDL_Keymod modFlags;
-	key_modifier_t resultFlags;
-
-	resultFlags = KeyModifier_None;
-	modFlags = SDL_GetModState();
+	key_modifier_t resultFlags = KeyModifier_None;
+	SDL_Keymod modFlags = SDL_GetModState();
 	if( FBitSet( modFlags, KMOD_LCTRL ))
 		SetBits( resultFlags, KeyModifier_LeftCtrl );
 	if( FBitSet( modFlags, KMOD_RCTRL ))

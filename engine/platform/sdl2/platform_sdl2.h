@@ -21,12 +21,8 @@ GNU General Public License for more details.
 #include "platform.h"
 
 // window management
-void VID_RestoreScreenResolution( void );
-qboolean  VID_CreateWindow( int width, int height, window_mode_t window_mode );
-void      VID_DestroyWindow( void );
-void GL_InitExtensions( void );
-qboolean GL_DeleteContext( void );
-void VID_SaveWindowSize( int width, int height, qboolean maximized );
+void VID_RestoreScreenResolution( window_mode_t window_mode );
+void VID_SaveWindowSize( int width, int height );
 
 //
 // in_sdl.c
@@ -38,6 +34,16 @@ void SDLash_FreeCursors( void );
 // joy_sdl.c
 //
 void SDLash_HandleGameControllerEvent( SDL_Event *ev );
+
+//
+// sensor_sdl2.c
+//
+void SDLash_InitSensors( void );
+void SDLash_ShutdownSensors( void );
+qboolean SDLash_GyroIsAvailable( void );
+#if SDL_VERSION_ATLEAST( 2, 0, 14 )
+void SDLash_SensorUpdate( SDL_SensorEvent sensor );
+#endif
 
 #endif // XASH_SDL
 #endif // KEYWRAPPER_H

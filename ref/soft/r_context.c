@@ -15,24 +15,10 @@ GNU General Public License for more details.
 
 #include "r_local.h"
 
-ref_api_t     gEngfuncs;
-ref_globals_t *gpGlobals;
-ref_client_t  *gp_cl;
-ref_host_t    *gp_host;
 gl_globals_t  tr;
 ref_speeds_t  r_stats;
-poolhandle_t  r_temppool;
 viddef_t      vid;
 
-void _Mem_Free( void *data, const char *filename, int fileline )
-{
-	gEngfuncs._Mem_Free( data, filename, fileline );
-}
-
-void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
-{
-	return gEngfuncs._Mem_Alloc( poolptr, size, clear, filename, fileline );
-}
 
 static void GAME_EXPORT R_ClearScreen( void )
 {
@@ -62,9 +48,44 @@ static void GAME_EXPORT CL_FillRGBA( int rendermode, float _x, float _y, float _
 	Draw_Fill( _x, _y, _w, _h );
 }
 
-void Mod_UnloadTextures( model_t *mod );
+static void Mod_BrushUnloadTextures( model_t *mod )
+{
+	gEngfuncs.Con_Printf( "Unloading world\n" );
+	tr.map_unload = true;
 
-static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buf )
+	for( int i = 0; i < mod->numtextures; i++ )
+	{
+		texture_t *tx = mod->textures[i];
+		if( !tx || tx->gl_texturenum == tr.defaultTexture )
+			continue; // free slot
+
+		GL_FreeTexture( tx->gl_texturenum ); // main texture
+		GL_FreeTexture( tx->fb_texturenum ); // luma texture
+	}
+}
+
+static void Mod_UnloadTextures( model_t *mod )
+{
+	Assert( mod != NULL );
+
+	switch( mod->type )
+	{
+	case mod_studio:
+		// Mod_StudioUnloadTextures( mod->cache.data );
+		break;
+	case mod_alias:
+		// Mod_AliasUnloadTextures( mod->cache.data );
+		break;
+	case mod_brush:
+		Mod_BrushUnloadTextures( mod );
+		break;
+	case mod_sprite:
+		break;
+	default: gEngfuncs.Host_Error( "%s: unsupported type %d\n", __func__, mod->type );
+	}
+}
+
+static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buf, size_t buffersize )
 {
 	qboolean loaded = false;
 
@@ -84,7 +105,7 @@ static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create
 		loaded = true;
 		break;
 	case mod_sprite:
-		Mod_LoadSpriteModel( mod, buf, &loaded, mod->numtexinfo );
+		loaded = true;
 		break;
 	default:
 		gEngfuncs.Host_Error( "%s: unsupported type %d\n", __func__, mod->type );
@@ -97,7 +118,7 @@ static qboolean GAME_EXPORT Mod_ProcessRenderData( model_t *mod, qboolean create
 	return loaded;
 }
 
-static int GL_RefGetParm( int parm, int arg )
+static intptr_t GL_RefGetParm( int parm, int arg )
 {
 	image_t *glt;
 
@@ -150,7 +171,7 @@ static int GL_RefGetParm( int parm, int arg )
 		return 0; // glState.activeTMU;
 	case PARM_LIGHTSTYLEVALUE:
 		arg = bound( 0, arg, MAX_LIGHTSTYLES - 1 );
-		return tr.lightstylevalue[arg];
+		return g_lightstylevalue[arg];
 	case PARM_MAX_IMAGE_UNITS:
 		return 0; // GL_MaxTextureUnits();
 	case PARM_REBUILD_GAMMA:
@@ -165,6 +186,8 @@ static int GL_RefGetParm( int parm, int arg )
 		return 0; // ref_soft doesn't support sky sphere
 	case PARM_TEX_FILTERING:
 		return 0; // ref_soft doesn't do filtering in general
+	case PARM_GET_STUDIO_HDR:
+		return (intptr_t)R_StudioGetHeader();
 	default:
 		return ENGINE_GET_PARM_( parm, arg );
 	}
@@ -173,12 +196,15 @@ static int GL_RefGetParm( int parm, int arg )
 
 static void GAME_EXPORT R_GetDetailScaleForTexture( int texture, float *xScale, float *yScale )
 {
-	image_t *glt = R_GetTexture( texture );
+	// details are not implemented in ref_soft
 
-	if( xScale )
-		*xScale = glt->xscale;
-	if( yScale )
-		*yScale = glt->yscale;
+	if( xScale ) *xScale = 1.0f;
+	if( yScale ) *yScale = 1.0f;
+}
+
+static void GAME_EXPORT R_SetDetailScaleForTexture( int texture, float xScale, float yScale )
+{
+	// details are not implemented in ref_soft
 }
 
 static void GAME_EXPORT R_GetExtraParmsForTexture( int texture, byte *red, byte *green, byte *blue, byte *density )
@@ -231,58 +257,10 @@ static const byte * GAME_EXPORT GL_TextureData( unsigned int texnum )
 	return NULL;
 }
 
-static void Mod_BrushUnloadTextures( model_t *mod )
-{
-	int i;
-
-
-	gEngfuncs.Con_Printf( "Unloading world\n" );
-	tr.map_unload = true;
-
-	for( i = 0; i < mod->numtextures; i++ )
-	{
-		texture_t *tx = mod->textures[i];
-		if( !tx || tx->gl_texturenum == tr.defaultTexture )
-			continue; // free slot
-
-		GL_FreeTexture( tx->gl_texturenum ); // main texture
-		GL_FreeTexture( tx->fb_texturenum ); // luma texture
-	}
-}
-
-void Mod_UnloadTextures( model_t *mod )
-{
-	int i, j;
-
-	Assert( mod != NULL );
-
-	switch( mod->type )
-	{
-	case mod_studio:
-		// Mod_StudioUnloadTextures( mod->cache.data );
-		break;
-	case mod_alias:
-		// Mod_AliasUnloadTextures( mod->cache.data );
-		break;
-	case mod_brush:
-		Mod_BrushUnloadTextures( mod );
-		break;
-	case mod_sprite:
-		Mod_SpriteUnloadTextures( mod->cache.data );
-		break;
-	default: gEngfuncs.Host_Error( "%s: unsupported type %d\n", __func__, mod->type );
-	}
-}
-
 static void GAME_EXPORT R_ProcessEntData( qboolean allocate, cl_entity_t *entities, unsigned int max_entities )
 {
 	tr.entities = entities;
 	tr.max_entities = max_entities;
-}
-
-static void GAME_EXPORT R_Flush( unsigned int flags )
-{
-	// stub
 }
 
 // stubs
@@ -317,13 +295,11 @@ static void GAME_EXPORT R_ShowTextures( void )
 
 static void GAME_EXPORT R_SetupSky( int *skyboxTextures )
 {
-	int i;
-
 	// TODO: R_UnloadSkybox();
 	if( !skyboxTextures )
 		return;
 
-	for( i = 0; i < SKYBOX_MAX_SIDES; i++ )
+	for( int i = 0; i < SKYBOX_MAX_SIDES; i++ )
 		tr.skyboxTextures[i] = skyboxTextures[i];
 }
 
@@ -394,10 +370,6 @@ byte *GAME_EXPORT Mod_GetCurrentVis( void )
 	return NULL;
 }
 
-static void GAME_EXPORT VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
-{
-}
-
 static void GAME_EXPORT VGUI_SetupDrawing( qboolean rect )
 {
 }
@@ -420,7 +392,42 @@ static void * GAME_EXPORT R_GetProcAddress( const char *name )
 	return gEngfuncs.GL_GetProcAddress( name );
 }
 
-static const ref_interface_t gReffuncs =
+static void R_FillRenderAPI( render_api_t *api )
+{
+	api->GetExtraParmsForTexture  = R_GetExtraParmsForTexture;
+	api->GetFrameTime             = R_GetFrameTime;
+	api->R_SetCurrentEntity       = R_SetCurrentEntity;
+	api->R_SetCurrentModel        = R_SetCurrentModel;
+	api->GL_CreateTexture         = GL_CreateTexture;
+	api->GL_LoadTextureArray      = GL_LoadTextureArray;
+	api->GL_CreateTextureArray    = GL_CreateTextureArray;
+	api->DrawSingleDecal          = DrawSingleDecal;
+	api->R_DecalSetupVerts        = R_DecalSetupVerts;
+	api->R_EntityRemoveDecals     = R_EntityRemoveDecals;
+	api->GL_SelectTexture         = GL_SelectTexture;
+	api->GL_LoadTextureMatrix     = GL_LoadTexMatrixExt;
+	api->GL_TexMatrixIdentity     = GL_LoadIdentityTexMatrix;
+	api->GL_CleanUpTextureUnits   = GL_CleanUpTextureUnits;
+	api->GL_TexGen                = GL_TexGen;
+	api->GL_TextureTarget         = GL_TextureTarget;
+	api->GL_TexCoordArrayMode     = GL_SetTexCoordArrayMode;
+	api->GL_UpdateTexSize         = GL_UpdateTexSize;
+	api->GL_DrawParticles         = CL_DrawParticlesExternal;
+	api->LightVec                 = R_LightVec;
+	api->StudioGetTexture         = R_StudioGetTexture;
+	api->GL_GetProcAddress        = R_GetProcAddress;
+}
+
+static void R_FillTriAPI( triangleapi_t *api )
+{
+	api->TexCoord2f    = TriTexCoord2f;
+	api->Fog           = TriFog;
+	api->ScreenToWorld = R_ScreenToWorld;
+	api->GetMatrix     = TriGetMatrix;
+	api->FogParams     = TriFogParams;
+}
+
+const ref_interface_t gReffuncs =
 {
 	R_Init,
 	R_Shutdown,
@@ -445,9 +452,7 @@ static const ref_interface_t gReffuncs =
 	GL_SetRenderMode,
 
 	R_AddEntity,
-	CL_AddCustomBeam,
 	R_ProcessEntData,
-	R_Flush,
 
 	R_ShowTextures,
 
@@ -457,7 +462,6 @@ static const ref_interface_t gReffuncs =
 	R_SetupSky,
 
 	R_Set2DMode,
-	R_DrawStretchRaw,
 	R_DrawStretchPic,
 	CL_FillRGBA,
 	R_WorldToScreen,
@@ -474,14 +478,13 @@ static const ref_interface_t gReffuncs =
 
 	R_StudioEstimateFrame,
 	R_StudioLerpMovement,
-	CL_InitStudioAPI,
+	R_StudioFillAPI,
+	R_StudioSetDrawInterface,
 
 	R_SetSkyCloudsTextures,
 	GL_SubdivideSurface,
 	CL_RunLightStyles,
 
-	R_GetSpriteParms,
-	R_GetSpriteTexture,
 
 	Mod_ProcessRenderData,
 	Mod_StudioLoadTextures,
@@ -489,47 +492,23 @@ static const ref_interface_t gReffuncs =
 	CL_DrawParticles,
 	CL_DrawTracers,
 	CL_DrawBeams,
-	R_BeamCull,
 
 	GL_RefGetParm,
+
 	R_GetDetailScaleForTexture,
-	R_GetExtraParmsForTexture,
-	R_GetFrameTime,
+	R_SetDetailScaleForTexture,
 
-	R_SetCurrentEntity,
-	R_SetCurrentModel,
-
+	GL_CreateTexture,
 	GL_FindTexture,
 	GL_TextureName,
 	GL_TextureData,
 	GL_LoadTexture,
-	GL_CreateTexture,
-	GL_LoadTextureArray,
-	GL_CreateTextureArray,
 	GL_FreeTexture,
 	R_OverrideTextureSourceSize,
 
-	DrawSingleDecal,
-	R_DecalSetupVerts,
-	R_EntityRemoveDecals,
-
-	R_UploadStretchRaw,
+	GL_UpdateTexture,
 
 	GL_Bind,
-	GL_SelectTexture,
-	GL_LoadTexMatrixExt,
-	GL_LoadIdentityTexMatrix,
-	GL_CleanUpTextureUnits,
-	GL_TexGen,
-	GL_TextureTarget,
-	GL_SetTexCoordArrayMode,
-	GL_UpdateTexSize,
-	NULL,
-	NULL,
-
-	CL_DrawParticlesExternal,
-	R_LightVec,
-	R_StudioGetTexture,
 
 	R_RenderFrame,
 	Mod_SetOrthoBounds,
@@ -537,39 +516,19 @@ static const ref_interface_t gReffuncs =
 	Mod_GetCurrentVis,
 	R_NewMap,
 	R_ClearScene,
-	R_GetProcAddress,
 
 	TriRenderMode,
 	TriBegin,
 	TriEnd,
 	_TriColor4f,
 	_TriColor4ub,
-	TriTexCoord2f,
 	TriVertex3fv,
 	TriVertex3f,
-	TriFog,
-	R_ScreenToWorld,
-	TriGetMatrix,
-	TriFogParams,
 	TriCullFace,
 
+	R_FillRenderAPI,
+	R_FillTriAPI,
+
 	VGUI_SetupDrawing,
-	VGUI_UploadTextureBlock,
 };
 
-int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
-int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals )
-{
-	if( version != REF_API_VERSION )
-		return 0;
-
-	// fill in our callbacks
-	*funcs = gReffuncs;
-	gEngfuncs = *engfuncs;
-	gpGlobals = globals;
-
-	gp_cl = (ref_client_t *)ENGINE_GET_PARM( PARM_GET_CLIENT_PTR );
-	gp_host = (ref_host_t *)ENGINE_GET_PARM( PARM_GET_HOST_PTR );
-
-	return REF_API_VERSION;
-}

@@ -22,14 +22,13 @@ double Platform_DoubleTime( void )
 {
 	static Uint64 g_PerformanceFrequency;
 	static Uint64 g_ClockStart;
-	Uint64 CurrentTime;
 
 	if( !g_PerformanceFrequency )
 	{
 		g_PerformanceFrequency = SDL_GetPerformanceFrequency();
 		g_ClockStart = SDL_GetPerformanceCounter();
 	}
-	CurrentTime = SDL_GetPerformanceCounter();
+	Uint64 CurrentTime = SDL_GetPerformanceCounter();
 	return (double)( CurrentTime - g_ClockStart ) / (double)( g_PerformanceFrequency );
 }
 
@@ -65,33 +64,37 @@ static const char *SDLash_CategoryToString( int category )
 
 static void SDLCALL SDLash_LogOutputFunction( void *userdata, int category, SDL_LogPriority priority, const char *message )
 {
+	const char *str = "";
+
 	switch( priority )
 	{
 	case SDL_LOG_PRIORITY_CRITICAL:
 	case SDL_LOG_PRIORITY_ERROR:
-		Con_Printf( S_ERROR S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", SDLash_CategoryToString( category ), message );
+		str = S_ERROR;
 		break;
 	case SDL_LOG_PRIORITY_WARN:
-		Con_DPrintf( S_WARN S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", SDLash_CategoryToString( category ), message );
+		str = S_WARN;
 		break;
 	case SDL_LOG_PRIORITY_INFO:
-		Con_Reportf( S_NOTE S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", SDLash_CategoryToString( category ), message );
+		str = S_NOTE;
 		break;
 	default:
-		Con_Reportf( S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", SDLash_CategoryToString( category ), message );
+		str = "";
 		break;
 	}
+
+	Con_Reportf( "%s" S_BLUE "SDL" S_DEFAULT ": [%s] %s\n", str, SDLash_CategoryToString( category ), message );
 }
 
-void SDLash_Init( const char *basedir )
+void SDLash_Init( void )
 {
-#if XASH_APPLE
+#if XASH_IOS
 	char *path = SDL_GetBasePath();
 	if( path != NULL )
 	{
 		char buf[MAX_VA_STRING];
 
-		Q_snprintf( buf, sizeof( buf ), "%s%s/extras.pk3", path, basedir );
+		Q_snprintf( buf, sizeof( buf ), "%s%s/extras.pk3", path, host.default_gamedir );
 		setenv( "XASH3D_EXTRAS_PAK1", buf, true );
 	}
 #endif
@@ -105,31 +108,58 @@ void SDLash_Init( const char *basedir )
 	else
 		SDL_LogSetAllPriority( SDL_LOG_PRIORITY_ERROR );
 
-#ifndef SDL_INIT_EVENTS
-#define SDL_INIT_EVENTS 0
-#endif
+#if XASH_WIN32
+	SDL_SetHint( SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitor" );
+	// TODO: disabled for now
+	// try to test it better when we'll come back to highdpi support issue
+	// SDL_SetHint( SDL_HINT_WINDOWS_DPI_SCALING, "1" );
+#endif // XASH_WIN32
+
+	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0" );
+	SDL_SetHint( SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0" );
+
+	// when launched through Steam (notably on Steam Deck) Steam Input hides the
+	// real controller and exposes a virtual gamepad without gyro/touchpad access
+	// undo the env-var filter and ignore the virtual pad instead
+	if( Sys_CheckParm( "-nosteaminput" ))
+	{
+		SDL_setenv( "SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT", "", 1 );
+		SDL_setenv( "SDL_GAMECONTROLLER_IGNORE_DEVICES", "0x28DE/0x11FF", 1 );
+	}
+
 	if( SDL_Init( SDL_INIT_TIMER | SDL_INIT_VIDEO | SDL_INIT_EVENTS ) )
 	{
 		Sys_Warn( "SDL_Init failed: %s", SDL_GetError() );
 		host.type = HOST_DEDICATED;
 	}
 
-#if SDL_MAJOR_VERSION >= 2
 	SDL_SetHint( SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0" );
+	SDL_SetHint( SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1" );
+	SDL_SetHint( SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1" );
+	SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
 
 #ifdef SDL_HINT_MOUSE_TOUCH_EVENTS
 	SDL_SetHint( SDL_HINT_MOUSE_TOUCH_EVENTS, "0" );
 #endif // SDL_HINT_MOUSE_TOUCH_EVENTS
 	SDL_SetHint( SDL_HINT_TOUCH_MOUSE_EVENTS, "0" );
 
+	// NOTE: setting this hint makes no sense, as of course
+	// it doesn't make warps magically work in normal, non-relative mode
+	// there is pointer_warp_v1 extension but it's only implemented in SDL3
+	// at the time of writing, so there it should just work if compositor
+	// supports it
+
+	// SDL_SetHint( SDL_HINT_VIDEO_WAYLAND_EMULATE_MOUSE_WARP, "1" );
+
 	SDL_StopTextInput();
-#endif // XASH_SDL == 2
 
 	SDLash_InitCursors();
+	SDLash_InitSensors();
 }
 
 void SDLash_Shutdown( void )
 {
+	SDLash_ShutdownSensors();
 	SDLash_FreeCursors();
 
 	SDL_Quit();

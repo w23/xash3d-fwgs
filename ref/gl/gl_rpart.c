@@ -47,12 +47,6 @@ update particle color, position, free expired and draw it
 */
 void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float partsize )
 {
-	particle_t	*p;
-	vec3_t		right, up;
-	color24		color;
-	int		alpha;
-	float		size;
-
 	if( !cl_active_particles )
 		return;	// nothing to draw?
 
@@ -66,28 +60,29 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 
 	pglBegin( GL_QUADS );
 
-	for( p = cl_active_particles; p; p = p->next )
+	for( particle_t *p = cl_active_particles; p; p = p->next )
 	{
-		if(( p->type != pt_blob ) || ( p->packedColor == 255 ))
+		if(( p->type != pt_blob ) || ( p->unused == 255 ))
 		{
-			size = partsize; // get initial size of particle
+			float size = partsize; // get initial size of particle
 
 			// scale up to keep particles from disappearing
-			size += (p->org[0] - RI.vieworg[0]) * RI.cull_vforward[0];
-			size += (p->org[1] - RI.vieworg[1]) * RI.cull_vforward[1];
-			size += (p->org[2] - RI.vieworg[2]) * RI.cull_vforward[2];
+			size += (p->org[0] - RI.rvp.vieworigin[0]) * RI.cull_vforward[0];
+			size += (p->org[1] - RI.rvp.vieworigin[1]) * RI.cull_vforward[1];
+			size += (p->org[2] - RI.rvp.vieworigin[2]) * RI.cull_vforward[2];
 
 			if( size < 20.0f ) size = partsize;
 			else size = partsize + size * 0.002f;
 
 			// scale the axes by radius
+			vec3_t right, up;
 			VectorScale( RI.cull_vright, size, right );
 			VectorScale( RI.cull_vup, size, up );
 
 			p->color = bound( 0, p->color, 255 );
-			color = tr.palette[p->color];
+			color24 color = tr.palette[p->color];
 
-			alpha = 255 * (p->die - gp_cl->time) * 16.0f;
+			int alpha = 255 * (p->die - gp_cl->time) * 16.0f;
 			if( alpha > 255 || p->type == pt_static )
 				alpha = 255;
 
@@ -120,11 +115,10 @@ check tracer bbox
 */
 static qboolean CL_CullTracer( particle_t *p, const vec3_t start, const vec3_t end )
 {
-	vec3_t	mins, maxs;
-	int	i;
+	vec3_t mins, maxs;
 
 	// compute the bounding box
-	for( i = 0; i < 3; i++ )
+	for( int i = 0; i < 3; i++ )
 	{
 		if( start[i] < end[i] )
 		{
@@ -157,11 +151,6 @@ update tracer color, position, free expired and draw it
 */
 void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 {
-	float		scale, atten, gravity;
-	vec3_t		screenLast, screen;
-	vec3_t		start, end, delta;
-	particle_t	*p;
-
 	// update tracer color if this is changed
 	if( FBitSet( tracerred->flags|tracergreen->flags|tracerblue->flags|traceralpha->flags, FCVAR_CHANGED ))
 	{
@@ -181,22 +170,24 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 	if( !TriSpriteTexture( gEngfuncs.GetDefaultSprite( REF_DOT_SPRITE ), 0 ))
 		return;
 
+	R_AllowFog( false );
 	pglEnable( GL_BLEND );
 	pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
 	pglDisable( GL_ALPHA_TEST );
 	pglDepthMask( GL_FALSE );
 
-	gravity = frametime * tr.movevars->gravity;
-	scale = 1.0 - (frametime * 0.9);
+	float gravity = frametime * gp_movevars->gravity;
+	float scale = 1.0 - (frametime * 0.9);
 	if( scale < 0.0f ) scale = 0.0f;
 
 	pglBegin( GL_QUADS );
 
-	for( p = cl_active_tracers; p; p = p->next )
+	for( particle_t *p = cl_active_tracers; p; p = p->next )
 	{
-		atten = (p->die - gp_cl->time);
+		float atten = (p->die - gp_cl->time);
 		if( atten > 0.1f ) atten = 0.1f;
 
+		vec3_t start, end, delta;
 		VectorScale( p->vel, ( p->ramp * atten ), delta );
 		VectorAdd( p->org, delta, end );
 		VectorCopy( p->org, start );
@@ -205,7 +196,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 		{
 			vec3_t	verts[4], tmp2;
 			vec3_t	tmp, normal;
-			color24	color;
+			vec3_t	screen, screenLast;
 
 			// Transform point into screen space
 			TriWorldToScreen( start, screen );
@@ -234,8 +225,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 				p->color = TRACER_COLORINDEX_DEFAULT;
 			}
 
-			color = gTracerColors[p->color];
-			pglColor4ub( color.r, color.g, color.b, p->packedColor );
+			color24 color = gTracerColors[p->color];
+			pglColor4ub( color.r, color.g, color.b, p->unused );
 
 				pglTexCoord2f( 0.0f, 0.8f );
 				pglVertex3fv( verts[2] );
@@ -256,8 +247,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			p->vel[1] *= scale;
 			p->vel[2] -= gravity;
 
-			p->packedColor = 255 * (p->die - gp_cl->time) * 2;
-			if( p->packedColor > 255 ) p->packedColor = 255;
+			p->unused = 255 * (p->die - gp_cl->time) * 2;
+			if( p->unused > 255 ) p->unused = 255;
 		}
 		else if( p->type == pt_slowgrav )
 		{
@@ -267,6 +258,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 	pglEnd();
 
 	pglDepthMask( GL_TRUE );
+	R_AllowFog( true );
 }
 
 /*

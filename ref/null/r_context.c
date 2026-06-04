@@ -49,6 +49,37 @@ static void R_SimpleStubBool( qboolean unused )
 	;
 }
 
+static qboolean R_StudioFillAPI( struct engine_studio_api_s *api, struct r_studio_interface_s *pDefaultDraw )
+{
+	return false;
+}
+
+static void R_StudioSetDrawInterface( struct r_studio_interface_s *pDraw )
+{
+	;
+}
+
+static void R_GetDetailScaleForTexture( int texture, float *xScale, float *yScale )
+{
+	if( xScale ) *xScale = 1.0f;
+	if( yScale ) *yScale = 1.0f;
+}
+
+static void R_SetDetailScaleForTexture( int texture, float xScale, float yScale )
+{
+	;
+}
+
+static void R_FillRenderAPI( render_api_t *api )
+{
+	;
+}
+
+static void R_FillTriAPI( triangleapi_t *api )
+{
+	;
+}
+
 static qboolean R_Init( void )
 {
 	gEngfuncs.R_Init_Video( REF_SOFTWARE );
@@ -75,11 +106,6 @@ static qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	return true;
 }
 
-static void CL_AddCustomBeam( cl_entity_t *pEnvBeam )
-{
-	;
-}
-
 static void R_ProcessEntData( qboolean allocate, cl_entity_t *entities, unsigned int max_entities )
 {
 	;
@@ -101,11 +127,6 @@ static void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottom
 }
 
 static void R_SetupSky( int *skytextures )
-{
-	;
-}
-
-static void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty )
 {
 	;
 }
@@ -177,24 +198,8 @@ static void CL_RunLightStyles( lightstyle_t *ls )
 
 }
 
-static void R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames, int currentFrame, const model_t *pSprite )
-{
-	if( frameWidth )
-		*frameWidth	= 0;
 
-	if( frameHeight )
-		*frameHeight = 0;
-
-	if( numFrames )
-		*numFrames = 0;
-}
-
-static int R_GetSpriteTexture( const model_t *m_pSpriteModel, int frame )
-{
-	return 0;
-}
-
-static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
+static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer, size_t buffersize )
 {
 	return true;
 }
@@ -219,39 +224,9 @@ static void CL_DrawBeams( int fTrans, BEAM *beams )
 	;
 }
 
-static qboolean R_BeamCull( const vec3_t start, const vec3_t end, qboolean pvsOnly )
-{
-	return false;
-}
-
-static int RefGetParm( int parm, int arg )
+static intptr_t RefGetParm( int parm, int arg )
 {
 	return 0;
-}
-
-static void GetDetailScaleForTexture( int texture, float *xScale, float *yScale )
-{
-	*xScale = *yScale = 1.0f;
-}
-
-static void GetExtraParmsForTexture( int texture, byte *red, byte *green, byte *blue, byte *alpha )
-{
-	*red = *green = *blue = *alpha = 0;
-}
-
-static float GetFrameTime( void )
-{
-	return 0.0f;
-}
-
-static void R_SetCurrentEntity( struct cl_entity_s *ent )
-{
-	;
-}
-
-static void R_SetCurrentModel( struct model_s *mod )
-{
-	;
 }
 
 static int GL_FindTexture( const char *name )
@@ -279,37 +254,12 @@ static int GL_CreateTexture( const char *name, int width, int height, const void
 	return 0;
 }
 
-static int GL_LoadTextureArray( const char **names, int flags )
-{
-	return 0;
-}
-
-static int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags )
-{
-	return 0;
-}
-
 static void R_OverrideTextureSourceSize( unsigned int textnum, unsigned int srcWidth, unsigned int srcHeight )
 {
 
 }
 
-static void DrawSingleDecal( struct decal_s *pDecal, struct msurface_s *fa )
-{
-	;
-}
-
-static float *R_DecalSetupVerts( struct decal_s *pDecal, struct msurface_s *surf, int texture, int *outCount )
-{
-	return NULL;
-}
-
-static void R_EntityRemoveDecals( struct model_s *mod )
-{
-	;
-}
-
-static void AVI_UploadRawFrame( int texture, int cols, int rows, int width, int height, const byte *data )
+static void GL_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
 	;
 }
@@ -317,37 +267,6 @@ static void AVI_UploadRawFrame( int texture, int cols, int rows, int width, int 
 static void GL_Bind( int tmu, unsigned int texnum )
 {
 	;
-}
-
-static void GL_LoadTextureMatrix( const float *glmatrix )
-{
-	;
-}
-
-static void GL_TexGen( unsigned int coord, unsigned int mode )
-{
-	;
-}
-
-static void GL_UpdateTexSize( int texnum, int width, int height, int depth )
-{
-	;
-}
-
-static void GL_DrawParticles( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime )
-{
-	;
-}
-
-static colorVec LightVec( const float *start, const float *end, float *lightspot, float *lightvec )
-{
-	colorVec c = { 0 };
-	return c;
-}
-
-static struct mstudiotex_s *StudioGetTexture( struct cl_entity_s *e )
-{
-	return NULL;
 }
 
 static void GL_RenderFrame( const struct ref_viewpass_s *rvp )
@@ -370,22 +289,12 @@ static byte *Mod_GetCurrentVis( void )
 	return NULL;
 }
 
-static void *R_GetProcAddress( const char *name )
-{
-	return NULL;
-}
-
 static void Color4f( float r, float g, float b, float a )
 {
 	;
 }
 
 static void Color4ub( unsigned char r, unsigned char g, unsigned char b, unsigned char a )
-{
-	;
-}
-
-static void TexCoord2f( float u, float v )
 {
 	;
 }
@@ -400,37 +309,12 @@ static void Vertex3f( float x, float y, float z )
 	;
 }
 
-static void Fog( float flFogColor[3], float flStart, float flEnd, int bOn )
-{
-	;
-}
-
-static void ScreenToWorld( const float *screen, float *world  )
-{
-	;
-}
-
-static void GetMatrix( const int pname, float *matrix )
-{
-	;
-}
-
-static void FogParams( float flDensity, int iFogSkybox )
-{
-	;
-}
-
 static void CullFace( TRICULLSTYLE mode )
 {
 	;
 }
 
 static void VGUI_SetupDrawing( qboolean rect )
-{
-	;
-}
-
-static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight )
 {
 	;
 }
@@ -460,9 +344,7 @@ static const ref_interface_t gReffuncs =
 	.GL_SetRenderMode = R_SimpleStubInt,
 
 	.R_AddEntity      = R_AddEntity,
-	.CL_AddCustomBeam = CL_AddCustomBeam,
 	.R_ProcessEntData = R_ProcessEntData,
-	.R_Flush          = R_SimpleStubUInt,
 
 	.R_ShowTextures = R_SimpleStub,
 
@@ -472,7 +354,6 @@ static const ref_interface_t gReffuncs =
 	.R_SetupSky                 = R_SetupSky,
 
 	.R_Set2DMode      = R_SimpleStubBool,
-	.R_DrawStretchRaw = R_DrawStretchRaw,
 	.R_DrawStretchPic = R_DrawStretchPic,
 	.FillRGBA         = FillRGBA,
 	.WorldToScreen    = WorldToScreen,
@@ -489,14 +370,13 @@ static const ref_interface_t gReffuncs =
 
 	.R_StudioEstimateFrame = R_StudioEstimateFrame,
 	.R_StudioLerpMovement  = R_StudioLerpMovement,
-	.CL_InitStudioAPI      = R_SimpleStub,
+	.R_StudioFillAPI          = R_StudioFillAPI,
+	.R_StudioSetDrawInterface = R_StudioSetDrawInterface,
 
 	.R_SetSkyCloudsTextures     = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
 	.CL_RunLightStyles   = CL_RunLightStyles,
 
-	.R_GetSpriteParms    = R_GetSpriteParms,
-	.R_GetSpriteTexture  = R_GetSpriteTexture,
 
 	.Mod_ProcessRenderData  = Mod_ProcessRenderData,
 	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
@@ -504,47 +384,23 @@ static const ref_interface_t gReffuncs =
 	.CL_DrawParticles = CL_DrawParticles,
 	.CL_DrawTracers   = CL_DrawTracers,
 	.CL_DrawBeams     = CL_DrawBeams,
-	.R_BeamCull       = R_BeamCull,
 
-	.RefGetParm               = RefGetParm,
-	.GetDetailScaleForTexture = GetDetailScaleForTexture,
-	.GetExtraParmsForTexture  = GetExtraParmsForTexture,
-	.GetFrameTime             = GetFrameTime,
+	.RefGetParm = RefGetParm,
 
-	.R_SetCurrentEntity = R_SetCurrentEntity,
-	.R_SetCurrentModel  = R_SetCurrentModel,
+	.R_GetDetailScaleForTexture = R_GetDetailScaleForTexture,
+	.R_SetDetailScaleForTexture = R_SetDetailScaleForTexture,
 
-	.GL_FindTexture        = GL_FindTexture,
-	.GL_TextureName        = GL_TextureName,
-	.GL_TextureData        = GL_TextureData,
-	.GL_LoadTexture        = GL_LoadTexture,
-	.GL_CreateTexture      = GL_CreateTexture,
-	.GL_LoadTextureArray   = GL_LoadTextureArray,
-	.GL_CreateTextureArray = GL_CreateTextureArray,
-	.GL_FreeTexture        = R_SimpleStubUInt,
+	.GL_CreateTexture = GL_CreateTexture,
+	.GL_FindTexture  = GL_FindTexture,
+	.GL_TextureName  = GL_TextureName,
+	.GL_TextureData  = GL_TextureData,
+	.GL_LoadTexture  = GL_LoadTexture,
+	.GL_FreeTexture  = R_SimpleStubUInt,
 	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
-	.DrawSingleDecal      = DrawSingleDecal,
-	.R_DecalSetupVerts    = R_DecalSetupVerts,
-	.R_EntityRemoveDecals = R_EntityRemoveDecals,
+	.GL_UpdateTexture = GL_UpdateTexture,
 
-	.AVI_UploadRawFrame = AVI_UploadRawFrame,
-
-	.GL_Bind                = GL_Bind,
-	.GL_SelectTexture       = R_SimpleStubInt,
-	.GL_LoadTextureMatrix   = GL_LoadTextureMatrix,
-	.GL_TexMatrixIdentity   = R_SimpleStub,
-	.GL_CleanUpTextureUnits = R_SimpleStubInt,
-	.GL_TexGen              = GL_TexGen,
-	.GL_TextureTarget       = R_SimpleStubUInt,
-	.GL_TexCoordArrayMode   = R_SimpleStubUInt,
-	.GL_UpdateTexSize       = GL_UpdateTexSize,
-	.GL_Reserved0           = NULL,
-	.GL_Reserved1           = NULL,
-
-	.GL_DrawParticles = GL_DrawParticles,
-	.LightVec         = LightVec,
-	.StudioGetTexture = StudioGetTexture,
+	.GL_Bind = GL_Bind,
 
 	.GL_RenderFrame    = GL_RenderFrame,
 	.GL_OrthoBounds    = GL_OrthoBounds,
@@ -552,24 +408,20 @@ static const ref_interface_t gReffuncs =
 	.Mod_GetCurrentVis = Mod_GetCurrentVis,
 	.R_NewMap          = R_SimpleStub,
 	.R_ClearScene      = R_SimpleStub,
-	.R_GetProcAddress  = R_GetProcAddress,
 
 	.TriRenderMode = R_SimpleStubInt,
 	.Begin         = R_SimpleStubInt,
 	.End           = R_SimpleStub,
 	.Color4f       = Color4f,
 	.Color4ub      = Color4ub,
-	.TexCoord2f    = TexCoord2f,
 	.Vertex3fv     = Vertex3fv,
 	.Vertex3f      = Vertex3f,
-	.Fog           = Fog,
-	.ScreenToWorld = ScreenToWorld,
-	.GetMatrix     = GetMatrix,
-	.FogParams     = FogParams,
 	.CullFace      = CullFace,
 
+	.R_FillRenderAPI = R_FillRenderAPI,
+	.R_FillTriAPI    = R_FillTriAPI,
+
 	.VGUI_SetupDrawing   = VGUI_SetupDrawing,
-	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
 };
 
 int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );

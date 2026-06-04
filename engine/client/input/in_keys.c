@@ -1,0 +1,965 @@
+/*
+keys.c - console key events
+Copyright (C) 2007 Uncle Mike
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+*/
+
+#include "common.h"
+#include "input.h"
+#include "client.h"
+#include "vgui_draw.h"
+#include "platform/platform.h"
+
+typedef struct
+{
+	const char *binding;
+	uint       down     : 1;
+	uint       gamedown : 1;
+	uint       repeats  : 30; // if > 1, it is autorepeating
+} enginekey_t;
+
+typedef struct keyname_s
+{
+	const char *name;    // key name
+	int        keynum;   // key number
+	const char *binding; // default bind
+} keyname_t;
+
+// 512 is the maximum amount of scancodes supported by SDL2
+// but we don't use that much, only about 255 like Quake/HL, add 9 additional
+// keys for international keyboards, that gives us 264 keys total
+//
+// as no limit is imposed by client.dll API, this can be safely extended
+// if needed
+static enginekey_t keys[265];
+
+static const keyname_t keynames[] =
+{
+{ "TAB",            K_TAB,                 ""                },
+{ "ENTER",		    K_ENTER,               ""                },
+{ "ESCAPE",         K_ESCAPE,              "cancelselect"    }, // hardcoded
+{ "SPACE",          K_SPACE,               "+jump"           },
+{ "BACKSPACE",      K_BACKSPACE,           ""                },
+{ "UPARROW",        K_UPARROW,             "+forward"        },
+{ "DOWNARROW",      K_DOWNARROW,           "+back"           },
+{ "LEFTARROW",      K_LEFTARROW,           "+left"           },
+{ "RIGHTARROW",     K_RIGHTARROW,          "+right"          },
+{ "ALT",            K_ALT,                 "+strafe"         },
+{ "CTRL",           K_CTRL,                "+attack"         },
+{ "SHIFT",          K_SHIFT,               "+speed"          },
+{ "CAPSLOCK",       K_CAPSLOCK,            ""                },
+{ "SCROLLOCK",      K_SCROLLLOCK,          ""                },
+{ "F1",             K_F1,                  "cmd help"        },
+{ "F2",             K_F2,                  "menu_savegame"   },
+{ "F3",             K_F3,                  "menu_loadgame"   },
+{ "F4",             K_F4,                  "menu_controls"   },
+{ "F5",             K_F5,                  "menu_creategame" },
+{ "F6",             K_F6,                  "savequick"       },
+{ "F7",             K_F7,                  "loadquick"       },
+{ "F8",             K_F8,                  "stop"            },
+{ "F9",             K_F9,                  ""                },
+{ "F10",            K_F10,                 "menu_main"       },
+{ "F11",            K_F11,                 ""                },
+{ "F12",            K_F12,                 "snapshot"        },
+{ "INS",            K_INS,                 ""                },
+{ "DEL",            K_DEL,                 "+lookdown"       },
+{ "PGDN",           K_PGDN,                "+lookup"         },
+{ "PGUP",           K_PGUP,                ""                },
+{ "HOME",           K_HOME,                ""                },
+{ "END",            K_END,                 "centerview"      },
+
+// mouse buttouns
+{ "MOUSE1",         K_MOUSE1,              "+attack"         },
+{ "MOUSE2",         K_MOUSE2,              "+attack2"        },
+{ "MOUSE3",         K_MOUSE3,              ""                },
+{ "MOUSE4",         K_MOUSE4,              ""                },
+{ "MOUSE5",         K_MOUSE5,              ""                },
+{ "MWHEELUP",       K_MWHEELUP,            ""                },
+{ "MWHEELDOWN",     K_MWHEELDOWN,          ""                },
+
+// digital keyboard
+{ "KP_HOME",        K_KP_HOME,             ""                },
+{ "KP_UPARROW",     K_KP_UPARROW,          "+forward"        },
+{ "KP_PGUP",        K_KP_PGUP,             ""                },
+{ "KP_LEFTARROW",   K_KP_LEFTARROW,        "+left"           },
+{ "KP_5",           K_KP_5,                ""                },
+{ "KP_RIGHTARROW",  K_KP_RIGHTARROW,       "+right"          },
+{ "KP_END",         K_KP_END,              "centerview"      },
+{ "KP_DOWNARROW",   K_KP_DOWNARROW,        "+back"           },
+{ "KP_PGDN",        K_KP_PGDN,             "+lookup"         },
+{ "KP_ENTER",       K_KP_ENTER,            ""                },
+{ "KP_INS",         K_KP_INS,              ""                },
+{ "KP_DEL",         K_KP_DEL,              "+lookdown"       },
+{ "KP_SLASH",       K_KP_SLASH,            ""                },
+{ "KP_MINUS",       K_KP_MINUS,            ""                },
+{ "KP_PLUS",        K_KP_PLUS,             ""                },
+{ "PAUSE",          K_PAUSE,               "pause"           },
+
+// Gamepad
+// A/B X/Y names match the Xbox controller layout
+{ "A_BUTTON",       K_A_BUTTON,            "+jump"           },
+{ "B_BUTTON",       K_B_BUTTON,            "+use"            },
+{ "X_BUTTON",       K_X_BUTTON,            "+reload"         },
+{ "Y_BUTTON",       K_Y_BUTTON,            "impulse 100"     }, // Flashlight
+{ "BACK",           K_BACK_BUTTON,         "pause"           }, // Menu
+{ "MODE",           K_MODE_BUTTON,         ""                },
+{ "START",          K_START_BUTTON,        "cancelselect"    },
+{ "STICK1",         K_LSTICK,              "+speed"          },
+{ "STICK2",         K_RSTICK,              "+duck"           },
+{ "L1_BUTTON",      K_L1_BUTTON,           "+duck"           },
+{ "R1_BUTTON",      K_R1_BUTTON,           "+attack"         },
+{ "DPAD_UP",        K_DPAD_UP,             "impulse 201"     }, // Spray
+{ "DPAD_DOWN",      K_DPAD_DOWN,           "lastinv"         },
+{ "DPAD_LEFT",      K_DPAD_LEFT,           "invprev"         },
+{ "DPAD_RIGHT",     K_DPAD_RIGHT,          "invnext"         },
+{ "L2_BUTTON",      K_L2_BUTTON,           "+speed"          },
+{ "R2_BUTTON",      K_R2_BUTTON,           "+attack2"        },
+{ "LTRIGGER",       K_JOY1,                "+speed"          }, // L2 in SDL2
+{ "RTRIGGER",       K_JOY2,                "+attack2"        }, // R2 in SDL2
+{ "JOY3",           K_JOY3,                ""                },
+{ "JOY4",           K_JOY4,                ""                },
+{ "C_BUTTON",       K_C_BUTTON,            ""                },
+{ "Z_BUTTON",       K_Z_BUTTON,            ""                },
+{ "MISC_BUTTON",    K_MISC_BUTTON,         ""                },
+{ "PADDLE1",        K_PADDLE1_BUTTON,      ""                },
+{ "PADDLE2",        K_PADDLE2_BUTTON,      ""                },
+{ "PADDLE3",        K_PADDLE3_BUTTON,      ""                },
+{ "PADDLE4",        K_PADDLE4_BUTTON,      ""                },
+{ "TOUCHPAD",       K_TOUCHPAD,            ""                },
+{ "AUX26",          K_AUX26,               ""                }, // generic
+{ "AUX27",          K_AUX27,               ""                },
+{ "AUX28",          K_AUX28,               ""                },
+{ "AUX29",          K_AUX29,               ""                },
+{ "AUX30",          K_AUX30,               ""                },
+{ "AUX31",          K_AUX31,               ""                },
+{ "AUX32",          K_AUX32,               ""                },
+
+// raw semicolon seperates commands
+{ "SEMICOLON",      ';',                   ""                },
+
+// extended keys set
+{ "INTERNATIONAL1", K_INTERNATIONAL,       ""                },
+{ "INTERNATIONAL2", K_INTERNATIONAL + 1,   ""                },
+{ "INTERNATIONAL3", K_INTERNATIONAL + 2,   ""                },
+{ "INTERNATIONAL4", K_INTERNATIONAL + 3,   ""                },
+{ "INTERNATIONAL5", K_INTERNATIONAL + 4,   ""                },
+{ "INTERNATIONAL6", K_INTERNATIONAL + 5,   ""                },
+{ "INTERNATIONAL7", K_INTERNATIONAL + 6,   ""                },
+{ "INTERNATIONAL8", K_INTERNATIONAL + 7,   ""                },
+{ "INTERNATIONAL9", K_INTERNATIONAL + 8,   ""                },
+};
+
+static CVAR_DEFINE_AUTO( key_rotate, "0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "rotate arrow keys (0-3)" );
+
+/*
+===================
+Key_IsDown
+===================
+*/
+int GAME_EXPORT Key_IsDown( int keynum )
+{
+	if( keynum == -1 )
+		return false;
+	return keys[keynum].down;
+}
+
+/*
+===================
+Key_StringToKeynum
+
+Returns a key number to be used to index keys[] by looking at
+the given string.  Single ascii characters return themselves, while
+the K_* names are matched up.
+
+0x11 will be interpreted as raw hex, which will allow new controlers
+
+to be configured even if they don't have defined names.
+===================
+*/
+static int Key_StringToKeynum( const char *str )
+{
+	if( !str || !str[0] )
+		return -1;
+
+	if( !str[1] )
+		return str[0];
+
+	// check for hex code
+	if( str[0] == '0' && str[1] == 'x' )
+	{
+		int key = Q_atoi( str );
+
+		if( key >= ARRAYSIZE( keys ))
+			return -1;
+
+		return key;
+	}
+
+	// scan for a text match
+	for( int i = 0; i < ARRAYSIZE( keynames ); i++ )
+	{
+		if( !Q_stricmp( str, keynames[i].name ))
+			return keynames[i].keynum;
+	}
+
+	return -1;
+}
+
+/*
+===================
+Key_KeynumToString
+
+Returns a string (either a single ascii char, a K_* name, or a 0x11 hex string) for the
+given keynum.
+===================
+*/
+const char *Key_KeynumToString( int keynum )
+{
+	static char	tinystr[16];
+
+	if( keynum == -1 )
+		return "<KEY NOT FOUND>";
+
+	if( keynum < 0 || keynum >= ARRAYSIZE( keys ))
+		return "<OUT OF RANGE>";
+
+	// check for printable ascii (don't use quote)
+	if( keynum > 32 && keynum < 127 && keynum != '"' && keynum != ';' && keynum != K_SCROLLLOCK )
+	{
+		tinystr[0] = keynum;
+		tinystr[1] = 0;
+		return tinystr;
+	}
+
+	// check for a key string
+	for( int i = 0; i < ARRAYSIZE( keynames ); i++ )
+	{
+		if( keynum == keynames[i].keynum )
+			return keynames[i].name;
+	}
+
+	Q_snprintf( tinystr, sizeof( tinystr ), "0x%x", keynum );
+	return tinystr;
+}
+
+/*
+===================
+Key_SetBinding
+===================
+*/
+void GAME_EXPORT Key_SetBinding( int keynum, const char *binding )
+{
+	if( keynum == -1 ) return;
+
+	// free old bindings
+	if( keys[keynum].binding )
+	{
+		Mem_Free((char *)keys[keynum].binding );
+		keys[keynum].binding = NULL;
+	}
+
+	// allocate memory for new binding
+	keys[keynum].binding = copystring( binding );
+}
+
+
+/*
+===================
+Key_GetBinding
+===================
+*/
+const char *Key_GetBinding( int keynum )
+{
+	if( keynum == -1 )
+		return NULL;
+	return keys[keynum].binding;
+}
+
+/*
+===================
+Key_GetKey
+===================
+*/
+static int Key_GetKey( const char *pBinding )
+{
+	if( !pBinding ) return -1;
+
+	int len = Q_strlen( pBinding );
+
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( !keys[i].binding )
+			continue;
+
+		const char *p = keys[i].binding;
+
+		if( *p == '+' )
+			p++;
+
+		if( !Q_strnicmp( p, pBinding, len ) )
+			return i;
+	}
+
+	return -1;
+}
+
+/*
+=============
+Key_LookupBinding
+
+=============
+*/
+const char *Key_LookupBinding( const char *pBinding )
+{
+	int key = Key_GetKey( pBinding );
+
+	if( key == -1 )
+		return NULL;
+
+	return Key_KeynumToString( key );
+}
+
+/*
+===================
+Key_Unbind_f
+===================
+*/
+static void Key_Unbind_f( void )
+{
+	if( Cmd_Argc() != 2 )
+	{
+		Con_Printf( S_USAGE "unbind <key> : remove commands from a key\n" );
+		return;
+	}
+
+	int b = Key_StringToKeynum( Cmd_Argv( 1 ));
+
+	if( b == -1 )
+	{
+		Con_Printf( "\"%s\" isn't a valid key\n", Cmd_Argv( 1 ));
+		return;
+	}
+
+	if( b == K_ESCAPE )
+	{
+		Con_Printf( "Can't unbind ESCAPE key\n" );
+		return;
+	}
+
+	Key_SetBinding( b, "" );
+}
+
+/*
+===================
+Key_Unbindall_f
+===================
+*/
+static void Key_Unbindall_f( void )
+{
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( keys[i].binding )
+			Key_SetBinding( i, "" );
+	}
+
+	// set some defaults
+	Key_SetBinding( K_ESCAPE, "cancelselect" );
+	Key_SetBinding( K_START_BUTTON, "cancelselect" );
+}
+
+/*
+===================
+Key_Reset_f
+===================
+*/
+static void Key_Reset_f( void )
+{
+	// clear all keys first
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( keys[i].binding )
+			Key_SetBinding( i, "" );
+	}
+
+	// apply default values
+	for( int i = 0; i < ARRAYSIZE( keynames ); i++ )
+		Key_SetBinding( keynames[i].keynum, keynames[i].binding );
+}
+
+/*
+===================
+Key_Bind_f
+===================
+*/
+static void Key_Bind_f( void )
+{
+	int c = Cmd_Argc();
+
+	if( c < 2 )
+	{
+		Con_Printf( S_USAGE "bind <key> [command] : attach a command to a key\n" );
+		return;
+	}
+
+	int b = Key_StringToKeynum( Cmd_Argv( 1 ));
+
+	if( b == -1 )
+	{
+		Con_Printf( "\"%s\" isn't a valid key\n", Cmd_Argv( 1 ));
+		return;
+	}
+
+	if( c == 2 )
+	{
+		if( keys[b].binding )
+			Con_Printf( "\"%s\" = \"%s\"\n", Cmd_Argv( 1 ), keys[b].binding );
+		else Con_Printf( "\"%s\" is not bound\n", Cmd_Argv( 1 ));
+		return;
+	}
+
+	// copy the rest of the command line
+	char cmd[1024];
+	cmd[0] = 0; // start out with a null string
+
+	for( int i = 2; i < c; i++ )
+	{
+		Q_strncat( cmd, Cmd_Argv( i ), sizeof( cmd ));
+		if( i != ( c - 1 )) Q_strncat( cmd, " ", sizeof( cmd ));
+	}
+
+	Key_SetBinding( b, cmd );
+}
+
+/*
+============
+Key_WriteBindings
+
+Writes lines containing "bind key value"
+============
+*/
+void Key_WriteBindings( file_t *f )
+{
+	if( !f ) return;
+
+	FS_Printf( f, "unbindall\n" );
+
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( COM_StringEmptyOrNULL( keys[i].binding ))
+			continue;
+
+		string newCommand;
+		Cmd_Escape( newCommand, keys[i].binding, sizeof( newCommand ));
+
+		// NOTE: as TheKingFireS figured out, some particular mods (like CoF) do not
+		// use LookupBinding to find key by it's binding and instead parse config.cfg
+		// to look for bind commands.
+		// CoF expects key to be enclosed in double quotes
+		FS_Printf( f, "bind \"%s\" \"%s\"\n", Key_KeynumToString( i ), newCommand );
+	}
+}
+
+/*
+============
+Key_Bindlist_f
+
+============
+*/
+static void Key_Bindlist_f( void )
+{
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( COM_StringEmptyOrNULL( keys[i].binding ))
+			continue;
+
+		Con_Printf( "%s \"%s\"\n", Key_KeynumToString( i ), keys[i].binding );
+	}
+}
+
+/*
+=====================================
+Cmd_GetKeysList
+
+Autocomplete for bind command
+=====================================
+*/
+qboolean Cmd_GetKeysList( const char *s, char *completedname, int length, qboolean print_suggestions )
+{
+	size_t i, numkeys;
+	string keys_strings[ARRAYSIZE( keys )];
+	string matchbuf;
+
+	// compare keys list with current keyword
+	int len = Q_strlen( s );
+
+	for( i = 0, numkeys = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		const char *keyname = Key_KeynumToString( i );
+
+		if(( *s == '*' ) || !Q_strnicmp( keyname, s, len ))
+			Q_strncpy( keys_strings[numkeys++], keyname, sizeof( keys_strings[0] ));
+	}
+
+	if( !numkeys ) return false;
+	Q_strncpy( matchbuf, keys_strings[0], sizeof( matchbuf ));
+	if( completedname && length )
+		Q_strncpy( completedname, matchbuf, length );
+	if( numkeys == 1 ) return true;
+
+	for( i = 0; i < numkeys; i++ )
+	{
+		Q_strncpy( matchbuf, keys_strings[i], sizeof( matchbuf ));
+		if( print_suggestions )
+			Con_Printf( "%16s\n", matchbuf );
+	}
+
+	if( print_suggestions )
+		Con_Printf( "\n^3 %zu keys found.\n", numkeys );
+
+	if( completedname && length )
+	{
+		for( i = 0; matchbuf[i]; i++ )
+		{
+			if( Q_tolower( completedname[i] ) != Q_tolower( matchbuf[i] ))
+				completedname[i] = 0;
+		}
+	}
+
+	return true;
+}
+
+/*
+==============================================================================
+
+			LINE TYPING INTO THE CONSOLE
+
+==============================================================================
+*/
+/*
+===================
+Key_Init
+===================
+*/
+void Key_Init( void )
+{
+	// register our functions
+	Cmd_AddRestrictedCommand( "bind", Key_Bind_f, "binds a command to the specified key in bindmap" );
+	Cmd_AddRestrictedCommand( "unbind", Key_Unbind_f, "removes a command on the specified key in bindmap" );
+	Cmd_AddRestrictedCommand( "unbindall", Key_Unbindall_f, "removes all commands from all keys in bindmap" );
+	Cmd_AddRestrictedCommand( "resetkeys", Key_Reset_f, "reset all keys to their default values" );
+	Cmd_AddCommand( "bindlist", Key_Bindlist_f, "display current key bindings" );
+	Cmd_AddCommand( "makehelp", Key_EnumCmds_f, "write help.txt that contains all console cvars and cmds" );
+
+	// setup default binding. "unbindall" from config.cfg will be reset it
+	for( int i = 0; i < ARRAYSIZE( keynames ); i++ )
+		Key_SetBinding( keynames[i].keynum, keynames[i].binding );
+
+	Cvar_RegisterVariable( &key_rotate );
+
+}
+
+/*
+===================
+Key_AddKeyCommands
+===================
+*/
+static void Key_AddKeyCommands( int key, const char *kb, qboolean down )
+{
+	if( !kb ) return;
+
+	char button[1024];
+	char *buttonPtr = button;
+
+	for( int i = 0; ; i++ )
+	{
+		if( kb[i] == ';' || !kb[i] )
+		{
+			*buttonPtr = '\0';
+			if( button[0] == '+' )
+			{
+				char cmd[1024];
+
+				// button commands add keynum as a parm
+				if( down ) Q_snprintf( cmd, sizeof( cmd ), "%s %i\n", button, key );
+				else Q_snprintf( cmd, sizeof( cmd ), "-%s %i\n", button + 1, key );
+				Cbuf_AddText( cmd );
+			}
+			else if( down )
+			{
+				// down-only command
+				Cbuf_AddText( button );
+				Cbuf_AddText( "\n" );
+			}
+
+			buttonPtr = button;
+			while((((byte)kb[i]) <= ' ' || kb[i] == ';' ) && kb[i] != 0 )
+				i++;
+		}
+
+		*buttonPtr++ = kb[i];
+		if( !kb[i] ) break;
+	}
+}
+
+/*
+===================
+Key_IsAllowedAutoRepeat
+
+List of keys that allows auto-repeat
+===================
+*/
+static qboolean Key_IsAllowedAutoRepeat( int key )
+{
+	if( cls.key_dest != key_game )
+		return true;
+
+	switch( key )
+	{
+	case K_BACKSPACE:
+	case K_PAUSE:
+	case K_PGUP:
+	case K_KP_PGUP:
+	case K_PGDN:
+	case K_KP_PGDN:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static int Key_Rotate( int key )
+{
+	if( key_rotate.value == 1.0f ) // CW
+	{
+		if( key == K_UPARROW )
+				key = K_LEFTARROW;
+		else if( key == K_LEFTARROW )
+				key = K_DOWNARROW;
+		else if( key == K_RIGHTARROW )
+				key = K_UPARROW;
+		else if( key == K_DOWNARROW )
+				key = K_RIGHTARROW;
+	}
+
+	else if( key_rotate.value == 3.0f ) // CCW
+	{
+		if( key == K_UPARROW )
+				key = K_RIGHTARROW;
+		else if( key == K_LEFTARROW )
+				key = K_UPARROW;
+		else if( key == K_RIGHTARROW )
+				key = K_DOWNARROW;
+		else if( key == K_DOWNARROW )
+				key = K_LEFTARROW;
+	}
+
+	else if( key_rotate.value == 2.0f )
+	{
+		if( key == K_UPARROW )
+				key = K_DOWNARROW;
+		else if( key == K_LEFTARROW )
+				key = K_RIGHTARROW;
+		else if( key == K_RIGHTARROW )
+				key = K_LEFTARROW;
+		else if( key == K_DOWNARROW )
+				key = K_UPARROW;
+	}
+
+	return key;
+}
+
+
+/*
+===================
+Key_Event
+
+Called by the system for both key up and key down events
+===================
+*/
+void GAME_EXPORT Key_Event( int key, int down )
+{
+	key = Key_Rotate( key );
+
+	if( OSK_KeyEvent( key, down ) )
+		return;
+
+	// key was pressed before engine was run
+	if( !keys[key].down && !down )
+		return;
+
+	const char *kb = keys[key].binding;
+	keys[key].down = down ? true : false;
+
+#ifdef HACKS_RELATED_HLMODS
+	if(( cls.key_dest == key_game ) && ( cls.state == ca_cinematic ) && ( key != K_ESCAPE || !down ))
+	{
+		// only escape passed when cinematic is playing
+		// HLFX 0.6 bug: crash in vgui3.dll while press +attack during movie playback
+		return;
+	}
+#endif
+	// distribute the key down event to the apropriate handler
+	if( cls.key_dest == key_game && ( down || keys[key].gamedown ))
+	{
+		if( !clgame.dllFuncs.pfnKey_Event( down, key, keys[key].binding ))
+		{
+			if( keys[key].repeats == 0 && down )
+			{
+				keys[key].gamedown = true;
+			}
+
+			if( !down )
+			{
+				keys[key].gamedown = false;
+				keys[key].repeats = 0;
+			}
+			return; // handled in client.dll
+		}
+	}
+
+	// update auto-repeat status
+	if( down )
+	{
+		keys[key].repeats++;
+
+		if( !Key_IsAllowedAutoRepeat( key ) && keys[key].repeats > 1 )
+		{
+			// ignore most autorepeats
+			return;
+		}
+
+		if( key >= 200 && !kb )
+			Con_Printf( "%s is unbound.\n", Key_KeynumToString( key ));
+	}
+	else
+	{
+		keys[key].gamedown = false;
+		keys[key].repeats = 0;
+	}
+
+	VGui_KeyEvent( key, down );
+
+	// console key is hardcoded, so the user can never unbind it
+	if( key == '`' || key == '~' )
+	{
+		// we are in typing mode, so don't switch to console
+		if( cls.key_dest == key_message || !down )
+			return;
+
+		Con_ToggleConsole_f();
+		return;
+	}
+
+	// escape is always handled special
+	if( key == K_ESCAPE && down )
+	{
+		switch( cls.key_dest )
+		{
+		case key_game:
+			if( r_showtextures.value )
+			{
+				// close texture atlas
+				Cvar_DirectSet( &r_showtextures, "0" );
+				return;
+			}
+			else if( host.mouse_visible && cls.state != ca_cinematic )
+			{
+				clgame.dllFuncs.pfnKey_Event( down, key, keys[key].binding );
+				return; // handled in client.dll
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	if( cls.key_dest == key_menu )
+	{
+		// classic Xash3D menus don't have an extension that tells engine
+		// to enable text input
+		if( !gameui.use_extended_api )
+		{
+			// we don't know if menu wants text input or not
+			// enable it unconditionally
+			Key_EnableTextInput( true, false );
+
+			// pass this key to the menu, if printable
+			if( !host.textmode && down && ( key >= 32 ) && ( key <= 'z' ))
+			{
+				if( Key_IsDown( K_SHIFT ))
+					key += 'A' - 'a';
+
+				UI_CharEvent( key );
+			}
+		}
+
+		UI_KeyEvent( key, down );
+		return;
+	}
+
+	// key up events only perform actions if the game key binding is
+	// a button command (leading + sign).  These will be processed even in
+	// console mode and menu mode, to keep the character from continuing
+	// an action started before a mode switch.
+	if( !down )
+	{
+		Key_AddKeyCommands( key, kb, down );
+		return;
+	}
+
+	// distribute the key down event to the apropriate handler
+	if( cls.key_dest == key_game )
+	{
+		Key_AddKeyCommands( key, kb, down );
+	}
+	else if( cls.key_dest == key_console )
+	{
+		Key_Console( key );
+	}
+	else if( cls.key_dest == key_message )
+	{
+		Key_Message( key );
+	}
+}
+
+/*
+================
+Key_EnableTextInput
+
+================
+*/
+void Key_EnableTextInput( qboolean enable, qboolean force )
+{
+	if( osk_enable.value )
+	{
+		OSK_EnableTextInput( enable, force );
+		return;
+	}
+	if( enable && ( !host.textmode || force ))
+		Platform_EnableTextInput( true );
+	else if( !enable && ( host.textmode || force ))
+		Platform_EnableTextInput( false );
+
+	host.textmode = enable;
+}
+
+/*
+=========
+Key_SetKeyDest
+=========
+*/
+void GAME_EXPORT Key_SetKeyDest( int key_dest )
+{
+	IN_ToggleClientMouse( key_dest, cls.key_dest );
+
+	switch( key_dest )
+	{
+	case key_game:
+		Key_EnableTextInput( false, false );
+		cls.key_dest = key_game;
+		break;
+	case key_menu:
+		Key_EnableTextInput( false, false );
+		cls.key_dest = key_menu;
+		break;
+	case key_console:
+#if !XASH_NSWITCH && !XASH_PSVITA // if we don't disable this, pops up the keyboard during load
+		Key_EnableTextInput( true, false );
+#endif
+		cls.key_dest = key_console;
+		break;
+	case key_message:
+		Key_EnableTextInput( true, false );
+		cls.key_dest = key_message;
+		break;
+	default:
+		Host_Error( "%s: wrong destination (%i)\n", __func__, key_dest );
+		break;
+	}
+}
+
+/*
+===================
+Key_ClearStates
+===================
+*/
+void GAME_EXPORT Key_ClearStates( void )
+{
+	// don't clear keys during changelevel
+	if( cls.changelevel )
+		return;
+
+	for( int i = 0; i < ARRAYSIZE( keys ); i++ )
+	{
+		if( i >= K_MOUSE1 && i <= K_MOUSE5 )
+			IN_MouseEvent( i - K_MOUSE1, false );
+		else
+			Key_Event( i, false );
+
+		keys[i].down = 0;
+		keys[i].repeats = 0;
+		keys[i].gamedown = 0;
+	}
+
+	if( clgame.hInstance )
+		clgame.dllFuncs.IN_ClearStates();
+}
+
+/*
+===================
+CL_CharEvent
+
+Normal keyboard characters, already shifted / capslocked / etc
+===================
+*/
+void CL_CharEvent( int key )
+{
+	// the console key should never be used as a char
+	if( key == '`' || key == '~' ) return;
+
+	if( cls.key_dest == key_console && !Con_Visible( ))
+	{
+		if((char)key == '`' || (char)key == '?' )
+			return; // don't pass '`' when we open the console
+	}
+
+	// distribute the key down event to the apropriate handler
+	if( cls.key_dest == key_console || cls.key_dest == key_message )
+	{
+		Con_CharEvent( key );
+	}
+	else if( cls.key_dest == key_menu )
+	{
+		UI_CharEvent( key );
+	}
+}
+
+/*
+============
+Key_ToUpper
+
+A helper function if platform input doesn't support text mode properly
+============
+*/
+int Key_ToUpper( int keynum )
+{
+	if( keynum == '-' )
+		return '_';
+	if( keynum == '=' )
+		return '+';
+	if( keynum == ';' )
+		return ':';
+	if( keynum == '\'' )
+		return '"';
+
+	return Q_toupper( keynum );
+}

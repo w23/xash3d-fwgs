@@ -16,6 +16,7 @@ GNU General Public License for more details.
 
 #if HAVE_LIBBACKTRACE
 #include <signal.h>
+#include <dlfcn.h>
 #include "common.h"
 #include "backtrace.h"
 #include "input.h"
@@ -26,15 +27,10 @@ static qboolean enable_libbacktrace;
 
 static void Sys_BacktraceError( void *data, const char *msg, int errnum )
 {
-	if( errnum < 0 )
-	{
-		Con_Printf( S_ERROR "no symbol info, no libbacktrace\n" );
-		return;
-	}
+	Con_Printf( S_ERROR "libbacktrace: %s (%d)\n", msg, errnum );
 
-	Con_Printf( S_ERROR "libbacktrace error: %s (%d)\n", msg, errnum );
-
-	enable_libbacktrace = false;
+	if( errnum > 0 )
+		enable_libbacktrace = false;
 }
 
 struct print_data
@@ -44,26 +40,31 @@ struct print_data
 	int len;
 	int idx;
 	int logfd;
+	qboolean skip_wrappers;
 };
+
+static qboolean Sys_IsCrashHandlerFrame( const char *name )
+{
+	if( !name )
+		return false;
+	return !Q_strcmp( name, "Sys_Crash" ) || !Q_strcmp( name, "Sys_CrashDetailsLibbacktrace" );
+}
 
 static void Sys_AppendPrint( struct print_data *pd, const char *fmt, ... )
 {
 	va_list va;
-	int len;
-
 	va_start( va, fmt );
-	len = Q_vsnprintf( pd->message, pd->message_size, fmt, va );
+	int len = Q_vsnprintf( pd->message, pd->message_size, fmt, va );
 	va_end( va );
 
 	if( len > 0 )
 	{
-		char ch = '\n';
+		ssize_t unused;
+		if( pd->logfd >= 0 )
+			unused = write( pd->logfd, pd->message, len );
 
-		write( pd->logfd, pd->message, len );
-		write( pd->logfd, &ch, 1 );
-
-		write( STDERR_FILENO, pd->message, len );
-		write( STDERR_FILENO, &ch, 1 );
+		unused = write( STDERR_FILENO, pd->message, len );
+		(void)unused;
 
 		pd->message += len;
 		pd->len += len;
@@ -82,6 +83,13 @@ static void Sys_BacktracePrintSyminfo( void *data, uintptr_t pc, const char *sym
 	struct print_data *pd = data;
 	Dl_info dlinfo = { 0 };
 	const char *module_name;
+
+	if( pd->skip_wrappers )
+	{
+		if( Sys_IsCrashHandlerFrame( symname ))
+			return;
+		pd->skip_wrappers = false;
+	}
 
 	if( dladdr((void *)pc, &dlinfo ))
 		module_name = dlinfo.dli_fname;
@@ -109,6 +117,13 @@ static int Sys_BacktracePrintFull( void *data, uintptr_t pc, const char *filenam
 	Dl_info dlinfo = { 0 };
 	const char *module_name;
 
+	if( pd->skip_wrappers )
+	{
+		if( Sys_IsCrashHandlerFrame( function ))
+			return 0;
+		pd->skip_wrappers = false;
+	}
+
 	if( dladdr((void *)pc, &dlinfo ))
 		module_name = dlinfo.dli_fname;
 	else module_name = NULL;
@@ -135,12 +150,13 @@ int Sys_CrashDetailsLibbacktrace( int logfd, char *message, int len, size_t max_
 	struct print_data pd =
 	{
 		.message = message + len,
-		.message_size = sizeof( message ) - len,
+		.message_size = max_len - len,
 		.logfd = logfd,
 		.len = len,
+		.skip_wrappers = true,
 	};
 
-	backtrace_full( g_bt_state, 1, Sys_BacktracePrintFull, Sys_BacktracePrintError, &pd );
+	backtrace_full( g_bt_state, 0, Sys_BacktracePrintFull, Sys_BacktracePrintError, &pd );
 
 	return pd.len;
 }
@@ -152,4 +168,4 @@ qboolean Sys_SetupLibbacktrace( const char *argv0 )
 	return g_bt_state != NULL && enable_libbacktrace;
 }
 
-#endif // HAVE_EXECINFO
+#endif // HAVE_LIBBACKTRACE
