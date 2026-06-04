@@ -448,10 +448,6 @@ static const ref_api_t gEngfuncs =
 
 	R_GetWindowHandle,
 	R_GetSpriteFrame,
-
-	XVK_GetInstanceExtensions,
-	XVK_GetVkGetInstanceProcAddr,
-	XVK_CreateSurface,
 };
 
 static void R_UnloadProgs( void )
@@ -713,9 +709,6 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_SOFT_ENABLED
 		"soft",
 #endif
-#if XASH_REF_VULKAN_ENABLED
-		"vk"
-#endif
 	};
 
 	// ordering is important here too!
@@ -739,73 +732,11 @@ static void R_CollectRendererNames( void )
 #if XASH_REF_SOFT_ENABLED
 		"Software",
 #endif
-#if XASH_REF_VULKAN_ENABLED
-		"Vulkan"
-#endif
 	};
 
 	ref.num_renderers = ARRAYSIZE( short_names );
 	ref.short_names = short_names;
 	ref.long_names = long_names;
-}
-
-const ref_device_t *R_GetRenderDevice( unsigned int idx )
-{
-	if( !Q_stricmp( r_refdll_loaded.string, "vk" ))
-	{
-		if( !ref.dllFuncs.pfnGetVulkanRenderDevice )
-			return NULL;
-
-		return ref.dllFuncs.pfnGetVulkanRenderDevice( idx );
-	}
-
-	// TODO: implement?
-	return NULL;
-}
-
-static const char *R_DeviceTypeToString( ref_device_type_t type )
-{
-	switch( type )
-	{
-	case REF_DEVICE_TYPE_DISCRETE_GPU:
-		return "^2Discrete^7";
-	case REF_DEVICE_TYPE_INTERGRATED_GPU:
-		return "^3Integrated^7";
-	case REF_DEVICE_TYPE_VIRTUAL_GPU:
-		return "^4Virtual^7";
-	case REF_DEVICE_TYPE_CPU:
-		return "^5Software^7";
-	}
-
-	return "^6Unknown^7";
-}
-
-static void R_GetRenderDevices_f( void )
-{
-	int i = 0;
-	const ref_device_t *device = NULL;
-
-	if( Q_stricmp( r_refdll_loaded.string, "vk" ) ||
-	    !ref.dllFuncs.pfnGetVulkanRenderDevice )
-	{
-		Con_Printf( "Renderer %s doesn't implement this!\n", r_refdll_loaded.string );
-		return;
-	}
-
-	Con_Printf( "Num ID      Type    Name\n" );
-	Con_Printf( "------------------------------------------------\n" );
-
-	for( i = 0;; i++ )
-	{
-		device = R_GetRenderDevice( i );
-		if( !device )
-			break;
-
-		Con_Printf( "%-3i %04x:%04x %-10s %s\n",
-			i, device->vendorID, device->deviceID,
-			R_DeviceTypeToString( device->deviceType ), device->deviceName );
-	}
-
 }
 
 qboolean R_Init( void )
@@ -847,8 +778,6 @@ qboolean R_Init( void )
 	Cvar_Get( "r_lighting_modulate", "0.6", FCVAR_ARCHIVE, "compatibility cvar, does nothing" );
 	Cvar_Get( "r_drawentities", "1", FCVAR_CHEAT, "render entities" );
 	Cvar_Get( "cl_himodels", "1", FCVAR_ARCHIVE, "draw high-resolution player models in multiplayer" );
-
-	Cmd_AddCommand( "r_show_devices", R_GetRenderDevices_f, "print all available GPUs in the system" );
 
 	// cvars are created, execute video config
 	Cbuf_AddText( "exec video.cfg\n" );
