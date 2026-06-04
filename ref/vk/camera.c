@@ -3,7 +3,7 @@
 #include "vk_math.h"
 
 #include "ref_params.h"
-#include "pm_movevars.h"
+#include "pmove.h"
 
 vk_global_camera_t g_camera;
 
@@ -155,4 +155,3 @@ int TriWorldToScreen( const float *world, float *screen )
 
 	return retval;
 }
-

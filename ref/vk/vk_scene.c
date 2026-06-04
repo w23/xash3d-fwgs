@@ -24,7 +24,7 @@
 
 #include "ref_params.h"
 #include "eiface.h"
-#include "pm_movevars.h"
+#include "pmove.h"
 #include "xash3d_mathlib.h"
 
 #include <stdlib.h> // qsort

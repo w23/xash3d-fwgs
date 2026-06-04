@@ -16,6 +16,7 @@ GNU General Public License for more details.
 #include "const.h"
 #include "xash3d_types.h"
 #include "com_model.h"
+#include "q_client.h"
 #include "pm_local.h"
 #include "studio.h"
 #include "xash3d_mathlib.h"

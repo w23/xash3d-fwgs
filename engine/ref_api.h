@@ -245,7 +245,7 @@ typedef enum ref_graphic_apis_e
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
 	REF_VULKAN, // Vulkan
-};
+} ref_graphic_apis_t;
 
 typedef enum
 {

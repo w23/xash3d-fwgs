@@ -21,8 +21,8 @@
 #include <ctype.h> // isalnum...
 
 #include "camera.h"
+#include "pmove.h"
 #include "pm_defs.h"
-#include "pmtrace.h"
 
 #define MODULE_NAME "light"
 #define LOG_MODULE light
@@ -740,7 +740,7 @@ static void addPointLightToAllClusters( int index ) {
 }
 
 static void addPointLightToClusters( int index ) {
-	const model_t* const world = WORLDMODEL;
+	model_t* const world = WORLDMODEL;
 
 	if (!world->visdata) {
 		addPointLightToAllClusters( index );
@@ -748,7 +748,7 @@ static void addPointLightToClusters( int index ) {
 	}
 
 	vk_point_light_t *const light = g_lights_.point_lights + index;
-	const mleaf_t* leaf = gEngine.Mod_PointInLeaf(light->origin, world->nodes);
+	const mleaf_t* leaf = gEngine.Mod_PointInLeaf(light->origin, world->nodes, world);
 	const vk_light_leaf_set_t *const leafs = (vk_light_leaf_set_t*)&g_lights_bsp.accum.count;
 
 	leafAccumPrepare();

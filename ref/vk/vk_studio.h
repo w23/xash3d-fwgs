@@ -17,7 +17,8 @@ void VK_StudioDrawModel( cl_entity_t *ent, int render_mode, float blend );
 void R_RunViewmodelEvents( void );
 void R_DrawViewModel( void );
 
-void CL_InitStudioAPI( void );
+qboolean R_StudioFillAPI( struct engine_studio_api_s *api, struct r_studio_interface_s *pDefaultDraw );
+void R_StudioSetDrawInterface( struct r_studio_interface_s *pDraw );
 
 float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time );
 void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles );

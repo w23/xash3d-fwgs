@@ -19,10 +19,9 @@
 #include "triangleapi.h"
 #include "studio.h"
 #include "pm_local.h"
-#include "pmtrace.h"
 #include "protocol.h"
 #include "enginefeatures.h"
-#include "pm_movevars.h"
+#include "pmove.h"
 
 #include <memory.h>
 #include <stdlib.h>
@@ -1126,22 +1125,22 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	VectorSet( vecSrc, origin[0], origin[1], origin[2] - lightDir[2] * 8.0f );
 	light.r = light.g = light.b = light.a = 0;
 
-	if(( mv->skycolor_r + mv->skycolor_g + mv->skycolor_b ) != 0 )
+	if(( mv->skycolor[0] + mv->skycolor[1] + mv->skycolor[2] ) != 0 )
 	{
 		msurface_t	*psurf = NULL;
 		pmtrace_t		trace;
 
 		if( FBitSet( ENGINE_GET_PARM( PARM_FEATURES ), ENGINE_WRITE_LARGE_COORD ))
 		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 65536.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 65536.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 65536.0f;
+			vecEnd[0] = origin[0] - mv->skyvec[0] * 65536.0f;
+			vecEnd[1] = origin[1] - mv->skyvec[1] * 65536.0f;
+			vecEnd[2] = origin[2] - mv->skyvec[2] * 65536.0f;
 		}
 		else
 		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 8192.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 8192.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 8192.0f;
+			vecEnd[0] = origin[0] - mv->skyvec[0] * 8192.0f;
+			vecEnd[1] = origin[1] - mv->skyvec[1] * 8192.0f;
+			vecEnd[2] = origin[2] - mv->skyvec[2] * 8192.0f;
 		}
 
 		trace = gEngine.CL_TraceLine( vecSrc, vecEnd, PM_WORLD_ONLY );
@@ -1150,11 +1149,11 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 		if( FBitSet( ent->model->flags, STUDIO_FORCE_SKYLIGHT ) || ( psurf && FBitSet( psurf->flags, SURF_DRAWSKY )))
 		{
-			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
+			VectorCopy( mv->skyvec, lightDir );
 
-			light.r = LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
-			light.g = LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
-			light.b = LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
+			light.r = LightToTexGamma( bound( 0, mv->skycolor[0], 255 ));
+			light.g = LightToTexGamma( bound( 0, mv->skycolor[1], 255 ));
+			light.b = LightToTexGamma( bound( 0, mv->skycolor[2], 255 ));
 		}
 	}
 
@@ -2389,7 +2388,7 @@ static model_t *R_StudioSetupPlayerModel( int index )
 	state = &g_studio.player_models[index];
 
 	// g-cont: force for "dev-mode", non-local games and menu preview
-	if(( gpGlobals->developer || !ENGINE_GET_PARM( PARM_LOCAL_GAME ) || !RI.drawWorld ) && info->model[0] )
+	if(( gpGlobals->developer || !ENGINE_GET_PARM( PARM_SINGLEPLAYER_GAME ) || !RI.drawWorld ) && info->model[0] )
 	{
 		if( Q_strcmp( state->name, info->model ))
 		{
@@ -3502,7 +3501,7 @@ static void pfnMod_LoadCacheFile( const char *path, struct cache_user_s *cu )
 
 static cvar_t *pfnGetCvarPointer( const char *name )
 {
-	return (cvar_t*)gEngine.pfnGetCvarPointer( name, 0 );
+	return (cvar_t*)gEngine.pfnGetCvarPointer( name );
 }
 
 static void *pfnMod_Calloc( int number, size_t size )
@@ -3614,21 +3613,20 @@ static r_studio_interface_t gStudioDraw =
 	R_StudioDrawPlayer,
 };
 
-void CL_InitStudioAPI( void )
+qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefaultDraw )
 {
-	pStudioDraw = &gStudioDraw;
-
 	// trying to grab them from client.dll
-	cl_righthand = gEngine.pfnGetCvarPointer( "cl_righthand", 0 );
+	cl_righthand = gEngine.pfnGetCvarPointer( "cl_righthand" );
 
-	// Xash will be used internal StudioModelRenderer
-	if( gEngine.pfnGetStudioModelInterface( STUDIO_INTERFACE_VERSION, &pStudioDraw, &gStudioAPI ))
-		return;
+	*api = gStudioAPI;
+	*pDefaultDraw = gStudioDraw;
 
-	// NOTE: we always return true even if game interface was not correct
-	// because we need Draw our StudioModels
-	// just restore pointer to builtin function
-	pStudioDraw = &gStudioDraw;
+	return true;
+}
+
+void R_StudioSetDrawInterface( r_studio_interface_t *pDraw )
+{
+	pStudioDraw = pDraw ? pDraw : &gStudioDraw;
 }
 
 void VK_StudioInit( void )

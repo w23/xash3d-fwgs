@@ -178,6 +178,14 @@ void GL_RenderFrame( const ref_viewpass_t *rvp )
 	ref.dllFuncs.GL_RenderFrame( rvp );
 }
 
+const ref_device_t *R_GetRenderDevice( unsigned int idx )
+{
+	if( !ref.initialized || !ref.dllFuncs.pfnGetVulkanRenderDevice )
+		return NULL;
+
+	return ref.dllFuncs.pfnGetVulkanRenderDevice( idx );
+}
+
 static intptr_t pfnEngineGetParm( int parm, int arg )
 {
 	return CL_RenderGetParm( parm, arg, false ); // prevent recursion
@@ -447,6 +455,9 @@ static const ref_api_t gEngfuncs =
 	&g_fsapi,
 
 	R_GetWindowHandle,
+	XVK_GetInstanceExtensions,
+	XVK_GetVkGetInstanceProcAddr,
+	XVK_CreateSurface,
 	R_GetSpriteFrame,
 };
 

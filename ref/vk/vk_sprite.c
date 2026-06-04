@@ -11,7 +11,7 @@
 #include "sprite.h"
 #include "xash3d_mathlib.h"
 #include "com_strings.h"
-#include "pmtrace.h"
+#include "pmove.h"
 #include "pm_defs.h"
 
 #include <memory.h>

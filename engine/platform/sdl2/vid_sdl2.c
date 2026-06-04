@@ -35,6 +35,9 @@ static struct
 	int prev_width, prev_height;
 } sdlState = { 640, 480 };
 
+static ref_graphic_apis_t sdl2_context_type = REF_SOFTWARE;
+static qboolean sdl2_vulkan_loaded = false;
+
 struct
 {
 	SDL_Renderer *renderer;
@@ -356,7 +359,7 @@ GL_UpdateSwapInterval
 */
 void GL_UpdateSwapInterval( void )
 {
-	if (glw_state.context_type != REF_GL)
+	if( sdl2_context_type != REF_GL )
 		return;
 
 	if( FBitSet( gl_vsync.flags, FCVAR_CHANGED ))
@@ -673,8 +676,10 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	SetBits( flags, SDL_WINDOW_ALLOW_HIGHDPI );
 #endif // !XASH_WIN32
 
-	if( !glw_state.software )
+	if( sdl2_context_type == REF_GL )
 		SetBits( flags, SDL_WINDOW_OPENGL );
+	else if( sdl2_context_type == REF_VULKAN )
+		SetBits( flags, SDL_WINDOW_VULKAN );
 
 	if( vid_maximized.value )
 		SetBits( flags, SDL_WINDOW_MAXIMIZED );
@@ -685,7 +690,7 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 
 	if( !host.hWnd )
 	{
-		err = glw_state.software ? rserr_unknown : rserr_invalid_context;
+		err = sdl2_context_type == REF_GL ? rserr_invalid_context : rserr_unknown;
 		goto cleanup;
 	}
 
@@ -702,7 +707,7 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	SDL_ShowWindow( host.hWnd );
 	SDL_RaiseWindow( host.hWnd );
 
-	if( glw_state.context_type == REF_SOFTWARE )
+	if( sdl2_context_type == REF_SOFTWARE )
 	{
 		char cmd[64];
 
@@ -724,7 +729,7 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 			Con_Printf( "SDL_Renderer %s initialized\n", info.name );
 		}
 	}
-	else
+	else if( sdl2_context_type == REF_GL )
 	{
 		glw_state.context = SDL_GL_CreateContext( host.hWnd );
 
@@ -953,8 +958,10 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 	switch( type )
 	{
 	case REF_SOFTWARE:
+		glw_state.software = true;
 		break;
 	case REF_GL:
+		glw_state.software = false;
 		if( !glw_state.safe && Sys_GetParmFromCmdLine( "-safegl", safe ) )
 			glw_state.safe = bound( SAFE_NO, Q_atoi( safe ), SAFE_DONTCARE );
 
@@ -968,11 +975,20 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 		}
 		break;
 	case REF_VULKAN:
+		glw_state.software = false;
+		if( SDL_Vulkan_LoadLibrary( NULL ) < 0 )
+		{
+			Con_Reportf( S_ERROR "Couldn't initialize Vulkan: %s\n", SDL_GetError());
+			return false;
+		}
+		sdl2_vulkan_loaded = true;
 		break;
 	default:
 		Host_Error( "Can't initialize unknown context type %d!\n", type );
 		break;
 	}
+
+	sdl2_context_type = type;
 
 	if( !VID_SetMode( ))
 		return false;
@@ -1076,7 +1092,7 @@ qboolean VID_SetMode( void )
 		err = R_ChangeDisplaySettings( width, height, window_mode );
 	}
 
-	while( err == rserr_invalid_context )
+	while( err == rserr_invalid_context && sdl2_context_type == REF_GL )
 	{
 		Con_Printf( S_ERROR "%s: couldn't create GL context with safegl level %d: %s\n", __func__, glw_state.safe, SDL_GetError());
 
@@ -1188,6 +1204,12 @@ void R_Free_Video( void )
 	GL_DeleteContext ();
 
 	VID_DestroyWindow ();
+
+	if( sdl2_vulkan_loaded )
+	{
+		SDL_Vulkan_UnloadLibrary();
+		sdl2_vulkan_loaded = false;
+	}
 
 	R_FreeVideoModes();
 

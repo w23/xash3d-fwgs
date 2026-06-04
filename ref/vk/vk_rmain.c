@@ -117,9 +117,10 @@ static void Mod_UnloadTextures( model_t *mod )
 	}
 }
 
-static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
+static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer, size_t buffersize )
 {
 	qboolean loaded = true;
+	(void)buffersize;
 
 	DEBUG("%s(%s, create=%d)", __FUNCTION__, mod->name, create);
 
@@ -226,7 +227,7 @@ static const char *getParmName(int parm)
 	}
 }
 
-static int VK_RefGetParm( int parm, int arg )
+static intptr_t VK_RefGetParm( int parm, int arg )
 {
 	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
@@ -257,7 +258,7 @@ static int VK_RefGetParm( int parm, int arg )
 	case PARM_WIDESCREEN:
 		return gpGlobals->wideScreen;
 	case PARM_FULLSCREEN:
-		return gpGlobals->fullScreen;
+		return gpGlobals->window_mode == WINDOW_MODE_BORDERLESS || gpGlobals->window_mode == WINDOW_MODE_FULLSCREEN;
 	case PARM_SCREEN_WIDTH:
 		return gpGlobals->width;
 	case PARM_SCREEN_HEIGHT:
@@ -269,6 +270,10 @@ static int VK_RefGetParm( int parm, int arg )
 	return 0;
 }
 static void		GetDetailScaleForTexture( int texture, float *xScale, float *yScale )
+{
+	PRINT_NOT_IMPLEMENTED();
+}
+static void		SetDetailScaleForTexture( int texture, float xScale, float yScale )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
@@ -305,6 +310,32 @@ static void		R_SetCurrentModel( struct model_s *mod )
 static void		AVI_UploadRawFrame( int texture, int cols, int rows, int width, int height, const byte *data )
 {
 	PRINT_NOT_IMPLEMENTED();
+}
+
+static void GL_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
+{
+	const char *name = R_TextureGetNameByIndex( texnum );
+	rgbdata_t pic = { 0 };
+
+	(void)width;
+	(void)height;
+
+	if( !name || !name[0] || !buffer )
+		return;
+
+	pic.width = cols;
+	pic.height = rows;
+	pic.depth = 1;
+	pic.type = fmt;
+	pic.buffer = (byte *)buffer;
+	pic.size = CalcImageSize( fmt, cols, rows, 1 );
+
+	if( fmt == PF_RGBA_32 || fmt == PF_BGRA_32 )
+		SetBits( pic.flags, IMAGE_HAS_ALPHA | IMAGE_HAS_COLOR );
+	else if( fmt == PF_RGB_24 || fmt == PF_BGR_24 )
+		SetBits( pic.flags, IMAGE_HAS_COLOR );
+
+	R_TextureUploadFromBuffer( name, &pic, TF_NOMIPMAP|TF_CLAMP|TF_UPDATE, true );
 }
 
 // glState related calls (must use this instead of normal gl-calls to prevent de-synchornize local states between engine and the client)
@@ -482,6 +513,41 @@ static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int
 		drawX, drawY, rgba, blockWidth, blockHeight);
 }
 
+static void R_FillRenderAPI( render_api_t *api )
+{
+	api->GetExtraParmsForTexture = GetExtraParmsForTexture;
+	api->GetFrameTime = GetFrameTime;
+	api->R_SetCurrentEntity = R_SetCurrentEntity;
+	api->R_SetCurrentModel = R_SetCurrentModel;
+	api->GL_LoadTextureArray = R_LoadTextureArray_UNUSED;
+	api->GL_CreateTextureArray = R_CreateTextureArray_UNUSED;
+	api->DrawSingleDecal = R_DrawSingleDecal;
+	api->R_DecalSetupVerts = R_DecalSetupVerts;
+	api->R_EntityRemoveDecals = R_EntityRemoveDecals;
+	api->AVI_UploadRawFrame = AVI_UploadRawFrame;
+	api->GL_SelectTexture = GL_SelectTexture;
+	api->GL_LoadTextureMatrix = GL_LoadTextureMatrix;
+	api->GL_TexMatrixIdentity = GL_TexMatrixIdentity;
+	api->GL_CleanUpTextureUnits = GL_CleanUpTextureUnits;
+	api->GL_TexGen = GL_TexGen;
+	api->GL_TextureTarget = GL_TextureTarget;
+	api->GL_TexCoordArrayMode = GL_TexCoordArrayMode;
+	api->GL_UpdateTexSize = GL_UpdateTexSize;
+	api->GL_DrawParticles = GL_DrawParticles;
+	api->LightVec = R_LightVec;
+	api->StudioGetTexture = R_StudioGetTexture;
+	api->GL_GetProcAddress = R_GetProcAddress;
+}
+
+static void R_FillTriAPI( triangleapi_t *api )
+{
+	api->TexCoord2f = TriTexCoord2f;
+	api->Fog = TriFog;
+	api->ScreenToWorld = R_ScreenToWorld;
+	api->GetMatrix = TriGetMatrix;
+	api->FogParams = TriFogParams;
+}
+
 static const ref_interface_t gReffuncs =
 {
 	.R_Init = R_Init,
@@ -510,9 +576,7 @@ static const ref_interface_t gReffuncs =
 	.GL_SetRenderMode = GL_SetRenderMode,
 
 	.R_AddEntity = R_AddEntity,
-	.CL_AddCustomBeam = CL_AddCustomBeam,
 	.R_ProcessEntData = R_ProcessEntData,
-	.R_Flush = NULL,
 
 	// debug
 	.R_ShowTextures = R_ShowTextures_UNUSED,
@@ -525,7 +589,6 @@ static const ref_interface_t gReffuncs =
 
 	// 2D
 	.R_Set2DMode = R_Set2DMode,
-	.R_DrawStretchRaw = R_DrawStretchRaw,
 	.R_DrawStretchPic = R_DrawStretchPic,
 	.FillRGBA = CL_FillRGBA,
 	.WorldToScreen = R_WorldToScreen,
@@ -545,14 +608,12 @@ static const ref_interface_t gReffuncs =
 
 	.R_StudioEstimateFrame = R_StudioEstimateFrame,
 	.R_StudioLerpMovement = R_StudioLerpMovement,
-	.CL_InitStudioAPI = CL_InitStudioAPI,
+	.R_StudioFillAPI = R_StudioFillAPI,
+	.R_StudioSetDrawInterface = R_StudioSetDrawInterface,
 
 	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
 	.CL_RunLightStyles = VK_RunLightStyles,
-
-	.R_GetSpriteParms = R_GetSpriteParms,
-	.R_GetSpriteTexture = R_GetSpriteTexture,
 
 	.Mod_ProcessRenderData = Mod_ProcessRenderData,
 	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
@@ -560,49 +621,23 @@ static const ref_interface_t gReffuncs =
 	.CL_DrawParticles = CL_DrawParticles,
 	.CL_DrawTracers = CL_DrawTracers,
 	.CL_DrawBeams = CL_DrawBeams,
-	.R_BeamCull = R_BeamCull,
 
 	.RefGetParm = VK_RefGetParm,
-	.GetDetailScaleForTexture = GetDetailScaleForTexture,
-	.GetExtraParmsForTexture = GetExtraParmsForTexture,
-	.GetFrameTime = GetFrameTime,
-
-	.R_SetCurrentEntity = R_SetCurrentEntity,
-	.R_SetCurrentModel = R_SetCurrentModel,
+	.R_GetDetailScaleForTexture = GetDetailScaleForTexture,
+	.R_SetDetailScaleForTexture = SetDetailScaleForTexture,
 
 	// Texture tools
+	.GL_CreateTexture = R_CreateTexture_UNUSED,
 	.GL_FindTexture = R_TextureFindByName,
 	.GL_TextureName = R_TextureGetNameByIndex,
 	.GL_TextureData = R_TextureData_UNUSED,
 	.GL_LoadTexture = R_TextureUploadFromFile,
-	.GL_CreateTexture = R_CreateTexture_UNUSED,
-	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
-	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
 	.GL_FreeTexture = R_TextureFree,
 	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
-	// Decals manipulating (draw & remove)
-	.DrawSingleDecal = R_DrawSingleDecal,
-	.R_DecalSetupVerts = R_DecalSetupVerts,
-	.R_EntityRemoveDecals = R_EntityRemoveDecals,
-
-	.AVI_UploadRawFrame = AVI_UploadRawFrame,
+	.GL_UpdateTexture = GL_UpdateTexture,
 
 	.GL_Bind = GL_Bind,
-	.GL_SelectTexture = GL_SelectTexture,
-	.GL_LoadTextureMatrix = GL_LoadTextureMatrix,
-	.GL_TexMatrixIdentity = GL_TexMatrixIdentity,
-	.GL_CleanUpTextureUnits = GL_CleanUpTextureUnits,
-	.GL_TexGen = GL_TexGen,
-	.GL_TextureTarget = GL_TextureTarget,
-	.GL_TexCoordArrayMode = GL_TexCoordArrayMode,
-	.GL_UpdateTexSize = GL_UpdateTexSize,
-	NULL, // Reserved0
-	NULL, // Reserved1
-
-	.GL_DrawParticles = GL_DrawParticles,
-	.LightVec = R_LightVec,
-	.StudioGetTexture = R_StudioGetTexture,
 
 	.GL_RenderFrame = VK_RenderFrame,
 	.GL_OrthoBounds = GL_OrthoBounds,
@@ -610,21 +645,18 @@ static const ref_interface_t gReffuncs =
 	.Mod_GetCurrentVis = Mod_GetCurrentVis,
 	.R_NewMap = R_NewMap,
 	.R_ClearScene = R_ClearScene,
-	.R_GetProcAddress = R_GetProcAddress,
 
 	.TriRenderMode = TriRenderMode,
 	.Begin = TriBegin,
 	.End = TriEnd,
 	.Color4f = TriColor4f,
 	.Color4ub = TriColor4ub,
-	.TexCoord2f = TriTexCoord2f,
 	.Vertex3fv = TriVertex3fv,
 	.Vertex3f = TriVertex3f,
-	.Fog = TriFog,
-	.ScreenToWorld = R_ScreenToWorld,
-	.GetMatrix = TriGetMatrix,
-	.FogParams= TriFogParams,
 	.CullFace = TriCullFace,
+
+	.R_FillRenderAPI = R_FillRenderAPI,
+	.R_FillTriAPI = R_FillTriAPI,
 
 	.VGUI_SetupDrawing = VGUI_SetupDrawing,
 	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
