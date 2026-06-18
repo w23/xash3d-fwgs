@@ -4,6 +4,10 @@
 /*
 Auto exposure tuning notes:
 
+This auto exposure is based on a log-luminance histogram. For performance, the
+histogram reduction is split into several passes distributed across several
+frames, so the measured exposure has a small multi-frame delay.
+
 - AE_MIN_EXPOSURE and AE_MAX_EXPOSURE clamp the exposure multiplier.
   AE_MIN_EXPOSURE controls how dark the camera may get in very bright scenes.
   AE_MAX_EXPOSURE controls how much full darkness may be lifted. Lower it if
