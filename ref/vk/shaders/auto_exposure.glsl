@@ -1,6 +1,29 @@
 #ifndef AUTO_EXPOSURE_GLSL_INCLUDED
 #define AUTO_EXPOSURE_GLSL_INCLUDED
 
+/*
+Auto exposure tuning notes:
+
+- AE_MIN_EXPOSURE and AE_MAX_EXPOSURE clamp the exposure multiplier.
+  AE_MIN_EXPOSURE controls how dark the camera may get in very bright scenes.
+  AE_MAX_EXPOSURE controls how much full darkness may be lifted. Lower it if
+  dark rooms or black frames become too bright.
+
+- AE_ADAPT_DARKEN_FRAMES and AE_ADAPT_LIGHTEN_FRAMES are frame-based adaptation
+  times because this shader has no frame time input. Smaller values adapt faster.
+  DARKEN is used when the scene gets brighter and exposure must go down.
+  LIGHTEN is used when the scene gets darker and exposure must go up.
+
+- AE_LOG_LUMINANCE_MIN and AE_LOG_LUMINANCE_MAX are the histogram metering clamp
+  in log2 luminance units. AE_LOG_LUMINANCE_MAX limits how far extreme highlights
+  can push the histogram; it is intentionally very high for sun and strong HDR
+  highlights. Lower it only if you want to clip metered highlight influence.
+
+- AE_LOW_PERCENTILE and AE_HIGH_PERCENTILE choose which histogram range is metered.
+  Higher AE_LOW_PERCENTILE gives highlights more priority. AE_HIGH_PERCENTILE near
+  1.0 keeps small bright objects like the sun while still dropping rare fireflies.
+*/
+
 #ifndef AUTO_EXPOSURE_HISTOGRAM_BINS
 #define AUTO_EXPOSURE_HISTOGRAM_BINS 32
 #endif
@@ -20,8 +43,10 @@ const float AE_LOG_LUMINANCE_MAX = 24.;
 const float AE_TARGET_GREY = 0.18;
 const float AE_LOW_PERCENTILE = 0.70;
 const float AE_HIGH_PERCENTILE = 0.999;
-const float AE_ADAPT_DARKEN_SPEED = 0.12;
-const float AE_ADAPT_LIGHTEN_SPEED = 0.05;
+const float AE_ADAPT_DARKEN_FRAMES = 8.333333;
+const float AE_ADAPT_LIGHTEN_FRAMES = 20.;
+const float AE_ADAPT_DARKEN_SPEED = 1. / AE_ADAPT_DARKEN_FRAMES;
+const float AE_ADAPT_LIGHTEN_SPEED = 1. / AE_ADAPT_LIGHTEN_FRAMES;
 const float AE_MIN_EXPOSURE = 1. / 16777216.;
 const float AE_MAX_EXPOSURE = 16777216.;
 
