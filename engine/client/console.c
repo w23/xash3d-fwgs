@@ -141,9 +141,6 @@ typedef struct
 
 	notify_t		notify[MAX_DBG_NOTIFY]; // for Con_NXPrintf
 	qboolean		draw_notify;	// true if we have NXPrint message
-
-	// console update
-	double		lastupdate;
 } console_t;
 
 static console_t		con;
@@ -945,13 +942,6 @@ void Con_Print( const char *txt )
 			lastlength = 0;
 			bufpos = 0;
 			charpos = 0;
-		}
-
-		// pump messages to avoid window hanging
-		if( con.lastupdate < Sys_DoubleTime( ))
-		{
-			con.lastupdate = Sys_DoubleTime() + 1.0;
-			Host_InputFrame();
 		}
 
 		// FIXME: disable updating screen, because when texture is bound any console print
@@ -1892,7 +1882,7 @@ static void Con_DrawSolidConsole( int lines )
 	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
 	ref.dllFuncs.Color4ub( 255, 255, 255, 255 ); // to prevent grab color from screenfade
 	if( refState.width * 3 / 4 < refState.height && lines >= refState.height )
-		ref.dllFuncs.R_DrawStretchPic( 0, lines - refState.height, refState.width, refState.height - refState.width * 3 / 4, 0, 0, 1, 1, R_GetBuiltinTexture( REF_BLACK_TEXTURE) );
+		ref.dllFuncs.R_DrawStretchPic( 0, lines - refState.height, refState.width, refState.height - refState.width * 3 / 4, 0, 0, 1, 1, R_GetBuiltinTexture( REF_BLACK_TEXTURE ));
 	ref.dllFuncs.R_DrawStretchPic( 0, lines - refState.width * 3 / 4, refState.width, refState.width * 3 / 4, 0, 0, 1, 1, con.background );
 
 	if( !con.curFont || !host.allow_console )

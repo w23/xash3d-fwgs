@@ -577,7 +577,7 @@ void Host_Error( const char *error, ... ) FORMAT_CHECK( 1 );
 void Host_ValidateEngineFeatures( uint32_t mask, uint32_t features );
 void Host_Frame( double time );
 void Host_Credits( void );
-void Host_ExitInMain( void );
+void Host_ExitInMain( void ) NORETURN;
 
 //
 // host_state.c
@@ -892,12 +892,12 @@ intptr_t V_GetGammaPtr( int parm );
 //
 void NET_InitMasters( void );
 void NET_SaveMasters( void );
-qboolean NET_SendToMasters( netsrc_t sock, size_t len, const void *data );
-qboolean NET_IsMasterAdr( netadr_t adr );
+qboolean NET_IsMasterAdr( netadr_t adr, connprotocol_t *proto );
 void NET_MasterHeartbeat( void );
 void NET_MasterClear( void );
 void NET_MasterShutdown( void );
 qboolean NET_GetMaster( netadr_t from, uint *challenge, double *last_heartbeat );
+qboolean NET_MasterQuery( uint32_t key, qboolean net, const char *filter );
 
 //
 // munge.c
