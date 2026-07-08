@@ -315,66 +315,6 @@ static void R_FreeVideoModes( void )
 }
 
 #if XASH_WIN32
-typedef enum _XASH_DPI_AWARENESS
-{
-	XASH_DPI_UNAWARE = 0,
-	XASH_SYSTEM_DPI_AWARE = 1,
-	XASH_PER_MONITOR_DPI_AWARE = 2
-} XASH_DPI_AWARENESS;
-
-static void WIN_SetDPIAwareness( void )
-{
-	HMODULE hModule;
-	HRESULT ( __stdcall *pSetProcessDpiAwareness )( XASH_DPI_AWARENESS );
-	BOOL ( __stdcall *pSetProcessDPIAware )( void );
-	BOOL bSuccess = FALSE;
-
-	if( ( hModule = LoadLibraryW( L"shcore.dll" ) ) )
-	{
-		if( ( pSetProcessDpiAwareness = (void*)GetProcAddress( hModule, "SetProcessDpiAwareness" ) ) )
-		{
-			// I hope SDL don't handle WM_DPICHANGED message
-			HRESULT hResult = pSetProcessDpiAwareness( XASH_SYSTEM_DPI_AWARE );
-
-			if( hResult == S_OK )
-			{
-				Con_Reportf( "%s: Success\n", __func__ );
-				bSuccess = TRUE;
-			}
-			else if( hResult == E_INVALIDARG ) Con_Reportf( "%s: Invalid argument\n", __func__ );
-			else if( hResult == E_ACCESSDENIED ) Con_Reportf( "%s: Access Denied\n", __func__ );
-		}
-		else Con_Reportf( "%s: Can't get SetProcessDpiAwareness\n", __func__ );
-		FreeLibrary( hModule );
-	}
-	else Con_Reportf( "%s: Can't load shcore.dll\n", __func__ );
-
-
-	if( !bSuccess )
-	{
-		Con_Reportf( "%s: Trying SetProcessDPIAware...\n", __func__ );
-
-		if( ( hModule = LoadLibraryW( L"user32.dll" ) ) )
-		{
-			if( ( pSetProcessDPIAware = ( void* )GetProcAddress( hModule, "SetProcessDPIAware" ) ) )
-			{
-				// I hope SDL don't handle WM_DPICHANGED message
-				BOOL hResult = pSetProcessDPIAware();
-
-				if( hResult )
-				{
-					Con_Reportf( "%s: Success\n", __func__ );
-					bSuccess = TRUE;
-				}
-				else Con_Reportf( "%s: fail\n", __func__ );
-			}
-			else Con_Reportf( "%s: Can't get SetProcessDPIAware\n", __func__ );
-			FreeLibrary( hModule );
-		}
-		else Con_Reportf( "%s: Can't load user32.dll\n", __func__ );
-	}
-}
-
 static qboolean WIN_SetWindowIcon( HICON ico )
 {
 	SDL_SysWMinfo wminfo;
@@ -388,7 +328,7 @@ static qboolean WIN_SetWindowIcon( HICON ico )
 		return true;
 	}
 
-	Con_Reportf( S_ERROR "%s: %s", __func__, SDL_GetError( ));
+	Con_Reportf( S_ERROR "%s: %s\n", __func__, SDL_GetError( ));
 	return false;
 }
 #endif
@@ -499,23 +439,18 @@ void VID_SaveWindowSize( int width, int height, qboolean maximized )
 static qboolean VID_SetScreenResolution( int width, int height, window_mode_t window_mode )
 {
 	SDL_DisplayMode got;
-	Uint32 wndFlags = 0;
-	
-	if( vid_highdpi.value )
-		SetBits( wndFlags, SDL_WINDOW_ALLOW_HIGHDPI );
-	SDL_SetWindowBordered( host.hWnd, SDL_FALSE );
 
 	if( window_mode == WINDOW_MODE_BORDERLESS )
 	{
 		if( SDL_GetDesktopDisplayMode( 0, &got ) < 0 )
 		{
-			Con_Printf( S_ERROR "%s: SDL_GetDesktopDisplayMode: %s", __func__, SDL_GetError( ));
+			Con_Printf( S_ERROR "%s: SDL_GetDesktopDisplayMode: %s\n", __func__, SDL_GetError( ));
 			return false;
 		}
 
 		if( SDL_SetWindowFullscreen( host.hWnd, SDL_WINDOW_FULLSCREEN_DESKTOP ) < 0 )
 		{
-			Con_Printf( S_ERROR "%s: SDL_SetWindowFullscreen (borderless): %s", __func__, SDL_GetError( ));
+			Con_Printf( S_ERROR "%s: SDL_SetWindowFullscreen (borderless): %s\n", __func__, SDL_GetError( ));
 			return false;
 		}
 	}
@@ -527,22 +462,33 @@ static qboolean VID_SetScreenResolution( int width, int height, window_mode_t wi
 
 		if( SDL_GetClosestDisplayMode( 0, &want, &got ) == NULL )
 		{
-			Con_Printf( S_ERROR "%s: SDL_GetClosestDisplayMode: %s", __func__, SDL_GetError( ));
-			return false;
-		}
+			Con_Printf( S_ERROR "%s: SDL_GetClosestDisplayMode: %s\n", __func__, SDL_GetError( ));
 
-		if( got.w != want.w || got.h != want.h )
-			Con_Reportf( S_NOTE "Got closest display mode: %ix%i@%i\n", got.w, got.h, got.refresh_rate );
+			// fall back to native mode
+			if( SDL_GetDesktopDisplayMode( 0, &got ) < 0 )
+			{
+				Con_Printf( S_ERROR "%s: SDL_GetDesktopDisplayMode: %s\n", __func__, SDL_GetError( ));
+				return false;
+			}
+
+			if( got.w != want.w || got.h != want.h )
+				Con_Reportf( S_NOTE "Got desktop display mode: %ix%i@%i\n", got.w, got.h, got.refresh_rate );
+		}
+		else
+		{
+			if( got.w != want.w || got.h != want.h )
+				Con_Reportf( S_NOTE "Got closest display mode: %ix%i@%i\n", got.w, got.h, got.refresh_rate );
+		}
 
 		if( SDL_SetWindowDisplayMode( host.hWnd, &got ) < 0 )
 		{
-			Con_Printf( S_ERROR "%s: SDL_SetWindowDisplayMode: %s", __func__, SDL_GetError( ));
+			Con_Printf( S_ERROR "%s: SDL_SetWindowDisplayMode: %s\n", __func__, SDL_GetError( ));
 			return false;
 		}
 
 		if( SDL_SetWindowFullscreen( host.hWnd, SDL_WINDOW_FULLSCREEN ) < 0 )
 		{
-			Con_Printf( S_ERROR "%s: SDL_SetWindowFullscreen (fullscreen): %s", __func__, SDL_GetError( ));
+			Con_Printf( S_ERROR "%s: SDL_SetWindowFullscreen (fullscreen): %s\n", __func__, SDL_GetError( ));
 			return false;
 		}
 	}
@@ -992,6 +938,7 @@ qboolean R_Init_Video( const int type )
 #else
 	int displayIndex = 0;
 #endif
+
 	SDL_GetCurrentDisplayMode( displayIndex, &displayMode );
 
 	refState.desktopBitsPixel = SDL_BITSPERPIXEL( displayMode.format );
@@ -1004,19 +951,18 @@ qboolean R_Init_Video( const int type )
 #endif
 
 	if( Sys_CheckParm( "-egl" ) )
+	{
+		// EGL doesn't mean we want GLES context
+		// so force it only on Windows, where GL is usually created via WGL
 #if XASH_WIN32
-		SDL_SetHint( "SDL_OPENGL_ES_DRIVER", "1" );
-#else
-		SDL_SetHint( "SDL_VIDEO_X11_FORCE_EGL", "1" );
+		SDL_SetHint( SDL_HINT_OPENGL_ES_DRIVER, "1" );
+#endif // XASH_WIN32
 
-	SDL_SetHint( "SDL_VIDEO_X11_XRANDR", "1" );
-	SDL_SetHint( "SDL_VIDEO_X11_XVIDMODE", "1" );
-#endif // !XASH_WIN32
+		SDL_SetHint( SDL_HINT_VIDEO_X11_FORCE_EGL, "1" );
+	}
 
-	// must be initialized before creating window
-#if XASH_WIN32
-	WIN_SetDPIAwareness();
-#endif
+	SDL_SetHint( SDL_HINT_VIDEO_X11_XRANDR, "1" );
+	SDL_SetHint( SDL_HINT_VIDEO_X11_XVIDMODE, "1" );
 
 	glw_state.context_type = type;
 	switch( type )
@@ -1103,7 +1049,7 @@ rserr_t R_ChangeDisplaySettings( int width, int height, window_mode_t window_mod
 
 		if( SDL_SetWindowFullscreen( host.hWnd, 0 ) < 0 )
 		{
-			Con_Printf( S_ERROR "SDL_SetWindowFullscreen: %s", SDL_GetError( ));
+			Con_Printf( S_ERROR "SDL_SetWindowFullscreen: %s\n", SDL_GetError( ));
 			return rserr_invalid_fullscreen;
 		}
 #if SDL_VERSION_ATLEAST( 2, 0, 5 )

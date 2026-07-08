@@ -48,6 +48,7 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "common/com_strings.h"
 #include "common/protocol.h"
+#include "library_suffix.h"
 
 #define FILE_COPY_SIZE		(1024 * 1024)
 #define SAVE_AGED_COUNT 2 // the default count of quick and auto saves
@@ -1465,7 +1466,7 @@ static qboolean FS_CheckForCrypt( const char *dllname )
 	FS_Read( f, &key, sizeof( key ));
 	FS_Close( f );
 
-	return ( key == 0x12345678 ) ? true : false;
+	return ( key == LittleLong( 0x12345678 )) ? true : false;
 }
 
 static int FS_StripIdiotRelativePath( const char *dllname, const char *gamefolder )
