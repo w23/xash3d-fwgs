@@ -1,6 +1,6 @@
 /*
-lightstyle.h - lighstyle description
-Copyright (C) 2011 Uncle Mike
+joy_sdl3 - SDL3 gamepads
+Copyright (C) 2018-2025 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -13,19 +13,30 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-#ifndef LIGHTSTYLE_H
-#define LIGHTSTYLE_H
+#include "platform_sdl3.h"
 
-#include "xash3d_types.h"
-
-typedef struct
+void Platform_Vibrate( float time, char flags )
 {
-	char		pattern[256];
-	float		map[256];
-	int		length;
-	float		value;
-	qboolean		interp;		// allow to interpolate this lightstyle
-	float		time;		// local time is gurantee what new style begins from the start, not mid or end of the sequence
-} lightstyle_t;
+	Platform_Vibrate2( time, -1, -1, flags );
+}
 
-#endif//LIGHTSTYLE_H
+void Platform_Vibrate2( float time, int val1, int val2, uint flags )
+{
+	// TODO
+}
+
+int Platform_JoyInit( void )
+{
+	// TODO
+	return 0;
+}
+
+void Platform_JoyShutdown( void )
+{
+	// TODO
+}
+
+void Platform_CalibrateGamepadGyro( void )
+{
+	// TODO
+}

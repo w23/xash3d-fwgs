@@ -13,18 +13,9 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-#include "common.h"
-#include "platform.h"
+#include "platform_sdl3.h"
 #include "sound.h"
 #include "voice.h"
-
-#include <SDL.h>
-#include <stdlib.h>
-
-#define SAMPLE_16BIT_SHIFT 1
-#define SECONDARY_BUFFER_SIZE 0x10000
-
-#define SDLash_IsAudioError( x ) (( x ) == 0)
 
 /*
 =======================================================================
@@ -32,16 +23,17 @@ Global variables. Must be visible to window-procedure function
 so it can unlock and free the data block after it has been played.
 =======================================================================
 */
-static int sdl_dev;
-static SDL_AudioDeviceID in_dev = 0;
-static SDL_AudioFormat sdl_format;
+static SDL_AudioStream *out_stream;
 static char sdl_backend_name[32];
 
-static void SDL_SoundCallback( void *userdata, Uint8 *stream, int len )
+static void SDLash_OutputCallback( void *userdata, SDL_AudioStream *stream, int additional_amount, int len )
 {
 	const int size = dma.samples << 1;
 	int pos;
 	int wrapped;
+
+	(void)userdata;
+	(void)additional_amount;
 
 	pos = dma.samplepos << 1;
 	if( pos >= size )
@@ -51,15 +43,15 @@ static void SDL_SoundCallback( void *userdata, Uint8 *stream, int len )
 
 	if( wrapped < 0 )
 	{
-		memcpy( stream, dma.buffer + pos, len );
+		SDL_PutAudioStreamData( stream, dma.buffer + pos, len );
 		dma.samplepos += len >> 1;
 	}
 	else
 	{
 		int remaining = size - pos;
 
-		memcpy( stream, dma.buffer + pos, remaining );
-		memcpy( stream + remaining, dma.buffer, wrapped );
+		SDL_PutAudioStreamData( stream, dma.buffer + pos, remaining );
+		SDL_PutAudioStreamData( stream, dma.buffer, wrapped );
 		dma.samplepos = wrapped >> 1;
 	}
 
@@ -77,10 +69,7 @@ Returns false if nothing is found.
 */
 qboolean SNDDMA_Init( void )
 {
-	SDL_AudioSpec desired, obtained;
-	int samplecount;
 	const char *driver = NULL;
-
 	// Modders often tend to use proprietary crappy solutions
 	// like FMOD to play music, sometimes even with versions outdated by a few decades!
 	//
@@ -103,75 +92,54 @@ qboolean SNDDMA_Init( void )
 	if( SDL_getenv( "SDL_AUDIODRIVER" ))
 		driver = NULL; // let SDL2 and user decide
 
-	SDL_SetHint( SDL_HINT_AUDIODRIVER, driver );
+	SDL_SetHint( SDL_HINT_AUDIO_DRIVER, driver );
 #endif // XASH_WIN32
 
-	// even if we don't have PA
-	// we still can safely set env variables
-	SDL_setenv( "PULSE_PROP_application.name", GI->title, 1 );
-	SDL_setenv( "PULSE_PROP_media.role", "game", 1 );
-
-	// reinitialize SDL with our driver just in case
 	if( SDL_WasInit( SDL_INIT_AUDIO ))
 		SDL_QuitSubSystem( SDL_INIT_AUDIO );
 
-	if( SDL_InitSubSystem( SDL_INIT_AUDIO ))
+	if( !SDL_InitSubSystem( SDL_INIT_AUDIO ))
 	{
-		Con_Reportf( S_ERROR "Audio: SDL: %s \n", SDL_GetError( ) );
+		Con_Reportf( S_ERROR "Audio: SDL: %s\n", SDL_GetError( ));
 		return false;
 	}
 
-	memset( &desired, 0, sizeof( desired ) );
-	desired.freq     = SOUND_DMA_SPEED;
-	desired.format   = AUDIO_S16LSB;
-	desired.samples  = 1024;
-	desired.channels = 2;
-	desired.callback = SDL_SoundCallback;
+	const SDL_AudioSpec spec = {
+		.freq = SOUND_DMA_SPEED,
+		.format = SDL_AUDIO_S16,
+		.channels = 2,
+	};
+	out_stream = SDL_OpenAudioDeviceStream(
+		SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+		&spec,
+		SDLash_OutputCallback,
+		NULL
+	);
 
-	sdl_dev = SDL_OpenAudioDevice( NULL, 0, &desired, &obtained, 0 );
-
-	if( SDLash_IsAudioError( sdl_dev ))
+	if( !out_stream )
 	{
-		Con_Printf( "Couldn't open SDL audio: %s\n", SDL_GetError( ) );
+		Con_PrintSDLError( "SDL_OpenAudioDeviceStream" );
 		return false;
 	}
 
-	if( obtained.format != AUDIO_S16LSB )
-	{
-		Con_Printf( "SDL audio format %d unsupported.\n", obtained.format );
-		goto fail;
-	}
-
-	if( obtained.channels != 1 && obtained.channels != 2 )
-	{
-		Con_Printf( "SDL audio channels %d unsupported.\n", obtained.channels );
-		goto fail;
-	}
-
-	dma.format.speed    = obtained.freq;
-	dma.format.channels = obtained.channels;
-	dma.format.width    = 2;
-	samplecount = s_samplecount.value;
+	dma.format.speed = SOUND_DMA_SPEED;
+	dma.format.channels = 2;
+	dma.format.width = 2;
+	int samplecount = s_samplecount.value;
 	if( !samplecount )
 		samplecount = 0x8000;
-	dma.samples         = samplecount * obtained.channels;
-	dma.buffer          = Mem_Calloc( sndpool, dma.samples * 2 );
-	dma.samplepos       = 0;
-
-	sdl_format = obtained.format;
-
-	Con_Printf( "Using SDL audio driver: %s @ %d Hz\n", SDL_GetCurrentAudioDriver( ), obtained.freq );
-	Q_snprintf( sdl_backend_name, sizeof( sdl_backend_name ), "SDL (%s)", SDL_GetCurrentAudioDriver( ));
+	dma.samples = samplecount * dma.format.channels;
+	dma.buffer = Mem_Calloc( sndpool, dma.samples * dma.format.width );
+	dma.samplepos = 0;
 	dma.initialized = true;
+	Q_snprintf( sdl_backend_name, sizeof( sdl_backend_name ), "SDL3 (%s)", SDL_GetCurrentAudioDriver( ));
 	dma.backendName = sdl_backend_name;
+
+	Con_Printf( "Using audio driver: %s @ %d Hz\n", sdl_backend_name, SOUND_DMA_SPEED );
 
 	SNDDMA_Activate( true );
 
 	return true;
-
-fail:
-	SNDDMA_Shutdown( );
-	return false;
 }
 
 
@@ -184,7 +152,7 @@ Makes sure dma.buffer is valid
 */
 void SNDDMA_BeginPainting( void )
 {
-	SDL_LockAudioDevice( sdl_dev );
+	SDL_LockAudioStream( out_stream );
 }
 
 /*
@@ -197,7 +165,7 @@ Also unlocks the dsound buffer
 */
 void SNDDMA_Submit( void )
 {
-	SDL_UnlockAudioDevice( sdl_dev );
+	SDL_UnlockAudioStream( out_stream );
 }
 
 /*
@@ -212,11 +180,11 @@ void SNDDMA_Shutdown( void )
 	Con_Printf( "Shutting down audio.\n" );
 	dma.initialized = false;
 
-	if( sdl_dev )
+	if( out_stream )
 	{
 		SNDDMA_Activate( false );
-
-		SDL_CloseAudioDevice( sdl_dev );
+		SDL_DestroyAudioStream( out_stream );
+		out_stream = NULL;
 	}
 
 	SDL_QuitSubSystem( SDL_INIT_AUDIO );
@@ -241,24 +209,10 @@ void SNDDMA_Activate( qboolean active )
 	if( !dma.initialized )
 		return;
 
-	SDL_PauseAudioDevice( sdl_dev, !active );
-}
-
-/*
-===========
-SDL_SoundInputCallback
-===========
-*/
-static void SDL_SoundInputCallback( void *userdata, Uint8 *stream, int len )
-{
-	int size = Q_min( len, sizeof( voice.input_buffer ) - voice.input_buffer_pos );
-
-	// engine can't keep up, skip audio
-	if( !size )
-		return;
-
-	memcpy( voice.input_buffer + voice.input_buffer_pos, stream, size );
-	voice.input_buffer_pos += size;
+	if( active )
+		SDL_ResumeAudioStreamDevice( out_stream );
+	else
+		SDL_PauseAudioStreamDevice( out_stream );
 }
 
 /*
@@ -268,30 +222,7 @@ VoiceCapture_Init
 */
 qboolean VoiceCapture_Init( void )
 {
-	SDL_AudioSpec wanted, spec;
-
-	if( !SDLash_IsAudioError( in_dev ))
-	{
-		VoiceCapture_Shutdown();
-	}
-
-	SDL_zero( wanted );
-	wanted.freq = voice.samplerate;
-	wanted.format = AUDIO_S16LSB;
-	wanted.channels = VOICE_PCM_CHANNELS;
-	wanted.samples = voice.frame_size;
-	wanted.callback = SDL_SoundInputCallback;
-
-	in_dev = SDL_OpenAudioDevice( NULL, SDL_TRUE, &wanted, &spec, 0 );
-
-	if( SDLash_IsAudioError( in_dev ))
-	{
-		Con_Printf( "%s: error creating capture device (%s)\n", __func__, SDL_GetError() );
-		return false;
-	}
-		
-	Con_Printf( S_NOTE "%s: capture device creation success (%i: %s)\n", __func__, in_dev, SDL_GetAudioDeviceName( in_dev, SDL_TRUE ) );
-	return true;
+	return false;
 }
 
 /*
@@ -301,11 +232,7 @@ VoiceCapture_Activate
 */
 qboolean VoiceCapture_Activate( qboolean activate )
 {
-	if( SDLash_IsAudioError( in_dev ))
-		return false;
-
-	SDL_PauseAudioDevice( in_dev, activate ? SDL_FALSE : SDL_TRUE );
-	return true;
+	return false;
 }
 
 /*
@@ -315,13 +242,7 @@ VoiceCapture_Lock
 */
 qboolean VoiceCapture_Lock( qboolean lock )
 {
-	if( SDLash_IsAudioError( in_dev ))
-		return false;
-
-	if( lock ) SDL_LockAudioDevice( in_dev );
-	else SDL_UnlockAudioDevice( in_dev );
-
-	return true;
+	return false;
 }
 
 /*
@@ -331,9 +252,4 @@ VoiceCapture_Shutdown
 */
 void VoiceCapture_Shutdown( void )
 {
-	if( SDLash_IsAudioError( in_dev ))
-		return;
-
-	SDL_CloseAudioDevice( in_dev );
-	in_dev = 0;
 }
