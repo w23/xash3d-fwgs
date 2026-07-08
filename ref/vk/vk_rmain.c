@@ -117,7 +117,7 @@ static void Mod_UnloadTextures( model_t *mod )
 	}
 }
 
-static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
+static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer, size_t buffersize )
 {
 	qboolean loaded = true;
 
