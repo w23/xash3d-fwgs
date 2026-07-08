@@ -302,15 +302,8 @@ def configure(conf):
 		# check if we're in a sgug environment
 		if 'sgug' in os.environ['LD_LIBRARYN32_PATH']:
 			linkflags.append('-lc')
-	elif conf.env.SAILFISH in ['aurora', 'sailfish']:
-		# TODO: enable XASH_MOBILE_PLATFORM
+	elif conf.env.SAILFISH:
 		conf.define('XASH_SAILFISH', 1)
-		if conf.env.SAILFISH == 'aurora':
-			conf.define('XASH_AURORAOS', 1)
-
-		# Do not warn us about bug in SDL_Audio headers
-		conf.env.append_unique('CFLAGS', ['-Wno-attributes'])
-		conf.env.append_unique('CXXFLAGS', ['-Wno-attributes'])
 
 	conf.check_cc(cflags=cflags, linkflags=linkflags, msg='Checking for required C flags')
 	conf.check_cxx(cxxflags=cxxflags, linkflags=linkflags, msg='Checking for required C++ flags')
@@ -319,7 +312,10 @@ def configure(conf):
 	conf.env.append_unique('CXXFLAGS', cxxflags)
 	conf.env.append_unique('LINKFLAGS', linkflags)
 
-	if conf.env.COMPILER_CC != 'msvc':
+	if conf.env.COMPILER_CC == 'msvc':
+		opt_cflags = ['/we4013'] # -Werror=implicit-function-declaration
+		conf.env.CFLAGS_werror = conf.filter_cflags(opt_cflags, cflags)
+	else:
 		opt_flags = [
 			# '-Wall', '-Wextra', '-Wpedantic',
 			'-fdiagnostics-color=always',
@@ -417,9 +413,7 @@ def configure(conf):
 
 	conf.define_cond('SUPPORT_HL25_EXTENDED_STRUCTS', conf.options.SUPPORT_HL25_EXTENDED_STRUCTS)
 
-	if conf.env.SAILFISH == 'aurora':
-		conf.env.DEFAULT_RPATH = '/usr/share/su.xash.Engine/lib'
-	elif conf.env.DEST_OS == 'darwin':
+	if conf.env.DEST_OS == 'darwin':
 		conf.env.DEFAULT_RPATH = '@loader_path'
 	elif conf.env.DEST_OS == 'openbsd':
 		# OpenBSD requires -z origin to enable $ORIGIN expansion in RPATH
@@ -495,9 +489,7 @@ def configure(conf):
 	# indicate if we are packaging for Linux/BSD
 	if conf.options.PACKAGING:
 		conf.env.PREFIX = conf.options.prefix
-		if conf.env.SAILFISH == "aurora":
-			conf.env.SHAREDIR = '${PREFIX}/share/su.xash.Engine/rodir'
-		elif conf.env.SAILFISH == "sailfish":
+		if conf.env.SAILFISH:
 			conf.env.SHAREDIR = '${PREFIX}/share/harbour-xash3d-fwgs/rodir'
 		else:
 			conf.env.SHAREDIR = '${PREFIX}/share/xash3d'

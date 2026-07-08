@@ -294,7 +294,7 @@ static screenfade_t *pfnRefGetScreenFade( void )
 static qboolean R_Init_Video_( const int type )
 {
 	host.apply_opengl_config = true;
-	Cbuf_AddTextf( "exec %s.cfg", ref.dllFuncs.R_GetConfigName());
+	Cbuf_AddTextf( "exec %s.cfg\n", ref.dllFuncs.R_GetConfigName());
 	Cbuf_Execute();
 	host.apply_opengl_config = false;
 
@@ -788,7 +788,7 @@ qboolean R_Init( void )
 	Cmd_AddCommand( "r_show_devices", R_GetRenderDevices_f, "print all available GPUs in the system" );
 
 	// cvars are created, execute video config
-	Cbuf_AddText( "exec video.cfg" );
+	Cbuf_AddText( "exec video.cfg\n" );
 	Cbuf_Execute();
 
 	// Set screen resolution and fullscreen mode if passed in on command line.
