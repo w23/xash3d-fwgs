@@ -76,10 +76,10 @@ static CVAR_DEFINE_AUTO( cl_upmax, "508", FCVAR_ARCHIVE, "max allowed incoming f
 
 CVAR_DEFINE_AUTO( cl_lw, "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
 CVAR_DEFINE_AUTO( cl_charset, "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
-CVAR_DEFINE_AUTO( cl_trace_consistency, "0", FCVAR_ARCHIVE, "enable consistency info tracing (good for developers)" );
-CVAR_DEFINE_AUTO( cl_trace_stufftext, "0", FCVAR_ARCHIVE, "enable stufftext (server-to-client console commands) tracing (good for developers)" );
-CVAR_DEFINE_AUTO( cl_trace_messages, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable message names tracing (good for developers)" );
-CVAR_DEFINE_AUTO( cl_trace_events, "0", FCVAR_ARCHIVE|FCVAR_CHEAT, "enable events tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_consistency, "0", 0, "enable consistency info tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_stufftext, "0", 0, "enable stufftext (server-to-client console commands) tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_messages, "0", FCVAR_CHEAT, "enable message names tracing (good for developers)" );
+CVAR_DEFINE_AUTO( cl_trace_events, "0", FCVAR_CHEAT, "enable events tracing (good for developers)" );
 static CVAR_DEFINE_AUTO( cl_nat, "0", 0, "show servers running under NAT" );
 CVAR_DEFINE_AUTO( hud_utf8, "0", FCVAR_ARCHIVE, "Use utf-8 encoding for hud text" );
 CVAR_DEFINE_AUTO( ui_renderworld, "0", FCVAR_ARCHIVE, "render world when UI is visible" );
@@ -172,6 +172,22 @@ int CL_IsDevOverviewMode( void )
 connprotocol_t CL_Protocol( void )
 {
 	return cls.legacymode;
+}
+
+void CL_SetCheatState( qboolean multiplayer, qboolean allow_cheats )
+{
+	if( NET_NetadrType( &cls.netchan.remote_address ) == NA_LOOPBACK )
+		return;
+
+	if( allow_cheats )
+	{
+		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
+	}
+	else
+	{
+		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
+		Cvar_SetCheatState();
+	}
 }
 
 /*
@@ -810,7 +826,7 @@ static void CL_WritePacket( void )
 		MSG_WriteByte( &buf, 0 );
 
 		if( proto == PROTO_GOLDSRC && voice_loopback.value )
-			SetBits( packet_loss, 7 ); // set 7-th bit to tell server that we want voice loopback
+			SetBits( packet_loss, BIT( 7 ) ); // set 7-th bit to tell server that we want voice loopback
 
 		MSG_WriteByte( &buf, packet_loss );
 		MSG_WriteByte( &buf, numbackup );
@@ -1072,13 +1088,9 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 	input_devices = IN_CollectInputDevices();
 	IN_LockInputDevices( adrtype != NA_LOOPBACK ? true : false );
 
-	// GoldSrc doesn't need sv_cheats set to 0, it's handled by svc_goldsrc_sendextrainfo
-	// it also doesn't need useragent string
+	// GoldSrc doesn't need useragent string
 	if( adrtype != NA_LOOPBACK && proto != PROTO_GOLDSRC )
 	{
-		Cvar_SetCheatState();
-		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
-
 		Info_SetValueForKeyf( protinfo, "d", sizeof( protinfo ),  "%d", input_devices );
 		Info_SetValueForKey( protinfo, "v", XASH_VERSION, sizeof( protinfo ) );
 		Info_SetValueForKeyf( protinfo, "b", sizeof( protinfo ), "%d", Q_buildnum( ));
@@ -1233,8 +1245,8 @@ static void CL_CheckForResend( void )
 	else if( cl_resend.value > CL_MAX_RESEND_TIME )
 		Cvar_DirectSetValue( &cl_resend, CL_MAX_RESEND_TIME );
 
-	bandwidthTest = cls.legacymode == PROTO_CURRENT && cl_test_bandwidth.value && cls.connect_retry <= CL_TEST_RETRIES;
-	resendTime = bandwidthTest ? 1.0f : cl_resend.value;
+	bandwidthTest = cls.legacymode == PROTO_CURRENT && cl_test_bandwidth.value && cls.connect_retry <= CL_TEST_RETRIES && !cls.passed_bandwidth_test;
+	resendTime = bandwidthTest ? 2.0f : cl_resend.value;
 
 	if(( host.realtime - cls.connect_time ) < resendTime )
 		return;
@@ -1267,12 +1279,8 @@ static void CL_CheckForResend( void )
 	{
 		// too many fails use default connection method
 		Con_Printf( "Bandwidth test failed, fallback to default connecting method\n" );
-		Con_Printf( "Connecting to %s... (retry #%i)\n", cls.servername, cls.connect_retry + 1 );
-		CL_SendGetChallenge( adr );
 		Cvar_DirectSetValue( &cl_dlmax, FRAGMENT_MIN_SIZE );
-		cls.connect_time = host.realtime;
-		cls.connect_retry++;
-		return;
+		bandwidthTest = false;
 	}
 
 	cls.serveradr = adr;
@@ -1417,6 +1425,7 @@ static void CL_Connect_f( void )
 	cls.connect_time = MAX_HEARTBEAT; // CL_CheckForResend() will fire immediately
 	cls.max_fragment_size = FRAGMENT_MAX_SIZE; // guess a we can establish connection with maximum fragment size
 	cls.connect_retry = 0;
+	cls.passed_bandwidth_test = false;
 	cls.spectator = false;
 	cls.signon = 0;
 }
@@ -1677,6 +1686,7 @@ void CL_Disconnect( void )
 	memset( &cls.serveradr, 0, sizeof( cls.serveradr ) );
 	cls.set_lastdemo = false;
 	cls.connect_retry = 0;
+	cls.passed_bandwidth_test = false;
 	cls.signon = 0;
 	cls.legacymode = PROTO_CURRENT;
 
@@ -2287,14 +2297,11 @@ static void CL_HandleTestPacket( netadr_t from, sizebuf_t *msg )
 		{
 			// too many fails use default connection method
 			Con_Printf( "hi-speed connection is failed, use default method\n" );
-			CL_SendGetChallenge( from );
 			Cvar_SetValue( "cl_dlmax", FRAGMENT_DEFAULT_SIZE );
-			cls.connect_time = host.realtime;
+			cls.connect_time = MAX_HEARTBEAT;
 			return;
 		}
 
-		// if we waiting more than cl_timeout or packet was trashed
-		cls.connect_time = MAX_HEARTBEAT;
 		return; // just wait for a next responce
 	}
 
@@ -2306,12 +2313,11 @@ static void CL_HandleTestPacket( netadr_t from, sizebuf_t *msg )
 
 	if( crcValue == crcValue2 )
 	{
-		// packet was sucessfully delivered, adjust the fragment size and get challenge
-
+		// packet was sucessfully delivered, adjust the fragment size
 		Con_DPrintf( "CRC %x is matched, get challenge, fragment size %d\n", crcValue, cls.max_fragment_size );
-		CL_SendGetChallenge( from );
 		Cvar_SetValue( "cl_dlmax", cls.max_fragment_size );
-		cls.connect_time = host.realtime;
+		cls.connect_time = MAX_HEARTBEAT;
+		cls.passed_bandwidth_test = true;
 	}
 	else
 	{
@@ -2319,16 +2325,12 @@ static void CL_HandleTestPacket( netadr_t from, sizebuf_t *msg )
 		{
 			// too many fails use default connection method
 			Con_Printf( "hi-speed connection is failed, use default method\n" );
-			CL_SendGetChallenge( from );
 			Cvar_SetValue( "cl_dlmax", FRAGMENT_MIN_SIZE );
 			cls.connect_time = host.realtime;
 			return;
 		}
 
 		Msg( "got testpacket, CRC mismatched 0x%08x should be 0x%08x, trying next fragment size %d\n", crcValue2, crcValue, cls.max_fragment_size >> 1 );
-
-		// trying the next size of packet
-		cls.connect_time = MAX_HEARTBEAT;
 	}
 }
 
@@ -2348,16 +2350,24 @@ static void CL_ClientConnect( connprotocol_t proto, const char *c, netadr_t from
 		if( Q_strcmp( c, S2C_GOLDSRC_CONNECTION ))
 		{
 			Con_DPrintf( S_ERROR "GoldSrc client connect expected but wasn't received, ignored\n");
+			CL_Disconnect_f();
 			return;
 		}
 
-		if( Cmd_Argc() > 4 )
-			cls.build_num = Q_atoi( Cmd_Argv( 4 ));
+		cls.build_num = Q_atoi( Cmd_Argv( 4 ));
+		cls.allow_cheats = false; // set by svc_goldsrc_sendextrainfo
 	}
-	else if( !Q_strcmp( c, S2C_GOLDSRC_CONNECTION ))
+	else
 	{
-		Con_DPrintf( S_ERROR "GoldSrc client connect received but wasn't expected, ignored\n");
-		return;
+		if( Q_strcmp( c, S2C_CONNECTION ))
+		{
+			Con_DPrintf( S_ERROR "Xash3D client connect expected but wasn't received, ignored\n");
+			CL_Disconnect_f();
+			return;
+		}
+
+		cls.build_num = 0; // not used in Xash3D protocols
+		cls.allow_cheats = Q_atoi( Info_ValueForKey( Cmd_Argv( 1 ), "cheats" ));
 	}
 
 	CL_Reconnect( true );
@@ -2763,11 +2773,7 @@ static void CL_ReadPackets( void )
 	CL_ReadNetMessage();
 
 	CL_ApplyAddAngle();
-#if 0
-	// keep cheat cvars are unchanged
-	if( cl.maxclients > 1 && cls.state == ca_active && !host_developer.value )
-		Cvar_SetCheatState();
-#endif
+
 	// hot precache and downloading resources
 	if( cls.signon == SIGNONS && cl.lastresourcecheck < host.realtime )
 	{

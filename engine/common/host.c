@@ -39,8 +39,6 @@ GNU General Public License for more details.
 
 static pfnChangeGame	pChangeGame = NULL;
 host_parm_t		host;	// host parms
-
-#if XASH_ANDROID
 static jmp_buf return_from_main_buf;
 
 /*
@@ -59,7 +57,6 @@ void Host_ExitInMain( void )
 {
 	longjmp( return_from_main_buf, 1 );
 }
-#endif // XASH_ANDROID
 
 #ifdef XASH_ENGINE_TESTS
 struct tests_stats_s tests_stats;
@@ -186,10 +183,8 @@ static void Sys_PrintUsage( const char *exename )
 	O("-windowed          ", "run engine in windowed mode")
 	O("-ref <name>        ", "use selected renderer dll")
 	O("-gldebug           ", "enable OpenGL debug log")
-#if XASH_WIN32
 	O("-noavi             ", "disable AVI support")
 	O("-nointro           ", "disable intro video")
-#endif
 	O("-noenginejoy       ", "disable engine builtin joystick support")
 	O("-noenginemouse     ", "disable engine builtin mouse support")
 	O("-nosound           ", "disable sound output")
@@ -203,12 +198,9 @@ static void Sys_PrintUsage( const char *exename )
 #if XASH_SDL == 2
 	O("-sdl_renderer <n>  ","use alternative SDL_Renderer for software")
 #endif // XASH_SDL
-#if XASH_ANDROID && !XASH_SDL
-	O("-nativeegl         ","use native egl implementation. Use if screen does not update or black")
-#endif // XASH_ANDROID
-#if XASH_DOS
+#if XASH_VIDEO == VIDEO_DOS
 	O("-novesa            ","disable vesa")
-#endif // XASH_DOS
+#endif // XASH_VIDEO == VIDEO_DOS
 #if XASH_VIDEO == VIDEO_FBDEV
 	O("-fbdev <path>      ","open selected framebuffer")
 	O("-ttygfx            ","set graphics mode in tty")
@@ -1035,13 +1027,6 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 			Sys_PrintBugcompUsage( exename );
 	}
 
-	if( !Sys_CheckParm( "-noch" ))
-		Sys_SetupCrashHandler( argv[0] );
-
-#if XASH_DLL_LOADER
-	host.enabledll = !Sys_CheckParm( "-nodll" );
-#endif
-
 	host.change_game = bChangeGame || Sys_CheckParm( "-changegame" );
 	host.config_executed = false;
 	host.status = HOST_INIT; // initialzation started
@@ -1113,7 +1098,11 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 		Cvar_SetValue( "sys_ticrate", fps );
 	}
 
+	Sys_InitLog();
 	Con_Init(); // early console running to catch all the messages
+
+	if( !Sys_CheckParm( "-noch" ))
+		Sys_SetupCrashHandler( argv[0] );
 
 #if XASH_ENGINE_TESTS
 	if( Sys_CheckParm( "-runtests" ))
@@ -1125,8 +1114,6 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 #endif
 	Platform_Init( Host_IsDedicated( ) || developer >= DEV_EXTENDED, basedir );
 	FS_Init( basedir );
-
-	Sys_InitLog();
 
 	// print current developer level to simplify processing users feedback
 	if( developer > 0 )
@@ -1351,18 +1338,16 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	// check after all configs were executed
 	HPAK_CheckIntegrity( hpk_custom_file.string );
 
-#if XASH_ANDROID
 	if( setjmp( return_from_main_buf ))
 		return error_on_exit;
-#endif // XASH_ANDROID
 
-#if !XASH_EMSCRIPTEN
 	// main window message loop
 	while( host.status != HOST_CRASHED )
-		Host_MainLoop( &oldtime );
-#else // XASH_EMSCRIPTEN
-	emscripten_set_main_loop_arg( Host_MainLoop, &oldtime, 0, false );
-#endif // XASH_EMSCRIPTEN
+	{
+		double newtime = Sys_DoubleTime();
+		COM_Frame( newtime - oldtime );
+		oldtime = newtime;
+	}
 
 	return 0;
 }

@@ -19,22 +19,6 @@ GNU General Public License for more details.
 #include "net_encode.h"
 #include "net_api.h"
 
-const char *const clc_strings[clc_lastmsg+1] =
-{
-	"clc_bad",
-	"clc_nop",
-	"clc_move",
-	"clc_stringcmd",
-	"clc_delta",
-	"clc_resourcelist",
-	"clc_legacy_userinfo",
-	"clc_fileconsistency",
-	"clc_voicedata",
-	"clc_cvarvalue/clc_goldsrc_hltv",
-	"clc_cvarvalue2/clc_goldsrc_requestcvarvalue",
-	"clc_goldsrc_requestcvarvalue2",
-};
-
 typedef struct ucmd_s
 {
 	const char	*name;
@@ -452,6 +436,7 @@ static void SV_ConnectClient( netadr_t from )
 	// build protinfo answer
 	protinfo[0] = '\0';
 	Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", newcl->extensions );
+	Info_SetValueForKey( protinfo, "cheats", sv_cheats.value ? "1" : "0", sizeof( protinfo ));
 
 	// send the connect packet to the client
 	Netchan_OutOfBandPrint( NS_SERVER, from, S2C_CONNECTION" %s", protinfo );

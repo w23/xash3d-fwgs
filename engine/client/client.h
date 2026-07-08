@@ -550,6 +550,7 @@ typedef struct
 	double		connect_time;		// for connection retransmits
 	int		max_fragment_size;		// we needs to test a real network bandwidth
 	int		connect_retry;		// how many times we send a connect packet to the server
+	qboolean		passed_bandwidth_test; // if testpacket matched CRC, stop test and send challenge
 	qboolean		spectator;		// not a real player, just spectator
 
 	local_state_t	spectator_state;		// init as client startup
@@ -639,6 +640,10 @@ typedef struct
 	// server's build number (might be zero)
 	int build_num;
 	uint8_t steamid[8];
+
+	// whether server allows cheats or not
+	// set differently depending on protocol and extensions
+	qboolean allow_cheats;
 } client_static_t;
 
 #ifdef __cplusplus
@@ -762,6 +767,7 @@ void CL_UpdateFrameLerp( void );
 int CL_IsDevOverviewMode( void );
 void CL_SignonReply( connprotocol_t proto );
 void CL_ClearState( void );
+void CL_SetCheatState( qboolean multiplayer, qboolean allow_cheats );
 
 //
 // cl_demo.c
