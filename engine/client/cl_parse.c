@@ -1003,6 +1003,10 @@ void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 	}
 	else Cvar_DirectSet( &r_decals, NULL );
 
+	// for GoldSrc, it's handled by svc_goldsrc_sendextrainfo
+	if( proto != PROTO_GOLDSRC )
+		CL_SetCheatState( cl.maxclients > 1, cls.allow_cheats );
+
 	// set the background state
 	if( cls.demoplayback && ( cls.demonum != -1 ))
 		cl.background = true;
@@ -2596,6 +2600,7 @@ void CL_ParseServerMessage( sizebuf_t *msg )
 				else cls.state = ca_connecting;
 				cl.background = old_background;
 				cls.connect_time = MAX_HEARTBEAT;
+				cls.passed_bandwidth_test = false;
 				cls.connect_retry = 0;
 			}
 			break;

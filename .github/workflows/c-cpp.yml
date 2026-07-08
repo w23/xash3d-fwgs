@@ -84,7 +84,7 @@ jobs:
 #            targetos: apple
 #            targetarch: amd64
     env:
-      SDL_VERSION: 2.32.8
+      SDL_VERSION: 2.32.10
       FFMPEG_VERSION: 7.1
       VULKAN_SDK_VERSION: 1.4.321.1
       GH_CPU_ARCH: ${{ matrix.targetarch }}
@@ -121,7 +121,7 @@ jobs:
         include:
           - app: su.xash.Engine.Compat.i386
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
       options: --privileged
     steps:
     - name: Checkout
@@ -140,31 +140,10 @@ jobs:
     needs: [build, flatpak]
     if: ${{ github.event_name == 'push' }}
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
     - name: Remove old release, fetch artifacts, repackage binaries and upload new release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        RELEASE_TAG: ${{ github.ref_name == 'master' && 'continuous' || format('continuous-{0}', github.ref_name) }}
-      run: |
-        gh release delete "$RELEASE_TAG" \
-          --yes \
-          --cleanup-tag \
-          --repo "$GITHUB_REPOSITORY" || true
-        gh run download "$GITHUB_RUN_ID" \
-          --dir artifacts/ \
-          --repo "$GITHUB_REPOSITORY"
-        pushd artifacts/
-        echo "Found artifacts:"
-        ls
-        for i in $(find -mindepth 1 -maxdepth 1 -type d); do
-          mv "$i"/* .
-          rm -rf "$i"
-        done
-        echo "Repackaged artifacts:"
-        ls -R
-        popd
-        sleep 20s
-        gh release create "$RELEASE_TAG" artifacts/* \
-          --title "Xash3D FWGS Continuous ${{ github.ref_name }} Build" \
-          --target $GITHUB_SHA \
-          --repo "$GITHUB_REPOSITORY" \
-          --prerelease
+        BASE_BUILDNUM_DATE: "2015-04-01"
+      run: bash scripts/gha/make_release.sh "Xash3D FWGS" "${{ github.ref_name }}"
