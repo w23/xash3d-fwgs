@@ -75,14 +75,15 @@ jobs:
           - os: windows-2022 # always use the oldest possible for 32-bit because of older compilers, and better support of certain legacy OSes
             targetos: win32
             targetarch: i386
-
-# FIXME Vulkan doesn't care about these for now
-#          - os: macos-14 # arm64 as per github documentation
-#            targetos: apple
-#            targetarch: arm64
-#          - os: macos-13 # x86 as per github documentation (will they fix it before they deprecate this version?..)
-#            targetos: apple
-#            targetarch: amd64
+          - os: macos-14 # arm64 as per github documentation
+            targetos: apple
+            targetarch: arm64
+          - os: macos-latest
+            targetos: ios
+            targetarch: arm64
+          - os: macos-13 # x86 as per github documentation (will they fix it before they deprecate this version?..)
+            targetos: apple
+            targetarch: amd64
     env:
       SDL_VERSION: 2.32.10
       FFMPEG_VERSION: 7.1
