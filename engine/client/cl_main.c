@@ -175,16 +175,23 @@ connprotocol_t CL_Protocol( void )
 
 void CL_SetCheatState( qboolean multiplayer, qboolean allow_cheats )
 {
+	uint flags;
+
 	if( NET_NetadrType( &cls.netchan.remote_address ) == NA_LOOPBACK )
 		return;
 
+	if( cls.demoplayback )
+		flags = FCVAR_SERVER;
+	else
+		flags = FCVAR_SERVER | FCVAR_READ_ONLY;
+
 	if( allow_cheats )
 	{
-		Cvar_FullSet( "sv_cheats", "1", FCVAR_READ_ONLY | FCVAR_SERVER );
+		Cvar_FullSet( "sv_cheats", "1", flags );
 	}
 	else
 	{
-		Cvar_FullSet( "sv_cheats", "0", FCVAR_READ_ONLY | FCVAR_SERVER );
+		Cvar_FullSet( "sv_cheats", "0", flags );
 		Cvar_SetCheatState();
 	}
 }
@@ -223,7 +230,7 @@ static void CL_CheckClientState( void )
 			CL_ServerCommand(true, "specmode 4\n");
 		}
 
-		Con_DPrintf( "client connected at %.2f sec\n", Sys_DoubleTime() - cls.timestart );
+		Con_DPrintf( "client connected at %.2f sec\n", Platform_DoubleTime() - cls.timestart );
 	}
 }
 
@@ -1157,7 +1164,7 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 		Con_Printf( "Trying to connect with modern protocol\n" );
 	}
 
-	cls.timestart = Sys_DoubleTime();
+	cls.timestart = Platform_DoubleTime();
 }
 
 /*
@@ -1855,6 +1862,45 @@ static void CL_Reconnect_f( void )
 
 		Con_Printf( "reconnecting...\n" );
 	}
+}
+
+/*
+=================
+CL_Retry_f
+
+retry connection to last server
+=================
+*/
+static void CL_Retry_f( void )
+{
+	if( !COM_CheckString( cls.servername ))
+	{
+		Con_Printf( "Can't retry, no previous connection.\n" );
+		return;
+	}
+
+	// can't retry when running a server
+	if( SV_Active( ))
+	{
+		Con_Printf( "Can't retry when running a server.\n" );
+		return;
+	}
+
+	NET_Config( true, !cl_nat.value ); // allow remote
+
+	Con_Printf( "Commencing connection retry to %s\n", cls.servername );
+	CL_Disconnect();
+
+	UI_SetActiveMenu( false );
+	Key_SetKeyDest( key_console );
+
+	cls.state = ca_connecting;
+	cls.connect_time = MAX_HEARTBEAT; // CL_CheckForResend() will fire immediately
+	cls.max_fragment_size = FRAGMENT_MAX_SIZE;
+	cls.connect_retry = 0;
+	memset( &cls.bandwidth_test, 0, sizeof( cls.bandwidth_test ));
+	cls.spectator = false;
+	cls.signon = 0;
 }
 
 /*
@@ -2740,7 +2786,7 @@ static void CL_ReadPackets( void )
 		return;
 
 	// if in the debugger last frame, don't timeout
-	if( host.frametime > 5.0f ) cls.netchan.last_received = Sys_DoubleTime();
+	if( host.frametime > 5.0f ) cls.netchan.last_received = Platform_DoubleTime();
 
 	// check timeout
 	if( cls.state >= ca_connected && cls.state != ca_cinematic && !cls.demoplayback )
@@ -3427,6 +3473,7 @@ static void CL_InitLocal( void )
 
 	Cmd_AddCommand ("connect", CL_Connect_f, "connect to a server by hostname" );
 	Cmd_AddCommand ("reconnect", CL_Reconnect_f, "reconnect to current level" );
+	Cmd_AddCommand ("retry", CL_Retry_f, "retry connection to last server" );
 
 	Cmd_AddCommand ("rcon", CL_Rcon_f, "sends a command to the server console (rcon_password and rcon_address required)" );
 

@@ -66,6 +66,9 @@ CVAR_DEFINE( host_developer, "developer", "0", FCVAR_FILTERABLE, "engine is in d
 CVAR_DEFINE_AUTO( sys_timescale, "1.0", FCVAR_FILTERABLE, "scale frame time" );
 
 static CVAR_DEFINE_AUTO( sys_ticrate, "100", FCVAR_SERVER, "framerate in dedicated mode" );
+static CVAR_DEFINE_AUTO( sv_hibernate_when_empty, "1", 0, "lower CPU usage when server has no players" );
+static CVAR_DEFINE_AUTO( sv_hibernate_when_empty_sleep, "500", 0, "sleeptime value when sv_hibernate_when_empty is active" );
+static CVAR_DEFINE_AUTO( sv_hibernate_when_empty_include_bots, "0", 0, "count bots as online players when sv_hibernate_when_empty is active" );
 static CVAR_DEFINE_AUTO( host_serverstate, "0", FCVAR_READ_ONLY, "displays current server state" );
 static CVAR_DEFINE_AUTO( host_gameloaded, "0", FCVAR_READ_ONLY, "inidcates a loaded game.dll" );
 static CVAR_DEFINE_AUTO( host_clientloaded, "0", FCVAR_READ_ONLY, "inidcates a loaded client.dll" );
@@ -107,17 +110,17 @@ static const feature_message_t engine_features[] =
 { ENGINE_STEP_POSHISTORY_LERP, "MOVETYPE_STEP Position History Based Lerping" },
 };
 
-static void Sys_MakeVersionString( char *out, size_t len )
+static void Host_MakeVersionString( char *out, size_t len )
 {
 	Q_snprintf( out, len, XASH_ENGINE_NAME " %i/" XASH_VERSION " (%s-%s build %i)", PROTOCOL_VERSION, Q_buildos(), Q_buildarch(), Q_buildnum( ));
 }
 
-static void Sys_PrintUsage( const char *exename )
+static void Host_PrintUsage( const char *exename )
 {
 	string version_str;
 	const char *usage_str;
 
-	Sys_MakeVersionString( version_str, sizeof( version_str ));
+	Host_MakeVersionString( version_str, sizeof( version_str ));
 
 #if XASH_MESSAGEBOX != MSGBOX_STDERR
 	#if XASH_WIN32
@@ -224,14 +227,14 @@ static void Sys_PrintUsage( const char *exename )
 	Sys_Quit( NULL );
 }
 
-static void Sys_PrintBugcompUsage( const char *exename )
+static void Host_PrintBugcompUsage( const char *exename )
 {
 	string version_str;
 	char usage_str[4096];
 	char *p = usage_str;
 	int i;
 
-	Sys_MakeVersionString( version_str, sizeof( version_str ));
+	Host_MakeVersionString( version_str, sizeof( version_str ));
 
 	p += Q_snprintf( p, sizeof( usage_str ) - ( usage_str - p ), "Known bugcomp flags are:\n" );
 	for( i = 0; i < ARRAYSIZE( bugcomp_features ); i++ )
@@ -352,6 +355,19 @@ static int Host_CalcSleep( void )
 {
 	if( Host_IsDedicated( ))
 	{
+		if( sv_hibernate_when_empty.value )
+		{
+			int players, bots;
+
+			SV_GetPlayerCount( &players, &bots );
+
+			if( sv_hibernate_when_empty_include_bots.value )
+				players += bots;
+
+			if( players == 0 )
+				return sv_hibernate_when_empty_sleep.value;
+		}
+
 		// let the dedicated server some sleep
 		return host_sleeptime.value;
 	}
@@ -656,10 +672,9 @@ static double Host_CalcFPS( void )
 
 static qboolean Host_Autosleep( double dt, double scale )
 {
-	double targetframetime, fps;
+	double targetframetime;
 	int sleep;
-
-	fps = Host_CalcFPS();
+	double fps = Host_CalcFPS();
 
 	if( fps <= 0 )
 		return true;
@@ -669,10 +684,11 @@ static qboolean Host_Autosleep( double dt, double scale )
 
 	if( Host_IsDedicated( ))
 		targetframetime = ( 1.0 / ( fps + 1.0 ));
-	else targetframetime = ( 1.0 / fps );
+	else
+		targetframetime = ( 1.0 / fps );
 
 	sleep = Host_CalcSleep();
-	if( sleep == 0 ) // no sleeps between frames, much simpler code
+	if( sleep <= 0 ) // no sleeps between frames, much simpler code
 	{
 		if( dt < targetframetime * scale )
 			return false;
@@ -691,18 +707,18 @@ static qboolean Host_Autosleep( double dt, double scale )
 			{
 				// Platform_Sleep isn't guaranteed to sleep an exact amount of microseconds
 				// so we measure the real sleep time and use it to decrease the window
-				double t1 = Sys_DoubleTime(), t2;
-				Platform_NanoSleep( sleep * 1000 ); // in usec!
-				t2 = Sys_DoubleTime();
-				realsleeptime = t2 - t1;
+				double t = Platform_DoubleTime();
 
+				Platform_NanoSleep( sleep * 1000 * 100 ); // sleeptime 1 ~ 100 usecs
+
+				realsleeptime = Platform_DoubleTime() - t;
 				timewindow -= realsleeptime;
 
 				if( host_sleeptime_debug.value )
 				{
 					counter++;
 
-					Con_NPrintf( counter, "%d: %.4f %.4f", counter, timewindow, realsleeptime );
+					Con_NPrintf( counter, "%d: %.6f %.6f", counter, timewindow, realsleeptime );
 				}
 			}
 
@@ -716,7 +732,8 @@ static qboolean Host_Autosleep( double dt, double scale )
 
 			if( targetsleeptime > 0 )
 				timewindow = targetsleeptime;
-			else timewindow = 0;
+			else
+				timewindow = 0;
 
 			realsleeptime = sleeptime; // reset in case CPU was too busy
 
@@ -777,7 +794,7 @@ void Host_Frame( double time )
 	if( !Host_FilterTime( time ))
 		return;
 
-	t1 = Sys_DoubleTime();
+	t1 = Platform_DoubleTime();
 
 	if( host.framecount == 0 )
 		Con_DPrintf( "Time to first frame: %.3f seconds\n", t1 - host.starttime );
@@ -790,7 +807,7 @@ void Host_Frame( double time )
 	HTTP_Run();			 // both server and client
 
 	host.framecount++;
-	host.pureframetime = Sys_DoubleTime() - t1;
+	host.pureframetime = Platform_DoubleTime() - t1;
 }
 
 /*
@@ -1021,10 +1038,10 @@ static void Host_InitCommon( int argc, char **argv, const char *progname, qboole
 		string arg;
 
 		if( Sys_CheckParm( "-help" ) || Sys_CheckParm( "-h" ) || Sys_CheckParm( "--help" ))
-			Sys_PrintUsage( exename );
+			Host_PrintUsage( exename );
 
 		if( Sys_GetParmFromCmdLine( "-bugcomp", arg ) && !Q_stricmp( arg, "help" ))
-			Sys_PrintBugcompUsage( exename );
+			Host_PrintBugcompUsage( exename );
 	}
 
 	host.change_game = bChangeGame || Sys_CheckParm( "-changegame" );
@@ -1187,7 +1204,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	if( setjmp( return_from_main_buf ))
 		return error_on_exit;
 
-	host.starttime = Sys_DoubleTime();
+	host.starttime = Platform_DoubleTime();
 
 	pChangeGame = func;	// may be NULL
 
@@ -1213,6 +1230,9 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	Cvar_RegisterVariable( &host_limitlocal );
 	Cvar_RegisterVariable( &con_gamemaps );
 	Cvar_RegisterVariable( &sys_timescale );
+	Cvar_RegisterVariable( &sv_hibernate_when_empty );
+	Cvar_RegisterVariable( &sv_hibernate_when_empty_include_bots );
+	Cvar_RegisterVariable( &sv_hibernate_when_empty_sleep );
 
 	Cvar_Getf( "buildnum", FCVAR_READ_ONLY, "returns a current build number", "%i", Q_buildnum_compat());
 	Cvar_Getf( "ver", FCVAR_READ_ONLY, "shows an engine version", "%i/%s (hw build %i)", PROTOCOL_VERSION, XASH_COMPAT_VERSION, Q_buildnum_compat());
@@ -1306,7 +1326,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	if( Sys_GetParmFromCmdLine( "-timedemo", demoname ))
 		Cbuf_AddTextf( "timedemo %s\n", demoname );
 
-	oldtime = Sys_DoubleTime() - 0.1;
+	oldtime = Platform_DoubleTime() - 0.1;
 
 	if( Host_IsDedicated( ))
 	{
@@ -1333,7 +1353,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	// main window message loop
 	while( host.status != HOST_CRASHED )
 	{
-		double newtime = Sys_DoubleTime();
+		double newtime = Platform_DoubleTime();
 		COM_Frame( newtime - oldtime );
 		oldtime = newtime;
 	}
