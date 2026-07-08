@@ -38,15 +38,13 @@ SV_GetPlayerCount
 */
 void SV_GetPlayerCount( int *players, int *bots )
 {
-	int i;
-
 	*players = 0;
 	*bots = 0;
 
 	if( !svs.clients )
 		return;
 
-	for( i = 0; i < svs.maxclients; i++ )
+	for( int i = 0; i < svs.maxclients; i++ )
 	{
 		if( svs.clients[i].state >= cs_connected )
 		{
@@ -55,7 +53,6 @@ void SV_GetPlayerCount( int *players, int *bots )
 			else
 				(*players)++;
 		}
-
 	}
 }
 
@@ -443,7 +440,7 @@ static void SV_ConnectClient( netadr_t from )
 
 	newcl->upstate = us_inactive;
 	newcl->connection_started = host.realtime;
-	newcl->cl_updaterate = 0.05;	// 20 fps as default
+	newcl->next_messageinterval = 0.05; // 20 fps as default
 	newcl->delta_sequence = -1;
 
 	// parse some info from the info strings (this can override cl_updaterate)
@@ -451,7 +448,7 @@ static void SV_ConnectClient( netadr_t from )
 
 	SV_UserinfoChanged( newcl );
 
-	newcl->next_messagetime = host.realtime + newcl->cl_updaterate;
+	newcl->next_messagetime = host.realtime + sv.frametime + newcl->next_messageinterval;
 
 	// reset stats
 	newcl->next_checkpingtime = -1.0;
@@ -612,8 +609,8 @@ void SV_DropClient( sv_client_t *cl, qboolean crash )
 	Netchan_Clear( &cl->netchan );
 
 	// clean client data on disconnect
-	memset( cl->userinfo, 0, MAX_INFO_STRING );
-	memset( cl->physinfo, 0, MAX_INFO_STRING );
+	memset( cl->userinfo, 0, sizeof( cl->userinfo ));
+	memset( cl->physinfo, 0, sizeof( cl->physinfo ));
 	COM_ClearCustomizationList( &cl->customdata, false );
 
 	// don't send to other clients
@@ -1774,6 +1771,40 @@ static qboolean SV_ShouldUpdateUserinfo( sv_client_t *cl )
 	return allow;
 }
 
+static double SV_CheckUpdateRate( double rate )
+{
+	if( sv_maxupdaterate.value )
+	{
+		if( rate < 1.0f / sv_maxupdaterate.value )
+			return 1.0f / sv_maxupdaterate.value;
+	}
+
+	if( sv_minupdaterate.value )
+	{
+		if( rate > 1.0f / sv_minupdaterate.value )
+			return 1.0f / sv_minupdaterate.value;
+	}
+
+	return rate;
+}
+
+static double SV_CheckRate( double rate )
+{
+	if( sv_maxrate.value )
+	{
+		if( rate > sv_maxrate.value )
+			return rate;
+	}
+
+	if( sv_minrate.value )
+	{
+		if( rate < sv_minrate.value )
+			return rate;
+	}
+
+	return rate;
+}
+
 /*
 =================
 SV_UserinfoChanged
@@ -1789,6 +1820,7 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 	string		name1, name2;
 	sv_client_t	*current;
 	const char		*val;
+	int ival;
 
 	if( !COM_CheckString( cl->userinfo ))
 		return;
@@ -1805,18 +1837,18 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 
 	if( !Q_stricmp( name1, "console" ))
 	{
-		Info_SetValueForKey( cl->userinfo, "name", "unnamed", MAX_INFO_STRING );
+		Info_SetValueForKey( cl->userinfo, "name", "unnamed", sizeof( cl->userinfo ));
 		val = Info_ValueForKey( cl->userinfo, "name" );
 	}
 	else if( Q_strcmp( name1, val ))
 	{
-		Info_SetValueForKey( cl->userinfo, "name", name1, MAX_INFO_STRING );
+		Info_SetValueForKey( cl->userinfo, "name", name1, sizeof( cl->userinfo ));
 		val = Info_ValueForKey( cl->userinfo, "name" );
 	}
 
-	if( !COM_CheckStringEmpty( name1 ) )
+	if( !COM_CheckStringEmpty( name1 ))
 	{
-		Info_SetValueForKey( cl->userinfo, "name", "unnamed", MAX_INFO_STRING );
+		Info_SetValueForKey( cl->userinfo, "name", "unnamed", sizeof( cl->userinfo ));
 		val = Info_ValueForKey( cl->userinfo, "name" );
 		Q_strncpy( name2, "unnamed", sizeof( name2 ));
 		Q_strncpy( name1, "unnamed", sizeof( name1 ));
@@ -1838,7 +1870,7 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 		{
 			// dup name
 			Q_snprintf( name2, sizeof( name2 ), "%s (%u)", name1, dupc++ );
-			Info_SetValueForKey( cl->userinfo, "name", name2, MAX_INFO_STRING );
+			Info_SetValueForKey( cl->userinfo, "name", name2, sizeof( cl->userinfo ));
 			val = Info_ValueForKey( cl->userinfo, "name" );
 			Q_strncpy( cl->name, name2, sizeof( cl->name ));
 		}
@@ -1851,10 +1883,10 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 	}
 
 	// rate command
-	val = Info_ValueForKey( cl->userinfo, "rate" );
-	if( COM_CheckString( val ) )
-		cl->netchan.rate = bound( sv_minrate.value, Q_atoi( val ), sv_maxrate.value );
-	else cl->netchan.rate = DEFAULT_RATE;
+	cl->netchan.rate = Q_atoi( Info_ValueForKey( cl->userinfo, "rate" ));
+	if( cl->netchan.rate <= 0 )
+		cl->netchan.rate = DEFAULT_RATE;
+	cl->netchan.rate = bound( MIN_RATE, cl->netchan.rate, MAX_RATE );
 
 	// movement prediction
 	if( Q_atoi( Info_ValueForKey( cl->userinfo, "cl_nopred" )))
@@ -1871,19 +1903,18 @@ static void SV_UserinfoChanged( sv_client_t *cl )
 		SetBits( cl->flags, FCL_LOCAL_WEAPONS );
 	else ClearBits( cl->flags, FCL_LOCAL_WEAPONS );
 
-	val = Info_ValueForKey( cl->userinfo, "cl_updaterate" );
+	ival = Q_atoi( Info_ValueForKey( cl->userinfo, "cl_updaterate" ));
 
-	if( COM_CheckString( val ))
-	{
-		float rate = Q_atoi( val );
-		cl->cl_updaterate = 1.0 / bound( sv_minupdaterate.value, rate, sv_maxupdaterate.value );
-	}
+	if( ival <= 0 )
+		ival = 20; // 20 fps as default
+
+	cl->next_messageinterval = SV_CheckUpdateRate( 1.0 / ival );
+	cl->netchan.rate = SV_CheckRate( cl->netchan.rate );
 
 	// call prog code to allow overrides
 	svgame.dllFuncs.pfnClientUserInfoChanged( cl->edict, cl->userinfo );
 
-	val = Info_ValueForKey( cl->userinfo, "name" );
-	Q_strncpy( cl->name, val, sizeof( cl->name ));
+	Q_strncpy( cl->name, Info_ValueForKey( cl->userinfo, "name" ), sizeof( cl->name ));
 	ent->v.netname = MAKE_STRING( cl->name );
 }
 
@@ -1894,7 +1925,7 @@ SV_SetInfo_f
 */
 static qboolean SV_SetInfo_f( sv_client_t *cl )
 {
-	Info_SetValueForKey( cl->userinfo, Cmd_Argv( 1 ), Cmd_Argv( 2 ), MAX_INFO_STRING );
+	Info_SetValueForKey( cl->userinfo, Cmd_Argv( 1 ), Cmd_Argv( 2 ), sizeof( cl->userinfo ));
 
 	if( cl->state >= cs_connected )
 		SetBits( cl->flags, FCL_RESEND_USERINFO ); // needs for update client info
@@ -2097,7 +2128,7 @@ static qboolean SV_DownloadFile_f( sv_client_t *cl )
 		byte		*pbuf;
 		int		size;
 
-		memset( &custResource, 0, sizeof( custResource ) );
+		memset( &custResource, 0, sizeof( custResource ));
 		COM_HexConvert( name + 4, 32, md5 );
 
 		if( HPAK_ResourceForHash( hpk_custom_file.string, md5, &custResource ))
@@ -3602,7 +3633,7 @@ void SV_ExecuteClientMessage( sv_client_t *cl, sizebuf_t *msg )
 	frame = &cl->frames[cl->netchan.incoming_acknowledged & SV_UPDATE_MASK];
 
 	// ping time doesn't factor in message interval, either
-	frame->ping_time = host.realtime - frame->senttime - cl->cl_updaterate;
+	frame->ping_time = host.realtime - frame->senttime - cl->next_messageinterval;
 
 	// on first frame ( no senttime ) don't skew ping
 	if( frame->senttime == 0.0f ) frame->ping_time = 0.0f;

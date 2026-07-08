@@ -999,7 +999,7 @@ pfnGetFilesList
 release prev search on a next call
 =========
 */
-static char ** GAME_EXPORT pfnGetFilesList( const char *pattern, int *numFiles, int gamedironly )
+char **GAME_EXPORT CL_GetFilesList( const char *pattern, int *numFiles, int gamedironly )
 {
 	static search_t	*t = NULL;
 
@@ -1239,7 +1239,7 @@ static const ui_enginefuncs_t gEngfuncs =
 	pfnMemFree,
 	pfnGetOldGameInfo,
 	pfnGetGamesList,
-	pfnGetFilesList,
+	CL_GetFilesList,
 	SV_GetSaveComment,
 	CL_GetDemoComment,
 	pfnCheckGameDll,
