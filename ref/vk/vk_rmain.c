@@ -257,7 +257,7 @@ static int VK_RefGetParm( int parm, int arg )
 	case PARM_WIDESCREEN:
 		return gpGlobals->wideScreen;
 	case PARM_FULLSCREEN:
-		return gpGlobals->fullScreen;
+		return gpGlobals->window_mode != WINDOW_MODE_WINDOWED;
 	case PARM_SCREEN_WIDTH:
 		return gpGlobals->width;
 	case PARM_SCREEN_HEIGHT:
