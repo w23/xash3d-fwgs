@@ -51,6 +51,18 @@ GNU General Public License for more details.
 #define FILE_COPY_SIZE		(1024 * 1024)
 #define SAVE_AGED_COUNT 2 // the default count of quick and auto saves
 
+#if !defined( O_BINARY )
+	#define O_BINARY 0
+#endif // !defined( O_BINARY )
+
+#if !defined( O_TEXT )
+	#define O_TEXT 0
+#endif // !defined( O_TEXT )
+
+#if !XASH_PSVITA && !XASH_NSWITCH
+	#define HAVE_DUP
+#endif // !XASH_PSVITA && !XASH_NSWITCH
+
 fs_globals_t FI;
 poolhandle_t  fs_mempool;
 char          fs_rootdir[MAX_SYSPATH];
@@ -357,7 +369,11 @@ void FS_CreatePath( char *path )
 			// create the directory
 			save = *ofs;
 			*ofs = 0;
-			_mkdir( path );
+#if XASH_WIN32
+			_mkdir( path ); // use _wmkdir maybe?
+#else // !XASH_WIN32
+			mkdir( path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH );
+#endif // !XASH_WIN32
 			*ofs = save;
 		}
 	}
@@ -576,7 +592,7 @@ FS_WriteGameInfo
 assume GameInfo is valid
 ================
 */
-static qboolean FS_WriteGameInfo( const char *filepath, gameinfo_t *GameInfo )
+static qboolean FS_WriteGameInfo( const char *filepath, const gameinfo_t *GameInfo )
 {
 	file_t	*f = FS_Open( filepath, "w", false ); // we in binary-mode
 	int	i, write_ambients = false;
@@ -697,8 +713,8 @@ static qboolean FS_WriteGameInfo( const char *filepath, gameinfo_t *GameInfo )
 		FS_Printf( f, "hd_background\t\t%i\n", GameInfo->hd_background );
 
 	// always expose our extensions :)
-	FS_Printf( f, "internal_vgui_support\t\t%s\n", GameInfo->internal_vgui_support ? "1" : "0" );
-	FS_Printf( f, "render_picbutton_text\t\t%s\n", GameInfo->render_picbutton_text ? "1" : "0" );
+	FS_Printf( f, "internal_vgui_support\t\t%i\n", GameInfo->internal_vgui_support );
+	FS_Printf( f, "render_picbutton_text\t\t%i\n", GameInfo->render_picbutton_text );
 
 	if( COM_CheckStringEmpty( GameInfo->demomap ))
 		FS_Printf( f, "demomap\t\t\"%s\"\n", GameInfo->demomap );
@@ -1364,7 +1380,7 @@ void FS_Rescan( uint32_t flags, const char *language )
 	if( Q_stricmp( GI->basedir, GI->falldir ) && Q_stricmp( GI->gamefolder, GI->falldir ))
 		FS_AddGameHierarchy( GI->falldir, flags );
 
-	GI->added = true;
+	((gameinfo_t *)GI)->added = true; // getting rid of const here, as this modifier only for the engine
 	FS_AddGameHierarchy( GI->gamefolder, FS_GAMEDIR_PATH | flags );
 }
 

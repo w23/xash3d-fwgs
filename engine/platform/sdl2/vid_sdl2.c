@@ -23,6 +23,10 @@ GNU General Public License for more details.
 // include it after because it breaks definitions in net_api.h wtf
 #include <SDL_syswm.h>
 
+#if XASH_PSVITA
+#include <vrtld.h>
+#endif // XASH_PSVITA
+
 static vidmode_t *vidmodes = NULL;
 static int num_vidmodes = 0;
 static void GL_SetupAttributes( void );
@@ -398,32 +402,11 @@ GL_GetProcAddress
 void *GL_GetProcAddress( const char *name )
 {
 	void *func = SDL_GL_GetProcAddress( name );
-#if !SDL_VERSION_ATLEAST( 2, 0, 6 ) && XASH_POSIX
-	if( !func && Sys_CheckParm( "-egl" ))
-	{
-		/*
-		 * SDL2 has broken SDL_GL_GetProcAddress until this commit if using egl:
-		 * https://github.com/libsdl-org/SDL/commit/466ba57d42d244e80357e9ad3011c50af30ed225
-		 * so call eglGetProcAddress directly
-		 * */
-		static void *(*peglGetProcAddress)( const char * );
-		if( !peglGetProcAddress )
-		{
-			void *lib = dlopen( "libEGL.so", RTLD_NOW );
-			if( lib )
-				*(void**)&peglGetProcAddress = dlsym( lib, "eglGetProcAddress" );
-		}
-		if( peglGetProcAddress )
-			func = peglGetProcAddress( name );
-	}
-#endif
 
 #if XASH_PSVITA
 	// try to find in main module
 	if( !func )
-	{
-		func = dlsym( NULL, name );
-	}
+		func = vrtld_dlsym( NULL, name );
 #endif
 
 	if( !func )
@@ -1225,8 +1208,11 @@ ref_window_type_t R_GetWindowHandle( void **handle, ref_window_type_t type )
 
 	SDL_VERSION( &wmInfo.version );
 
-	if( SDL_GetWindowWMInfo( host.hWnd, &wmInfo ))
+	if( !SDL_GetWindowWMInfo( host.hWnd, &wmInfo ))
+	{
+		Con_Reportf( S_ERROR "%s: SDL_GetWindowWMInfo: %s\n", __func__, SDL_GetError( ));
 		return REF_WINDOW_TYPE_NULL;
+	}
 
 	switch( wmInfo.subsystem )
 	{
