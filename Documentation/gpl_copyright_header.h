@@ -1,6 +1,6 @@
 /*
-lightstyle.h - lighstyle description
-Copyright (C) 2011 Uncle Mike
+filename.ext - do not include this file, only copy the header
+Copyright (C) 2015-2025 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -13,19 +13,3 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
-#ifndef LIGHTSTYLE_H
-#define LIGHTSTYLE_H
-
-#include "xash3d_types.h"
-
-typedef struct
-{
-	char		pattern[256];
-	float		map[256];
-	int		length;
-	float		value;
-	qboolean		interp;		// allow to interpolate this lightstyle
-	float		time;		// local time is gurantee what new style begins from the start, not mid or end of the sequence
-} lightstyle_t;
-
-#endif//LIGHTSTYLE_H

@@ -26,11 +26,11 @@ GNU General Public License for more details.
 #include "com_model.h"
 #include "studio.h"
 #include "r_efx.h"
-#include "com_image.h"
 #include "filesystem.h"
 #include "ref_vulkan.h"
 #include "ref_device.h"
 #include "common/protocol.h"
+#include "cvardef.h"
 
 // RefAPI changelog:
 // 1. Initial release
@@ -62,7 +62,7 @@ GNU General Public License for more details.
 // 10. Added R_GetWindowHandle to retrieve platform-specific window object.
 // 11. Added size argument to Mod_ProcessRenderData
 // 12. Added Image_CalcImageSize
-#define REF_API_VERSION 11
+#define REF_API_VERSION 12
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -123,7 +123,8 @@ typedef enum ref_window_type_e
 	REF_WINDOW_TYPE_X11, // Display*
 	REF_WINDOW_TYPE_WAYLAND, // wl_display*
 	REF_WINDOW_TYPE_MACOS, // NSWindow*
-	REF_WINDOW_TYPE_SDL, // SDL_Window*
+	REF_WINDOW_TYPE_SDL2, // SDL2 SDL_Window*
+	REF_WINDOW_TYPE_SDL3, // SDL3 SDL_Window*
 } ref_window_type_t;
 
 typedef struct
