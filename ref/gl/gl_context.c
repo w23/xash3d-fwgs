@@ -22,20 +22,7 @@ GNU General Public License for more details.
 #include "gl4es/include/gl4esinit.h"
 #endif
 
-ref_api_t      gEngfuncs;
-ref_globals_t *gpGlobals;
-ref_client_t  *gp_cl;
-ref_host_t    *gp_host;
 
-void _Mem_Free( void *data, const char *filename, int fileline )
-{
-	gEngfuncs._Mem_Free( data, filename, fileline );
-}
-
-void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
-{
-	return gEngfuncs._Mem_Alloc( poolptr, size, clear, filename, fileline );
-}
 
 static void R_ClearScreen( void )
 {
@@ -427,7 +414,7 @@ static const char *R_GetConfigName( void )
 	return "opengl";
 }
 
-static const ref_interface_t gReffuncs =
+const ref_interface_t gReffuncs =
 {
 	R_Init,
 	R_Shutdown,
@@ -452,7 +439,6 @@ static const ref_interface_t gReffuncs =
 	GL_SetRenderMode,
 
 	R_AddEntity,
-	CL_AddCustomBeam,
 	R_ProcessEntData,
 	R_Flush,
 
@@ -531,8 +517,6 @@ static const ref_interface_t gReffuncs =
 	GL_TextureTarget,
 	GL_SetTexCoordArrayMode,
 	GL_UpdateTexSize,
-	NULL,
-	NULL,
 
 	CL_DrawParticlesExternal,
 	R_LightVec,
@@ -564,19 +548,3 @@ static const ref_interface_t gReffuncs =
 	VGUI_UploadTextureBlock,
 };
 
-int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals );
-int EXPORT GetRefAPI( int version, ref_interface_t *funcs, ref_api_t *engfuncs, ref_globals_t *globals )
-{
-	if( version != REF_API_VERSION )
-		return 0;
-
-	// fill in our callbacks
-	*funcs = gReffuncs;
-	gEngfuncs = *engfuncs;
-	gpGlobals = globals;
-
-	gp_cl = (ref_client_t *)ENGINE_GET_PARM( PARM_GET_CLIENT_PTR );
-	gp_host = (ref_host_t *)ENGINE_GET_PARM( PARM_GET_HOST_PTR );
-
-	return REF_API_VERSION;
-}
