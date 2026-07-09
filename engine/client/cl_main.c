@@ -2957,12 +2957,6 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 	{
 		if( filename[0] != '!' )
 			Con_Printf( "processing %s\n", filename );
-
-		if( !Q_strnicmp( filename, DEFAULT_DOWNLOADED_DIRECTORY, sizeof( DEFAULT_DOWNLOADED_DIRECTORY ) - 1 ))
-		{
-			// skip "downloaded/" part to avoid mismatch with needed resources list
-			filename += sizeof( DEFAULT_DOWNLOADED_DIRECTORY ) - 1;
-		}
 	}
 	else if( !successfully_received )
 	{
@@ -3724,14 +3718,15 @@ void CL_Init( void )
 
 	COM_GetCommonLibraryPath( LIBRARY_CLIENT, libpath, sizeof( libpath ));
 
-	if( !CL_LoadProgs( libpath ))
-		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError( ));
-
 	S_Init();	// init sound
 	Voice_Init( VOICE_DEFAULT_CODEC, 3, true ); // init voice (do not open the device)
 
 	ID_Init();
 	SteamBroker_Init();
+
+	// client must be always initialized last so it can fetch all cvars
+	if( !CL_LoadProgs( libpath ))
+		Host_Error( "can't initialize %s: %s\n", libpath, COM_GetLibraryError( ));
 
 	cls.build_num = 0;
 	cls.initialized = true;
