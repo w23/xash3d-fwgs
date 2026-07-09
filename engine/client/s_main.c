@@ -44,9 +44,6 @@ snd_globals_t snd =
 	.max_raw_channels = MAX_RAW_CHANNELS,
 };
 
-static sound_api_t s_clientSoundAPI;
-static snd_interface_state_t s_sndState;
-
 static CVAR_DEFINE( s_volume, "volume", "0.7", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "sound volume" );
 CVAR_DEFINE( s_musicvolume, "MP3Volume", "1.0", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "background music volume" );
 static CVAR_DEFINE( s_mixahead, "_snd_mixahead", "0.12", FCVAR_FILTERABLE, "how much sound to mix ahead of time" );
@@ -186,13 +183,11 @@ S_FreeChannel
 */
 void S_FreeChannel( channel_t *ch )
 {
+	S_NotifyChannelUpdate( ch - snd.channels, NULL, -1 );
+
 	// free the currently loaded word's audio cache before nuking the channel
 	if( ch->words )
 		VOX_FreeWord( ch );
-
-	int ch_idx = ch - snd.channels;
-	if( ch_idx >= 0 && ch_idx < MAX_CHANNELS )
-		S_NotifyChannelUpdate( ch_idx, NULL, -1 );
 
 	ch->sfx = NULL;
 	ch->name[0] = '\0';
@@ -563,7 +558,8 @@ SND_Spatialize
 */
 static void SND_Spatialize( channel_t *ch )
 {
-	if( clgame.soundFuncs.pfnS_Spatialize ) {
+	if( clgame.soundFuncs.pfnS_Spatialize )
+	{
 		clgame.soundFuncs.pfnS_Spatialize( ch );
 		return;
 	}
@@ -737,8 +733,7 @@ void S_StartSound( const vec3_t pos, int ent, int chan, sound_t handle, float fv
 		}
 	}
 
-	ch_idx = target_chan - snd.channels;
-	S_NotifyChannelUpdate( ch_idx, target_chan, handle );
+	S_NotifyChannelUpdate( target_chan - snd.channels, target_chan, handle );
 
 	// Init client entity mouth movement vars
 	SND_InitMouth( ent, chan );
@@ -1567,19 +1562,8 @@ static void S_UpdateChannels( void )
 		endtime -= ( endtime - snd.paintedtime ) & 0x3;
 	}
 
-	s_sndState.total_channels = snd.total_channels;
 	if( clgame.soundFuncs.pfnS_PaintChannels )
-	{
-		dma_t api = {
-			.format = snd.format,
-			.samples = snd.samples,
-			.samplepos = snd.samplepos,
-			.initialized = snd.initialized,
-			.buffer = snd.buffer,
-			.backendName = snd.backend_name
-		};
-		clgame.soundFuncs.pfnS_PaintChannels( endtime, &api, &snd.paintedtime );
-	}
+		clgame.soundFuncs.pfnS_PaintChannels( endtime );
 	else
 		S_PaintChannels( endtime );
 
@@ -1627,9 +1611,8 @@ void SND_UpdateSound( void )
 {
 	if( !snd.initialized ) return;
 
-	if( clgame.soundFuncs.pfnS_UpdateSound ) {
+	if( clgame.soundFuncs.pfnS_UpdateSound )
 		clgame.soundFuncs.pfnS_UpdateSound();
-	}
 
 	// if the loading plaque is up, clear everything
 	// out to make sure we aren't looping a dirty
@@ -1952,40 +1935,36 @@ static void S_VoiceRecordStop_f( void )
 	Voice_RecordStop();
 }
 
-/*
-================
-S_FillSoundAPI
-================
-*/
-static void S_FillSoundAPI( sound_api_t *api )
-{
-	memset( api, 0, sizeof( *api ));
-	api->CL_GetEntitySpatialization = CL_GetEntitySpatialization;
-	api->S_GetSfxByHandle = S_GetSfxByHandle;
-}
+static const sound_api_t gSoundAPI = {
+	CL_GetEntitySpatialization,
+	S_GetSfxByHandle,
+};
 
 /*
 ================
-S_FillSndState
+S_InitSoundAPI
 ================
 */
-static void S_FillSndState( snd_interface_state_t *st )
+static qboolean S_InitSoundAPI( void )
 {
-	memset( st, 0, sizeof( *st ));
-	// listener fields are embedded in snd_globals_t, create a view for the API
-	static listener_t s_listener;
-	VectorCopy( snd.origin, s_listener.origin );
-	VectorCopy( snd.forward, s_listener.forward );
-	VectorCopy( snd.right, s_listener.right );
-	VectorCopy( snd.up, s_listener.up );
-	s_listener.entnum = snd.entnum;
-	s_listener.streaming = snd.streaming;
-	s_listener.stream_paused = snd.stream_paused;
-	st->listener = &s_listener;
-	st->channels = snd.channels;
-	st->total_channels = snd.total_channels;
-	st->raw_channels = snd.raw_channels;
-	st->max_raw_channels = MAX_RAW_CHANNELS;
+	// make sure what sound functions is cleared
+	memset( &clgame.soundFuncs, 0, sizeof( clgame.soundFuncs ));
+
+	if( clgame.dllFuncs.pfnGetSoundInterface )
+	{
+		if( clgame.dllFuncs.pfnGetSoundInterface( CL_SOUND_INTERFACE_VERSION, &gSoundAPI, &clgame.soundFuncs ))
+		{
+			Con_Reportf( "%s: ^2initailized extended SoundAPI ^7ver. %i\n", __func__, CL_SOUND_INTERFACE_VERSION );
+			return true;
+		}
+
+		Con_Reportf( "%s: ^1failed to initialize extended SoundAPI ^7ver. %i\n", __func__, CL_SOUND_INTERFACE_VERSION );
+
+		// make sure what sound functions is cleared
+		memset( &clgame.soundFuncs, 0, sizeof( clgame.soundFuncs ));
+	}
+
+	return false;
 }
 
 /*
@@ -2048,21 +2027,10 @@ qboolean S_Init( void )
 	S_InitSounds ();
 	VOX_Init ();
 
-	memset( &clgame.soundFuncs, 0, sizeof( clgame.soundFuncs ));
+	S_InitSoundAPI();
 
-	if( clgame.dllFuncs.pfnGetSoundInterface )
-	{
-		S_FillSoundAPI( &s_clientSoundAPI );
-		S_FillSndState( &s_sndState );
-
-		if( clgame.dllFuncs.pfnGetSoundInterface( CL_SOUND_INTERFACE_VERSION, &s_clientSoundAPI, &clgame.soundFuncs ))
-		{
-			if( clgame.soundFuncs.pfnS_Init && clgame.soundFuncs.pfnS_Init( &s_sndState ))
-			{
-				Con_Reportf( "%s: ^2initialized extended SoundAPI ^7ver. %i\n", __func__, CL_SOUND_INTERFACE_VERSION );
-			}
-		}
-	}
+	if( clgame.soundFuncs.pfnS_Init )
+		clgame.soundFuncs.pfnS_Init( &snd );
 
 	return true;
 }
@@ -2089,9 +2057,7 @@ void S_Shutdown( void )
 	Cmd_RemoveCommand( "spk" );
 
 	if( clgame.soundFuncs.pfnS_Shutdown )
-	{
 		clgame.soundFuncs.pfnS_Shutdown();
-	}
 
 	S_StopAllSounds (false);
 	S_FreeRawChannels ();
