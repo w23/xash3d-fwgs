@@ -1066,12 +1066,6 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 		return;
 	}
 
-	//if( !Q_strcmp( cl_ticket_generator.string, "steam" )
-	//{
-	//	i = SteamBroker_InitiateGameConnection( buf, sizeof( buf ));
-	//	MSG_WriteBytes( send, buf, i );
-	//	return;
-	//}
 
 	ID_GetMD5ForAddress( key, adr, sizeof( key ));
 	CRC32_Init( &crc );
