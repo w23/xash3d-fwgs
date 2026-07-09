@@ -497,21 +497,6 @@ uint LZSS_Decompress( const byte *pInput, byte *pOutput, size_t input_len, size_
 }
 
 /*
-==============
-COM_IsWhiteSpace
-
-interpret symbol as whitespace
-==============
-*/
-
-static int COM_IsWhiteSpace( char space )
-{
-	if( space == ' ' || space == '\t' || space == '\r' || space == '\n' )
-		return 1;
-	return 0;
-}
-
-/*
 ================
 COM_ParseVector
 
@@ -573,39 +558,6 @@ int GAME_EXPORT COM_FileSize( const char *filename )
 }
 
 /*
-=============
-COM_TrimSpace
-
-trims all whitespace from the front
-and end of a string
-=============
-*/
-void COM_TrimSpace( const char *source, char *dest )
-{
-	int	start, end, length;
-
-	start = 0;
-	end = Q_strlen( source );
-
-	while( source[start] && COM_IsWhiteSpace( source[start] ))
-		start++;
-	end--;
-
-	while( end > 0 && COM_IsWhiteSpace( source[end] ))
-		end--;
-	end++;
-
-	length = end - start;
-
-	if( length > 0 )
-		memcpy( dest, source + start, length );
-	else length = 0;
-
-	// terminate the dest string
-	dest[length] = 0;
-}
-
-/*
 ==================
 COM_Nibble
 
@@ -645,84 +597,12 @@ void COM_HexConvert( const char *pszInput, int nInputLength, byte *pOutput )
 	byte		*p = pOutput;
 	int		i;
 
-
 	for( i = 0; i < nInputLength; i += 2 )
 	{
 		pIn = &pszInput[i];
 		*p = COM_Nibble( pIn[0] ) << 4 | COM_Nibble( pIn[1] );
 		p++;
 	}
-}
-
-/*
-=============
-COM_MemFgets
-
-=============
-*/
-char *GAME_EXPORT COM_MemFgets( byte *pMemFile, int fileSize, int *filePos, char *pBuffer, int bufferSize )
-{
-	int	i, last, stop;
-
-	if( !pMemFile || !pBuffer || !filePos )
-		return NULL;
-
-	if( *filePos >= fileSize )
-		return NULL;
-
-	i = *filePos;
-	last = fileSize;
-
-	// fgets always NULL terminates, so only read bufferSize-1 characters
-	if( last - *filePos > ( bufferSize - 1 ))
-		last = *filePos + ( bufferSize - 1);
-
-	stop = 0;
-
-	// stop at the next newline (inclusive) or end of buffer
-	while( i < last && !stop )
-	{
-		if( pMemFile[i] == '\n' )
-			stop = 1;
-		i++;
-	}
-
-	// if we actually advanced the pointer, copy it over
-	if( i != *filePos )
-	{
-		// we read in size bytes
-		int	size = i - *filePos;
-
-		// copy it out
-		memcpy( pBuffer, pMemFile + *filePos, size );
-
-		// If the buffer isn't full, terminate (this is always true)
-		if( size < bufferSize ) pBuffer[size] = 0;
-
-		// update file pointer
-		*filePos = i;
-		return pBuffer;
-	}
-
-	return NULL;
-}
-
-/*
-====================
-Cache_Check
-
-consistency check
-====================
-*/
-void *GAME_EXPORT Cache_Check( poolhandle_t mempool, cache_user_t *c )
-{
-	if( !c->data )
-		return NULL;
-
-	if( !Mem_IsAllocatedExt( mempool, c->data ))
-		return NULL;
-
-	return c->data;
 }
 
 /*
