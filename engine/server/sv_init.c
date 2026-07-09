@@ -358,12 +358,11 @@ static void SV_CreateGenericResources( void )
 	SV_ReadResourceList( filename );
 	SV_ReadResourceList( "reslist.txt" );
 
-	for( i = 0; i < world.wadlist.count; i++ )
+	// precache wads so client can knows this map needs some extra wad files
+	for( i = 0; i < world.wadcount; i++ )
 	{
-		if( world.wadlist.wadusage[i] > 0 )
-		{
-			SV_GenericIndex( world.wadlist.wadnames[i] );
-		}
+		if( world.wadlist[i].usage > 0 )
+			SV_GenericIndex( world.wadlist[i].name );
 	}
 }
 
@@ -475,7 +474,7 @@ static void SV_CreateBaseline( void )
 
 	for( entnum = 0; entnum < svgame.numEntities; entnum++ )
 	{
-		edict_t	*pEdict = EDICT_NUM( entnum );
+		edict_t	*pEdict = SV_EdictNum( entnum );
 
 		if( !SV_IsValidEdict( pEdict ))
 			continue;
@@ -513,7 +512,7 @@ static void SV_CreateBaseline( void )
 
 	for( entnum = 0; entnum < svgame.numEntities; entnum++ )
 	{
-		edict_t	*pEdict = EDICT_NUM( entnum );
+		edict_t	*pEdict = SV_EdictNum( entnum );
 
 		if( !SV_IsValidEdict( pEdict ))
 			continue;
@@ -560,14 +559,14 @@ void SV_FreeOldEntities( void )
 	// at end of frame kill all entities which supposed to it
 	for( i = svs.maxclients + 1; i < svgame.numEntities; i++ )
 	{
-		ent = EDICT_NUM( i );
+		ent = SV_EdictNum( i );
 
 		if( !ent->free && FBitSet( ent->v.flags, FL_KILLME ))
 			SV_FreeEdict( ent );
 	}
 
 	// decrement svgame.numEntities if the highest number entities died
-	for( ; ( ent = EDICT_NUM( svgame.numEntities - 1 )) && ent->free; svgame.numEntities-- );
+	for( ; ( ent = SV_EdictNum( svgame.numEntities - 1 )) && ent->free; svgame.numEntities-- );
 }
 
 /*
@@ -729,7 +728,7 @@ SV_InitGame
 A brand new game has been started
 ==============
 */
-qboolean SV_InitGame( void )
+qboolean SV_InitGame( qboolean silent )
 {
 	string dllpath;
 
@@ -743,7 +742,10 @@ qboolean SV_InitGame( void )
 
 	if( !SV_LoadProgs( dllpath ))
 	{
-		Sys_Warn( "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
+		if( !silent )
+			Sys_Warn( "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
+		else
+			Con_Printf( S_ERROR "can't initialize %s: %s\n", dllpath, COM_GetLibraryError( ));
 		return false; // failed to loading server.dll
 	}
 
@@ -1016,7 +1018,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 
 	SV_SetupClients();
 
-	if( !SV_InitGame( ))
+	if( !SV_InitGame( false ))
 		return false;
 
 	Delta_Init(); // re-initialize delta
@@ -1133,7 +1135,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 		if( svs.clients[i].state > cs_connected )
 			svs.clients[i].state = cs_connected;
 
-		ent = EDICT_NUM( i + 1 );
+		ent = SV_EdictNum( i + 1 );
 		svs.clients[i].pViewEntity = NULL;
 		svs.clients[i].edict = ent;
 		SV_InitEdict( ent );

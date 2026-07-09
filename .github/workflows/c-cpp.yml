@@ -29,10 +29,9 @@ jobs:
           - os: ubuntu-22.04
             targetos: linux
             targetarch: i386
-          - os: ubuntu-22.04
+          - os: ubuntu-22.04-arm
             targetos: linux
             targetarch: arm64
-            cross: true
           - os: ubuntu-22.04
             targetos: linux
             targetarch: armhf
@@ -93,7 +92,7 @@ jobs:
       GH_CROSSCOMPILING: ${{ matrix.cross }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
     - name: Install dependencies
@@ -110,7 +109,7 @@ jobs:
         FWGS_PFX_PASSWORD: ${{ secrets.FWGS_PFX_PASSWORD }}
       run: bash scripts/gha/build_${{ matrix.targetos }}.sh
     - name: Upload engine (artifacts)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: artifact-${{ matrix.targetos }}-${{ matrix.targetarch }}
         path: artifacts/*
@@ -126,7 +125,7 @@ jobs:
       options: --privileged
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
     - name: Build flatpak (Compat.i386)
@@ -142,7 +141,7 @@ jobs:
     if: ${{ github.event_name == 'push' }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
     - name: Remove old release, fetch artifacts, repackage binaries and upload new release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
