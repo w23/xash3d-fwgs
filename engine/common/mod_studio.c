@@ -162,7 +162,6 @@ le_struct_begin( mstudioattachment_swap )
 	le_struct_field( mstudioattachment_t, flags )
 	le_struct_field( mstudioattachment_t, bone )
 	le_struct_array( mstudioattachment_t, org, 3 )
-	le_struct_array( mstudioattachment_t, vectors, 3 * 3 )
 le_struct_end();
 
 le_struct_begin( mstudiobodyparts_swap )
@@ -551,6 +550,38 @@ static void Mod_StudioCalcRotations( int boneused[], int numbones, const byte *p
 }
 
 
+void Mod_SwapStudioSeqGroupAnims( studiohdr_t *phdr, mstudioseqdesc_t *pseq, byte *buf )
+{
+	mstudioanim_t *panim = (mstudioanim_t *)( buf + pseq->animindex );
+	int numanims = pseq->numblends * phdr->numbones;
+
+	for( int j = 0; j < numanims; j++, panim++ )
+	{
+		le_struct_swap( mstudioanim_swap, panim );
+
+		for( int k = 0; k < 6; k++ )
+		{
+			if( panim->offset[k] == 0 )
+				continue;
+
+			mstudioanimvalue_t *panimvalue = (mstudioanimvalue_t *)((byte *)panim + panim->offset[k] );
+
+			int frames = pseq->numframes;
+			while( frames > 0 )
+			{
+				int valid = panimvalue->num.valid;
+				int total = panimvalue->num.total;
+
+				for( int l = 1; l <= valid; l++ )
+					panimvalue[l].value = LittleShort( panimvalue[l].value );
+
+				panimvalue += valid + 1;
+				frames -= total;
+			}
+		}
+	}
+}
+
 /*
 ====================
 StudioGetAnim
@@ -559,17 +590,10 @@ StudioGetAnim
 */
 void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstudioseqdesc_t *pseqdesc )
 {
-	mstudioseqgroup_t	*pseqgroup;
-	cache_user_t	*paSequences;
-	fs_offset_t	filesize;
-	byte		*buf;
-
-	pseqgroup = (mstudioseqgroup_t *)((byte *)m_pStudioHeader + m_pStudioHeader->seqgroupindex) + pseqdesc->seqgroup;
 	if( pseqdesc->seqgroup == 0 )
 		return ((byte *)m_pStudioHeader + pseqdesc->animindex);
 
-	paSequences = (cache_user_t *)m_pSubModel->submodels;
-
+	cache_user_t *paSequences = (cache_user_t *)m_pSubModel->submodels;
 	if( paSequences == NULL )
 	{
 		paSequences = (cache_user_t *)Mem_Calloc( com_studiocache, MAXSTUDIOGROUPS * sizeof( cache_user_t ));
@@ -579,23 +603,31 @@ void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstud
 	// check for already loaded
 	if( !Mod_CacheCheck(( cache_user_t *)&( paSequences[pseqdesc->seqgroup] )))
 	{
-		string	filepath, modelname, modelpath;
-
+		string modelname;
 		COM_FileBase( m_pSubModel->name, modelname, sizeof( modelname ));
+
+		string modelpath;
 		COM_ExtractFilePath( m_pSubModel->name, modelpath );
 
 		// NOTE: here we build real sub-animation filename because stupid user may rename model without recompile
+		string filepath;
 		Q_snprintf( filepath, sizeof( filepath ), "%s/%s%i%i.mdl", modelpath, modelname, pseqdesc->seqgroup / 10, pseqdesc->seqgroup % 10 );
 
-		buf = FS_LoadFile( filepath, &filesize, false );
-		if( !buf || !filesize ) Host_Error( "%s: can't load %s\n", __func__, filepath );
-		if( IDSEQGRPHEADER != *(uint *)buf ) Host_Error( "%s: %s is corrupted\n", __func__, filepath );
+		fs_offset_t filesize;
+		byte *buf = FS_LoadFile( filepath, &filesize, false );
+		if( !buf || !filesize )
+			Host_Error( "%s: can't load %s\n", __func__, filepath );
+		if( LittleLong( IDSEQGRPHEADER ) != *(uint *)buf )
+			Host_Error( "%s: %s is corrupted\n", __func__, filepath );
 
 		Con_Printf( "loading: %s\n", filepath );
 
 		paSequences[pseqdesc->seqgroup].data = Mem_Calloc( com_studiocache, filesize );
 		memcpy( paSequences[pseqdesc->seqgroup].data, buf, filesize );
 		Mem_Free( buf );
+
+		Mod_SwapStudioSeqGroupAnims( m_pStudioHeader, pseqdesc,
+			(byte *)paSequences[pseqdesc->seqgroup].data );
 	}
 
 	return ((byte *)paSequences[pseqdesc->seqgroup].data + pseqdesc->animindex);
@@ -977,6 +1009,9 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 	if( phdr->ident != IDSTUDIOHEADER || phdr->version != STUDIO_VERSION )
 		return false;
 
+
+
+
 #if XASH_BIG_ENDIAN
 	if( phdr->studiohdr2index > 0 && phdr->studiohdr2index < phdr->length )
 	{
@@ -998,7 +1033,11 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 		le_struct_swap( mstudioseqgroup_swap, (mstudioseqgroup_t *)( mod_base + phdr->seqgroupindex ) + i );
 
 	for( int i = 0; i < phdr->numattachments; i++ )
-		le_struct_swap( mstudioattachment_swap, (mstudioattachment_t *)( mod_base + phdr->attachmentindex ) + i );
+	{
+		mstudioattachment_t *pattach = (mstudioattachment_t *)( mod_base + phdr->attachmentindex ) + i;
+		le_struct_swap( mstudioattachment_swap, pattach );
+		le_array_swap((float *)pattach->vectors, 3 * 3 );
+	}
 
 	for( int i = 0; i < phdr->numtextures; i++ )
 		le_struct_swap( mstudiotexture_swap, (mstudiotexture_t *)( mod_base + phdr->textureindex ) + i );
@@ -1013,6 +1052,11 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 
 		for( int j = 0; j < pseq->numevents; j++ )
 			le_struct_swap( mstudioevent_swap, (mstudioevent_t *)( mod_base + pseq->eventindex ) + j );
+
+		if( pseq->seqgroup != 0 )
+			continue;
+
+		Mod_SwapStudioSeqGroupAnims( phdr, pseq, mod_base );
 	}
 
 	for( int i = 0; i < phdr->numbodyparts; i++ )
@@ -1024,8 +1068,25 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 			mstudiomodel_t *pmodel = (mstudiomodel_t *)( mod_base + pbodypart->modelindex ) + j;
 			le_struct_swap( mstudiomodel_swap, pmodel );
 
+			le_array_swap((float *)( mod_base + pmodel->vertindex ), pmodel->numverts * 3 );
+			le_array_swap((float *)( mod_base + pmodel->normindex ), pmodel->numnorms * 3 );
+
 			for( int k = 0; k < pmodel->nummesh; k++ )
-				le_struct_swap( mstudiomesh_swap, (mstudiomesh_t *)( mod_base + pmodel->meshindex ) + k );
+			{
+				mstudiomesh_t *pmesh = (mstudiomesh_t *)( mod_base + pmodel->meshindex ) + k;
+				le_struct_swap( mstudiomesh_swap, pmesh );
+
+				short *ptricmds = (short *)( mod_base + pmesh->triindex );
+				short n;
+				while(( n = LittleShort( *ptricmds )))
+				{
+					*ptricmds++ = n;
+					int count = abs( n ) * 4;
+					for( int l = 0; l < count; l++, ptricmds++ )
+						*ptricmds = LittleShort( *ptricmds );
+				}
+				*ptricmds = 0;
+			}
 		}
 	}
 
