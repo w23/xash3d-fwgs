@@ -172,7 +172,7 @@ static int R_TransEntityCompare( const cl_entity_t **a, const cl_entity_t **b )
 	{
 		VectorAverage( ent1->model->mins, ent1->model->maxs, org );
 		VectorAdd( ent1->origin, org, org );
-		VectorSubtract( RI.vieworg, org, vecLen );
+		VectorSubtract( RI.rvp.vieworigin, org, vecLen );
 		dist1 = DotProduct( vecLen, vecLen );
 	}
 	else
@@ -182,7 +182,7 @@ static int R_TransEntityCompare( const cl_entity_t **a, const cl_entity_t **b )
 	{
 		VectorAverage( ent2->model->mins, ent2->model->maxs, org );
 		VectorAdd( ent2->origin, org, org );
-		VectorSubtract( RI.vieworg, org, vecLen );
+		VectorSubtract( RI.rvp.vieworigin, org, vecLen );
 		dist2 = DotProduct( vecLen, vecLen );
 	}
 	else
@@ -379,7 +379,7 @@ R_GetFarClip
 */
 static float R_GetFarClip( void )
 {
-	if( WORLDMODEL && RI.drawWorld )
+	if( WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		return tr.movevars->zmax * 1.73f;
 	return 2048.0f;
 }
@@ -392,10 +392,10 @@ R_SetupFrustum
 void R_SetupFrustum( void )
 {
 	// build the transformation matrix for the given view angles
-	AngleVectors( RI.viewangles, RI.vforward, RI.vright, RI.vup );
+	AngleVectors( RI.rvp.viewangles, RI.vforward, RI.vright, RI.vup );
 
 	{
-		VectorCopy( RI.vieworg, RI.cullorigin );
+		VectorCopy( RI.rvp.vieworigin, RI.cullorigin );
 		VectorCopy( RI.vforward, RI.cull_vforward );
 		VectorCopy( RI.vright, RI.cull_vright );
 		VectorCopy( RI.vup, RI.cull_vup );
@@ -410,13 +410,6 @@ R_SetupProjectionMatrix
 static void R_SetupProjectionMatrix( matrix4x4 m )
 {
 	float xMin, xMax, yMin, yMax, zNear, zFar;
-
-	if( RI.drawOrtho )
-	{
-		const ref_overview_t *ov = gEngfuncs.GetOverviewParms();
-		Matrix4x4_CreateOrtho( m, ov->xLeft, ov->xRight, ov->yTop, ov->yBottom, ov->zNear, ov->zFar );
-		return;
-	}
 
 	RI.farClip = R_GetFarClip();
 
@@ -440,10 +433,10 @@ R_SetupModelviewMatrix
 static void R_SetupModelviewMatrix( matrix4x4 m )
 {
 	Matrix4x4_CreateModelview( m );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[2], 1, 0, 0 );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[0], 0, 1, 0 );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[1], 0, 0, 1 );
-	Matrix4x4_ConcatTranslate( m, -RI.vieworg[0], -RI.vieworg[1], -RI.vieworg[2] );
+	Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[2], 1, 0, 0 );
+	Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[0], 0, 1, 0 );
+	Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[1], 0, 0, 1 );
+	Matrix4x4_ConcatTranslate( m, -RI.rvp.vieworigin[0], -RI.rvp.vieworigin[1], -RI.rvp.vieworigin[2] );
 }
 
 /*
@@ -481,7 +474,7 @@ R_FindViewLeaf
 void R_FindViewLeaf( void )
 {
 	RI.oldviewleaf = RI.viewleaf;
-	RI.viewleaf = gEngfuncs.Mod_PointInLeaf( RI.pvsorigin, WORLDMODEL->nodes );
+	RI.viewleaf = gEngfuncs.Mod_PointInLeaf( RI.rvp.vieworigin, WORLDMODEL->nodes );
 }
 
 /*
@@ -492,7 +485,7 @@ R_SetupFrame
 static void R_SetupFrame( void )
 {
 	// setup viewplane dist
-	RI.viewplanedist = DotProduct( RI.vieworg, RI.vforward );
+	RI.viewplanedist = DotProduct( RI.rvp.vieworigin, RI.vforward );
 
 //	if( !gl_nosort->value )
 	{
@@ -501,11 +494,8 @@ static void R_SetupFrame( void )
 	}
 
 	// current viewleaf
-	if( RI.drawWorld )
-	{
-		RI.isSkyVisible = false; // unknown at this moment
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_FindViewLeaf();
-	}
 
 	// setup twice until globals fully refactored
 	R_SetupFrameQ();
@@ -527,7 +517,7 @@ static void R_DrawEntitiesOnList( void )
 	d_pdrawspans = R_PolysetFillSpans8;
 	GL_SetRenderMode( kRenderNormal );
 	// first draw solid entities
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -555,7 +545,7 @@ static void R_DrawEntitiesOnList( void )
 
 	R_SetUpWorldTransform();
 	// draw sprites seperately, because of alpha blending
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -571,17 +561,17 @@ static void R_DrawEntitiesOnList( void )
 		}
 	}
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		gEngfuncs.CL_DrawEFX( tr.frametime, false );
 	}
 
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.pfnDrawNormalTriangles();
 
 	d_pdrawspans = R_PolysetDrawSpans8_33;
 	// then draw translucent entities
-	for( i = 0; i < tr.draw_list->num_trans_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_trans_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->trans_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -619,12 +609,10 @@ static void R_DrawEntitiesOnList( void )
 		}
 	}
 
-	if( RI.drawWorld )
-	{
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.pfnDrawTransparentTriangles();
-	}
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		R_AllowFog( false );
 		gEngfuncs.CL_DrawEFX( tr.frametime, true );
@@ -633,7 +621,7 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_SetRenderMode( kRenderNormal );
 	R_SetUpWorldTransform();
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_DrawViewModel();
 	gEngfuncs.CL_ExtraUpdate();
 
@@ -804,7 +792,7 @@ static void R_DrawBEntitiesOnList( void )
 	VectorCopy( tr.modelorg, oldorigin );
 	insubmodel = true;
 
-	for( i = 0; i < tr.draw_list->num_edge_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_edge_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		int k;
 		RI.currententity = tr.draw_list->edge_entities[i];
@@ -832,7 +820,7 @@ static void R_DrawBEntitiesOnList( void )
 			continue; // no part in a visible leaf
 
 		VectorCopy( RI.currententity->origin, r_entorigin );
-		VectorSubtract( RI.vieworg, r_entorigin, tr.modelorg );
+		VectorSubtract( RI.rvp.vieworigin, r_entorigin, tr.modelorg );
 		// VectorSubtract (r_origin, RI.currententity->origin, modelorg);
 		r_pcurrentvertbase = RI.currentmodel->vertexes;
 
@@ -890,7 +878,7 @@ void R_DrawBrushModel( cl_entity_t *pent )
 	surf_t  lsurfs[NUMSTACKSURFACES
 		       + (( CACHE_SIZE - 1 ) / sizeof( surf_t )) + 1];
 
-	if( !RI.drawWorld )
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		return;
 
 	if( auxedges )
@@ -944,7 +932,7 @@ void R_DrawBrushModel( cl_entity_t *pent )
 
 	alphaspans = true;
 	VectorCopy( RI.currententity->origin, r_entorigin );
-	VectorSubtract( RI.vieworg, r_entorigin, tr.modelorg );
+	VectorSubtract( RI.rvp.vieworigin, r_entorigin, tr.modelorg );
 	// VectorSubtract (r_origin, RI.currententity->origin, modelorg);
 	r_pcurrentvertbase = RI.currentmodel->vertexes;
 
@@ -998,7 +986,7 @@ static void R_EdgeDrawing( void )
 	surf_t lsurfs[NUMSTACKSURFACES
 		      + (( CACHE_SIZE - 1 ) / sizeof( surf_t )) + 1];
 
-	if( !RI.drawWorld )
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		return;
 
 	if( auxedges )
@@ -1053,7 +1041,7 @@ static void R_MarkLeaves( void )
 	tr.visframecount++;
 	r_oldviewcluster = r_viewcluster;
 
-	gEngfuncs.R_FatPVS( RI.pvsorigin, r_pvs_radius->value, RI.visbytes, false, false );
+	gEngfuncs.R_FatPVS( RI.rvp.vieworigin, r_pvs_radius->value, RI.visbytes, false, false );
 	vis = RI.visbytes;
 
 	for( i = 0; i < WORLDMODEL->numleafs; i++ )
@@ -1082,7 +1070,7 @@ R_SetupRefParams must be called right before
 */
 void GAME_EXPORT R_RenderScene( void )
 {
-	if( !WORLDMODEL && RI.drawWorld )
+	if( !WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
 	// frametime is valid only for normal pass
@@ -1158,18 +1146,6 @@ set initial params for renderer
 void R_SetupRefParams( const ref_viewpass_t *rvp )
 {
 	RI.rvp = *rvp;
-
-	RI.drawWorld = FBitSet( rvp->flags, RF_DRAW_WORLD );
-	RI.onlyClientDraw = FBitSet( rvp->flags, RF_ONLY_CLIENTDRAW );
-
-	if( !FBitSet( rvp->flags, RF_DRAW_CUBEMAP ))
-		RI.drawOrtho = FBitSet( rvp->flags, RF_DRAW_OVERVIEW );
-	else
-		RI.drawOrtho = false;
-
-	VectorCopy( rvp->vieworigin, RI.vieworg );
-	VectorCopy( rvp->viewangles, RI.viewangles );
-	VectorCopy( rvp->vieworigin, RI.pvsorigin );
 }
 
 /*
@@ -1204,7 +1180,7 @@ void GAME_EXPORT R_RenderFrame( const ref_viewpass_t *rvp )
 	}
 
 	tr.fCustomRendering = false;
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_RunViewmodelEvents();
 
 	tr.realframecount++; // right called after viewmodel events
@@ -1535,7 +1511,7 @@ int CL_FxBlend( cl_entity_t *e )
 	case kRenderFxHologram:
 	case kRenderFxDistort:
 		VectorCopy( e->origin, tmp );
-		VectorSubtract( tmp, RI.vieworg, tmp );
+		VectorSubtract( tmp, RI.rvp.vieworigin, tmp );
 		dist = DotProduct( tmp, RI.vforward );
 
 		// turn off distance fade
