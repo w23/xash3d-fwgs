@@ -157,6 +157,8 @@ def build(bld):
 			'efp': 'tests/test_efp.c',
 			'atoi': 'tests/test_atoi.c',
 			'parsefile': 'tests/test_parsefile.c',
+			'atlas': 'tests/test_atlas.c',
+			'swapstruct': 'tests/test_swapstruct.c',
 		}
 
 		for i in tests:
