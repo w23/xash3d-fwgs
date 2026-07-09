@@ -71,7 +71,6 @@ CVAR_DEFINE_AUTO( sw_texfilt, "0", FCVAR_GLCONFIG, "texture dither" );
 static CVAR_DEFINE_AUTO( r_novis, "0", 0, "" );
 
 
-DEFINE_ENGINE_SHARED_CVAR_LIST()
 
 int r_viewcluster, r_oldviewcluster;
 
@@ -424,10 +423,10 @@ static void R_SetupProjectionMatrix( matrix4x4 m )
 	zNear = 4.0f;
 	zFar = Q_max( 256.0f, RI.farClip );
 
-	yMax = zNear * tan( RI.fov_y * M_PI_F / 360.0f );
+	yMax = zNear * tan( RI.rvp.fov_y * M_PI_F / 360.0f );
 	yMin = -yMax;
 
-	xMax = zNear * tan( RI.fov_x * M_PI_F / 360.0f );
+	xMax = zNear * tan( RI.rvp.fov_x * M_PI_F / 360.0f );
 	xMin = -xMax;
 
 	Matrix4x4_CreateProjection( m, xMax, xMin, yMax, yMin, zNear, zFar );
@@ -841,21 +840,8 @@ static void R_DrawBEntitiesOnList( void )
 		R_RotateBmodel();
 
 		// calculate dynamic lighting for bmodel
-		for( k = 0; k < MAX_DLIGHTS; k++ )
-		{
-			dlight_t *l = &tr.dlights[k];
-			vec3_t   origin_l, oldorigin;
-
-			if( l->die < gp_cl->time || !l->radius )
-				continue;
-
-			VectorCopy( l->origin, oldorigin ); // save lightorigin
-			Matrix4x4_CreateFromEntity( RI.objectMatrix, RI.currententity->angles, RI.currententity->origin, 1 );
-			Matrix4x4_VectorITransform( RI.objectMatrix, l->origin, origin_l );
-			VectorCopy( origin_l, l->origin ); // move light in bmodel space
-			R_MarkLights( l, 1 << k, RI.currentmodel->nodes + RI.currentmodel->hulls[0].firstclipnode );
-			VectorCopy( oldorigin, l->origin ); // restore lightorigin
-		}
+		Matrix4x4_CreateFromEntity( RI.objectMatrix, RI.currententity->angles, RI.currententity->origin, 1 );
+		R_PushDlightsForBmodel( RI.currentmodel, tr.dlightframecount, RI.objectMatrix );
 
 		RI.currententity->topnode = topnode;
 		if( topnode->contents >= 0 )
@@ -966,22 +952,9 @@ void R_DrawBrushModel( cl_entity_t *pent )
 	R_RotateBmodel();
 
 	// calculate dynamic lighting for bmodel
-	for( k = 0; k < MAX_DLIGHTS; k++ )
-	{
-		dlight_t *l = &tr.dlights[k];
-		vec3_t   origin_l, oldorigin;
-
-		if( l->die < gp_cl->time || !l->radius )
-			continue;
-
-		VectorCopy( l->origin, oldorigin );         // save lightorigin
-		Matrix4x4_CreateFromEntity( RI.objectMatrix, RI.currententity->angles, RI.currententity->origin, 1 );
-		Matrix4x4_VectorITransform( RI.objectMatrix, l->origin, origin_l );
-		tr.modelviewIdentity = false;
-		VectorCopy( origin_l, l->origin );         // move light in bmodel space
-		R_MarkLights( l, 1 << k, RI.currentmodel->nodes + RI.currentmodel->hulls[0].firstclipnode );
-		VectorCopy( oldorigin, l->origin );         // restore lightorigin*/
-	}
+	Matrix4x4_CreateFromEntity( RI.objectMatrix, RI.currententity->angles, RI.currententity->origin, 1 );
+	R_PushDlightsForBmodel( RI.currentmodel, tr.dlightframecount, RI.objectMatrix );
+	tr.modelviewIdentity = false;
 
 	RI.currententity->topnode = topnode;
 	if( topnode->contents >= 0 )
@@ -1080,7 +1053,7 @@ static void R_MarkLeaves( void )
 	tr.visframecount++;
 	r_oldviewcluster = r_viewcluster;
 
-	gEngfuncs.R_FatPVS( RI.pvsorigin, r_pvs_radius->value, RI.visbytes, FBitSet( RI.params, RP_OLDVIEWLEAF ), false );
+	gEngfuncs.R_FatPVS( RI.pvsorigin, r_pvs_radius->value, RI.visbytes, false, false );
 	vis = RI.visbytes;
 
 	for( i = 0; i < WORLDMODEL->numleafs; i++ )
@@ -1113,10 +1086,7 @@ void GAME_EXPORT R_RenderScene( void )
 		gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
 	// frametime is valid only for normal pass
-	if( RP_NORMALPASS( ))
-		tr.frametime = gp_cl->time - gp_cl->oldtime;
-	else
-		tr.frametime = 0.0;
+	tr.frametime = gp_cl->time - gp_cl->oldtime;
 
 	// begin a new frame
 	tr.framecount++;
@@ -1131,7 +1101,7 @@ void GAME_EXPORT R_RenderScene( void )
 	R_SetupFrustum();
 	R_SetupFrame();
 
-	R_PushDlights();
+	tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
 	R_SetupModelviewMatrix( RI.worldviewMatrix );
 	R_SetupProjectionMatrix( RI.projectionMatrix );
 
@@ -1187,7 +1157,8 @@ set initial params for renderer
 */
 void R_SetupRefParams( const ref_viewpass_t *rvp )
 {
-	RI.params = RP_NONE;
+	RI.rvp = *rvp;
+
 	RI.drawWorld = FBitSet( rvp->flags, RF_DRAW_WORLD );
 	RI.onlyClientDraw = FBitSet( rvp->flags, RF_ONLY_CLIENTDRAW );
 
@@ -1195,16 +1166,6 @@ void R_SetupRefParams( const ref_viewpass_t *rvp )
 		RI.drawOrtho = FBitSet( rvp->flags, RF_DRAW_OVERVIEW );
 	else
 		RI.drawOrtho = false;
-
-	// setup viewport
-	RI.viewport[0] = rvp->viewport[0];
-	RI.viewport[1] = rvp->viewport[1];
-	RI.viewport[2] = rvp->viewport[2];
-	RI.viewport[3] = rvp->viewport[3];
-
-	// calc FOV
-	RI.fov_x = rvp->fov_x;
-	RI.fov_y = rvp->fov_y;
 
 	VectorCopy( rvp->vieworigin, RI.vieworg );
 	VectorCopy( rvp->viewangles, RI.viewangles );
@@ -1407,9 +1368,6 @@ qboolean GAME_EXPORT R_Init( void )
 {
 	qboolean glblit = false;
 
-	RETRIEVE_ENGINE_SHARED_CVAR_LIST();
-
-
 	gEngfuncs.Cvar_RegisterVariable( &sw_clearcolor );
 	gEngfuncs.Cvar_RegisterVariable( &sw_drawflat );
 	gEngfuncs.Cvar_RegisterVariable( &sw_draworder );
@@ -1454,8 +1412,7 @@ qboolean GAME_EXPORT R_Init( void )
 	tr.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
 	tr.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
 	tr.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
-	tr.dlights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_DLIGHTS_PTR );
-	tr.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
+		tr.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
 
 	if( !R_InitBlit( glblit ))
 	{
@@ -1513,43 +1470,31 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt > 0 )
-				e->curstate.renderamt -= 1;
-			else
-				e->curstate.renderamt = 0;
-		}
+		if( e->curstate.renderamt > 0 )
+			e->curstate.renderamt -= 1;
+		else
+			e->curstate.renderamt = 0;
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFadeFast:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt > 3 )
-				e->curstate.renderamt -= 4;
-			else
-				e->curstate.renderamt = 0;
-		}
+		if( e->curstate.renderamt > 3 )
+			e->curstate.renderamt -= 4;
+		else
+			e->curstate.renderamt = 0;
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidSlow:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt < 255 )
-				e->curstate.renderamt += 1;
-			else
-				e->curstate.renderamt = 255;
-		}
+		if( e->curstate.renderamt < 255 )
+			e->curstate.renderamt += 1;
+		else
+			e->curstate.renderamt = 255;
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidFast:
-		if( RP_NORMALPASS( ))
-		{
-			if( e->curstate.renderamt < 252 )
-				e->curstate.renderamt += 4;
-			else
-				e->curstate.renderamt = 255;
-		}
+		if( e->curstate.renderamt < 252 )
+			e->curstate.renderamt += 4;
+		else
+			e->curstate.renderamt = 255;
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxStrobeSlow:

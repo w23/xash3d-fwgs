@@ -22,7 +22,6 @@ CVAR_DEFINE_AUTO( gl_msaa, "1", FCVAR_GLCONFIG, "enable or disable multisample a
 CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelformat stencil bits (0 - auto)" );
 CVAR_DEFINE_AUTO( gl_overbright, "1", FCVAR_GLCONFIG, "overbrights" );
 CVAR_DEFINE_AUTO( gl_fog, "1", FCVAR_GLCONFIG, "allow for rendering fog using built-in OpenGL fog implementation" );
-CVAR_DEFINE_AUTO( r_lighting_extended, "1", FCVAR_GLCONFIG, "allow to get lighting from world and bmodels" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
 CVAR_DEFINE_AUTO( r_detailtextures, "1", FCVAR_GLCONFIG, "enable detail textures support" );
 CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
@@ -39,11 +38,7 @@ CVAR_DEFINE_AUTO( r_ripple, "0", FCVAR_GLCONFIG, "enable software-like water tex
 CVAR_DEFINE_AUTO( r_ripple_updatetime, "0.05", FCVAR_GLCONFIG, "how fast ripple simulation is" );
 CVAR_DEFINE_AUTO( r_ripple_spawntime, "0.1", FCVAR_GLCONFIG, "how fast new ripples spawn" );
 CVAR_DEFINE_AUTO( r_large_lightmaps, "0", FCVAR_GLCONFIG|FCVAR_LATCH, "enable larger lightmap atlas textures (might break custom renderer mods)" );
-CVAR_DEFINE_AUTO( r_dlight_virtual_radius, "3", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount, should help against ugly cut off dlights on highly scaled textures" );
 
-DEFINE_ENGINE_SHARED_CVAR_LIST()
-
-poolhandle_t r_temppool;
 
 gl_globals_t	tr;
 glconfig_t	glConfig;
@@ -1141,9 +1136,6 @@ GL_InitCommands
 */
 static void GL_InitCommands( void )
 {
-	RETRIEVE_ENGINE_SHARED_CVAR_LIST();
-
-	gEngfuncs.Cvar_RegisterVariable( &r_lighting_extended );
 	gEngfuncs.Cvar_RegisterVariable( &r_lighting_ambient );
 	gEngfuncs.Cvar_RegisterVariable( &r_novis );
 	gEngfuncs.Cvar_RegisterVariable( &r_nocull );
@@ -1162,7 +1154,6 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_overbrightmode );
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_detail );
 	gEngfuncs.Cvar_RegisterVariable( &r_large_lightmaps );
-	gEngfuncs.Cvar_RegisterVariable( &r_dlight_virtual_radius );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
@@ -1276,7 +1267,6 @@ qboolean R_Init( void )
 	tr.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
 	tr.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
 	tr.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
-	tr.dlights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_DLIGHTS_PTR );
 	tr.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
 
 	GL_SetDefaults();

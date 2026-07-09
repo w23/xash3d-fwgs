@@ -432,7 +432,7 @@ pfnGetViewInfo
 */
 static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *forwardv )
 {
-	if( origin ) VectorCopy( RI.vieworg, origin );
+	if( origin ) VectorCopy( RI.rvp.vieworigin, origin );
 	if( forwardv ) VectorCopy( RI.vforward, forwardv );
 	if( rightv ) VectorCopy( RI.vright, rightv );
 	if( upv ) VectorCopy( RI.vup, upv );
@@ -1441,7 +1441,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 	for( lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
 	{
-		dl = &tr.dlights[lnum];
+		dl = &gp_dlights[lnum];
 
 		if( dl->die < g_studio.time || !r_dynamic->value )
 			continue;
@@ -2914,7 +2914,7 @@ R_StudioSetChromeOrigin
 */
 static void R_StudioSetChromeOrigin( void )
 {
-	VectorCopy( RI.vieworg, g_studio.chrome_origin );
+	VectorCopy( RI.rvp.vieworigin, g_studio.chrome_origin );
 }
 
 /*
