@@ -38,7 +38,7 @@ extern poolhandle_t sndpool;
 
 #define CLIP16( x ) bound( SHRT_MIN + 8, x, SHRT_MAX - 8 )
 
-typedef struct
+typedef struct portable_samplepair_s
 {
 	int left;
 	int right;
@@ -74,6 +74,15 @@ typedef struct snd_format_s
 	byte channels;
 } snd_format_t;
 
+typedef struct dma_api_s
+{
+	snd_format_t format;
+	int          samples;     // mono samples in buffer
+	int          samplepos;   // in mono samples
+	qboolean     initialized; // sound engine is active
+	byte        *buffer;
+	const char  *backendName;
+} dma_t;
 typedef struct rawchan_s
 {
 	short                 entnum;
@@ -130,6 +139,18 @@ typedef struct channel_s
 } channel_t;
 
 typedef int sound_t;
+
+typedef struct listener_s
+{
+	vec3_t   origin;   // simorg + view_ofs
+	vec3_t   forward;
+	vec3_t   right;
+	vec3_t   up;
+
+	int      entnum;
+	qboolean streaming;     // playing AVI-file
+	qboolean stream_paused; // pause only background track
+} listener_t;
 
 typedef struct snd_globals_s
 {
