@@ -227,7 +227,7 @@ static const char *getParmName(int parm)
 	}
 }
 
-static int VK_RefGetParm( int parm, int arg )
+static intptr_t VK_RefGetParm( int parm, int arg )
 {
 	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
