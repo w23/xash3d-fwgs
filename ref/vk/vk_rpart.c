@@ -72,7 +72,7 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 
 	for( p = cl_active_particles; p; p = p->next )
 	{
-		if(( p->type != pt_blob ) || ( p->packedColor == 255 ))
+		if(( p->type != pt_blob ) || ( p->unused == 255 ))
 		{
 			size = partsize; // get initial size of particle
 
@@ -249,7 +249,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			}
 
 			pColor = &gTracerColors[p->color];
-			TriColor4ub_( pColor->r, pColor->g, pColor->b, p->packedColor );
+			TriColor4ub_( pColor->r, pColor->g, pColor->b, p->unused );
 
 			TriBegin( TRI_QUADS );
 				TriTexCoord2f( 0.0f, 0.8f );
@@ -260,7 +260,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 				TriVertex3fv( verts[1] );
 				TriTexCoord2f( 0.0f, 0.0f );
 				TriVertex3fv( verts[0] );
-			const vec4_t color = { 1, 1, 1, 1 }; //pColor->r / 255.f, pColor->g / 255.f, pColor->b / 255.f, p->packedColor / 255.f };
+			const vec4_t color = { 1, 1, 1, 1 }; //pColor->r / 255.f, pColor->g / 255.f, pColor->b / 255.f, p->unused / 255.f };
 			TriEndEx( color, "tracer" );
 		}
 
@@ -273,8 +273,8 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			p->vel[1] *= scale;
 			p->vel[2] -= gravity;
 
-			p->packedColor = 255 * (p->die - gp_cl->time) * 2;
-			if( p->packedColor > 255 ) p->packedColor = 255;
+			p->unused = 255 * (p->die - gp_cl->time) * 2;
+			if( p->unused > 255 ) p->unused = 255;
 		}
 		else if( p->type == pt_slowgrav )
 		{
