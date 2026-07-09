@@ -54,7 +54,6 @@ void VGL_ShimEndFrame( void );
 #define LM_SAMPLE_SIZE             16
 
 
-extern poolhandle_t r_temppool;
 
 #define BLOCK_SIZE		tr.block_size	// lightmap blocksize
 #define BLOCK_SIZE_DEFAULT	128		// for keep backward compatibility
@@ -72,16 +71,13 @@ extern poolhandle_t r_temppool;
 #define DEFAULT_ALPHATEST	0.0f
 
 // refparams
-#define RP_NONE		0
-#define RP_ENVVIEW		BIT( 0 )	// used for cubemapshot
-#define RP_OLDVIEWLEAF	BIT( 1 )
-#define RP_CLIPPLANE	BIT( 2 )
+#define RP_NONE    0
+#define RP_ENVVIEW BIT( 0 )	// used for cubemapshot
 
-#define RP_NONVIEWERREF	(RP_ENVVIEW)
 #define R_ModelOpaque( rm )	( rm == kRenderNormal )
 #define R_StaticEntity( ent )	( VectorIsNull( ent->origin ) && VectorIsNull( ent->angles ))
 #define RP_LOCALCLIENT( e )	((e) != NULL && (e)->index == ( gp_cl->playernum + 1 ) && e->player )
-#define RP_NORMALPASS()	( FBitSet( RI.params, RP_NONVIEWERREF ) == 0 )
+#define RP_NORMALPASS()	( FBitSet( RI.params, RP_ENVVIEW ) == 0 )
 
 #define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == ( gp_cl->playernum + 1 ))
 
@@ -128,6 +124,8 @@ typedef struct gltexture_s
 
 typedef struct
 {
+	ref_viewpass_t rvp;
+
 	int		params;		// rendering parameters
 
 	qboolean		drawWorld;	// ignore world for drawing PlayerModel
@@ -135,20 +133,14 @@ typedef struct
 	qboolean		onlyClientDraw;	// disabled by client request
 	qboolean		drawOrtho;	// draw world as orthogonal projection
 
-	float		fov_x, fov_y;	// current view fov
-
 	cl_entity_t	*currententity;
 	model_t		*currentmodel;
 	cl_entity_t	*currentbeam;	// same as above but for beams
 
-	int		viewport[4];
 	gl_frustum_t	frustum;
 
 	mleaf_t		*viewleaf;
 	mleaf_t		*oldviewleaf;
-	vec3_t		pvsorigin;
-	vec3_t		vieworg;		// locked vieworigin
-	vec3_t		viewangles;
 	vec3_t		vforward;
 	vec3_t		vright;
 	vec3_t		vup;
@@ -233,7 +225,6 @@ typedef struct
 	qboolean		fFlipViewModel;
 
 	byte		visbytes[(MAX_MAP_LEAFS+7)/8];	// member custom PVS
-	int		lightstylevalue[MAX_LIGHTSTYLES];	// value 0 - 65536
 	int		block_size;			// lightmap blocksize
 
 	double		frametime;	// special frametime for multipass rendering (will set to 0 on a nextview)
@@ -249,7 +240,6 @@ typedef struct
 	movevars_t *movevars;
 	color24 *palette;
 	cl_entity_t *viewent;
-	dlight_t *dlights;
 	dlight_t *elights;
 	byte *texgammatable;
 	uint *lightgammatable;
@@ -353,7 +343,6 @@ gl_texture_t *R_GetTexture( unsigned int texnum );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
 int GL_LoadTextureArray( const char **names, int flags );
 int GL_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
-byte *GL_ResampleTexture( const byte *source, int in_w, int in_h, int out_w, int out_h, qboolean isNormalMap );
 int GL_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags );
 int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor );
@@ -370,16 +359,6 @@ int GL_TexMemory( void );
 qboolean R_SearchForTextureReplacement( char *out, size_t size, const char *modelname, const char *fmt, ... ) FORMAT_CHECK( 4 );
 void R_TextureReplacementReport( const char *modelname, int gl_texturenum, const char *foundpath );
 void R_ShowTextures( void );
-
-//
-// gl_rlight.c
-//
-void CL_RunLightStyles( lightstyle_t *ls );
-void R_PushDlights( void );
-void R_GetLightSpot( vec3_t lightspot );
-void R_MarkLights( const dlight_t *light, int bit, const mnode_t *node );
-colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lightspot, vec3_t lightvec );
-colorVec R_LightPoint( const vec3_t p0 );
 
 //
 // gl_rmain.c
@@ -762,7 +741,6 @@ extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t gl_fog;
 
-extern convar_t	r_lighting_extended;
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;
 extern convar_t	r_detailtextures;
@@ -782,12 +760,10 @@ extern convar_t r_ripple;
 extern convar_t r_ripple_updatetime;
 extern convar_t r_ripple_spawntime;
 extern convar_t r_large_lightmaps;
-extern convar_t r_dlight_virtual_radius;
 
 //
 // engine shared convars
 //
-DECLARE_ENGINE_SHARED_CVAR_LIST()
 
 //
 // engine callbacks

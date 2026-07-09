@@ -28,6 +28,8 @@ extern ref_client_t  *gp_cl;
 extern ref_host_t    *gp_host;
 extern const ref_interface_t gReffuncs;
 
+DECLARE_ENGINE_SHARED_CVAR_LIST()
+
 #define Assert( x ) if( !( x )) gEngfuncs.Host_Error( "assert failed at %s:%i\n", __FILE__, __LINE__ )
 
 #define ENGINE_GET_PARM_ (*gEngfuncs.EngineGetParm)
@@ -50,6 +52,16 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *memptr, size_t size, qboolean cl
 #define Mem_FreePool( pool )           gEngfuncs._Mem_FreePool( pool, __FILE__, __LINE__ )
 #define Mem_EmptyPool( pool )          gEngfuncs._Mem_EmptyPool( pool, __FILE__, __LINE__ )
 
+extern dlight_t *gp_dlights;
+extern int g_lightstylevalue[MAX_LIGHTSTYLES];
+extern poolhandle_t r_temppool;
+
+//
+// ref_common cvars
+//
+extern convar_t r_dlight_virtual_radius;
+extern convar_t r_lighting_extended;
+
 //
 // ref_math.c
 //
@@ -60,5 +72,20 @@ void Matrix4x4_CreateProjection( matrix4x4 out, float xMax, float xMin, float yM
 void Matrix4x4_CreateOrtho( matrix4x4 m, float xLeft, float xRight, float yBottom, float yTop, float zNear, float zFar );
 void Matrix4x4_CreateModelview( matrix4x4 out );
 void Matrix4x4_ToArrayFloatGL( const matrix4x4 in, float out[16] );
+
+//
+// ref_light.c
+//
+void CL_RunLightStyles( lightstyle_t *ls );
+void R_PushDlightsForBmodel( model_t *model, int framecount, const matrix4x4 object_matrix );
+int R_PushDlights( model_t *model, int framecount );
+colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec );
+colorVec R_LightPoint( const vec3_t p0 );
+void R_UpdateSurfaceCachedLight( msurface_t *surf );
+
+//
+// ref_image.c
+//
+byte *GL_ResampleTexture( const byte *source, int in_w, int in_h, int out_w, int out_h, qboolean isNormalMap );
 
 #endif // REF_COMMON_H

@@ -62,20 +62,15 @@ Set sprite brightness factor
 */
 static float R_SpriteGlowBlend( vec3_t origin, int rendermode, int renderfx, float *pscale )
 {
-	float     dist, brightness;
-	vec3_t    glowDist;
-	pmtrace_t *tr;
+	float  dist, brightness;
+	vec3_t glowDist;
 
 	VectorSubtract( origin, RI.vieworg, glowDist );
 	dist = VectorLength( glowDist );
 
-	if( RP_NORMALPASS( ))
-	{
-		tr = gEngfuncs.EV_VisTraceLine( RI.vieworg, origin, r_traceglow.value ? PM_GLASS_IGNORE : ( PM_GLASS_IGNORE | PM_STUDIO_IGNORE ));
-
-		if(( 1.0f - tr->fraction ) * dist > 8.0f )
-			return 0.0f;
-	}
+	pmtrace_t *tr = gEngfuncs.EV_VisTraceLine( RI.vieworg, origin, r_traceglow.value ? PM_GLASS_IGNORE : ( PM_GLASS_IGNORE | PM_STUDIO_IGNORE ));
+	if(( 1.0f - tr->fraction ) * dist > 8.0f )
+		return 0.0f;
 
 	if( renderfx == kRenderFxNoDissipation )
 		return 1.0f;
@@ -103,9 +98,9 @@ static qboolean R_SpriteOccluded( cl_entity_t *e, vec3_t origin, float *pscale )
 
 		TriWorldToScreen( origin, v );
 
-		if( v[0] < RI.viewport[0] || v[0] > RI.viewport[0] + RI.viewport[2] )
+		if( v[0] < RI.rvp.viewport[0] || v[0] > RI.rvp.viewport[0] + RI.rvp.viewport[2] )
 			return true; // do scissor
-		if( v[1] < RI.viewport[1] || v[1] > RI.viewport[1] + RI.viewport[3] )
+		if( v[1] < RI.rvp.viewport[1] || v[1] > RI.rvp.viewport[1] + RI.rvp.viewport[3] )
 			return true; // do scissor
 
 		blend = R_SpriteGlowBlend( origin, e->curstate.rendermode, e->curstate.renderfx, pscale );
@@ -172,9 +167,6 @@ void R_DrawSpriteModel( cl_entity_t *e )
 	float          angle, dot, sr, cr, scale;
 	vec3_t         v_forward, v_right, v_up;
 	vec3_t         origin, color;
-
-	if( RI.params & RP_ENVVIEW )
-		return;
 
 	model = e->model;
 	psprite = (msprite_t *)model->cache.data;

@@ -38,8 +38,6 @@ typedef int fixed16_t;
 // make mod_ref.h?
 #define LM_SAMPLE_SIZE 16
 
-extern poolhandle_t r_temppool;
-
 #define BLOCK_SIZE         tr.block_size        // lightmap blocksize
 #define BLOCK_SIZE_DEFAULT 128                  // for keep backward compatibility
 #define BLOCK_SIZE_MAX     1024
@@ -63,17 +61,9 @@ extern poolhandle_t r_temppool;
 #define SHADE_LAMBERT     1.4953241
 #define DEFAULT_ALPHATEST 0.0f
 
-// refparams
-#define RP_NONE        0
-#define RP_ENVVIEW     BIT( 0 )                 // used for cubemapshot
-#define RP_OLDVIEWLEAF BIT( 1 )
-#define RP_CLIPPLANE   BIT( 2 )
-
-#define RP_NONVIEWERREF ( RP_ENVVIEW )
 #define R_ModelOpaque( rm )   ( rm == kRenderNormal )
 #define R_StaticEntity( ent ) ( VectorIsNull( ent->origin ) && VectorIsNull( ent->angles ))
 #define RP_LOCALCLIENT( e )   (( e ) != NULL && ( e )->index == ( gp_cl->playernum + 1 ) && e->player )
-#define RP_NORMALPASS()       ( FBitSet( RI.params, RP_NONVIEWERREF ) == 0 )
 
 #define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == ( gp_cl->playernum + 1 ))
 
@@ -132,20 +122,17 @@ extern viddef_t vid;
 
 typedef struct
 {
-	int         params;             // rendering parameters
+	ref_viewpass_t rvp;
 
 	qboolean    drawWorld;                  // ignore world for drawing PlayerModel
 	qboolean    isSkyVisible;               // sky is visible
 	qboolean    onlyClientDraw;             // disabled by client request
 	qboolean    drawOrtho;                  // draw world as orthogonal projection
 
-	float       fov_x, fov_y;       // current view fov
-
 	cl_entity_t *currententity;
 	model_t     *currentmodel;
 	cl_entity_t *currentbeam;       // same as above but for beams
 
-	int         viewport[4];
 	// gl_frustum_t	frustum;
 
 	mleaf_t     *viewleaf;
@@ -253,7 +240,6 @@ typedef struct
 	int          max_recursion;
 
 	byte         visbytes[( MAX_MAP_LEAFS + 7 ) / 8]; // member custom PVS
-	int          lightstylevalue[MAX_LIGHTSTYLES];    // value 0 - 65536
 	int          block_size;                          // lightmap blocksize
 
 	double       frametime;         // special frametime for multipass rendering (will set to 0 on a nextview)
@@ -272,7 +258,6 @@ typedef struct
 	color24      *palette;
 	cl_entity_t  *viewent;
 	lightstyle_t *lightstyles;
-	dlight_t     *dlights;
 	dlight_t     *elights;
 	byte         *texgammatable;
 	uint         *lightgammatable;
@@ -369,7 +354,6 @@ image_t *R_GetTexture( unsigned int texnum );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
 int GL_LoadTextureArray( const char **names, int flags );
 int GL_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
-byte *GL_ResampleTexture( const byte *source, int in_w, int in_h, int out_w, int out_h, qboolean isNormalMap );
 int GL_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags );
 int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor );
@@ -383,17 +367,6 @@ void R_InitImages( void );
 void R_ShutdownImages( void );
 int R_TexMemory( void );
 
-#if 1
-//
-// gl_rlight.c
-//
-void CL_RunLightStyles( lightstyle_t *ls );
-void R_PushDlights( void );
-void R_GetLightSpot( vec3_t lightspot );
-void R_MarkLights( dlight_t *light, int bit, mnode_t *node );
-colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lightspot, vec3_t lightvec );
-colorVec R_LightPoint( const vec3_t p0 );
-#endif
 //
 // gl_rmain.c
 //
@@ -528,7 +501,6 @@ void TriCullFace( TRICULLSTYLE mode );
 void TriBrightness( float brightness );
 
 
-DECLARE_ENGINE_SHARED_CVAR_LIST()
 
 //
 // helper funcs
