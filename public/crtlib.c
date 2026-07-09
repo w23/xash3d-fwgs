@@ -22,6 +22,30 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "crtlib.h"
 
+char *GAME_EXPORT Q_memfgets( byte *data, int data_len, int *data_offset, char *dst, int dst_size )
+{
+	// sanity check
+	if( !data || !data_offset || !dst || *data_offset >= data_len )
+		return NULL;
+
+	const char *start = (const char *)data + *data_offset;
+	int remaining = data_len - *data_offset;
+
+	// do not assume the data is null terminated, as we have data_len anyway :)
+	const char *end = memchr( start, '\n', remaining );
+
+	if( end )
+		remaining = end - start + 1;
+
+	// include null terminator
+	Q_strncpy( dst, start, Q_min( remaining + 1, dst_size ));
+
+	*data_offset += remaining;
+
+	return dst;
+}
+
+
 void Q_strnlwr( const char *in, char *out, size_t size_out )
 {
 	size_t len, i;
@@ -666,14 +690,23 @@ interpert this character as single
 */
 static int COM_IsSingleChar( unsigned int flags, char c )
 {
-	if( c == '{' || c == '}' || c == '\'' || c == ',' )
+	switch( c )
+	{
+	case '}':
+	case '{':
 		return true;
-
-	if( !FBitSet( flags, PFILE_IGNOREBRACKET ) && ( c == ')' || c == '(' ))
-		return true;
-
-	if( FBitSet( flags, PFILE_HANDLECOLON ) && c == ':' )
-		return true;
+	case ',':
+		return !FBitSet( flags, PFILE_NO_COMMA_AS_TOKEN );
+	case '\'':
+		return !FBitSet( flags, PFILE_NO_SINGLE_QUOTE_AS_TOKEN );
+	case '(':
+	case ')':
+		return !FBitSet( flags, PFILE_NO_BRACKETS_AS_TOKEN );
+	case ':':
+		return FBitSet( flags, PFILE_COLON_AS_TOKEN );
+	case '\n':
+		return FBitSet( flags, PFILE_NEWLINE_AS_TOKEN );
+	}
 
 	return false;
 }
@@ -707,6 +740,9 @@ char *COM_ParseFileSafe( char *data, char *token, const int size, unsigned int f
 skipwhite:
 	while(( c = ((byte)*data)) <= ' ' )
 	{
+		if( FBitSet( flags, PFILE_NEWLINE_AS_TOKEN ) && c == '\n' )
+			break;
+
 		if( c == 0 )
 		{
 			if( plen ) *plen = overflow ? -1 : len;
@@ -716,7 +752,7 @@ skipwhite:
 	}
 
 	// skip // or #, if requested, comments
-	if(( c == '/' && data[1] == '/' ) || ( c == '#' && FBitSet( flags, PFILE_IGNOREHASHCMT )))
+	if(( c == '/' && data[1] == '/' ) || ( c == '#' && FBitSet( flags, PFILE_HASH_AS_COMMENT )))
 	{
 		while( *data && *data != '\n' )
 			data++;
@@ -724,7 +760,7 @@ skipwhite:
 	}
 
 	// handle quoted strings specially
-	if( c == '\"' )
+	if( c == '\"' && !FBitSet( flags, PFILE_NO_QUOTED_TOKENS ))
 	{
 		if( quoted )
 			*quoted = true;
@@ -887,3 +923,24 @@ int matchpattern_with_separator( const char *in, const char *pattern, qboolean c
 	return 1; // success
 }
 
+void COM_TrimSpace( char *dst, const char *src, size_t size )
+{
+	if( !dst || !src || !size )
+		return;
+
+	// remove spaces from the start
+	for( ; *src && isspace( *src ); src++ );
+
+	int len = Q_strlen( src );
+
+	// remove spaces from the end
+	for( ; len > 0 && isspace( src[len - 1] ); len-- );
+
+	if( len > 0 )
+	{
+		// + 1 to fit null terminator in strlcpy
+		Q_strncpy( dst, src, Q_min( size, len + 1 ));
+	}
+	else
+		dst[0] = 0;
+}

@@ -41,12 +41,29 @@ enum
 
 // a1ba: not using BIT macro, so flags can be copypasted into
 // exported APIs headers and will not get warning in case of changing values
-#define PFILE_IGNOREBRACKET (1<<0)
-#define PFILE_HANDLECOLON   (1<<1)
-#define PFILE_IGNOREHASHCMT (1<<2)
 
-#define PFILE_TOKEN_MAX_LENGTH 1024
-#define PFILE_FS_TOKEN_MAX_LENGTH 512
+// do NOT interpret brackets as separate token
+// e.g. (a b) will be parsed as "(a", "b)"
+#define PFILE_NO_BRACKETS_AS_TOKEN     ( 1U << 0 )
+
+// interpret ':' as separate token
+// e.g. a:b will be parsed as "a", ":", "b"
+#define PFILE_COLON_AS_TOKEN           ( 1U << 1 )
+
+// ignore the whole line starting with '#' interpreting it as comment
+#define PFILE_HASH_AS_COMMENT          ( 1U << 2 )
+
+// when encountering double quotes, do not interpret what's inside as single token
+#define PFILE_NO_QUOTED_TOKENS         ( 1U << 3 )
+
+// do NOT interpret ''' as separate token
+#define PFILE_NO_SINGLE_QUOTE_AS_TOKEN ( 1U << 4 )
+
+// do NOT interpret comma as token
+#define PFILE_NO_COMMA_AS_TOKEN        ( 1U << 5 )
+
+// interpret '\n' as separate token
+#define PFILE_NEWLINE_AS_TOKEN         ( 1U << 6 )
 
 #ifdef __cplusplus
 #define restrict
@@ -81,6 +98,7 @@ int Q_atoi_hex( int sign, const char *str );
 int Q_atoi( const char *str );
 float Q_atof( const char *str );
 void Q_atov( float *vec, const char *str, size_t siz );
+char *Q_memfgets( byte *data, int data_len, int *data_offset, char *dst, int dst_size );
 #define Q_strchr  strchr
 #define Q_strrchr strrchr
 qboolean Q_stricmpext( const char *pattern, const char *text );
@@ -103,6 +121,7 @@ const char *COM_FileWithoutPath( const char *in );
 void COM_StripExtension( char *path );
 void COM_RemoveLineFeed( char *str, size_t bufsize );
 void COM_PathSlashFix( char *path );
+void COM_TrimSpace( char *dst, const char *src, size_t size );
 
 // returns true on empty or NULL string, false otherwise
 #define COM_StringEmpty( string )       (( string )[0] ? false : true )

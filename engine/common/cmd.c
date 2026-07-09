@@ -24,24 +24,13 @@ GNU General Public License for more details.
 
 typedef struct
 {
-	byte *const data;
-	const int maxsize;
-	int cursize;
+	byte data[MAX_CMD_BUFFER];
+	int  cursize;
 } cmdbuf_t;
 
 static qboolean cmd_wait;
-static byte     cmd_text_buf[MAX_CMD_BUFFER];
-static byte     filteredcmd_text_buf[MAX_CMD_BUFFER];
-static cmdbuf_t cmd_text =
-{
-	.data = cmd_text_buf,
-	.maxsize = ARRAYSIZE( cmd_text_buf ),
-};
-static cmdbuf_t filteredcmd_text =
-{
-	.data = filteredcmd_text_buf,
-	.maxsize = ARRAYSIZE( filteredcmd_text_buf ),
-};
+static cmdbuf_t cmd_text;
+static cmdbuf_t filteredcmd_text;
 static cmdalias_t *cmd_alias;
 static uint cmd_condition;
 static int  cmd_condlevel;
@@ -65,9 +54,8 @@ Cbuf_Clear
 */
 void Cbuf_Clear( void )
 {
-	memset( cmd_text.data, 0, cmd_text.maxsize );
-	memset( filteredcmd_text.data, 0, filteredcmd_text.maxsize );
-	cmd_text.cursize = filteredcmd_text.cursize = 0;
+	memset( &cmd_text, 0, sizeof( cmd_text ));
+	memset( &filteredcmd_text, 0, sizeof( filteredcmd_text ));
 }
 
 /*
@@ -77,9 +65,9 @@ Cbuf_GetSpace
 */
 static void *Cbuf_GetSpace( cmdbuf_t *buf, int length )
 {
-	void    *data;
+	void *data;
 
-	if(( buf->cursize + length ) > buf->maxsize )
+	if(( buf->cursize + length ) >= sizeof( buf->data ))
 	{
 		buf->cursize = 0;
 		Host_Error( "%s: overflow\n", __func__ );
@@ -95,7 +83,7 @@ static void Cbuf_AddTextToBuffer( cmdbuf_t *buf, const char *text )
 {
 	int l = Q_strlen( text );
 
-	if(( buf->cursize + l ) >= buf->maxsize )
+	if(( buf->cursize + l ) >= sizeof( buf->data ))
 	{
 		Con_Reportf( S_WARN "%s: overflow\n", __func__ );
 		return;
@@ -147,7 +135,7 @@ Adds command text immediately after the current command
 */
 static void Cbuf_InsertTextToBuffer( cmdbuf_t *buf, const char *text, size_t len, size_t requested_len )
 {
-	if(( buf->cursize + requested_len ) >= buf->maxsize )
+	if(( buf->cursize + requested_len ) >= sizeof( buf->data ))
 	{
 		Con_Reportf( S_WARN "%s: overflow\n", __func__ );
 	}
@@ -159,7 +147,7 @@ static void Cbuf_InsertTextToBuffer( cmdbuf_t *buf, const char *text, size_t len
 	}
 }
 
-void Cbuf_InsertTextLen( const char *text, size_t len, size_t requested_len )
+static void Cbuf_InsertTextLen( const char *text, size_t len, size_t requested_len )
 {
 	// sometimes we need to insert more data than we have
 	// but also prevent overflow
@@ -950,44 +938,33 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 
 	BaseCmd_FindAll( cmd_argv[0], &cmd, &a, &cvar );
 
-	if( !host.apply_game_config )
+	// check aliases
+	if( a )
 	{
-		if( a )
-		{
-			size_t len = Q_strlen( a->value );
-			Cbuf_InsertTextToBuffer(
-				isPrivileged ? &cmd_text : &filteredcmd_text,
-				a->value, len, len );
-			return;
-		}
+		size_t len = Q_strlen( a->value );
+		Cbuf_InsertTextToBuffer( isPrivileged ? &cmd_text : &filteredcmd_text, a->value, len, len );
+		return;
 	}
 
-	// special mode for restore game.dll archived cvars
-	if( !host.apply_game_config || !Q_strcmp( cmd_argv[0], "exec" ))
+	// check functions
+	if( cmd && cmd->function )
 	{
-		// check functions
-		if( cmd && cmd->function )
+		if( Cmd_ShouldAllowCommand( cmd, isPrivileged ))
 		{
-			if( Cmd_ShouldAllowCommand( cmd, isPrivileged ))
-			{
-				cmd_currentCommandIsPrivileged = isPrivileged;
-				cmd->function();
-				cmd_currentCommandIsPrivileged = true;
-			}
-			else
-			{
-				Con_Printf( S_WARN "Could not execute privileged command %s\n", cmd->name );
-			}
-
-			return;
+			cmd_currentCommandIsPrivileged = isPrivileged;
+			cmd->function();
+			cmd_currentCommandIsPrivileged = true;
 		}
+		else
+		{
+			Con_Printf( S_WARN "Could not execute privileged command %s\n", cmd->name );
+		}
+		return;
 	}
 
 	// check cvars
-	if( Cvar_CommandWithPrivilegeCheck( cvar, isPrivileged )) return;
-
-	if( host.apply_game_config )
-		return; // don't send nothing to server: we are a server!
+	if( Cvar_CommandWithPrivilegeCheck( cvar, isPrivileged ))
+		return;
 
 	// forward the command line to the server, so the entity DLL can parse it
 #if !XASH_DEDICATED
@@ -1019,7 +996,7 @@ so when they are typed in at the console, they will need to be forwarded.
 #if !XASH_DEDICATED
 void Cmd_ForwardToServer( void )
 {
-	char	str[MAX_CMD_BUFFER];
+	char str[MAX_CMD_BUFFER];
 
 	if( cls.demoplayback )
 	{
@@ -1262,6 +1239,118 @@ static void Cmd_MakePrivileged_f( void )
 }
 
 /*
+===============
+Cmd_Exec_f
+===============
+*/
+static void Cmd_Exec_f( void )
+{
+	string cfgpath;
+	byte *f;
+	fs_offset_t len;
+
+	if( Cmd_Argc() != 2 )
+	{
+		Con_Printf( S_USAGE "exec <filename>\n" );
+		return;
+	}
+
+	Q_strncpy( cfgpath, Cmd_Argv( 1 ), sizeof( cfgpath ));
+	COM_DefaultExtension( cfgpath, ".cfg", sizeof( cfgpath )); // append as default
+
+#ifndef XASH_DEDICATED
+	if( !Cmd_CurrentCommandIsPrivileged() && !Q_stricmp( GI->gamefolder, "tfc" ))
+	{
+		const char *const unprivileged_whitelist[] =
+		{
+			"civilian.cfg", "demoman.cfg", "engineer.cfg",
+			"hwguy.cfg", "mapdefault.cfg", "medic.cfg", "pyro.cfg",
+			"scout.cfg", "sniper.cfg", "soldier.cfg", "spy.cfg",
+		};
+		char mapcfg[MAX_VA_STRING];
+		qboolean allow = false;
+
+		Q_snprintf( mapcfg, sizeof( mapcfg ), "%s.cfg", clgame.mapname );
+
+		if( !Q_stricmp( mapcfg, cfgpath ))
+		{
+			allow = true;
+		}
+		else for( int i = 0; i < ARRAYSIZE( unprivileged_whitelist ); i++ )
+		{
+			if( !Q_strcmp( cfgpath, unprivileged_whitelist[i] ))
+			{
+				allow = true;
+				break;
+			}
+		}
+
+		if( !allow )
+		{
+			Con_Printf( "exec %s: not privileged or in whitelist\n", cfgpath );
+			return;
+		}
+	}
+#endif // XASH_DEDICATED
+
+	// don't execute game.cfg in singleplayer
+	if( SV_GetMaxClients() == 1 && !Q_stricmp( "game.cfg", cfgpath ))
+		return;
+
+	f = FS_LoadFile( cfgpath, &len, false );
+	if( !f )
+	{
+		Con_Reportf( "couldn't exec %s\n", Cmd_Argv( 1 ));
+		return;
+	}
+
+	// len is fs_offset_t, which can be larger than size_t
+	if( len >= SIZE_MAX )
+	{
+		Con_Reportf( "%s: %s is too long\n", __func__, Cmd_Argv( 1 ));
+		return;
+	}
+
+	if( !Q_stricmp( "config.cfg", cfgpath ))
+		host.config_executed = true;
+
+	Con_Printf( "execing " S_GREEN "%s" S_DEFAULT "\n", Cmd_Argv( 1 ));
+
+	// adds \n at end of the file
+	// FS_LoadFile always null terminates
+	if( f[len - 1] != '\n' )
+	{
+		Cbuf_InsertTextLen( f, len, len + 1 );
+		Cbuf_InsertTextLen( "\n", 1, 1 );
+	}
+	else Cbuf_InsertTextLen( f, len, len );
+
+	Mem_Free( f );
+}
+
+/*
+=================
+Cmd_Userconfigd_f
+=================
+*/
+static void Cmd_Userconfigd_f( void )
+{
+	search_t *t;
+	int i;
+
+	t = FS_Search( "userconfig.d/*.cfg", true, false );
+	if( !t )
+		return;
+
+	for( i = 0; i < t->numfilenames; i++ )
+	{
+		Cbuf_AddTextf( "exec %s\n", t->filenames[i] );
+	}
+
+	Mem_Free( t );
+}
+
+/*
 ==========
 Cmd_Escape
 
@@ -1312,9 +1401,9 @@ void Cmd_Init( void )
 	// register our commands
 	Cmd_AddCommand( "echo", Cmd_Echo_f, "print a message to the console (useful in scripts)" );
 	Cmd_AddCommand( "wait", Cmd_Wait_f, "make script execution wait for some rendered frames" );
-	Cmd_AddCommand( "cmdlist", Cmd_List_f, "display all console commands beginning with the specified prefix" );
+	Cmd_AddRestrictedCommand( "cmdlist", Cmd_List_f, "display all console commands beginning with the specified prefix" );
 	Cmd_AddRestrictedCommand( "stuffcmds", Cmd_StuffCmds_f, "execute commandline parameters (must be present in .rc script)" );
-	Cmd_AddCommand( "apropos", Cmd_Apropos_f, "lists all console variables/commands/aliases containing the specified string in the name or description" );
+	Cmd_AddRestrictedCommand( "apropos", Cmd_Apropos_f, "lists all console variables/commands/aliases containing the specified string in the name or description" );
 #if !XASH_DEDICATED
 	Cmd_AddCommand( "cmd", Cmd_ForwardToServer, "send a console commandline to the server" );
 #endif // XASH_DEDICATED
@@ -1325,8 +1414,10 @@ void Cmd_Init( void )
 
 	Cmd_AddRestrictedCommand( "make_privileged", Cmd_MakePrivileged_f, "makes command or variable privileged (protected from access attempts from server)" );
 
-	Cmd_AddCommand( "basecmd_stats", BaseCmd_Stats_f, "print info about basecmd usage" );
-	Cmd_AddCommand( "basecmd_test", BaseCmd_Test_f, "test basecmd" );
+	Cmd_AddRestrictedCommand( "basecmd_stats", BaseCmd_Stats_f, "print info about basecmd usage" );
+	Cmd_AddRestrictedCommand( "basecmd_test", BaseCmd_Test_f, "test basecmd" );
+	Cmd_AddCommand( "exec", Cmd_Exec_f, "execute a script file" );
+	Cmd_AddRestrictedCommand( "userconfigd", Cmd_Userconfigd_f, "execute all scripts from userconfig.d" );
 }
 
 void Cmd_Shutdown( void )
