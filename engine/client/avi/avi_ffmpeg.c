@@ -355,6 +355,10 @@ qboolean AVI_Think( movie_state_t *Avi )
 	qboolean decoded = false;
 	qboolean flushing = false;
 	qboolean redraw = false;
+
+	if( !Avi->video_ctx )
+		return false;
+
 	const double timebase = (double)Avi->video_ctx->pkt_timebase.den / Avi->video_ctx->pkt_timebase.num;
 	int64_t curtime = round( Platform_DoubleTime() * timebase );
 
@@ -384,7 +388,7 @@ qboolean AVI_Think( movie_state_t *Avi )
 
 		if(( res = pav_read_frame( Avi->fmt_ctx, Avi->pkt )) >= 0 )
 		{
-			if( Avi->pkt->stream_index == Avi->audio_stream )
+			if( Avi->pkt->stream_index == Avi->audio_stream && Avi->audio_ctx )
 			{
 				res = pavcodec_send_packet( Avi->audio_ctx, Avi->pkt );
 				if( res < 0 )
