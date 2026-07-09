@@ -171,7 +171,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	memcpy( &index, buffer + KTX2_IDENTIFIER_SIZE + sizeof( ktx2_header_t ), sizeof( index ));
 	le_struct_swap( ktx2_index_swap, &index );
 
-	for( mip = 0; mip < header->levelCount; ++mip )
+	for( int mip = 0; mip < header->levelCount; ++mip )
 	{
 		const uint32_t width = Q_max( 1, ( header->pixelWidth >> mip ));
 		const uint32_t height = Q_max( 1, ( header->pixelHeight >> mip ));
