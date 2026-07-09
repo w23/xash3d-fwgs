@@ -1854,13 +1854,12 @@ int GAME_EXPORT pfnDropToFloor( edict_t *e )
 {
 	qboolean	monsterClip;
 	trace_t	trace;
-	vec3_t	end;
 
 	if( !SV_IsValidEdict( e ))
 		return 0;
 
 	monsterClip = FBitSet( e->v.flags, FL_MONSTERCLIP ) ? true : false;
-	VectorCopy( e->v.origin, end );
+	vec3_t end = Vec3( e->v.origin );
 	end[2] -= 256.0f;
 
 	trace = SV_Move( e->v.origin, e->v.mins, e->v.maxs, end, MOVE_NORMAL, e, monsterClip );
@@ -1887,8 +1886,6 @@ pfnWalkMove
 */
 static int GAME_EXPORT pfnWalkMove( edict_t *ent, float yaw, float dist, int iMode )
 {
-	vec3_t	move;
-
 	if( !SV_IsValidEdict( ent ))
 		return 0;
 
@@ -1896,7 +1893,7 @@ static int GAME_EXPORT pfnWalkMove( edict_t *ent, float yaw, float dist, int iMo
 		return 0;
 
 	yaw = DEG2RAD( yaw );
-	VectorSet( move, cos( yaw ) * dist, sin( yaw ) * dist, 0.0f );
+	vec3_t move = { cos( yaw ) * dist, sin( yaw ) * dist, 0.0f };
 
 	switch( iMode )
 	{
@@ -3804,7 +3801,6 @@ pfnRunPlayerMove
 static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewangles, float fmove, float smove, float upmove, word buttons, byte impulse, byte msec )
 {
 	sv_client_t	*cl, *oldcl;
-	usercmd_t		cmd;
 	uint		seed;
 
 	if(( cl = SV_ClientFromEdict( pClient, true )) == NULL )
@@ -3818,14 +3814,16 @@ static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewang
 	sv.current_client = SV_ClientFromEdict( pClient, true );
 	sv.current_client->timebase = (sv.time + sv.frametime) - ((double)msec / 1000.0);
 
-	memset( &cmd, 0, sizeof( cmd ));
-	VectorCopy( viewangles, cmd.viewangles );
-	cmd.forwardmove = fmove;
-	cmd.sidemove = smove;
-	cmd.upmove = upmove;
-	cmd.buttons = buttons;
-	cmd.impulse = impulse;
-	cmd.msec = msec;
+	usercmd_t cmd =
+	{
+		.viewangles = Vec3( viewangles ),
+		.forwardmove = fmove,
+		.sidemove = smove,
+		.upmove = upmove,
+		.buttons = buttons,
+		.impulse = impulse,
+		.msec = msec,
+	};
 
 	seed = COM_RandomLong( 0, 0x7fffffff ); // full range
 
@@ -4682,6 +4680,16 @@ static void GAME_EXPORT pfnGetGameDir( char *out )
 	}
 }
 
+static cvar_t* GAME_EXPORT SV_CvarGetPointer( const char *szVarName )
+{
+	cvar_t *result = (cvar_t *)Cvar_FindVar( szVarName );
+
+	if( !result )
+		Con_DPrintf( S_WARN "%s: server tried to get non-existent cvar \"%s\"\n", __func__, szVarName );
+	
+	return result;
+}
+
 // engine callbacks
 static enginefuncs_t gEngfuncs =
 {
@@ -4801,7 +4809,7 @@ static enginefuncs_t gEngfuncs =
 	pfnGetPlayerUserId,
 	pfnBuildSoundMsg,
 	pfnIsDedicatedServer,
-	pfnCVarGetPointer,
+	SV_CvarGetPointer,
 	pfnGetPlayerWONId,
 	(void*)Info_RemoveKey,
 	pfnGetPhysicsKeyValue,

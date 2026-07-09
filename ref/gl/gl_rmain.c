@@ -805,6 +805,9 @@ static void R_DrawEntitiesOnList( void )
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
 
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
+
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
 
@@ -836,6 +839,9 @@ static void R_DrawEntitiesOnList( void )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -874,6 +880,9 @@ static void R_DrawEntitiesOnList( void )
 		else tr.blend = 1.0f; // draw as solid but sorted by distance
 
 		if( tr.blend <= 0.0f ) continue;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -1232,8 +1241,7 @@ int CL_FxBlend( cl_entity_t *e )
 	case kRenderFxHologram:
 	case kRenderFxDistort:
 	{
-		vec3_t tmp;
-		VectorCopy( e->origin, tmp );
+		vec3_t tmp = Vec3( e->origin );
 		VectorSubtract( tmp, RI.rvp.vieworigin, tmp );
 		float dist = DotProduct( tmp, RI.vforward );
 
