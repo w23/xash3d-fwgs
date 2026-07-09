@@ -33,12 +33,6 @@
 
 #include "pm_info.h"
 
-// PM_PlayerTrace results.
-#include "pmtrace.h"
-
-
-#include "usercmd.h"
-
 // physent_t
 typedef struct physent_s
 {
