@@ -15,17 +15,12 @@ GNU General Public License for more details.
 
 #ifndef GL_LOCAL_H
 #define GL_LOCAL_H
+#include "ref_common.h"
 #include "port.h"
 #include "xash3d_types.h"
 #include "cvardef.h"
-#include "const.h"
-#include "com_model.h"
-#include "cl_entity.h"
-#include "render_api.h"
 #include "protocol.h"
 #include "gl_frustum.h"
-#include "ref_api.h"
-#include "xash3d_mathlib.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
@@ -408,17 +403,6 @@ void R_DrawFog( void );
 int CL_FxBlend( cl_entity_t *e );
 
 //
-// gl_rmath.c
-//
-void Matrix4x4_ToArrayFloatGL( const matrix4x4 in, float out[16] );
-void Matrix4x4_Concat( matrix4x4 out, const matrix4x4 in1, const matrix4x4 in2 );
-void Matrix4x4_ConcatTranslate( matrix4x4 out, float x, float y, float z );
-void Matrix4x4_ConcatRotate( matrix4x4 out, float angle, float x, float y, float z );
-void Matrix4x4_CreateProjection(matrix4x4 out, float xMax, float xMin, float yMax, float yMin, float zNear, float zFar);
-void Matrix4x4_CreateOrtho(matrix4x4 m, float xLeft, float xRight, float yBottom, float yTop, float zNear, float zFar);
-void Matrix4x4_CreateModelview( matrix4x4 out );
-
-//
 // gl_rmisc.c
 //
 void R_NewMap( void );
@@ -434,7 +418,6 @@ void GL_SubdivideSurface( model_t *mod, msurface_t *fa );
 void GL_SetupFogColorForSurfaces( void );
 void R_DrawAlphaTextureChains( void );
 void GL_RebuildLightmaps( void );
-void GL_InitRandomTable( void );
 void GL_BuildLightmaps( void );
 void GL_ResetFogColor( void );
 void R_GenerateVBO( void );
@@ -538,7 +521,6 @@ int R_CreateDecalList( decallist_t *pList );
 void R_ClearAllDecals( void );
 byte *Mod_GetCurrentVis( void );
 void Mod_SetOrthoBounds( const float *mins, const float *maxs );
-void CL_AddCustomBeam( cl_entity_t *pEnvBeam );
 
 //
 // gl_opengl.c
@@ -698,13 +680,6 @@ extern glconfig_t		glConfig;
 extern glstate_t		glState;
 // move to engine
 extern glwstate_t		glw_state;
-extern ref_api_t      gEngfuncs;
-extern ref_globals_t *gpGlobals;
-extern ref_client_t  *gp_cl;
-extern ref_host_t    *gp_host;
-
-#define ENGINE_GET_PARM_ (*gEngfuncs.EngineGetParm)
-#define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
 
 //
 // helper funcs
@@ -826,16 +801,6 @@ DECLARE_ENGINE_SHARED_CVAR_LIST()
 //
 #include "crtlib.h"
 
-void _Mem_Free( void *data, const char *filename, int fileline );
-void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
-	ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
 
-#define Mem_Malloc( pool, size ) _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
-#define Mem_Calloc( pool, size ) _Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
-#define Mem_Realloc( pool, ptr, size ) gEngfuncs._Mem_Realloc( pool, ptr, size, true, __FILE__, __LINE__ )
-#define Mem_Free( mem ) _Mem_Free( mem, __FILE__, __LINE__ )
-#define Mem_AllocPool( name ) gEngfuncs._Mem_AllocPool( name, __FILE__, __LINE__ )
-#define Mem_FreePool( pool ) gEngfuncs._Mem_FreePool( pool, __FILE__, __LINE__ )
-#define Mem_EmptyPool( pool ) gEngfuncs._Mem_EmptyPool( pool, __FILE__, __LINE__ )
 
 #endif // GL_LOCAL_H

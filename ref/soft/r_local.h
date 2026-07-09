@@ -15,16 +15,11 @@ GNU General Public License for more details.
 
 #ifndef GL_LOCAL_H
 #define GL_LOCAL_H
+#include "ref_common.h"
 #include "port.h"
 #include "xash3d_types.h"
 #include "cvardef.h"
-#include "const.h"
-#include "com_model.h"
-#include "cl_entity.h"
-#include "render_api.h"
 #include "protocol.h"
-#include "ref_api.h"
-#include "xash3d_mathlib.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
@@ -420,18 +415,6 @@ void R_PopScene( void );
 void R_DrawFog( void );
 
 //
-// gl_rmath.c
-//
-void Matrix4x4_Concat( matrix4x4 out, const matrix4x4 in1, const matrix4x4 in2 );
-void Matrix4x4_ConcatTranslate( matrix4x4 out, float x, float y, float z );
-void Matrix4x4_ConcatRotate( matrix4x4 out, float angle, float x, float y, float z );
-void Matrix4x4_CreateTranslate( matrix4x4 out, float x, float y, float z );
-void Matrix4x4_CreateRotate( matrix4x4 out, float angle, float x, float y, float z );
-void Matrix4x4_CreateProjection( matrix4x4 out, float xMax, float xMin, float yMax, float yMin, float zNear, float zFar );
-void Matrix4x4_CreateOrtho( matrix4x4 m, float xLeft, float xRight, float yBottom, float yTop, float zNear, float zFar );
-void Matrix4x4_CreateModelview( matrix4x4 out );
-
-//
 // gl_rpart.c
 //
 void CL_DrawParticlesExternal( const ref_viewpass_t *rvp, qboolean trans_pass, float frametime );
@@ -529,7 +512,6 @@ void R_ClearAllDecals( void );
 byte *Mod_GetCurrentVis( void );
 void Mod_SetOrthoBounds( const float *mins, const float *maxs );
 void R_NewMap( void );
-void CL_AddCustomBeam( cl_entity_t *pEnvBeam );
 
 //
 // gl_triapi.c
@@ -552,13 +534,6 @@ void TriFogParams( float flDensity, int iFogSkybox );
 void TriCullFace( TRICULLSTYLE mode );
 void TriBrightness( float brightness );
 
-#define ENGINE_GET_PARM_ ( *gEngfuncs.EngineGetParm )
-#define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_(( parm ), 0 )
-
-extern ref_api_t     gEngfuncs;
-extern ref_globals_t *gpGlobals;
-extern ref_client_t  *gp_cl;
-extern ref_host_t    *gp_host;
 
 DECLARE_ENGINE_SHARED_CVAR_LIST()
 
@@ -1099,7 +1074,6 @@ void R_ScanEdges( void );
 //
 // r_surf.c
 //
-void GL_InitRandomTable( void );
 void D_FlushCaches( void );
 
 //
@@ -1147,16 +1121,6 @@ void R_SetUpWorldTransform( void );
 //
 #include "crtlib.h"
 #include "crclib.h"
-void _Mem_Free( void *data, const char *filename, int fileline );
-void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
-ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
 
-#define Mem_Malloc( pool, size )       _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
-#define Mem_Calloc( pool, size )       _Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
-#define Mem_Realloc( pool, ptr, size ) gEngfuncs._Mem_Realloc( pool, ptr, size, true, __FILE__, __LINE__ )
-#define Mem_Free( mem )                _Mem_Free( mem, __FILE__, __LINE__ )
-#define Mem_AllocPool( name )          gEngfuncs._Mem_AllocPool( name, __FILE__, __LINE__ )
-#define Mem_FreePool( pool )           gEngfuncs._Mem_FreePool( pool, __FILE__, __LINE__ )
-#define Mem_EmptyPool( pool )          gEngfuncs._Mem_EmptyPool( pool, __FILE__, __LINE__ )
 
 #endif // GL_LOCAL_H
