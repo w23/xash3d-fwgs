@@ -359,7 +359,7 @@ void R_DrawSolidClippedSubmodelPolygons( model_t *pmodel, mnode_t *topnode )
 
 	for( i = 0; i < numsurfaces; i++, psurf++ )
 	{
-		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
+		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ))
 		{
 			if( psurf->plane->type != PLANE_Z && !FBitSet( RI.currententity->curstate.effects, EF_WATERSIDES ))
 				continue;
@@ -441,7 +441,7 @@ void R_DrawSubmodelPolygons( model_t *pmodel, int clipflags, mnode_t *topnode )
 
 	for( i = 0; i < numsurfaces; i++, psurf++ )
 	{
-		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
+		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ))
 		{
 			if( psurf->plane->type != PLANE_Z && !FBitSet( RI.currententity->curstate.effects, EF_WATERSIDES ))
 				continue;
@@ -559,7 +559,6 @@ static void R_RecursiveWorldNode( mnode_t *node, int clipflags )
 	}
 	else
 	{
-		mnode_t    *children[2];
 		int firstsurface;
 
 		// node is just a decision point, so go down the apropriate sides
@@ -589,8 +588,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int clipflags )
 			side = 1;
 
 		// recurse down the children, front side first
-		node_children( children, node, WORLDMODEL );
-		R_RecursiveWorldNode( children[side], clipflags );
+		R_RecursiveWorldNode( node_child( node, side, WORLDMODEL ), clipflags );
 
 		// draw stuff
 		c = node_numsurfaces( node, WORLDMODEL );
@@ -634,7 +632,7 @@ static void R_RecursiveWorldNode( mnode_t *node, int clipflags )
 		}
 
 		// recurse down the back side
-		R_RecursiveWorldNode( children[!side], clipflags );
+		R_RecursiveWorldNode( node_child( node, !side, WORLDMODEL ), clipflags );
 	}
 }
 

@@ -46,7 +46,12 @@ acess to array elem
 */
 gl_texture_t *R_GetTexture( unsigned int texnum )
 {
-	Assert( texnum < MAX_TEXTURES );
+	if( texnum >= MAX_TEXTURES )
+	{
+		gEngfuncs.Host_Error( "%s: texnum (%d) >= MAX_TEXTURES (%d)", __func__, texnum, MAX_TEXTURES );
+		texnum = 0;
+	}
+
 	return &gl_textures[texnum];
 }
 
@@ -837,7 +842,7 @@ static byte *GL_ApplyFilter( const byte *source, int width, int height )
 	byte	*out = (byte *)source;
 	int	i;
 
-	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) || glConfig.max_multisamples > 1 )
+	if( FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ) || glConfig.max_multisamples > 1 )
 		return in;
 
 	for( i = 0; source && i < width * height; i++, in += 4 )
