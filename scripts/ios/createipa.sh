@@ -10,10 +10,8 @@ cd "../../engine/platform/ios/bundle" || exit 1
 if [ -d "$BUILDDIR" ]; then
     mkdir -p "$BUILDDIR/ios/xash3d.app"
 
-    cp -r "$BUILDDIR/ios/dlls" "$BUILDDIR/ios/xash3d.app"
-    cp -r "$BUILDDIR/ios/cl_dlls" "$BUILDDIR/ios/xash3d.app"
+    cp -r "$BUILDDIR/ios/libs/"* "$BUILDDIR/ios/xash3d.app"
     cp Info.plist "$BUILDDIR/ios/xash3d.app"
-    cp ftp_commands.plist "$BUILDDIR/ios/xash3d.app"
     if [ ! -d "$BUILDDIR/SDL2.framework" ]; then
         echo "Couldn't find SDL2.framework, place it in the build directory"
         exit 1
