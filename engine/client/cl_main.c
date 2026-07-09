@@ -955,7 +955,7 @@ static void CL_BeginUpload_f( void )
 
 	name = Cmd_Argv( 1 );
 
-	if( !COM_CheckString( name ))
+	if( COM_StringEmptyOrNULL( name ))
 		return;
 
 	if( !cl_allow_upload.value )
@@ -1503,7 +1503,7 @@ static void CL_Rcon_f( void )
 	netadr_t to;
 	int	i;
 
-	if( !COM_CheckString( rcon_password.string ))
+	if( COM_StringEmptyOrNULL( rcon_password.string ))
 	{
 		Con_Printf( "You must set 'rcon_password' before issuing an rcon command.\n" );
 		return;
@@ -1517,7 +1517,7 @@ static void CL_Rcon_f( void )
 	}
 	else
 	{
-		if( !COM_CheckString( rcon_address.string ))
+		if( COM_StringEmptyOrNULL( rcon_address.string ))
 		{
 			Con_Printf( "You must either be connected or set the 'rcon_address' cvar to issue rcon commands\n" );
 			return;
@@ -1889,7 +1889,7 @@ static void CL_Reconnect_f( void )
 		return;
 	}
 
-	if( COM_CheckString( cls.servername ))
+	if( !COM_StringEmptyOrNULL( cls.servername ))
 	{
 		connprotocol_t proto = cls.legacymode;
 
@@ -1915,7 +1915,7 @@ retry connection to last server
 */
 static void CL_Retry_f( void )
 {
-	if( !COM_CheckString( cls.servername ))
+	if( COM_StringEmptyOrNULL( cls.servername ))
 	{
 		Con_Printf( "Can't retry, no previous connection.\n" );
 		return;
@@ -2027,17 +2027,17 @@ static void CL_ParseStatusMessage( netadr_t from, sizebuf_t *msg )
 
 	CL_FixupColorStringsForInfoString( s, infostring, sizeof( infostring ));
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "gamedir" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "gamedir" )))
 		return; // unsupported proto
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "host" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "host" )))
 		return;
 
-	if( !COM_CheckString( Info_ValueForKey( infostring, "map" )))
+	if( COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "map" )))
 		return;
 
 	// don't let servers pretend they're something else
-	if( COM_CheckString( Info_ValueForKey( infostring, "gs" )))
+	if( !COM_StringEmptyOrNULL( Info_ValueForKey( infostring, "gs" )))
 		return;
 
 	maxcl = Q_atoi( Info_ValueForKey( infostring, "maxcl" ));
@@ -2398,7 +2398,7 @@ static void CL_Print( const char *c, const char *args, netadr_t from, sizebuf_t 
 
 	s = c[0] == A2C_GOLDSRC_PRINT ? args + 1 : MSG_ReadString( msg );
 
-	if( !COM_CheckStringEmpty( s ))
+	if( COM_StringEmpty( s ))
 		return;
 
 	Con_Printf( "Remote message from %s:\n", NET_AdrToString( from ));
@@ -2869,7 +2869,7 @@ Replace the displayed name for some resources
 */
 static const char *CL_CleanFileName( const char *filename )
 {
-	if( COM_CheckString( filename ) && filename[0] == '!' )
+	if( !COM_StringEmptyOrNULL( filename ) && filename[0] == '!' )
 		return "customization";
 
 	return filename;
@@ -2924,7 +2924,7 @@ void CL_ProcessFile( qboolean successfully_received, const char *filename )
 	byte		rgucMD5_hash[16];
 	resource_t	*p;
 
-	if( COM_CheckString( filename ) && successfully_received )
+	if( !COM_StringEmptyOrNULL( filename ) && successfully_received )
 	{
 		if( filename[0] != '!' )
 			Con_Printf( "processing %s\n", filename );
@@ -3368,7 +3368,7 @@ static void CL_ListMessages_f( void )
 	Con_Printf( "num size name\n" );
 	for( i = 0; i < MAX_USER_MESSAGES; i++ )
 	{
-		if( !COM_CheckStringEmpty( clgame.msg[i].name ))
+		if( COM_StringEmpty( clgame.msg[i].name ))
 			break;
 
 		Con_Printf( "%3d\t%3d\t%s\n", clgame.msg[i].number, clgame.msg[i].size, clgame.msg[i].name );

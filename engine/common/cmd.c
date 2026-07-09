@@ -459,9 +459,7 @@ static void Cmd_Alias_f( void )
 		else cmd_alias = a;
 		a->next = cur;
 
-#if defined( XASH_HASHED_VARS )
 		BaseCmd_Insert( HM_CMDALIAS, a, a->name );
-#endif
 	}
 
 	// copy the rest of the command line
@@ -507,9 +505,7 @@ static void Cmd_UnAlias_f ( void )
 		{
 			if( !Q_strcmp( s, a->name ))
 			{
-#if defined( XASH_HASHED_VARS )
 				BaseCmd_Remove( HM_CMDALIAS, a->name );
-#endif
 				if( a == cmd_alias )
 					cmd_alias = a->next;
 				if( p ) p->next = a->next;
@@ -656,22 +652,24 @@ int Cmd_AddCommandEx( const char *cmd_name, xcommand_t function, const char *cmd
 {
 	cmd_t  *cmd, *cur, *prev;
 	size_t desc_len;
+	convar_t *cvar;
+	cmdalias_t *alias;
 
-	if( !COM_CheckString( cmd_name ))
+	if( COM_StringEmptyOrNULL( cmd_name ))
 	{
 		Con_Reportf( S_ERROR "%s: NULL name\n", funcname );
 		return 0;
 	}
 
 	// fail if the command is a variable name
-	if( Cvar_FindVar( cmd_name ))
+	BaseCmd_FindAll( cmd_name, &cmd, &alias, &cvar );
+	if( cvar )
 	{
 		Con_DPrintf( S_ERROR "%s: %s already defined as a var\n", funcname, cmd_name );
 		return 0;
 	}
 
 	// fail if the command already exists and cannot be overriden
-	cmd = Cmd_Exists( cmd_name );
 	if( cmd )
 	{
 		// some mods register commands that share the name with some engine's commands
@@ -709,9 +707,7 @@ int Cmd_AddCommandEx( const char *cmd_name, xcommand_t function, const char *cmd
 	else cmd_functions = cmd;
 	cmd->next = cur;
 
-#if defined(XASH_HASHED_VARS)
 	BaseCmd_Insert( HM_CMD, cmd, cmd->name );
-#endif
 
 	return 1;
 }
@@ -736,9 +732,7 @@ void GAME_EXPORT Cmd_RemoveCommand( const char *cmd_name )
 
 		if( !Q_strcmp( cmd_name, cmd->name ))
 		{
-#if defined(XASH_HASHED_VARS)
 			BaseCmd_Remove( HM_CMD, cmd->name );
-#endif
 
 			*back = cmd->next;
 
@@ -783,17 +777,7 @@ Cmd_Exists
 */
 cmd_t *Cmd_Exists( const char *cmd_name )
 {
-#if defined(XASH_HASHED_VARS)
 	return BaseCmd_Find( HM_CMD, cmd_name );
-#else
-	cmd_t	*cmd;
-	for( cmd = cmd_functions; cmd; cmd = cmd->next )
-	{
-		if( !Q_strcmp( cmd_name, cmd->name ))
-			return cmd;
-	}
-	return NULL;
-#endif
 }
 
 /*
@@ -964,21 +948,10 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 
 	if( !Cmd_Argc( )) return; // no tokens
 
-#if defined( XASH_HASHED_VARS )
 	BaseCmd_FindAll( cmd_argv[0], &cmd, &a, &cvar );
-#endif
 
 	if( !host.apply_game_config )
 	{
-#if !defined( XASH_HASHED_VARS )
-		// check aliases
-		for( a = cmd_alias; a; a = a->next )
-		{
-			if( !Q_stricmp( cmd_argv[0], a->name ))
-				break;
-		}
-#endif
-
 		if( a )
 		{
 			size_t len = Q_strlen( a->value );
@@ -992,14 +965,6 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 	// special mode for restore game.dll archived cvars
 	if( !host.apply_game_config || !Q_strcmp( cmd_argv[0], "exec" ))
 	{
-#if !defined( XASH_HASHED_VARS )
-		for( cmd = cmd_functions; cmd; cmd = cmd->next )
-		{
-			if( !Q_stricmp( cmd_argv[0], cmd->name ) && cmd->function )
-				break;
-		}
-#endif
-
 		// check functions
 		if( cmd && cmd->function )
 		{
@@ -1156,9 +1121,7 @@ void Cmd_Unlink( int group )
 			continue;
 		}
 
-#if defined(XASH_HASHED_VARS)
 		BaseCmd_Remove( HM_CMD, cmd->name );
-#endif
 
 		*prev = cmd->next;
 
@@ -1277,12 +1240,7 @@ static void Cmd_MakePrivileged_f( void )
 		return;
 	}
 
-#if defined( XASH_HASHED_VARS )
 	BaseCmd_FindAll( s, &cmd, &alias, &cv );
-#else
-	cmd = Cmd_Exists( s );
-	cv = Cvar_FindVar( s );
-#endif
 
 	if( !cv && !cmd )
 	{
@@ -1367,10 +1325,8 @@ void Cmd_Init( void )
 
 	Cmd_AddRestrictedCommand( "make_privileged", Cmd_MakePrivileged_f, "makes command or variable privileged (protected from access attempts from server)" );
 
-#if defined(XASH_HASHED_VARS)
 	Cmd_AddCommand( "basecmd_stats", BaseCmd_Stats_f, "print info about basecmd usage" );
 	Cmd_AddCommand( "basecmd_test", BaseCmd_Test_f, "test basecmd" );
-#endif
 }
 
 void Cmd_Shutdown( void )
