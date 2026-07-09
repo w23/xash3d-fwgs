@@ -634,7 +634,6 @@ byte COM_Nibble( char c );
 int COM_SaveFile( const char *filename, const void *data, int len );
 byte *COM_LoadFileForMe( const char *filename, int *pLength ) MALLOC_LIKE( free, 1 );
 qboolean COM_IsSafeFileToDownload( const char *filename );
-cvar_t *pfnCVarGetPointer( const char *szVarName );
 int pfnDrawConsoleString( int x, int y, char *string );
 void pfnDrawSetTextColor( float r, float g, float b );
 void pfnDrawConsoleStringLen( const char *pText, int *length, int *height );
@@ -939,6 +938,15 @@ const char *SoundList_GetRandom( soundlst_group_t group );
 const char *SoundList_Get( soundlst_group_t group, int idx );
 void SoundList_Init( void );
 void SoundList_Shutdown( void );
+
+//
+// xrcon.c
+//
+void XRcon_Init( void );
+void XRcon_Shutdown( void );
+void XRcon_Frame( void );
+void XRcon_Print( const char *msg );
+qboolean XRcon_IsActive( void );
 
 #ifdef REF_DLL
 #error "common.h in ref_dll"

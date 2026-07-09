@@ -517,6 +517,9 @@ static void R_DrawEntitiesOnList( void )
 		RI.currentmodel = RI.currententity->model;
 		// d_aflatcolor += 500;
 
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
+
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
 
@@ -543,6 +546,9 @@ static void R_DrawEntitiesOnList( void )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -577,6 +583,9 @@ static void R_DrawEntitiesOnList( void )
 			tr.blend = 1.0f; // draw as solid but sorted by distance
 
 		if( tr.blend <= 0.0f )
+			continue;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 			continue;
 
 		Assert( RI.currententity != NULL );
@@ -771,11 +780,10 @@ R_DrawBEntitiesOnList
 */
 static void R_DrawBEntitiesOnList( void )
 {
-	vec3_t oldorigin;
 	vec3_t mins, maxs;
 	float  minmaxs[6];
 
-	VectorCopy( tr.modelorg, oldorigin );
+	vec3_t oldorigin = Vec3( tr.modelorg );
 	insubmodel = true;
 
 	for( int i = 0; i < tr.draw_list->num_edge_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
@@ -852,7 +860,6 @@ R_DrawBEntitiesOnList
 */
 void R_DrawBrushModel( cl_entity_t *pent )
 {
-	vec3_t oldorigin;
 	vec3_t mins, maxs;
 	float  minmaxs[6];
 	edge_t ledges[NUMSTACKEDGES
@@ -887,7 +894,7 @@ void R_DrawBrushModel( cl_entity_t *pent )
 
 	R_BeginEdgeFrame();
 
-	VectorCopy( tr.modelorg, oldorigin );
+	vec3_t oldorigin = Vec3( tr.modelorg );
 	insubmodel = true;
 
 	if( !RI.currentmodel )
@@ -1399,7 +1406,6 @@ int CL_FxBlend( cl_entity_t *e )
 {
 	int    blend = 0;
 	float  dist;
-	vec3_t tmp;
 
 	float offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
 
@@ -1482,7 +1488,8 @@ int CL_FxBlend( cl_entity_t *e )
 		break;
 	case kRenderFxHologram:
 	case kRenderFxDistort:
-		VectorCopy( e->origin, tmp );
+	{
+		vec3_t tmp = Vec3( e->origin );
 		VectorSubtract( tmp, RI.rvp.vieworigin, tmp );
 		dist = DotProduct( tmp, RI.vforward );
 
@@ -1504,6 +1511,7 @@ int CL_FxBlend( cl_entity_t *e )
 			blend += gEngfuncs.COM_RandomLong( -32, 31 );
 		}
 		break;
+	}
 	default:
 		blend = e->curstate.renderamt;
 		break;

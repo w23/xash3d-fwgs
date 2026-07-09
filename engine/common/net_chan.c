@@ -94,6 +94,7 @@ CVAR_DEFINE_AUTO( net_showpackets, "0", FCVAR_PRIVILEGED, "show network packets"
 static CVAR_DEFINE_AUTO( net_chokeloop, "0", 0, "apply bandwidth choke to loopback packets" );
 static CVAR_DEFINE_AUTO( net_showdrop, "0", 0, "show packets that are dropped" );
 static CVAR_DEFINE_AUTO( net_qport, "0", FCVAR_READ_ONLY, "current quake netport" );
+static CVAR_DEFINE_AUTO( net_sequence_window, "256", 0, "reject sequenced packets that jump more than this many sequences ahead (anti-spoofing; 0 disables)" );
 CVAR_DEFINE_AUTO( net_send_debug, "0", FCVAR_PRIVILEGED, "enable debugging output for outgoing messages" );
 CVAR_DEFINE_AUTO( net_recv_debug, "0", FCVAR_PRIVILEGED, "enable debugging output for incoming messages" );
 
@@ -173,6 +174,7 @@ void Netchan_Init( void )
 	Cvar_RegisterVariable( &net_chokeloop );
 	Cvar_RegisterVariable( &net_showdrop );
 	Cvar_RegisterVariable( &net_qport );
+	Cvar_RegisterVariable( &net_sequence_window );
 	Cvar_RegisterVariable( &net_send_debug );
 	Cvar_RegisterVariable( &net_recv_debug );
 	Cvar_FullSet( net_qport.name, buf, net_qport.flags );
@@ -239,7 +241,16 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, voi
 	chan->last_received = host.realtime;
 	chan->connect_time = host.realtime;
 	chan->incoming_sequence = 0;
-	chan->outgoing_sequence = 1;
+
+	// the server picks a random initial outgoing sequence so a remote attacker can't guess where in the sequence space the channel is
+	// kept well below BIT( 30 ) — bits 30/31 are reserved for the flags
+	// FIXME: BIT( 27 ) taken so in the worst case we have few months of stable client<->server connection
+	// as netchan doesn't currently handle wrapping around
+	if( sock == NS_SERVER )
+		chan->outgoing_sequence = COM_RandomLong( 1, BIT( 27 ) - 1 );
+	else
+		chan->outgoing_sequence = 1;
+
 	chan->rate = DEFAULT_RATE;
 	chan->qport = qport;
 	chan->client = client;
@@ -248,8 +259,22 @@ void Netchan_Setup( netsrc_t sock, netchan_t *chan, netadr_t adr, int qport, voi
 	chan->use_bz2 = FBitSet( flags, NETCHAN_USE_BZIP2 ) ? true : false;
 	chan->use_lzss = FBitSet( flags, NETCHAN_USE_LZSS ) ? true : false;
 	chan->gs_netchan = FBitSet( flags, NETCHAN_GOLDSRC ) ? true : false;
+	chan->use_cookie = FBitSet( flags, NETCHAN_USE_COOKIE ) ? true : false;
+	chan->cookie = 0;
 
 	MSG_Init( &chan->message, "NetData", chan->message_buf, sizeof( chan->message_buf ));
+}
+
+/*
+==============
+Netchan_SetCookie
+
+called on the client after parsing NET_EXT_NETCHAN_COOKIE in the connect reply
+==============
+*/
+void Netchan_SetCookie( netchan_t *chan, uint64_t cookie )
+{
+	chan->cookie = cookie;
 }
 
 /*
@@ -1074,8 +1099,6 @@ Netchan_CopyNormalFragments
 */
 qboolean Netchan_CopyNormalFragments( netchan_t *chan, sizebuf_t *msg, size_t *length )
 {
-	size_t	size = 0;
-
 	if( !chan->incomingready[FRAG_NORMAL_STREAM] )
 		return false;
 
@@ -1095,55 +1118,55 @@ qboolean Netchan_CopyNormalFragments( netchan_t *chan, sizebuf_t *msg, size_t *l
 
 		// copy it in
 		MSG_WriteBytes( msg, MSG_GetData( &p->frag_message ), MSG_GetNumBytesWritten( &p->frag_message ));
-		size += MSG_GetNumBytesWritten( &p->frag_message );
-
 		Mem_Free( p );
 		p = n;
 	}
 
-	if( chan->use_bz2 && !memcmp( MSG_GetData( msg ), "BZ2", 4 ))
+	// consumed buffer, flush
+	chan->incomingbufs[FRAG_NORMAL_STREAM] = NULL;
+	chan->incomingready[FRAG_NORMAL_STREAM] = false;
+
+	if( MSG_Overflow( msg, 0 ))
+	{
+		Con_Printf( S_ERROR "%s: net_message_buffer overflow!\n", __func__ );
+		return false;
+	}
+
+	size_t size = MSG_GetNumBytesWritten( msg );
+
+	if( chan->use_bz2 && size >= 4 && !memcmp( MSG_GetData( msg ), "BZ2", 4 ))
 	{
 #if !XASH_DEDICATED
 		byte buf[0x10000];
 		uint uDecompressedLen = sizeof( buf );
-		int bz2_err = BZ2_bzBuffToBuffDecompress( buf, &uDecompressedLen, MSG_GetData( msg ) + 4, MSG_GetNumBytesWritten( msg ) - 4, 1, 0 );
+		int bz2_err = BZ2_bzBuffToBuffDecompress( buf, &uDecompressedLen, MSG_GetData( msg ) + 4, size - 4, 1, 0 );
 
-		if( bz2_err == BZ_OK )
-		{
-			size = uDecompressedLen;
-			memcpy( msg->pData, buf, size );
-		}
-		else
+		if( bz2_err != BZ_OK )
 		{
 			Con_Printf( S_ERROR "%s: BZ2 decompression failed (%d)\n", __func__, bz2_err );
 			return false;
 		}
+
+		size = uDecompressedLen;
+		memcpy( msg->pData, buf, size );
 #else
 		Host_Error( "%s: BZ2 compression is not supported for server\n", __func__ );
 #endif
 	}
 	else if( chan->use_lzss && LZSS_IsCompressed( MSG_GetData( msg ), size ))
 	{
-		uint	uDecompressedLen = LZSS_GetActualSize( MSG_GetData( msg ), size );
-		byte	buf[NET_MAX_MESSAGE];
+		byte buf[NET_MAX_MESSAGE];
+		uint uDecompressedLen = LZSS_GetActualSize( MSG_GetData( msg ), size );
 
-		if( uDecompressedLen <= sizeof( buf ))
+		if( uDecompressedLen == 0 || uDecompressedLen > sizeof( buf ))
 		{
-			size = LZSS_Decompress( MSG_GetData( msg ), buf, size, sizeof( buf ));
-			memcpy( msg->pData, buf, size );
-		}
-		else
-		{
-			// g-cont. this should not happens
-			Con_Printf( S_ERROR "buffer to small to decompress message\n" );
+			Con_Printf( S_ERROR "LZSS fragment uncompressed size out of range: %u\n", uDecompressedLen );
 			return false;
 		}
+
+		size = LZSS_Decompress( MSG_GetData( msg ), buf, size, sizeof( buf ));
+		memcpy( msg->pData, buf, size );
 	}
-
-	chan->incomingbufs[FRAG_NORMAL_STREAM] = NULL;
-
-	// reset flag
-	chan->incomingready[FRAG_NORMAL_STREAM] = false;
 
 	// tell about message size
 	if( length ) *length = size;
@@ -1160,7 +1183,7 @@ Netchan_CopyFileFragments
 qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 {
 	char	filename[MAX_OSPATH], compressor[32];
-	uint	uncompressedSize;
+	uint	uncompressedSize = 0;
 
 	if( !chan->incomingready[FRAG_FILE_STREAM] )
 		return false;
@@ -1177,6 +1200,7 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 
 	// copy in first chunk so we can get filename out
 	MSG_WriteBytes( msg, MSG_GetData( &p->frag_message ), MSG_GetNumBytesWritten( &p->frag_message ));
+	msg->nDataBits = msg->iCurBit; // tighten the NetMessage buffer to amount read from frag_message
 	MSG_Clear( msg );
 
 	Q_strncpy( filename, MSG_ReadString( msg ), sizeof( filename ));
@@ -1185,6 +1209,13 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 	{
 		Q_strncpy( compressor, MSG_ReadString( msg ), sizeof( compressor ));
 		uncompressedSize = MSG_ReadLong( msg );
+	}
+
+	if( MSG_CheckOverflow( msg ))
+	{
+		Con_Printf( S_ERROR "%s: malformed file fragment header\n", __func__ );
+		Netchan_FlushIncoming( chan, FRAG_FILE_STREAM );
+		return false;
 	}
 
 	if( COM_StringEmptyOrNULL( filename ))
@@ -1258,6 +1289,10 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 		p = n;
 	}
 
+	// buffers consumed, now reset incomingbufs
+	chan->incomingbufs[FRAG_FILE_STREAM] = NULL;
+	chan->incomingready[FRAG_FILE_STREAM] = false;
+
 	if( chan->gs_netchan && chan->use_bz2 && !Q_stricmp( compressor, "bz2" ))
 	{
 #if !XASH_DEDICATED
@@ -1265,7 +1300,6 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 		{
 			Con_Printf( S_ERROR "BZ2 fragment uncompressed size out of range: %u for %s\n", uncompressedSize, filename );
 			Mem_Free( buffer );
-			Netchan_FlushIncoming( chan, FRAG_FILE_STREAM );
 			return false;
 		}
 
@@ -1277,7 +1311,6 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 			Con_DPrintf( S_ERROR "BZ2 decompression failed for %s\n", filename );
 			Mem_Free( buffer );
 			Mem_Free( uncompressedBuffer );
-			Netchan_FlushIncoming( chan, FRAG_FILE_STREAM );
 			return false;
 		}
 		Mem_Free( buffer );
@@ -1295,7 +1328,6 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 		{
 			Con_Printf( S_ERROR "LZSS fragment uncompressed size out of range: %u for %s\n", uncompressedSize, filename );
 			Mem_Free( buffer );
-			Netchan_FlushIncoming( chan, FRAG_FILE_STREAM );
 			return false;
 		}
 
@@ -1325,14 +1357,14 @@ qboolean Netchan_CopyFileFragments( netchan_t *chan, sizebuf_t *msg )
 	// clear remnants
 	MSG_Clear( msg );
 
-	chan->incomingbufs[FRAG_FILE_STREAM] = NULL;
-	chan->incomingready[FRAG_FILE_STREAM] = false;
-
 	return true;
 }
 
 static qboolean Netchan_Validate( netchan_t *chan, sizebuf_t *sb, qboolean *frag_message, uint *fragid, int *frag_offset, int *frag_length )
 {
+	int bits_read = MSG_GetNumBitsRead( sb );
+	int bits_total = MSG_GetMaxBits( sb );
+
 	for( int i = 0; i < MAX_STREAMS; i++ )
 	{
 		if( !frag_message[i] )
@@ -1340,8 +1372,6 @@ static qboolean Netchan_Validate( netchan_t *chan, sizebuf_t *sb, qboolean *frag
 
 		int buffer = FRAG_GETID( fragid[i] );
 		int count = FRAG_GETCOUNT( fragid[i] );
-		int offset = BitByte( frag_offset[i] );
-		int length = BitByte( frag_length[i] );
 
 		if( buffer < 0 || buffer > NET_MAX_BUFFER_ID )
 			return false;
@@ -1349,10 +1379,13 @@ static qboolean Netchan_Validate( netchan_t *chan, sizebuf_t *sb, qboolean *frag
 		if( count < 0 || count > NET_MAX_BUFFERS_COUNT )
 			return false;
 
-		if( length < 0 || length > ( FRAGMENT_MAX_SIZE << 3 ))
+		if( frag_offset[i] < 0 || frag_offset[i] > ( FRAGMENT_MAX_SIZE << 3 ))
 			return false;
 
-		if( offset < 0 || offset > ( FRAGMENT_MAX_SIZE << 3 ))
+		if( frag_length[i] < 0 || frag_length[i] > ( FRAGMENT_MAX_SIZE << 3 ))
+			return false;
+
+		if( bits_read + frag_offset[i] + frag_length[i] > bits_total )
 			return false;
 	}
 
@@ -1652,6 +1685,14 @@ void Netchan_TransmitBits( netchan_t *chan, int length, const byte *data )
 
 	chan->outgoing_sequence++;
 
+	// prefix the cookie so the peer can authenticate this packet as ours
+	// before doing anything else with it
+	if( chan->use_cookie )
+	{
+		MSG_WriteLong( &send, (uint)( chan->cookie & 0xFFFFFFFF ));
+		MSG_WriteLong( &send, (uint)( chan->cookie >> 32 ));
+	}
+
 	MSG_WriteLong( &send, w1 );
 	MSG_WriteLong( &send, w2 );
 
@@ -1776,15 +1817,42 @@ qboolean Netchan_Process( netchan_t *chan, sizebuf_t *msg )
 
 	// get sequence numbers
 	MSG_Clear( msg );
+
+	// authenticate via the per-connection cookie before parsing anything else;
+	// a spoofed packet from a remote attacker won't know the 64-bit cookie and
+	// will be rejected here without touching sequence/ack state
+	if( chan->use_cookie )
+	{
+		if( MSG_GetMaxBytes( msg ) < 16 )
+		{
+			Con_Reportf( S_WARN "%s: %s: truncated packet (%d bytes) with cookie expected, dropping\n", __func__, NET_AdrToString( chan->remote_address ), MSG_GetMaxBytes( msg ));
+			return false;
+		}
+
+		uint32_t cookie_lo = MSG_ReadDword( msg );
+		uint32_t cookie_hi = MSG_ReadDword( msg );
+		uint64_t cookie = ((uint64_t)cookie_hi << 32 ) | (uint64_t)cookie_lo;
+
+		if( cookie != chan->cookie )
+		{
+			Con_Reportf( S_WARN "%s: %s: cookie mismatch, dropping (possible spoof attempt)\n", __func__, NET_AdrToString( chan->remote_address ));
+			return false;
+		}
+	}
+
 	uint sequence = MSG_ReadLong( msg );
 	uint sequence_ack = MSG_ReadLong( msg );
 
-	if( chan->use_munge )
-		COM_UnMunge2( msg->pData + 8, ( msg->nDataBits >> 3 ) - 8, sequence & 0xFF );
+	if( chan->use_munge && MSG_GetMaxBytes( msg ) >= 8 )
+		COM_UnMunge2( msg->pData + 8, MSG_GetMaxBytes( msg ) - 8, sequence & 0xFF );
 
-	// read the qport if we are a server
+	// read the qport if we are a server; serves as a NAT-stable
+	// connection demultiplexer and rejects packets for the wrong client
 	if( chan->sock == NS_SERVER )
-		MSG_ReadShort( msg );
+	{
+		if(( MSG_ReadShort( msg ) & 0xffff ) != chan->qport )
+			return false;
+	}
 
 	uint reliable_message = sequence >> 31;
 	uint reliable_ack = sequence_ack >> 31;
@@ -1843,6 +1911,20 @@ qboolean Netchan_Process( netchan_t *chan, sizebuf_t *msg )
 				Con_Printf( "%s:duplicate packet %i at %i\n", adr, sequence, chan->incoming_sequence );
 			else Con_Printf( "%s:out of order packet %i at %i\n", adr, sequence, chan->incoming_sequence );
 		}
+		return false;
+	}
+
+	// reject packets that leap too far ahead of the expected sequence
+	// skip on the very first packet — the server starts with a random
+	// outgoing_sequence, so the first one legitimately jumps far ahead of 0
+	// NOTE: disable sequence window with cookie extension, if cookie ext proves
+	// to be inefficient, we can safely enable sequence window back
+	if( !chan->use_cookie && chan->incoming_sequence != 0 && net_sequence_window.value > 0 && sequence > chan->incoming_sequence + (uint)net_sequence_window.value )
+	{
+		Con_Printf( S_WARN "%s: %s: sequence %u jumps %u ahead of expected %i (window %i), dropping\n",
+			__func__, NET_AdrToString( chan->remote_address ),
+			sequence, sequence - chan->incoming_sequence,
+			chan->incoming_sequence, (int)net_sequence_window.value );
 		return false;
 	}
 
@@ -1909,7 +1991,7 @@ qboolean Netchan_Process( netchan_t *chan, sizebuf_t *msg )
 					MSG_Clear( &pbuf->frag_message );
 
 					MSG_StartReading( &temp, msg->pData, MSG_GetMaxBytes( msg ), size, -1 );
-					MSG_ReadBits( &temp, buffer, bits );
+					MSG_ReadBits( &temp, buffer, sizeof( buffer ), bits );
 					MSG_WriteBits( &pbuf->frag_message, buffer, bits );
 				}
 

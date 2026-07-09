@@ -952,8 +952,7 @@ void R_DrawAliasModel( cl_entity_t *e )
 	R_AliasSetupTimings();
 
 	// angles will be modify below keep original
-	vec3_t angles;
-	VectorCopy( e->angles, angles );
+	vec3_t angles = Vec3( e->angles );
 
 	R_AliasLerpMovement( e );
 
@@ -966,9 +965,11 @@ void R_DrawAliasModel( cl_entity_t *e )
 	//
 	// get lighting information
 	//
-	alight_t lighting;
 	vec3_t dir;
-	lighting.plightvec = dir;
+	alight_t lighting =
+	{
+		.plightvec = dir,
+	};
 	R_EntityDynamicLight( e, &lighting, FBitSet( RI.rvp.flags, RF_DRAW_WORLD ), g_alias.time, g_alias.lightspot, g_alias.lightvec );
 
 	r_stats.c_alias_polys += m_pAliasHeader->numtris;

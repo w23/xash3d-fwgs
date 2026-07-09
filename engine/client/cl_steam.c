@@ -45,7 +45,7 @@ GNU General Public License for more details.
 #define SBRK_CONNECT_RETRY_DELAY	5.0
 #define SBRK_TICKET_SIZE_MAX 		2048
 
-static CVAR_DEFINE_AUTO( cl_steam_broker_addr, "127.0.0.1:27420", FCVAR_ARCHIVE, "address of steam broker instance" );
+static CVAR_DEFINE_AUTO( cl_steam_broker_addr, "127.0.0.1:27420", FCVAR_PRIVILEGED|FCVAR_ARCHIVE, "address of steam broker instance" );
 
 typedef enum
 {
@@ -220,7 +220,7 @@ static qboolean SteamBroker_ProcessFrame( void )
 
 	// verify frame header
 	char header[SBRK_FRAME_HEADER_SIZE];
-	if( !MSG_ReadBytes( &sb, header, SBRK_FRAME_HEADER_SIZE ))
+	if( !MSG_ReadBytes( &sb, header, sizeof( header ), SBRK_FRAME_HEADER_SIZE ))
 		return false;
 
 	if( memcmp( header, SBRK_FRAME_HEADER, SBRK_FRAME_HEADER_SIZE ) != 0 )
@@ -237,7 +237,7 @@ static qboolean SteamBroker_ProcessFrame( void )
 		return false; // need more data
 
 	char response_header[SBRK_RESPONSE_HEADER_SIZE];
-	if( MSG_ReadBytes( &sb, response_header, SBRK_RESPONSE_HEADER_SIZE ))
+	if( MSG_ReadBytes( &sb, response_header, sizeof( response_header ), SBRK_RESPONSE_HEADER_SIZE ))
 	{
 		if( memcmp( response_header, SBRK_RESPONSE_HEADER, SBRK_RESPONSE_HEADER_SIZE ) == 0 )
 		{
@@ -249,7 +249,7 @@ static qboolean SteamBroker_ProcessFrame( void )
 			else
 			{
 				uint64_t steam_id;
-				MSG_ReadBytes( &sb, &steam_id, sizeof( steam_id ));
+				MSG_ReadBytes( &sb, &steam_id, sizeof( steam_id ), sizeof( steam_id ));
 				uint32_t ticket_size = MSG_ReadDword( &sb );
 				uint8_t ticket_data[SBRK_TICKET_SIZE_MAX];
 
@@ -257,7 +257,7 @@ static qboolean SteamBroker_ProcessFrame( void )
 				{
 					Con_Printf( S_ERROR "%s: ticket size exceeds limit (%u)\n", __func__, ticket_size );
 				}
-				else if( MSG_ReadBytes( &sb, ticket_data, ticket_size ))
+				else if( MSG_ReadBytes( &sb, ticket_data, sizeof( ticket_data ), ticket_size ))
 				{
 					Con_Printf( "%s: SteamID: %"PRIu64", ticket: [%d, %d, %d, %d...]\n", __func__, steam_id, ticket_data[0], ticket_data[1], ticket_data[2], ticket_data[3] );
 
@@ -395,9 +395,7 @@ static void SteamBroker_UpdateConnecting( void )
 	FD_ZERO( &writefds );
 	FD_SET( broker.socket, &writefds );
 
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 0;
+	struct timeval tv = { 0 };
 
 #if XASH_WIN32
 	int select_result = select( 0, NULL, &writefds, NULL, &tv );

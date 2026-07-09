@@ -13,6 +13,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include <inttypes.h>
 #include "common.h"
 #include "const.h"
 #include "server.h"
@@ -301,6 +302,7 @@ static void SV_ConnectClient( netadr_t from )
 	const char *s;
 	int extensions;
 	uint netchan_flags = 0;
+	uint64_t netchan_cookie = 0;
 
 	if( Cmd_Argc() < 5 )
 	{
@@ -344,6 +346,27 @@ static void SV_ConnectClient( netadr_t from )
 	// extract qport from protocol info
 	qport = Q_atoi( Info_ValueForKey( protinfo, "qport" ));
 	extensions = Q_atoi( Info_ValueForKey( protinfo, "ext" ));
+
+	if( FBitSet( extensions, NET_EXT_NETCHAN_COOKIE ))
+	{
+		const char *cookie_str = Info_ValueForKey( protinfo, "cookie" );
+
+		if( Q_strlen( cookie_str ) != 16 )
+		{
+			SV_RejectConnection( from, "client advertised NET_EXT_NETCHAN_COOKIE but did not supply a cookie\n" );
+			return;
+		}
+
+		byte buf[8];
+		COM_HexConvert( cookie_str, 16, buf );
+		for( int i = 0; i < 8; i++ )
+			netchan_cookie = ( netchan_cookie << 8 ) | buf[i];
+	}
+
+	// these keys aren't useragent
+	Info_RemoveKey( protinfo, "cookie" );
+	Info_RemoveKey( protinfo, "ext" );
+	Info_RemoveKey( protinfo, "qport" );
 
 	s = Cmd_Argv( 4 );	// user info
 
@@ -419,7 +442,7 @@ static void SV_ConnectClient( netadr_t from )
 	newcl->frames = frames;
 	newcl->userid = g_userid++;	// create unique userid
 	newcl->state = cs_connected;	// now expect "spawn" command
-	newcl->extensions = FBitSet( extensions, NET_EXT_SPLITSIZE );
+	newcl->extensions = FBitSet( extensions, NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE );
 	Q_strncpy( newcl->useragent, protinfo, sizeof( newcl->useragent ));
 
 	// HACKHACK: can hear all players by default to avoid issues
@@ -429,7 +452,11 @@ static void SV_ConnectClient( netadr_t from )
 	// initailize netchan
 	if( !Host_IsLocalClient( ))
 		SetBits( netchan_flags, NETCHAN_USE_LZSS );
+	if( FBitSet( newcl->extensions, NET_EXT_NETCHAN_COOKIE ))
+		SetBits( netchan_flags, NETCHAN_USE_COOKIE );
 	Netchan_Setup( NS_SERVER, &newcl->netchan, from, qport, newcl, SV_GetFragmentSize, netchan_flags );
+	if( FBitSet( newcl->extensions, NET_EXT_NETCHAN_COOKIE ))
+		Netchan_SetCookie( &newcl->netchan, netchan_cookie );
 	MSG_Init( &newcl->datagram, "Datagram", newcl->datagram_buf, sizeof( newcl->datagram_buf )); // datagram buf
 
 	Q_strncpy( newcl->hashedcdkey, Info_ValueForKey( protinfo, "uuid" ), 32 );
@@ -439,6 +466,8 @@ static void SV_ConnectClient( netadr_t from )
 	protinfo[0] = '\0';
 	Info_SetValueForKeyf( protinfo, "ext", sizeof( protinfo ), "%d", newcl->extensions );
 	Info_SetValueForKey( protinfo, "cheats", sv_cheats.value ? "1" : "0", sizeof( protinfo ));
+	if( FBitSet( newcl->extensions, NET_EXT_NETCHAN_COOKIE ))
+		Info_SetValueForKeyf( protinfo, "cookie", sizeof( protinfo ), "%016"PRIx64, netchan_cookie );
 
 	// send the connect packet to the client
 	Netchan_OutOfBandPrint( NS_SERVER, from, S2C_CONNECTION" %s", protinfo );
@@ -2313,7 +2342,6 @@ static edict_t *SV_GetCrossEnt( edict_t *player )
 		vec3_t vecLOS;
 		vec3_t vecOrigin;
 		float flDot, traceLen;
-		vec3_t boxSize;
 		trace_t trace;
 		vec3_t vecTrace;
 
@@ -2339,7 +2367,7 @@ static edict_t *SV_GetCrossEnt( edict_t *player )
 		if( traceLen > maxLen )
 			continue;
 
-		VectorCopy( ent->v.size, boxSize);
+		vec3_t boxSize = Vec3( ent->v.size );
 		VectorScale( boxSize, 0.5, boxSize );
 
 		if ( vecLOS[0] > boxSize[0] )
@@ -2659,16 +2687,17 @@ static qboolean SV_EntFire_f( sv_client_t *cl )
 		{
 			string keyname;
 			string value;
-			KeyValueData	pkvd;
 			if( Cmd_Argc() != 5 )
 				return false;
 
-			pkvd.szClassName = (char*)SV_GetString( ent->v.classname );
 			Q_strncpy( keyname, Cmd_Argv( 3 ), sizeof( keyname ));
 			Q_strncpy( value, Cmd_Argv( 4 ), sizeof( value ));
-			pkvd.szKeyName = keyname;
-			pkvd.szValue = value;
-			pkvd.fHandled = false;
+			KeyValueData pkvd =
+			{
+				.szClassName = (char*)SV_GetString( ent->v.classname ),
+				.szKeyName = keyname,
+				.szValue = value,
+			};
 			svgame.dllFuncs.pfnKeyValue( ent, &pkvd );
 
 			if( pkvd.fHandled )
@@ -2951,7 +2980,6 @@ static qboolean SV_EntCreate_f( sv_client_t *cl )
 		{
 			string keyname;
 			string value;
-			KeyValueData pkvd;
 
 			// allow split keyvalues to prespawn and postspawn
 			if( !Q_strcmp( Cmd_Argv( i ), "|" ) )
@@ -2959,10 +2987,12 @@ static qboolean SV_EntCreate_f( sv_client_t *cl )
 
 			Q_strncpy( keyname, Cmd_Argv( i++ ), sizeof( keyname ));
 			Q_strncpy( value, Cmd_Argv( i ), sizeof( value ));
-			pkvd.fHandled = false;
-			pkvd.szClassName = (char*)SV_GetString( ent->v.classname );
-			pkvd.szKeyName = keyname;
-			pkvd.szValue = value;
+			KeyValueData pkvd =
+			{
+				.szClassName = (char*)SV_GetString( ent->v.classname ),
+				.szKeyName = keyname,
+				.szValue = value,
+			};
 			svgame.dllFuncs.pfnKeyValue( ent, &pkvd );
 
 			if( pkvd.fHandled )
@@ -3018,14 +3048,15 @@ static qboolean SV_EntCreate_f( sv_client_t *cl )
 		{
 			string keyname;
 			string value;
-			KeyValueData pkvd;
 
 			Q_strncpy( keyname, Cmd_Argv( i++ ), sizeof( keyname ));
 			Q_strncpy( value, Cmd_Argv( i ), sizeof( value ));
-			pkvd.fHandled = false;
-			pkvd.szClassName = (char*)SV_GetString( ent->v.classname );
-			pkvd.szKeyName = keyname;
-			pkvd.szValue = value;
+			KeyValueData pkvd =
+			{
+				.szClassName = (char*)SV_GetString( ent->v.classname ),
+				.szKeyName = keyname,
+				.szValue = value,
+			};
 			svgame.dllFuncs.pfnKeyValue( ent, &pkvd );
 
 			if( pkvd.fHandled )
@@ -3443,7 +3474,7 @@ static void SV_ParseResourceList( sv_client_t *cl, sizebuf_t *msg )
 		ClearBits( resource->ucFlags, RES_WASMISSING );
 
 		if( FBitSet( resource->ucFlags, RES_CUSTOM ))
-			MSG_ReadBytes( msg, resource->rgucMD5_hash, 16 );
+			MSG_ReadBytes( msg, resource->rgucMD5_hash, sizeof( resource->rgucMD5_hash ), 16 );
 
 		if( resource->type > t_world || resource->nDownloadSize > 1024 * 1024 * 1024 )
 		{
@@ -3567,7 +3598,7 @@ static void SV_ParseVoiceData( sv_client_t *cl, sizebuf_t *msg )
 		return;
 	}
 
-	MSG_ReadBytes( msg, received, size );
+	MSG_ReadBytes( msg, received, sizeof( received ), size );
 
 	if( !sv_voiceenable.value || cl->state != cs_spawned )
 		return;
