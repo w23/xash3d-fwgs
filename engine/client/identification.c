@@ -13,14 +13,16 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include "build.h"
 #include <inttypes.h>
-#include "common.h"
 #include <fcntl.h>
 #if !XASH_WIN32
 #include <dirent.h>
 #else
 #include <io.h>
 #endif
+#include "common.h"
+#include "client.h"
 
 /*
 ==========================================================
@@ -644,16 +646,13 @@ void ID_GetMD5ForAddress( char *key, netadr_t adr, size_t size )
 	// local server case
 	case NA_IP:
 		memcpy( buf, adr.ip, sizeof( adr.ip ));
-		memcpy( buf + sizeof( adr.ip ), &adr.port, sizeof( adr.port ));
-		bufsize = sizeof( adr.ip ) + sizeof( adr.port );
+		bufsize = sizeof( adr.ip );
 		break;
 	case NA_IP6:
 		NET_NetadrToIP6Bytes( buf, &adr );
-		memcpy( buf + 16, &adr.port, sizeof( adr.port ));
-		bufsize = 16 + sizeof( adr.port );
+		bufsize = 16;
 		break;
 	default:
-		bufsize = 0;
 		break;
 	}
 
