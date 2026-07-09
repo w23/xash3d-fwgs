@@ -466,6 +466,8 @@ static const ref_api_t gEngfuncs =
 
 	R_GetWindowHandle,
 
+	R_GetSpriteFrame,
+
 	XVK_GetInstanceExtensions,
 	XVK_GetVkGetInstanceProcAddr,
 	XVK_CreateSurface,

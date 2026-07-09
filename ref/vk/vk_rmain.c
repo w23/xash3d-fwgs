@@ -109,7 +109,7 @@ static void Mod_UnloadTextures( model_t *mod )
 		R_BrushUnloadTextures( mod );
 		break;
 	case mod_sprite:
-		Mod_SpriteUnloadTextures( mod->cache.data );
+		// Sprite textures are managed by the engine (Mod_SpriteUnloadTextures)
 		break;
 	default:
 		ASSERT( 0 );
@@ -137,7 +137,8 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 				// TODO we might benefit a tiny bit (a few ms loading time) from reusing studio models from previous map
 				break;
 			case mod_sprite:
-				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
+				// Sprite textures are loaded by the engine (Mod_SpriteLoadTextures)
+				// Nothing to do here
 				break;
 			case mod_alias:
 				// TODO what ARE mod_alias? We just don't know.
@@ -549,9 +550,6 @@ static const ref_interface_t gReffuncs =
 	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
 	.CL_RunLightStyles = VK_RunLightStyles,
-
-	.R_GetSpriteParms = R_GetSpriteParms,
-	.R_GetSpriteTexture = R_GetSpriteTexture,
 
 	.Mod_ProcessRenderData = Mod_ProcessRenderData,
 	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
