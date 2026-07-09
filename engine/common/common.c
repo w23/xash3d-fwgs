@@ -31,6 +31,8 @@ static const char *const file_exts[] =
 	// ban Windows code
 	"exe", "vbs", "com", "bat",
 	"dll", "sys", "ps1",
+	"lnk", "scr", "cpl", "msi",
+	"url", "jar",
 
 	// ban common unix code
 	// NOTE: in unix anything can be executed as long it has access flag
@@ -943,11 +945,11 @@ void GAME_EXPORT pfnResetTutorMessageDecayData( void )
 
 static void Test_LZSS( void )
 {
-	char poison1[8192];
+	char poison1[8192] MAYBE_UNUSED;
 	byte in[256];
-	char poison2[8192];
+	char poison2[8192] MAYBE_UNUSED;
 	byte out[256];
-	char poison3[8192];
+	char poison3[8192] MAYBE_UNUSED;
 
 	lzss_header_t *hdr = (lzss_header_t *)in;
 	uint result;

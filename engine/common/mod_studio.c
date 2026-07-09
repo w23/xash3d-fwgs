@@ -862,7 +862,6 @@ static void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qbo
 	studiohdr_t	*pstudiohdr;
 	mstudiobodyparts_t	*pbodypart;
 	mstudiomodel_t	*m_pSubModel;
-	mstudioseqgroup_t	*pseqgroup;
 	mstudioseqdesc_t	*pseqdesc;
 	mstudiobone_t	*pbones;
 	mstudioanim_t	*panim;
@@ -902,7 +901,6 @@ static void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qbo
 	for( i = 0; i < numseq; i++ )
 	{
 		pseqdesc = (mstudioseqdesc_t *)((byte *)pstudiohdr + pstudiohdr->seqindex) + i;
-		pseqgroup = (mstudioseqgroup_t *)((byte *)pstudiohdr + pstudiohdr->seqgroupindex) + pseqdesc->seqgroup;
 
 		if( pseqdesc->seqgroup == 0 )
 			panim = (mstudioanim_t *)((byte *)pstudiohdr + pseqdesc->animindex);
@@ -999,7 +997,6 @@ static int Mod_StudioBodyVariations( model_t *mod )
 static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buffersize )
 {
 	studiohdr_t *phdr = buffer;
-	byte *mod_base = buffer;
 
 	if( buffersize < sizeof( studiohdr_t ))
 		return false;
@@ -1010,12 +1007,13 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 		return false;
 
 #if XASH_BIG_ENDIAN
+	byte *mod_base = buffer;
+
 	if( phdr->studiohdr2index > 0 && phdr->studiohdr2index < phdr->length )
 	{
 		Con_Printf( S_ERROR "byteswapping extended studio model \"%s\" is unsupoprted\n", name );
 		return false;
 	}
-#endif
 
 	for( int i = 0; i < phdr->numbones; i++ )
 		le_struct_swap( mstudiobone_swap, (mstudiobone_t *)( mod_base + phdr->boneindex ) + i );
@@ -1090,6 +1088,7 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 	short *pskinref = (short *)( mod_base + phdr->skinindex );
 	for( int i = 0; i < phdr->numskinfamilies * phdr->numskinref; i++ )
 		pskinref[i] = LittleShort( pskinref[i] );
+#endif
 
 	return true;
 }
