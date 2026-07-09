@@ -320,6 +320,11 @@ static qboolean FS_DetermineReadOnlyRootDirectory( char *out, size_t size )
 		return true;
 	}
 
+#if XASH_IOS
+	Q_strncpy( out, IOS_GetExecDir(), size );
+	return true;
+#endif
+
 	return false;
 }
 
