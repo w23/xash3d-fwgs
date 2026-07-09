@@ -836,7 +836,7 @@ static void SV_TestBandWidth( netadr_t from )
 		return;
 	}
 
-	crc = svs.testpacket_crcs[ofs];
+	crc = LittleLong( svs.testpacket_crcs[ofs] );
 	memcpy( svs.testpacket_crcpos, &crc, sizeof( crc ));
 
 	// send the datagram
@@ -2167,7 +2167,7 @@ static qboolean SV_Spawn_f( sv_client_t *cl )
 	if( sv.paused )
 	{
 		MSG_BeginServerCmd( &sv.reliable_datagram, svc_setpause );
-		MSG_WriteByte( &sv.reliable_datagram, sv.paused );
+		MSG_WriteOneBit( &sv.reliable_datagram, sv.paused );
 		SV_ClientPrintf( cl, "Server is paused.\n" );
 	}
 	return true;
@@ -3219,9 +3219,11 @@ void SV_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 		return;
 	}
 
-	if( !Q_strcmp( pcmd, A2S_GOLDSRC_INFO ) || pcmd[0] == A2S_GOLDSRC_PLAYERS || pcmd[0] == A2S_GOLDSRC_RULES )
+	// Must check `args` because A2S_GOLDSRC_INFO contains spaces.
+	// `pcmd` points only to the first word from the query string.
+	if( !Q_strcmp( args, A2S_GOLDSRC_INFO ) || pcmd[0] == A2S_GOLDSRC_PLAYERS || pcmd[0] == A2S_GOLDSRC_RULES )
 	{
-		SV_SourceQuery_HandleConnnectionlessPacket( pcmd, from );
+		SV_SourceQuery_HandleConnnectionlessPacket( args, from );
 	}
 	else if( !Q_strcmp( pcmd, A2A_NETINFO ))
 	{
@@ -3464,6 +3466,16 @@ static void SV_ParseResourceList( sv_client_t *cl, sizebuf_t *msg )
 		}
 		SV_AddToResourceList( resource, &cl->resourcesneeded );
 	}
+
+	if( host.realtime < cl->resourcelist_next_changetime )
+	{
+		Con_Reportf( "%s: ignoring resource list update from %s: too soon\n", __func__, cl->name );
+		SV_ClearResourceList( &cl->resourcesneeded );
+		SV_ClearResourceList( &cl->resourcesonhand );
+		return;
+	}
+
+	cl->resourcelist_next_changetime = host.realtime + sv_upload_penalty_time.value;
 
 	totalsize = COM_SizeofResourceList( &cl->resourcesneeded, &ri );
 

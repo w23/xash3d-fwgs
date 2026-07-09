@@ -68,6 +68,7 @@ static CVAR_DEFINE_AUTO( joy_gyro_roll, "0.0", FCVAR_ARCHIVE | FCVAR_FILTERABLE,
 static CVAR_DEFINE_AUTO( joy_gyro_pitch_deadzone, "0.5", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "gyroscope pitch axis deadzone (deg/s)" );
 static CVAR_DEFINE_AUTO( joy_gyro_yaw_deadzone, "0.5", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "gyroscope yaw axis deadzone (deg/s)" );
 static CVAR_DEFINE_AUTO( joy_gyro_roll_deadzone, "0.5", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "gyroscope roll axis deadzone (deg/s)" );
+static CVAR_DEFINE_AUTO( joy_gyro_enable, "1", FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enables aiming with gamepad gyroscope" );
 static CVAR_DEFINE_AUTO( joy_debug, "0", 0, "visualize gamepad axes and buttons" );
 
 // stores the latest instantaneous gyroscope rotation rates (in rad/s) from platform input
@@ -197,7 +198,7 @@ static int Joy_GetHatValueForAxis( const engineAxis_t engineAxis )
 		positive = JOY_HAT_RIGHT;
 		break;
 	case JOY_AXIS_FWD:
-		threshold = joy_side_key_threshold.value;
+		threshold = joy_forward_key_threshold.value;
 		negative = JOY_HAT_UP;
 		positive = JOY_HAT_DOWN;
 		break;
@@ -318,7 +319,7 @@ void Joy_FinalizeMove( float *fw, float *side, float *dpitch, float *dyaw )
 		const char *bind = joy_axis_binding.string;
 		size_t i;
 
-		for( i = 0; bind[i]; i++ )
+		for( i = 0; bind[i] && i < MAX_AXES; i++ )
 		{
 			switch( bind[i] )
 			{
@@ -340,7 +341,7 @@ void Joy_FinalizeMove( float *fw, float *side, float *dpitch, float *dyaw )
 	*dpitch += joy_pitch.value * (float)joyaxis[JOY_AXIS_PITCH].val/(float)SHRT_MAX * host.realframetime;
 	*dyaw   -= joy_yaw.value   * (float)joyaxis[JOY_AXIS_YAW  ].val/(float)SHRT_MAX * host.realframetime;
 
-	if( joy_have_gyro.value && (int)joy_calibrated.value == JOY_CALIBRATED )
+	if( joy_gyro_enable.value && joy_have_gyro.value && (int)joy_calibrated.value == JOY_CALIBRATED )
 	{
 		float pitch_speed = joy_gyro_speed[0] * ( 180.0f / M_PI );
 		float yaw_speed   = joy_gyro_speed[1] * ( 180.0f / M_PI );
@@ -596,6 +597,7 @@ void Joy_Init( void )
 	Cvar_RegisterVariable( &joy_have_gyro );
 	Cvar_RegisterVariable( &joy_calibrated );
 	Cvar_RegisterVariable( &joy_enable );
+	Cvar_RegisterVariable( &joy_gyro_enable );
 
 	Cvar_RegisterVariable( &joy_gyro_pitch );
 	Cvar_RegisterVariable( &joy_gyro_yaw );
