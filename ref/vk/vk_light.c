@@ -21,8 +21,8 @@
 #include <ctype.h> // isalnum...
 
 #include "camera.h"
+#include "pmove.h"
 #include "pm_defs.h"
-#include "pmtrace.h"
 
 #define MODULE_NAME "light"
 #define LOG_MODULE light

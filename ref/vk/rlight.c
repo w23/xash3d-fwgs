@@ -13,6 +13,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
 
+#include "vk_common.h"
 #include "const.h"
 #include "xash3d_types.h"
 #include "com_model.h"
@@ -20,8 +21,6 @@ GNU General Public License for more details.
 #include "studio.h"
 #include "xash3d_mathlib.h"
 #include "ref_params.h"
-
-#include "vk_common.h"
 
 /*
 =======================================================================

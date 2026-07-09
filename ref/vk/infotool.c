@@ -5,8 +5,8 @@
 #include "vk_brush.h"
 #include "vk_light.h"
 
+#include "pmove.h"
 #include "pm_defs.h"
-#include "pmtrace.h"
 
 static const char *renderModeName( int rendermode ) {
 	switch (rendermode) {

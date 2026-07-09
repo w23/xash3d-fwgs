@@ -28,7 +28,7 @@ GNU General Public License for more details.
 #include "triangleapi.h"
 #include "pm_local.h"
 #include "studio.h"
-#include "pm_movevars.h" // movevars_t
+#include "pmove.h" // movevars_t
 
 static float gTracerSize[11] = { 1.5f, 0.5f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
 static color24 gTracerColors[] =
