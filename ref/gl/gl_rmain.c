@@ -317,7 +317,7 @@ static void R_Clear( int bitMask )
 	pglClear( bits );
 
 	// change ordering for overview
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 	{
 		gldepthmin = 1.0f;
 		gldepthmax = 0.0f;
@@ -340,7 +340,7 @@ R_GetFarClip
 */
 static float R_GetFarClip( void )
 {
-	if( WORLDMODEL && RI.drawWorld )
+	if( WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		return tr.movevars->zmax * 1.73f;
 	return 2048.0f;
 }
@@ -363,7 +363,7 @@ void R_SetupFrustum( void )
 		VectorCopy( RI.vup, RI.cull_vup );
 	}
 
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 	{
 		const ref_overview_t	*ov = gEngfuncs.GetOverviewParms();
 		GL_FrustumInitOrtho( &RI.frustum, ov->xLeft, ov->xRight, ov->yTop, ov->yBottom, ov->zNear, ov->zFar );
@@ -383,7 +383,7 @@ static void R_SetupProjectionMatrix( matrix4x4 m )
 {
 	GLfloat	xMin, xMax, yMin, yMax, zNear, zFar;
 
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 	{
 		const ref_overview_t *ov = gEngfuncs.GetOverviewParms();
 		Matrix4x4_CreateOrtho( m, ov->xLeft, ov->xRight, ov->yTop, ov->yBottom, ov->zNear, ov->zFar );
@@ -534,11 +534,8 @@ static void R_SetupFrame( void )
 	}
 
 	// current viewleaf
-	if( RI.drawWorld )
-	{
-		RI.isSkyVisible = false; // unknown at this moment
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_FindViewLeaf();
-	}
 }
 
 /*
@@ -555,7 +552,7 @@ void R_SetupGL( qboolean set_gl_state )
 
 	if( !set_gl_state ) return;
 
-	if( RP_NORMALPASS( ))
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 	{
 		int x, x2, y, y2;
 
@@ -704,7 +701,7 @@ static void R_CheckFog( void )
 
 	RI.fogEnabled = false;
 
-	if( RI.onlyClientDraw || ENGINE_GET_PARM( PARM_WATER_LEVEL ) < 3 || !RI.drawWorld || !RI.viewleaf )
+	if( FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ) || ENGINE_GET_PARM( PARM_WATER_LEVEL ) < 3 || !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ) || !RI.viewleaf )
 	{
 		if( RI.cached_waterlevel == 3 )
 		{
@@ -826,7 +823,7 @@ static void R_DrawEntitiesOnList( void )
 	GL_CheckForErrors();
 
 	// first draw solid entities
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -858,7 +855,7 @@ static void R_DrawEntitiesOnList( void )
 	GL_CheckForErrors();
 
 	// draw sprites seperately, because of alpha blending
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -876,20 +873,20 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		gEngfuncs.CL_DrawEFX( tr.frametime, false );
 	}
 
 	GL_CheckForErrors();
 
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.pfnDrawNormalTriangles();
 
 	GL_CheckForErrors();
 
 	// then draw translucent entities
-	for( i = 0; i < tr.draw_list->num_trans_entities && !RI.onlyClientDraw; i++ )
+	for( i = 0; i < tr.draw_list->num_trans_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->trans_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -925,7 +922,7 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 	{
 		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 		gEngfuncs.pfnDrawTransparentTriangles ();
@@ -933,7 +930,7 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		R_AllowFog( false );
 		gEngfuncs.CL_DrawEFX( tr.frametime, true );
@@ -944,7 +941,7 @@ static void R_DrawEntitiesOnList( void )
 
 	pglDisable( GL_BLEND );	// Trinity Render issues
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_DrawViewModel();
 	gEngfuncs.CL_ExtraUpdate();
 
@@ -960,11 +957,11 @@ R_SetupRefParams must be called right before
 */
 void R_RenderScene( void )
 {
-	if( !WORLDMODEL && RI.drawWorld )
+	if( !WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
 	// frametime is valid only for normal pass
-	if( RP_NORMALPASS( ))
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		tr.frametime = gp_cl->time -   gp_cl->oldtime;
 	else tr.frametime = 0.0;
 
@@ -980,7 +977,7 @@ void R_RenderScene( void )
 
 	R_MarkLeaves();
 	R_DrawFog ();
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_AnimateRipples();
 
 	R_CheckGLFog();
@@ -1082,20 +1079,7 @@ void R_SetupRefParams( const ref_viewpass_t *rvp )
 {
 	RI.rvp = *rvp;
 
-	RI.params = RP_NONE;
-	RI.drawWorld = FBitSet( rvp->flags, RF_DRAW_WORLD );
-	RI.onlyClientDraw = FBitSet( rvp->flags, RF_ONLY_CLIENTDRAW );
 	RI.farClip = 0;
-
-	if( !FBitSet( rvp->flags, RF_DRAW_CUBEMAP ))
-	{
-		RI.drawOrtho = FBitSet( rvp->flags, RF_DRAW_OVERVIEW );
-	}
-	else
-	{
-		SetBits( RI.params, RP_ENVVIEW );
-		RI.drawOrtho = false;
-	}
 }
 
 /*
@@ -1111,7 +1095,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	// setup the initial render params
 	R_SetupRefParams( rvp );
 
-	if( gl_finish.value && RI.drawWorld )
+	if( gl_finish.value && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		pglFinish();
 
 	// completely override rendering
@@ -1129,7 +1113,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	}
 
 	tr.fCustomRendering = false;
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_RunViewmodelEvents();
 
 	tr.realframecount++; // right called after viewmodel events
@@ -1211,7 +1195,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 0 )
 				e->curstate.renderamt -= 1;
@@ -1220,7 +1204,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFadeFast:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 3 )
 				e->curstate.renderamt -= 4;
@@ -1229,7 +1213,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidSlow:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 255 )
 				e->curstate.renderamt += 1;
@@ -1238,7 +1222,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidFast:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 252 )
 				e->curstate.renderamt += 4;

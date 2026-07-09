@@ -124,11 +124,6 @@ typedef struct
 {
 	ref_viewpass_t rvp;
 
-	qboolean    drawWorld;                  // ignore world for drawing PlayerModel
-	qboolean    isSkyVisible;               // sky is visible
-	qboolean    onlyClientDraw;             // disabled by client request
-	qboolean    drawOrtho;                  // draw world as orthogonal projection
-
 	cl_entity_t *currententity;
 	model_t     *currentmodel;
 	cl_entity_t *currentbeam;       // same as above but for beams
@@ -137,9 +132,6 @@ typedef struct
 
 	mleaf_t     *viewleaf;
 	mleaf_t     *oldviewleaf;
-	vec3_t      pvsorigin;
-	vec3_t      vieworg;                    // locked vieworigin
-	vec3_t      viewangles;
 	vec3_t      vforward;
 	vec3_t      vright;
 	vec3_t      vup;
