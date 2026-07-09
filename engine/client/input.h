@@ -71,7 +71,7 @@ static inline void Touch_AddDefaultButton( const char *name, const char *texture
 static inline void Touch_WriteConfig( void ) { }
 static inline void Touch_Init( void ) { }
 static inline void Touch_Shutdown( void ) { }
-static inline void Touch_GetMove( float * forward, float *side, float *yaw, float *pitch ) { }
+static inline void Touch_GetMove( float * forward, float *side, float *pitch, float *yaw ) { }
 static inline void Touch_ResetDefaultButtons( void ) { }
 static inline int IN_TouchEvent( touchEventType type, int fingerID, float x, float y, float dx, float dy ) { return 0; }
 static inline void Touch_KeyEvent( int key, int down ) { }
@@ -87,7 +87,7 @@ void Touch_AddDefaultButton( const char *name, const char *texturefile, const ch
 void Touch_WriteConfig( void );
 void Touch_Init( void );
 void Touch_Shutdown( void );
-void Touch_GetMove( float * forward, float *side, float *yaw, float *pitch );
+void Touch_GetMove( float * forward, float *side, float *pitch, float *yaw );
 void Touch_ResetDefaultButtons( void );
 int IN_TouchEvent( touchEventType type, int fingerID, float x, float y, float dx, float dy );
 void Touch_KeyEvent( int key, int down );
@@ -119,7 +119,7 @@ typedef enum engineAxis_e
 	JOY_AXIS_YAW,
 	JOY_AXIS_RT,
 	JOY_AXIS_LT,
-	JOY_AXIS_NULL
+	MAX_AXES,
 } engineAxis_t;
 
 typedef enum joy_calibration_state_s
@@ -136,6 +136,7 @@ void Joy_SetCalibrationState( joy_calibration_state_t state );
 void Joy_AxisMotionEvent( engineAxis_t engineAxis, short value );
 void Joy_GyroEvent( vec3_t data );
 void Joy_FinalizeMove( float *fw, float *side, float *dpitch, float *dyaw );
+void Joy_DrawDebug( void );
 void Joy_Init( void );
 void Joy_Shutdown( void );
 
