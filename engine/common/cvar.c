@@ -76,18 +76,7 @@ convar_t *Cvar_FindVar( const char *var_name )
 	if( !var_name )
 		return NULL;
 
-#if defined(XASH_HASHED_VARS) // TODO: ignore_group
 	var = BaseCmd_Find( HM_CVAR, var_name );
-#else
-	for( var = cvar_vars; var; var = var->next )
-	{
-		if( ignore_group && FBitSet( ignore_group, var->flags ))
-			continue;
-
-		if( !Q_stricmp( var_name, var->name ))
-			return var;
-	}
-#endif
 
 	// HACKHACK: HL25 compatibility
 	if( !var && !Q_stricmp( var_name, "gl_widescreen_yfov" ))
@@ -231,7 +220,7 @@ static const char *Cvar_ValidateString( convar_t *var, const char *value )
 		pszValue = szNew;
 
 		// g-cont. is this even need?
-		if( !COM_CheckStringEmpty( szNew ) ) Q_strncpy( szNew, "empty", sizeof( szNew ));
+		if( COM_StringEmpty( szNew ) ) Q_strncpy( szNew, "empty", sizeof( szNew ));
 	}
 
 	if( FBitSet( var->flags, FCVAR_NOEXTRAWHITESPACE ))
@@ -319,9 +308,7 @@ static int Cvar_UnlinkVar( const char *var_name, uint32_t group )
 			continue;
 		}
 
-#if defined(XASH_HASHED_VARS)
 		BaseCmd_Remove( HM_CVAR, var->name );
-#endif
 
 		// unlink variable from list
 		*prev = var->next;
@@ -407,18 +394,20 @@ The flags will be or'ed in if the variable exists.
 */
 convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const char *var_desc )
 {
-	convar_t	*cur, *find, *var;
+	convar_t *cur, *find, *var;
+	cmd_t *cmd;
+	cmdalias_t *alias;
 
 	ASSERT( name && *name );
 
+	BaseCmd_FindAll( name, &cmd, &alias, &var );
+
 	// check for command coexisting
-	if( Cmd_Exists( name ))
+	if( cmd )
 	{
 		Con_DPrintf( S_ERROR "can't register variable '%s', is already defined as command\n", name );
 		return NULL;
 	}
-
-	var = Cvar_FindVar( name );
 
 	if( var )
 	{
@@ -429,7 +418,7 @@ convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const c
 			// which executed from the config file. So we don't need to
 			// change value here: we *already* have actual value from config.
 			// in other cases we need to rewrite them
-			if( COM_CheckStringEmpty( var->desc ))
+			if( !COM_StringEmpty( var->desc ))
 			{
 				// directly set value
 				size_t len = Q_strlen( value ) + 1;
@@ -485,10 +474,8 @@ convar_t *Cvar_Get( const char *name, const char *value, uint32_t flags, const c
 	// tell engine about changes
 	Cvar_Changed( var );
 
-#if defined(XASH_HASHED_VARS)
 	// add to map
 	BaseCmd_Insert( HM_CVAR, var, var->name );
-#endif
 
 	return var;
 }
@@ -519,12 +506,14 @@ Adds a freestanding variable to the variable list.
 */
 void Cvar_RegisterVariable( convar_t *var )
 {
-	convar_t	*cur, *find, *dup;
+	convar_t *cur, *find, *dup;
+	cmd_t *cmd;
+	cmdalias_t *alias;
 
 	ASSERT( var != NULL );
 
 	// first check to see if it has allready been defined
-	dup = Cvar_FindVar( var->name );
+	BaseCmd_FindAll( var->name, &cmd, &alias, &dup );
 
 	if( dup )
 	{
@@ -539,7 +528,7 @@ void Cvar_RegisterVariable( convar_t *var )
 	}
 
 	// check for overlap with a command
-	if( Cmd_Exists( var->name ))
+	if( cmd )
 	{
 		Con_DPrintf( S_ERROR "can't register variable '%s', is already defined as command\n", var->name );
 		return;
@@ -571,10 +560,8 @@ void Cvar_RegisterVariable( convar_t *var )
 	// tell engine about changes
 	Cvar_Changed( var );
 
-#if defined(XASH_HASHED_VARS)
 	// add to map
 	BaseCmd_Insert( HM_CVAR, var, var->name );
-#endif
 }
 
 static qboolean Cvar_CanSet( const convar_t *cv )
@@ -1020,11 +1007,6 @@ qboolean Cvar_CommandWithPrivilegeCheck( convar_t *v, qboolean isPrivileged )
 		return true;
 	}
 
-#if !defined( XASH_HASHED_VARS )
-	// check variables
-	v = Cvar_FindVar( Cmd_Argv( 0 ));
-#endif
-
 	if( !v )
 		return false;
 
@@ -1134,24 +1116,6 @@ static void Cvar_Set_f( void )
 	}
 
 	Cvar_Set2( Cmd_Argv( 1 ), combined );
-}
-
-/*
-============
-Cvar_SetGL_f
-
-As Cvar_Set, but also flags it as glconfig
-============
-*/
-static void Cvar_SetGL_f( void )
-{
-	if( Cmd_Argc() != 3 )
-	{
-		Con_Printf( S_USAGE "setgl <variable> <value>\n" );
-		return;
-	}
-
-	Cvar_SetGL( Cmd_Argv( 1 ), Cmd_Argv( 2 ) );
 }
 
 /*
@@ -1344,7 +1308,6 @@ void Cvar_Init( void )
 	Cvar_RegisterVariable( &cmd_scripting );
 	Cvar_RegisterVariable( &host_developer ); // early registering for dev
 	Cvar_RegisterVariable( &cl_filterstuffcmd );
-	Cmd_AddRestrictedCommand( "setgl", Cvar_SetGL_f, "change the value of a opengl variable" );	// OBSOLETE
 	Cmd_AddRestrictedCommand( "toggle", Cvar_Toggle_f, "toggles a console variable's values (use for more info)" );
 	Cmd_AddRestrictedCommand( "reset", Cvar_Reset_f, "reset any type variable to initial value" );
 	Cmd_AddCommand( "set", Cvar_Set_f, "create or change the value of a console variable" );
