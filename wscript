@@ -101,7 +101,7 @@ SUBDIRS = [
 	Subproject('3rdparty/vorbis',       lambda x: x.env.CLIENT and (not x.env.HAVE_SYSTEM_VORBIS or not x.env.HAVE_SYSTEM_VORBISFILE)),
 	Subproject('3rdparty/opusfile',     lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_OPUSFILE),
 	Subproject('3rdparty/maintui',      lambda x: x.env.CLIENT and x.env.TUI),
-	Subproject('3rdparty/mainui',       lambda x: x.env.CLIENT),
+	Subproject('3rdparty/mainui',       lambda x: x.env.CLIENT and x.env.DEST_OS != 'android'),
 	Subproject('3rdparty/vgui_support', lambda x: x.env.CLIENT),
 	Subproject('3rdparty/MultiEmulator',lambda x: x.env.CLIENT),
 #	Subproject('3rdparty/freevgui',     lambda x: x.env.CLIENT),
@@ -435,7 +435,6 @@ def configure(conf):
 			conf.env.RPATH_ST = '-Wl,-z,origin,-rpath,%s'
 			conf.env.DEFAULT_RPATH = '$ORIGIN'
 		elif conf.env.DEST_OS == 'irix':
-			linkflags.append('-Wl,-rpath-link=/usr/lib32')
 			conf.env.DEFAULT_RPATH = '/usr/lib32:/usr/sgug/lib32'
 		elif conf.env.DEST_OS == 'darwin':
 			conf.env.DEFAULT_RPATH = '@loader_path'

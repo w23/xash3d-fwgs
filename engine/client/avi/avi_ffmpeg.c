@@ -23,7 +23,6 @@ static qboolean avi_initialized;
 static poolhandle_t avi_mempool;
 
 #if XASH_AVI == AVI_FFMPEG
-#define XASH_FFMPEG_DLOPEN 1
 #include "avi_ffmpeg.h"
 
 struct movie_state_s
@@ -218,11 +217,6 @@ static int AVI_OpenCodecContext( AVCodecContext **dst_dec_ctx, AVFormatContext *
 }
 
 int AVI_GetVideoFrameNumber( movie_state_t *Avi, float time )
-{
-	return 0;
-}
-
-int AVI_TimeToSoundPosition( movie_state_t *Avi, int time )
 {
 	return 0;
 }
@@ -844,11 +838,6 @@ qboolean AVI_HaveAudioTrack( const movie_state_t *Avi )
 void AVI_OpenVideo( movie_state_t *Avi, const char *filename, qboolean load_audio, int quiet )
 {
 	;
-}
-
-int AVI_TimeToSoundPosition( movie_state_t *Avi, int time )
-{
-	return 0;
 }
 
 void AVI_CloseVideo( movie_state_t *Avi )

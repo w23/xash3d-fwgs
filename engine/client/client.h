@@ -336,6 +336,7 @@ typedef struct
 #define FONT_DRAW_NORENDERMODE BIT( 3 ) // ignore font's default rendermode
 #define FONT_DRAW_NOLF     BIT( 4 ) // ignore \n
 #define FONT_DRAW_RESETCOLORONLF BIT( 5 ) // yet another flag to simulate consecutive Con_DrawString calls...
+#define FONT_DRAW_NOCOLOR  BIT( 6 ) // do not set color to draw this character
 
 typedef struct
 {
@@ -722,6 +723,7 @@ extern convar_t	scr_loading;
 extern convar_t	v_dark;	// start from dark
 extern convar_t	net_graph;
 extern convar_t	rate;
+extern convar_t cl_ticket_generator;
 extern convar_t	m_ignore;
 extern convar_t	r_showtree;
 extern convar_t	ui_renderworld;
@@ -831,6 +833,7 @@ qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float sc
 qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float scale, convar_t *rendermode, uint texFlags );
 void CL_FreeFont( cl_font_t *font );
 void CL_SetFontRendermode( cl_font_t *font );
+void CL_SetFontColor( cl_font_t *font, const rgba_t color );
 int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_t *font, int flags );
 int CL_DrawString( float x, float y, const char *s, const rgba_t color, cl_font_t *font, int flags );
 void CL_DrawCharacterLen( cl_font_t *font, int number, int *width, int *height );
@@ -851,7 +854,6 @@ void CL_ClearWorld( void );
 void CL_DrawCenterPrint( void );
 void CL_ClearSpriteTextures( void );
 void CL_CenterPrint( const char *text, float y );
-client_textmessage_t *CL_TextMessageParse( poolhandle_t mempool, byte *pMemFile, int fileSize, int *numTitles );
 client_textmessage_t *CL_TextMessageGet( const char *pName );
 void NetAPI_CancelAllRequests( void );
 model_t *CL_LoadClientSprite( const char *filename );
@@ -1184,7 +1186,6 @@ void UI_CharEvent( int key );
 qboolean UI_MouseInRect( void );
 qboolean UI_IsVisible( void );
 void UI_ResetPing( void );
-void UI_ShowUpdateDialog( qboolean preferStore );
 qboolean UI_ShowMessageBox( const char *text );
 void UI_AddTouchButtonToList( const char *name, const char *texture, const char *command, unsigned char *color, int flags );
 void UI_ConnectionProgress_Disconnect( void );
@@ -1212,6 +1213,7 @@ void CL_GetSecuredClientAPI( CL_EXPORT_FUNCS F );
 //
 void SteamBroker_Init( void );
 void SteamBroker_Shutdown( void );
+void SteamBroker_Frame( void );
 void SteamBroker_HandlePacket( netadr_t from, sizebuf_t *msg );
 int SteamBroker_InitiateGameConnection( netadr_t serveradr, int challenge );
 void SteamBroker_TerminateGameConnection( void );
@@ -1246,12 +1248,18 @@ void Key_SetKeyDest( int key_dest );
 void Key_EnableTextInput( qboolean enable, qboolean force );
 int Key_ToUpper( int key );
 void OSK_Draw( void );
+qboolean Cmd_GetKeysList( const char *s, char *completedname, int length, qboolean print_suggestions );
 
 //
 // identification.c
 //
 void ID_Init( void );
 void ID_GetMD5ForAddress( char *key, netadr_t adr, size_t size );
+
+//
+// titles.c
+//
+client_textmessage_t *CL_TextMessageParse( poolhandle_t mempool, char *pMemFile, int fileSize, int *numTitles );
 
 extern rgba_t g_color_table[8];
 extern triangleapi_t gTriApi;

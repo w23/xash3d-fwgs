@@ -871,24 +871,24 @@ DrawGLPoly
 */
 static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
 {
-	float		*v;
-	float		sOffset, sy;
-	float		tOffset, cy;
-	cl_entity_t	*e = RI.currententity;
-	int		i, hasScale = false;
+	float *v;
+	float sOffset, tOffset;
+	int i;
 
-	if( !p ) return;
+	if( !p )
+		return;
 
 	if( FBitSet( p->flags, SURF_DRAWTILED ))
 		GL_ResetFogColor();
 
-	if( p->flags & SURF_CONVEYOR )
+	if( FBitSet( p->flags, SURF_CONVEYOR ))
 	{
-		float		flConveyorSpeed = 0.0f;
-		float		flRate, flAngle;
-		gl_texture_t	*texture;
+		const cl_entity_t *e = RI.currententity;
+		float flConveyorSpeed;
+		float flRate, flAngle, sy, cy;
+		gl_texture_t *texture;
 
-		if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && RI.currententity == CL_GetEntityByIndex( 0 ))
+		if( e == CL_GetEntityByIndex( 0 ) && ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
 		{
 			// same as doom speed
 			flConveyorSpeed = -35.0f;
@@ -920,8 +920,7 @@ static void DrawGLPoly( glpoly2_t *p, float xScale, float yScale )
 		sOffset = tOffset = 0.0f;
 	}
 
-	if( xScale != 0.0f && yScale != 0.0f )
-		hasScale = true;
+	const qboolean hasScale = xScale != 0.0f && yScale != 0.0f;
 
 	pglBegin( GL_POLYGON );
 
@@ -949,10 +948,7 @@ Render lightmaps
 */
 static void DrawGLPolyChain( glpoly2_t *p, float soffset, float toffset )
 {
-	qboolean	dynamic = true;
-
-	if( soffset == 0.0f && toffset == 0.0f )
-		dynamic = false;
+	const qboolean dynamic = soffset != 0.0f || toffset != 0.0f;
 
 	for( ; p != NULL; p = p->chain )
 	{
@@ -1135,10 +1131,10 @@ static void R_BlendLightmaps( void )
 R_RenderFullbrights
 ================
 */
-static void R_RenderFullbrights( void )
+static void R_RenderFullbrights( qboolean allow_vbo )
 {
-	mextrasurf_t	*es, *p;
-	int		i;
+	mextrasurf_t *es, *p;
+	int i;
 
 	if( !R_SeparatePassActive( &draw_fullbrights ))
 		return;
@@ -1152,11 +1148,8 @@ static void R_RenderFullbrights( void )
 
 	// if fullbright textures are drawn in separate pass from VBO they
 	// cause z-fighting, this is noticeable on `slide_waifufu.bsp` map
-	if( R_HasEnabledVBO() && gl_polyoffset.value )
-	{
-		pglEnable( GL_POLYGON_OFFSET_FILL );
-		pglPolygonOffset( -1.0f, -gl_polyoffset.value );
-	}
+	if( allow_vbo && gl_polyoffset.value )
+		GL_PushPolygonOffset( -1.0f, -gl_polyoffset.value );
 
 	for( i = draw_fullbrights.first; i <= draw_fullbrights.last; i++ )
 	{
@@ -1173,8 +1166,8 @@ static void R_RenderFullbrights( void )
 		es->lumachain = NULL;
 	}
 
-	if( R_HasEnabledVBO() && gl_polyoffset.value )
-		pglDisable( GL_POLYGON_OFFSET_FILL );
+	if( allow_vbo && gl_polyoffset.value )
+		GL_PopPolygonOffset();
 
 	pglDisable( GL_BLEND );
 	pglDepthMask( GL_TRUE );
@@ -1205,7 +1198,7 @@ static void R_RenderDetails( int passes )
 	pglEnable( GL_BLEND );
 	pglBlendFunc( GL_DST_COLOR, GL_SRC_COLOR );
 	pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL );
-	if(passes == 3)
+	if( passes == 3 )
 		pglDepthFunc( GL_EQUAL );
 	else
 	{
@@ -1672,6 +1665,51 @@ static void R_SetRenderMode( cl_entity_t *e )
 	}
 }
 
+static int R_SortBrushModelSurfaces( cl_entity_t *e, model_t *clmodel, vec3_t mins )
+{
+	qboolean quake_compatible = ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE );
+	int num_sorted = 0;
+
+	for( int i = 0; i < clmodel->nummodelsurfaces; i++ )
+	{
+		msurface_t *psurf = &clmodel->surfaces[clmodel->firstmodelsurface + i];
+
+		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !quake_compatible )
+		{
+			if( psurf->plane->type != PLANE_Z && !FBitSet( e->curstate.effects, EF_WATERSIDES ))
+				continue;
+
+			if( mins[2] + 1.0f >= psurf->plane->dist )
+				continue;
+		}
+
+		int cull_type = R_CullSurface( psurf, &RI.frustum, RI.frustum.clipFlags );
+
+		if( cull_type >= CULL_FRUSTUM )
+			continue;
+
+		if( cull_type == CULL_BACKSIDE )
+		{
+			if( !FBitSet( psurf->flags, SURF_DRAWTURB ) && !( psurf->pdecals && e->curstate.rendermode == kRenderTransTexture ))
+				continue;
+		}
+
+		if( num_sorted < gpGlobals->max_surfaces )
+		{
+			gpGlobals->draw_surfaces[num_sorted].surf = psurf;
+			gpGlobals->draw_surfaces[num_sorted].cull = cull_type;
+			num_sorted++;
+		}
+	}
+
+	// sort faces if needs
+	if( !FBitSet( clmodel->flags, MODEL_LIQUID ) && e->curstate.rendermode == kRenderTransTexture && !gl_nosort.value )
+		qsort( gpGlobals->draw_surfaces, num_sorted, sizeof( sortedface_t ), R_SurfaceCompare );
+
+	return num_sorted;
+
+}
+
 /*
 =================
 R_DrawBrushModel
@@ -1679,20 +1717,14 @@ R_DrawBrushModel
 */
 void R_DrawBrushModel( cl_entity_t *e )
 {
-	int		i, k, num_sorted;
-	vec3_t		origin_l, oldorigin;
-	int		old_rendermode;
-	vec3_t		mins, maxs;
-	int		cull_type;
-	msurface_t	*psurf;
-	model_t		*clmodel;
-	qboolean		rotated;
-	dlight_t		*l;
+	int old_rendermode;
+	vec3_t mins, maxs;
+	qboolean rotated;
 	qboolean allow_vbo = R_HasEnabledVBO();
 
 	if( !RI.drawWorld ) return;
 
-	clmodel = e->model;
+	model_t *clmodel = e->model;
 
 	// external models not loaded to VBO
 	if( clmodel->surfaces != WORLDMODEL->surfaces )
@@ -1700,7 +1732,7 @@ void R_DrawBrushModel( cl_entity_t *e )
 
 	if( !VectorIsNull( e->angles ))
 	{
-		for( i = 0; i < 3; i++ )
+		for( int i = 0; i < 3; i++ )
 		{
 			mins[i] = e->origin[i] - clmodel->radius;
 			maxs[i] = e->origin[i] + clmodel->radius;
@@ -1721,21 +1753,29 @@ void R_DrawBrushModel( cl_entity_t *e )
 	old_rendermode = e->curstate.rendermode;
 	gl_lms.dynamic_surfaces = NULL;
 
-	if( rotated ) R_RotateForEntity( e );
-	else R_TranslateForEntity( e );
+	if( rotated )
+	{
+		R_RotateForEntity( e );
+
+		Matrix4x4_VectorITransform( RI.objectMatrix, RI.cullorigin, tr.modelorg );
+	}
+	else
+	{
+		R_TranslateForEntity( e );
+
+		VectorSubtract( RI.cullorigin, e->origin, tr.modelorg );
+	}
 
 	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ) && FBitSet( clmodel->flags, MODEL_TRANSPARENT ))
 		e->curstate.rendermode = kRenderTransAlpha;
 
 	e->visframe = tr.realframecount; // visible
 
-	if( rotated ) Matrix4x4_VectorITransform( RI.objectMatrix, RI.cullorigin, tr.modelorg );
-	else VectorSubtract( RI.cullorigin, e->origin, tr.modelorg );
-
 	// calculate dynamic lighting for bmodel
-	for( k = 0; k < MAX_DLIGHTS; k++ )
+	for( int k = 0; k < MAX_DLIGHTS; k++ )
 	{
-		l = &tr.dlights[k];
+		dlight_t *l = &tr.dlights[k];
+		vec3_t origin_l, oldorigin;
 
 		if( l->die < gp_cl->time || !l->radius )
 			continue;
@@ -1761,56 +1801,35 @@ void R_DrawBrushModel( cl_entity_t *e )
 	if( !allow_vbo )
 		GL_SetupFogColorForSurfaces ();
 
-	psurf = &clmodel->surfaces[clmodel->firstmodelsurface];
-	num_sorted = 0;
+	int num_sorted = R_SortBrushModelSurfaces( e, clmodel, mins );
 
-	for( i = 0; i < clmodel->nummodelsurfaces; i++, psurf++ )
-	{
-		if( FBitSet( psurf->flags, SURF_DRAWTURB ) && !ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
-		{
-			if( psurf->plane->type != PLANE_Z && !FBitSet( e->curstate.effects, EF_WATERSIDES ))
-				continue;
-			if( mins[2] + 1.0f >= psurf->plane->dist )
-				continue;
-		}
-
-		cull_type = R_CullSurface( psurf, &RI.frustum, RI.frustum.clipFlags );
-
-		if( cull_type >= CULL_FRUSTUM )
-			continue;
-
-		if( cull_type == CULL_BACKSIDE )
-		{
-			if( !FBitSet( psurf->flags, SURF_DRAWTURB ) && !( psurf->pdecals && e->curstate.rendermode == kRenderTransTexture ))
-				continue;
-		}
-
-		if( num_sorted < gpGlobals->max_surfaces )
-		{
-			gpGlobals->draw_surfaces[num_sorted].surf = psurf;
-			gpGlobals->draw_surfaces[num_sorted].cull = cull_type;
-			num_sorted++;
-		}
-	}
-
-	// sort faces if needs
-	if( !FBitSet( clmodel->flags, MODEL_LIQUID ) && e->curstate.rendermode == kRenderTransTexture && !gl_nosort.value )
-		qsort( gpGlobals->draw_surfaces, num_sorted, sizeof( sortedface_t ), R_SurfaceCompare );
+	// draw bmodels with a polyoffset to avoid flickering when they are too close to world
+	// R_DrawVBO and DrawDecalsBatch will restore polyoffset
+	if( gl_polyoffset_bmodels.value )
+		GL_PushPolygonOffset( -0.5f, -gl_polyoffset_bmodels.value );
 
 	// draw sorted translucent surfaces
-	for( i = 0; i < num_sorted; i++ )
-		if( !allow_vbo || !R_AddSurfToVBO( gpGlobals->draw_surfaces[i].surf, true ) )
+	for( int i = 0; i < num_sorted; i++ )
+	{
+		if( !allow_vbo || !R_AddSurfToVBO( gpGlobals->draw_surfaces[i].surf, true ))
 			R_RenderBrushPoly( gpGlobals->draw_surfaces[i].surf, gpGlobals->draw_surfaces[i].cull );
+	}
+
 	R_DrawVBO( R_HasLightmap(), true );
 
 	if( e->curstate.rendermode == kRenderTransColor )
 		pglEnable( GL_TEXTURE_2D );
 
 	DrawDecalsBatch();
+
 	GL_ResetFogColor();
 	R_BlendLightmaps();
-	R_RenderFullbrights();
-	R_RenderDetails( allow_vbo? 2: 3 );
+	R_RenderFullbrights( allow_vbo );
+	R_RenderDetails( allow_vbo ? 2 : 3 );
+
+	if( gl_polyoffset_bmodels.value )
+		GL_PopPolygonOffset();
+
 	R_DrawTriangleOutlines();
 
 	// restore fog here
@@ -1825,17 +1844,9 @@ void R_DrawBrushModel( cl_entity_t *e )
 
 	if( r_showhull->value > 0.0f )
 	{
-		GLfloat factor, units;
-
-		pglGetFloatv( GL_POLYGON_OFFSET_FACTOR, &factor );
-		pglGetFloatv( GL_POLYGON_OFFSET_UNITS, &units );
-
-		pglPolygonOffset( 1.0f, 2.0f );
-		pglEnable( GL_POLYGON_OFFSET_FILL );
+		GL_PushPolygonOffset( 1.0f, 2.0f );
 		gEngfuncs.R_DrawModelHull( clmodel );	// draw before restore
-		pglDisable( GL_POLYGON_OFFSET_FILL );
-
-		pglPolygonOffset( factor, units );
+		GL_PopPolygonOffset();
 	}
 
 	R_LoadIdentity();	// restore worldmatrix
@@ -2860,7 +2871,6 @@ static void R_DrawVBODlights( vboarray_t *vbo, vbotexture_t *vbotex, texture_t *
 			uint indexbase = vbos.surfdata[((char*)surf - (char*)WORLDMODEL->surfaces) / sizeof( *surf )].startindex;
 			uint index;
 			mextrasurf_t *info; // this stores current dlight offset
-			decal_t *pdecal;
 			int sample_size;
 
 			info = surf->info;
@@ -3078,7 +3088,6 @@ static void R_DrawStaticDecals( vboarray_t *vbo, qboolean drawlightmap, int ilig
 
 	pglDepthMask( GL_FALSE );
 	pglEnable( GL_BLEND );
-	pglEnable( GL_POLYGON_OFFSET_FILL );
 
 	if( RI.currententity->curstate.rendermode == kRenderTransAlpha )
 		pglDisable( GL_ALPHA_TEST );
@@ -3144,7 +3153,6 @@ static void R_DrawStaticDecals( vboarray_t *vbo, qboolean drawlightmap, int ilig
 	// prepare for next texture
 	pglDepthMask( GL_TRUE );
 	pglDisable( GL_BLEND );
-	pglDisable( GL_POLYGON_OFFSET_FILL );
 
 	R_SetupVBOArrayStatic( vbo, drawlightmap, true );
 
@@ -3284,11 +3292,19 @@ void R_DrawVBO( qboolean drawlightmap, qboolean drawtextures )
 
 		if( drawtextures && drawlightmap && vbos.decaldata->lm[k] )
 		{
+			if( gl_polyoffset.value )
+				GL_PushPolygonOffset( -1.0f, -gl_polyoffset.value );
+
 			R_DrawStaticDecals( vbo, drawlightmap, k );
+
+			if( gl_polyoffset.value )
+				GL_PopPolygonOffset();
 		}
+
 		if( !drawtextures || !drawlightmap )
 			vbos.decaldata->lm[k] = NULL;
 	}
+
 	// Assert( !vbo->next );
 	R_ClearVBOState( drawlightmap, drawtextures );
 
@@ -3411,7 +3427,7 @@ loc0:
 			if( !FBitSet( clipflags, BIT( i )))
 				continue;
 
-			clipped = BoxOnPlaneSide( node->minmaxs, node->minmaxs + 3, p );
+			clipped = BOX_ON_PLANE_SIDE( node->minmaxs, node->minmaxs + 3, p );
 			if( clipped == 2 ) return;
 			if( clipped == 1 ) ClearBits( clipflags, BIT( i ));
 		}
@@ -3569,7 +3585,7 @@ static void R_DrawWorldTopView( mnode_t *node, uint clipflags )
 				if( !FBitSet( clipflags, BIT( i )))
 					continue;
 
-				clipped = BoxOnPlaneSide( node->minmaxs, node->minmaxs + 3, p );
+				clipped = BOX_ON_PLANE_SIDE( node->minmaxs, node->minmaxs + 3, p );
 				if( clipped == 2 ) return;
 				if( clipped == 1 ) ClearBits( clipflags, BIT( i ));
 			}
@@ -3663,7 +3679,7 @@ void R_DrawWorld( void )
 		DrawDecalsBatch();
 		GL_ResetFogColor();
 		R_BlendLightmaps();
-		R_RenderFullbrights();
+		R_RenderFullbrights( R_HasEnabledVBO( ));
 		R_RenderDetails( R_HasEnabledVBO() ? 2 : 3 );
 		R_DrawTriangleOutlines();
 

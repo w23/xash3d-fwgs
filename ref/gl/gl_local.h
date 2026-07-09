@@ -315,7 +315,8 @@ void GL_SetRenderMode( int mode );
 void GL_EnableTextureUnit( int tmu, qboolean enable );
 void GL_TextureTarget( uint target );
 void GL_Cull( GLenum cull );
-void R_ShowTextures( void );
+void GL_PushPolygonOffset( float factor, float units );
+void GL_PopPolygonOffset( void );
 void SCR_TimeRefresh_f( void );
 
 //
@@ -327,9 +328,9 @@ qboolean R_BeamCull( const vec3_t start, const vec3_t end, qboolean pvsOnly );
 //
 // gl_cull.c
 //
-qboolean R_CullModel( cl_entity_t *e, const vec3_t absmin, const vec3_t absmax );
+qboolean R_CullModel( const cl_entity_t *e, const vec3_t absmin, const vec3_t absmax );
 qboolean R_CullBox( const vec3_t mins, const vec3_t maxs );
-int R_CullSurface( msurface_t *surf, gl_frustum_t *frustum, uint clipflags );
+int R_CullSurface( const msurface_t *surf, const gl_frustum_t *frustum, uint clipflags );
 
 //
 // gl_decals.c
@@ -352,7 +353,6 @@ void R_UploadStretchRaw( int texture, int cols, int rows, int width, int height,
 //
 void R_SetTextureParameters( void );
 gl_texture_t *R_GetTexture( unsigned int texnum );
-const char *GL_TargetToString( GLenum target );
 #define GL_LoadTextureInternal( name, pic, flags ) GL_LoadTextureFromBuffer( name, pic, flags, false )
 #define GL_UpdateTextureInternal( name, pic, flags ) GL_LoadTextureFromBuffer( name, pic, flags, true )
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
@@ -374,6 +374,7 @@ void R_ShutdownImages( void );
 int GL_TexMemory( void );
 qboolean R_SearchForTextureReplacement( char *out, size_t size, const char *modelname, const char *fmt, ... ) FORMAT_CHECK( 4 );
 void R_TextureReplacementReport( const char *modelname, int gl_texturenum, const char *foundpath );
+void R_ShowTextures( void );
 
 //
 // gl_rlight.c
@@ -544,7 +545,7 @@ void CL_AddCustomBeam( cl_entity_t *pEnvBeam );
 //
 #define GL_CheckForErrors() GL_CheckForErrors_( __FILE__, __LINE__ )
 void GL_CheckForErrors_( const char *filename, const int fileline );
-const char *GL_ErrorString( int err );
+const char *GL_ErrorString( int err ) RETURNS_NONNULL;
 
 //
 // gl_triapi.c
@@ -661,6 +662,12 @@ typedef struct
 	int		prev_height;
 } glconfig_t;
 
+typedef struct polyoffset_state_s
+{
+	float factor;
+	float units;
+} polyoffset_state_t;
+
 typedef struct
 {
 	int		activeTMU;
@@ -676,6 +683,9 @@ typedef struct
 
 	qboolean		stencilEnabled;
 	qboolean		in2DMode;
+
+	polyoffset_state_t polyoffset_state[2];
+	int num_polyoffsets;
 } glstate_t;
 
 typedef struct
@@ -775,6 +785,7 @@ extern convar_t	gl_keeptjunctions;
 extern convar_t	gl_round_down;
 extern convar_t	gl_wireframe;
 extern convar_t	gl_polyoffset;
+extern convar_t	gl_polyoffset_bmodels;
 extern convar_t	gl_finish;
 extern convar_t	gl_nosort;
 extern convar_t	gl_test;		// cvar to testify new effects

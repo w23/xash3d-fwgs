@@ -177,3 +177,9 @@ To build you should clone [SDL](https://github.com/libsdl-org/SDL) from `SDL2` b
 2) Compile `./waf build`.
 3) Navigate to `build` and copy your compiled SDL2.framework there, then add your client dylibs to `build/ios/cl_dlls` and any other dylibs to `build/ios/dlls` (You can also run `scripts/ios/buildhlsdk.sh` instead to automatically create an ipa with hlsdk dylibs)
 4) Run `scripts/ios/createipa.sh` to create an installable ipa
+
+### Running tests
+
+Tests are enabled with `--enable-tests` passed to `./waf configure` and can be run with `./waf --alltests`.
+
+This builds both standalone unit tests and a separate engine test binary (`xash3d_tests`) that embeds engine-level tests. The engine test binary requires no game assets.
