@@ -545,7 +545,8 @@ static const ref_interface_t gReffuncs =
 
 	.R_StudioEstimateFrame = R_StudioEstimateFrame,
 	.R_StudioLerpMovement = R_StudioLerpMovement,
-	.CL_InitStudioAPI = CL_InitStudioAPI,
+	.R_StudioFillAPI = R_StudioFillAPI,
+	.R_StudioSetDrawInterface = R_StudioSetDrawInterface,
 
 	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
