@@ -152,6 +152,8 @@ static qboolean StreamFindNextChunk( file_t *file, const char *name, int *last_c
 		if( FS_Read( file, &iff_chunk_len, sizeof( iff_chunk_len )) != sizeof( iff_chunk_len ))
 			return false;
 
+		iff_chunk_len = LittleLong( iff_chunk_len );
+
 		if( iff_chunk_len < 0 )
 			return false;	// didn't find the chunk
 
@@ -317,6 +319,15 @@ qboolean Sound_LoadWAV( const char *name, const byte *buffer, fs_offset_t filesi
 
 	memcpy( sound.wav, buffer + (iff_dataPtr - buffer), sound.size );
 
+	// swap 16-bit samples from little endian to native
+	if( sound.width == 2 )
+	{
+		short *p = (short *)sound.wav;
+		int count = sound.size / 2;
+		for( int i = 0; i < count; i++ )
+			p[i] = LittleShort( p[i] );
+	}
+
 	// now convert 8-bit sounds to signed
 	if( sound.width == 1 )
 	{
@@ -394,6 +405,7 @@ stream_t *Stream_OpenWAV( const char *filename )
 	FS_Read( file, chunkName, 4 );
 
 	FS_Read( file, &t, sizeof( t ));
+	t = LittleShort( t );
 	if( t != 1 )
 	{
 		Con_DPrintf( S_ERROR "%s: %s not a microsoft PCM format\n", __func__, filename );
@@ -402,14 +414,15 @@ stream_t *Stream_OpenWAV( const char *filename )
 	}
 
 	FS_Read( file, &t, sizeof( t ));
-	sound.channels = t;
+	sound.channels = LittleShort( t );
 
 	FS_Read( file, &sound.rate, sizeof( int ));
+	sound.rate = LittleLong( sound.rate );
 
 	FS_Seek( file, 6, SEEK_CUR );
 
 	FS_Read( file, &t, sizeof( t ));
-	sound.width = t / 8;
+	sound.width = LittleShort( t ) / 8;
 
 	sound.loopstart = 0;
 
@@ -423,7 +436,7 @@ stream_t *Stream_OpenWAV( const char *filename )
 	}
 
 	FS_Read( file, &sound.samples, sizeof( int ));
-	sound.samples = ( sound.samples / sound.width ) / sound.channels;
+	sound.samples = ( LittleLong( sound.samples ) / sound.width ) / sound.channels;
 
 	// at this point we have valid stream
 	stream = Mem_Calloc( host.soundpool, sizeof( stream_t ));
@@ -457,6 +470,14 @@ int Stream_ReadWAV( stream_t *stream, int bytes, void *buffer )
 
 	stream->pos += bytes;
 	FS_Read( stream->file, buffer, bytes );
+
+	if( stream->width == 2 )
+	{
+		short *p = (short *)buffer;
+		int count = bytes / 2;
+		for( int i = 0; i < count; i++ )
+			p[i] = LittleShort( p[i] );
+	}
 
 	return bytes;
 }
