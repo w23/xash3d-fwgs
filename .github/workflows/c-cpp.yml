@@ -32,23 +32,17 @@ jobs:
           - os: ubuntu-22.04-arm
             targetos: linux
             targetarch: arm64
-          - os: ubuntu-22.04
+          - os: ubuntu-22.04-arm
             targetos: linux
             targetarch: armhf
+          - os: ubuntu-24.04 # riscv64 would benefit from having latest compilers
+            targetos: linux
+            targetarch: riscv64
             cross: true
-# FIXME currently vulkan build fails for these, as Vulkan SDK is not easily available.
-#          - os: ubuntu-24.04 # riscv64 would benefit from having latest compilers
-#            targetos: linux
-#            targetarch: riscv64
-#            cross: true
-#          - os: ubuntu-22.04
-#            targetos: linux
-#            targetarch: ppc64el
-#            cross: true
-
-#          - os: ubuntu-aarch64-22.04
-#            targetos: linux
-#            targetarch: aarch64
+          - os: ubuntu-22.04
+            targetos: linux
+            targetarch: ppc64el
+            cross: true
 #          - os: ubuntu-latest
 #            targetos: linux
 #            targetarch: e2k-8c
