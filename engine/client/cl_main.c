@@ -1175,7 +1175,7 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 	else
 	{
 		const char *qport = Cvar_VariableString( "net_qport" );
-		int extensions = Host_IsLocalGame() ? 0 : NET_EXT_SPLITSIZE;
+		int extensions = adrtype == NA_LOOPBACK ? 0 : NET_EXT_SPLITSIZE;
 		string key;
 
 		ID_GetMD5ForAddress( key, adr, sizeof( key ));
@@ -2625,10 +2625,6 @@ static void CL_ConnectionlessPacket( netadr_t from, sizebuf_t *msg )
 		Con_Reportf( "%s: %s : %s\n", __func__, NET_AdrToString( from ), c );
 
 	// server connection
-	if( !Q_strcmp( c, "sb_connect" ))
-	{
-		SteamBroker_HandlePacket( from, msg );
-	}
 	if( !Q_strcmp( c, S2C_GOLDSRC_CONNECTION ) || !Q_strcmp( c, S2C_CONNECTION ))
 	{
 		CL_ClientConnect( cls.legacymode, c, from );
@@ -2859,7 +2855,7 @@ static void CL_ReadPackets( void )
 	// hot precache and downloading resources
 	if( cls.signon == SIGNONS && cl.lastresourcecheck < host.realtime )
 	{
-		double checktime = Host_IsLocalGame() ? 0.1 : 1.0;
+		double checktime = Host_IsLocalClient() ? 0.1 : 1.0;
 
 		if( !cls.dl.custom && cl.resourcesneeded.pNext != &cl.resourcesneeded )
 		{
