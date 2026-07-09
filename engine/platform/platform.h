@@ -41,6 +41,17 @@ void Platform_MessageBox( const char *title, const char *message, qboolean paren
 void Platform_SetStatus( const char *status );
 qboolean Platform_DebuggerPresent( void );
 
+typedef enum
+{
+	ORIENTATION_UNKNOWN = 0,
+	ORIENTATION_LANDSCAPE,
+	ORIENTATION_LANDSCAPE_FLIPPED,
+	ORIENTATION_PORTRAIT,
+	ORIENTATION_PORTRAIT_FLIPPED
+} platform_orientation_t;
+
+platform_orientation_t Platform_GetDisplayOrientation( void );
+
 // legacy iOS port functions
 #if XASH_IOS
 int IOS_GetArgs( char ***argv );
@@ -65,6 +76,7 @@ char *Posix_Input( void );
 void SDLash_Init( void );
 void SDLash_Shutdown( void );
 void SDLash_NanoSleep( int nsec );
+qboolean SDLash_GyroIsAvailable( void );
 #endif
 
 #if XASH_ANDROID
