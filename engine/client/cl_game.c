@@ -2939,10 +2939,15 @@ pfnGetMousePos
 */
 static void GAME_EXPORT pfnGetMousePos( struct tagPOINT *ppt )
 {
+	int x, y;
+
 	if( !ppt )
 		return;
 
-	Platform_GetMousePos( &ppt->x, &ppt->y );
+	Platform_GetMousePos( &x, &y );
+
+	ppt->x = x;
+	ppt->y = y;
 }
 
 /*
@@ -3953,7 +3958,7 @@ void CL_UnloadProgs( void )
 	if( GI->internal_vgui_support )
 		VGui_Shutdown();
 
-	Cvar_FullSet( "cl_background", "0", FCVAR_READ_ONLY );
+	Cvar_DirectFullSet( &cl_background, "0", FCVAR_READ_ONLY );
 	Cvar_FullSet( "host_clientloaded", "0", FCVAR_READ_ONLY );
 
 	Cvar_Unlink( FCVAR_CLIENTDLL );
