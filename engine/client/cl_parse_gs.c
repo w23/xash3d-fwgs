@@ -19,7 +19,6 @@ GNU General Public License for more details.
 #include "particledef.h"
 #include "cl_tent.h"
 #include "shake.h"
-#include "hltv.h"
 #include "input.h"
 #include "server.h"
 
@@ -58,12 +57,12 @@ static void CL_ParseNewMovevars( sizebuf_t *msg )
 	clgame.movevars.footsteps         = MSG_ReadByte( msg );
 	clgame.movevars.rollangle         = MSG_ReadFloat( msg );
 	clgame.movevars.rollspeed         = MSG_ReadFloat( msg );
-	clgame.movevars.skycolor_r        = MSG_ReadFloat( msg );
-	clgame.movevars.skycolor_g        = MSG_ReadFloat( msg );
-	clgame.movevars.skycolor_b        = MSG_ReadFloat( msg );
-	clgame.movevars.skyvec_x          = MSG_ReadFloat( msg );
-	clgame.movevars.skyvec_y          = MSG_ReadFloat( msg );
-	clgame.movevars.skyvec_z          = MSG_ReadFloat( msg );
+	clgame.movevars.skycolor[0]       = MSG_ReadFloat( msg );
+	clgame.movevars.skycolor[1]       = MSG_ReadFloat( msg );
+	clgame.movevars.skycolor[2]       = MSG_ReadFloat( msg );
+	clgame.movevars.skyvec[0]         = MSG_ReadFloat( msg );
+	clgame.movevars.skyvec[1]         = MSG_ReadFloat( msg );
+	clgame.movevars.skyvec[2]         = MSG_ReadFloat( msg );
 
 	Q_strncpy( clgame.movevars.skyName, MSG_ReadString( msg ), sizeof( clgame.movevars.skyName ));
 

@@ -19,8 +19,9 @@ GNU General Public License for more details.
 #include "particledef.h"
 #include "cl_tent.h"
 #include "shake.h"
-#include "hltv.h"
 #include "input.h"
+#include "eiface.h"
+
 #if XASH_LOW_MEMORY != 2
 int CL_UPDATE_BACKUP = SINGLEPLAYER_BACKUP;
 #endif
@@ -802,7 +803,6 @@ void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 	string	mapfile;
 	qboolean	background;
 	int	i, required_version;
-	uint32_t	mapCRC;
 
 	HPAK_CheckSize( hpk_custom_file.string );
 
@@ -1540,13 +1540,11 @@ static const char *CL_CheckTypeToString( int check_type )
 
 static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 {
-	qboolean		user_changed_diskfile;
-	vec3_t		mins, maxs;
-	string		filename;
-	CRC32_t		crcFile;
-	byte		md5[16] = { 0 };
-	consistency_t	*pc;
-	int		i, pos;
+	qboolean user_changed_diskfile;
+	vec3_t   mins, maxs;
+	string   filename;
+	byte     md5[16] = { 0 };
+	int      pos;
 
 	if( !cl.need_force_consistency_response )
 		return;
@@ -1562,11 +1560,10 @@ static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 
 	FS_AllowDirectPaths( true );
 
-	for( i = 0; i < cl.num_consistency; i++ )
+	for( int i = 0; i < cl.num_consistency; i++ )
 	{
 		qboolean have_file = true;
-
-		pc = &cl.consistency_list[i];
+		consistency_t *pc = &cl.consistency_list[i];
 
 		user_changed_diskfile = false;
 		MSG_WriteOneBit( msg, 1 );
@@ -1581,6 +1578,7 @@ static void CL_SendConsistencyInfo( sizebuf_t *msg, connprotocol_t proto )
 
 		if( Q_strstr( filename, "models/" ) && have_file )
 		{
+			uint32_t crcFile;
 			CRC32_Init( &crcFile );
 			CRC32_File( &crcFile, filename );
 			crcFile = CRC32_Final( crcFile );
@@ -1990,6 +1988,8 @@ CL_ParseHLTV
 
 spectator message (hltv)
 sended from game.dll
+
+normal client ignores any of HLTV messages
 ==============
 */
 void CL_ParseHLTV( sizebuf_t *msg )
@@ -2001,21 +2001,16 @@ void CL_ParseHLTV( sizebuf_t *msg )
 		cls.spectator = true;
 		break;
 	case HLTV_STATUS:
-			MSG_ReadLong( msg );
-			MSG_ReadShort( msg );
-			MSG_ReadWord( msg );
-			MSG_ReadLong( msg );
-			MSG_ReadLong( msg );
-			MSG_ReadWord( msg );
+		MSG_ReadLong( msg );
+		MSG_ReadShort( msg );
+		MSG_ReadWord( msg );
+		MSG_ReadLong( msg );
+		MSG_ReadLong( msg );
+		MSG_ReadWord( msg );
 		break;
 	case HLTV_LISTEN:
 		cls.signon = SIGNONS;
-#if 1
 		MSG_ReadString( msg );
-#else
-		NET_StringToAdr( MSG_ReadString( msg ), &cls.hltv_listen_address );
-		NET_JoinGroup( cls.netchan.sock, cls.hltv_listen_address );
-#endif
 		SCR_EndLoadingPlaque();
 		break;
 	default:

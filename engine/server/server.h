@@ -21,8 +21,8 @@ GNU General Public License for more details.
 #include "eiface.h"
 #include "physint.h"	// physics interface
 #include "mod_local.h"
+#include "pmove.h"
 #include "pm_defs.h"
-#include "pm_movevars.h"
 #include "entity_state.h"
 #include "protocol.h"
 #include "netchan.h"
@@ -133,7 +133,7 @@ typedef struct server_s
 	struct sv_client_s	*current_client;	// current client who network message sending on
 
 	int		hostflags;	// misc server flags: predicting etc
-	CRC32_t		worldmapCRC;	// check crc for catch cheater maps
+	uint32_t worldmapCRC;	// check crc for catch cheater maps
 	int		progsCRC;		// this is used with feature ENGINE_QUAKE_COMPATIBLE
 
 	char		name[MAX_QPATH];	// map name
