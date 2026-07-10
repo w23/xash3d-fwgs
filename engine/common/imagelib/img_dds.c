@@ -16,25 +16,64 @@ GNU General Public License for more details.
 #include "imagelib.h"
 #include "xash3d_mathlib.h"
 #include "img_dds.h"
+#include "swaplib.h"
+
+le_struct_begin( dds_pixf_swap )
+	le_struct_field( dds_pixf_t, dwSize )
+	le_struct_field( dds_pixf_t, dwFlags )
+	le_struct_field( dds_pixf_t, dwFourCC )
+	le_struct_field( dds_pixf_t, dwRGBBitCount )
+	le_struct_field( dds_pixf_t, dwRBitMask )
+	le_struct_field( dds_pixf_t, dwGBitMask )
+	le_struct_field( dds_pixf_t, dwBBitMask )
+	le_struct_field( dds_pixf_t, dwABitMask )
+le_struct_end();
+
+le_struct_begin( dds_caps_swap )
+	le_struct_field( dds_caps_t, dwCaps1 )
+	le_struct_field( dds_caps_t, dwCaps2 )
+	le_struct_field( dds_caps_t, dwCaps3 )
+	le_struct_field( dds_caps_t, dwCaps4 )
+le_struct_end();
+
+le_struct_begin( dds_swap )
+	le_struct_field( dds_t, dwIdent )
+	le_struct_field( dds_t, dwSize )
+	le_struct_field( dds_t, dwFlags )
+	le_struct_field( dds_t, dwHeight )
+	le_struct_field( dds_t, dwWidth )
+	le_struct_field( dds_t, dwLinearSize )
+	le_struct_field( dds_t, dwDepth )
+	le_struct_field( dds_t, dwMipMapCount )
+	le_struct_field( dds_t, dwAlphaBitDepth )
+	le_struct_array( dds_t, dwReserved1, 10 )
+	le_struct_child( dds_t, dsPixelFormat, dds_pixf_swap )
+	le_struct_child( dds_t, dsCaps, dds_caps_swap )
+	le_struct_field( dds_t, dwTextureStage )
+le_struct_end();
+
+le_struct_begin( dds_dxt10_swap )
+	le_struct_field( dds_header_dxt10_t, dxgiFormat )
+	le_struct_field( dds_header_dxt10_t, resourceDimension )
+	le_struct_field( dds_header_dxt10_t, miscFlag )
+	le_struct_field( dds_header_dxt10_t, arraySize )
+	le_struct_field( dds_header_dxt10_t, miscFlags2 )
+le_struct_end();
 
 static qboolean Image_CheckDXT3Alpha( dds_t *hdr, byte *fin )
 {
-	word	sAlpha;
-	byte	*alpha;
-	int	x, y, i, j;
-
-	for( y = 0; y < hdr->dwHeight; y += 4 )
+	for( int y = 0; y < hdr->dwHeight; y += 4 )
 	{
-		for( x = 0; x < hdr->dwWidth; x += 4 )
+		for( int x = 0; x < hdr->dwWidth; x += 4 )
 		{
-			alpha = fin + 8;
+			byte *alpha = fin + 8;
 			fin += 16;
 
-			for( j = 0; j < 4; j++ )
+			for( int j = 0; j < 4; j++ )
 			{
-				sAlpha = alpha[2*j] + 256 * alpha[2*j+1];
+				word sAlpha = alpha[2*j] + 256 * alpha[2*j+1];
 
-				for( i = 0; i < 4; i++ )
+				for( int i = 0; i < 4; i++ )
 				{
 					if((( x + i ) < hdr->dwWidth ) && (( y + j ) < hdr->dwHeight ))
 					{
@@ -52,29 +91,23 @@ static qboolean Image_CheckDXT3Alpha( dds_t *hdr, byte *fin )
 
 static qboolean Image_CheckDXT5Alpha( dds_t *hdr, byte *fin )
 {
-	uint	bits, bitmask;
-	byte	*alphamask;
-	int	x, y, i, j;
-
-	for( y = 0; y < hdr->dwHeight; y += 4 )
+	for( int y = 0; y < hdr->dwHeight; y += 4 )
 	{
-		for( x = 0; x < hdr->dwWidth; x += 4 )
+		for( int x = 0; x < hdr->dwWidth; x += 4 )
 		{
 			if( y >= hdr->dwHeight || x >= hdr->dwWidth )
 				break;
 
-			alphamask = fin + 2;
+			byte *alphamask = fin + 2;
 			fin += 8;
-
-			bitmask = ((uint *)fin)[1];
 			fin += 8;
 
 			// last three bytes
-			bits = (alphamask[3]) | (alphamask[4] << 8) | (alphamask[5] << 16);
+			uint bits = (alphamask[3]) | (alphamask[4] << 8) | (alphamask[5] << 16);
 
-			for( j = 2; j < 4; j++ )
+			for( int j = 2; j < 4; j++ )
 			{
-				for( i = 0; i < 4; i++ )
+				for( int i = 0; i < 4; i++ )
 				{
 					// only put pixels out < width or height
 					if((( x + i ) < hdr->dwWidth ) && (( y + j ) < hdr->dwHeight ))
@@ -218,14 +251,14 @@ static void Image_DXTGetPixelFormat( dds_t *hdr, dds_header_dxt10_t *headerExt )
 static size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 {
 	size_t	buffsize = 0;
-	int	i, width, height;
 
 	// now correct buffer size
-	for( i = 0; i < Q_max( 1, ( hdr->dwMipMapCount )); i++ )
+	for( int i = 0; i < Q_max( 1, ( hdr->dwMipMapCount )); i++ )
 	{
-		width = Q_max( 1, ( hdr->dwWidth >> i ));
-		height = Q_max( 1, ( hdr->dwHeight >> i ));
-		buffsize += Image_ComputeSize( image.type, width, height, image.depth );
+		int width = Q_max( 1, ( hdr->dwWidth >> i ));
+		int height = Q_max( 1, ( hdr->dwHeight >> i ));
+		int depth = Q_max( 1, ( image.depth >> i ));
+		buffsize += Image_ComputeSize( image.type, width, height, depth );
 	}
 
 	return buffsize;
@@ -234,9 +267,6 @@ static size_t Image_DXTCalcMipmapSize( dds_t *hdr )
 static uint Image_DXTCalcSize( const char *name, dds_t *hdr, size_t filesize )
 {
 	size_t buffsize = 0;
-	int w = image.width;
-	int h = image.height;
-	int d = image.depth;
 
 	if( hdr->dsCaps.dwCaps2 & DDS_CUBEMAP )
 	{
@@ -286,14 +316,13 @@ Image_LoadDDS
 qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesize )
 {
 	dds_t	header;
-	byte	*fin;
-	int		headersOffset;
 	dds_header_dxt10_t header2;
 
 	if( filesize < sizeof( header ))
 		return false;
 
 	memcpy( &header, buffer, sizeof( header ));
+	le_struct_swap( dds_swap, &header );
 
 	if( header.dwIdent != DDSHEADER )
 		return false; // it's not a dds file, just skip it
@@ -310,10 +339,11 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 		return false;
 	}
 
-	headersOffset = sizeof( header );
+	int headersOffset = sizeof( header );
 	if( header.dsPixelFormat.dwFourCC == TYPE_DX10 )
 	{
 		memcpy( &header2, buffer + sizeof( header ), sizeof( header2 ));
+		le_struct_swap( dds_dxt10_swap, &header2 );
 		headersOffset += sizeof( header2 );
 	}
 
@@ -340,7 +370,7 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 
 	image.size = Image_DXTCalcSize( name, &header, filesize - headersOffset );
 	if( image.size == 0 ) return false; // just in case
-	fin = (byte *)( buffer + headersOffset );
+	byte *fin = (byte *)( buffer + headersOffset );
 
 	// copy an encode method
 	image.encode = (word)header.dwReserved1[0];
@@ -368,6 +398,9 @@ qboolean Image_LoadDDS( const char *name, const byte *buffer, fs_offset_t filesi
 			SetBits( image.flags, IMAGE_HAS_ALPHA );
 		if( !FBitSet( header.dsPixelFormat.dwFlags, DDS_LUMINANCE ))
 			SetBits( image.flags, IMAGE_HAS_COLOR );
+		if (image.type == PF_BGRA_32 || image.type == PF_RGBA_32)
+			SetBits( image.flags, IMAGE_HAS_ALPHA );
+		
 		break;
 	}
 

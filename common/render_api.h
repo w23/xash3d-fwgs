@@ -16,8 +16,8 @@ GNU General Public License for more details.
 #ifndef RENDER_API_H
 #define RENDER_API_H
 
+#include <stdint.h>
 #include "lightstyle.h"
-#include "dlight.h"
 
 #define CL_RENDER_INTERFACE_VERSION	37	// Xash3D 1.0
 #define MAX_STUDIO_DECALS		4096	// + unused space of BSP decals
@@ -102,7 +102,7 @@ typedef enum
 	TF_TEXTURE_3D	= (1<<20),	// this is GL_TEXTURE_3D
 	TF_ATLAS_PAGE	= (1<<21),	// bit who indicate lightmap page or deluxemap page
 	TF_ALPHACONTRAST	= (1<<22),	// special texture mode for A2C
-// reserved
+	TF_PREMULTIPLIED	= (1<<23),	// RGBA was stored premultiplied (HL gradient / indexalpha)
 // reserved
 	TF_IMG_UPLOADED	= (1<<25),	// this is set for first time when called glTexImage, otherwise it will be call glTexSubImage
 	TF_ARB_FLOAT	= (1<<26),	// float textures
@@ -176,6 +176,7 @@ enum movie_parms_e
 
 struct movie_state_s;
 struct ref_viewpass_s;
+struct dlight_s;
 
 typedef struct render_api_s
 {
@@ -184,8 +185,8 @@ typedef struct render_api_s
 	void		(*GetDetailScaleForTexture)( int texture, float *xScale, float *yScale );
 	void		(*GetExtraParmsForTexture)( int texture, byte *red, byte *green, byte *blue, byte *alpha );
 	lightstyle_t*	(*GetLightStyle)( int number );
-	dlight_t*		(*GetDynamicLight)( int number );
-	dlight_t*		(*GetEntityLight)( int number );
+	struct dlight_s*		(*GetDynamicLight)( int number );
+	struct dlight_s*		(*GetEntityLight)( int number );
 	byte		(*LightToTexGamma)( byte color );	// software gamma support
 	float		(*GetFrameTime)( void );
 

@@ -19,7 +19,6 @@ GNU General Public License for more details.
 #include "triangleapi.h"
 #include "alias.h"
 #include "pm_local.h"
-#include "pmtrace.h"
 
 typedef struct
 {
@@ -87,12 +86,9 @@ StripLength
 */
 static int StripLength( int starttri, int startv )
 {
-	int		m1, m2, j, k;
-	dtriangle_t	*last, *check;
-
 	g_used[starttri] = 2;
 
-	last = &g_triangles[starttri];
+	dtriangle_t *last = &g_triangles[starttri];
 
 	g_stripverts[0] = last->vertindex[(startv+0) % 3];
 	g_stripverts[1] = last->vertindex[(startv+1) % 3];
@@ -101,8 +97,10 @@ static int StripLength( int starttri, int startv )
 	g_striptris[0] = starttri;
 	g_stripcount = 1;
 
-	m1 = last->vertindex[(startv+2)%3];
-	m2 = last->vertindex[(startv+1)%3];
+	int m1 = last->vertindex[(startv+2)%3];
+	int m2 = last->vertindex[(startv+1)%3];
+	int j;
+	dtriangle_t *check;
 nexttri:
 	// look for a matching triangle
 	for( j = starttri + 1, check = &g_triangles[starttri + 1]; j < m_pAliasHeader->numtris; j++, check++ )
@@ -110,7 +108,7 @@ nexttri:
 		if( check->facesfront != last->facesfront )
 			continue;
 
-		for( k = 0; k < 3; k++ )
+		for( int k = 0; k < 3; k++ )
 		{
 			if( check->vertindex[k] != m1 )
 				continue;
@@ -153,12 +151,9 @@ FanLength
 */
 static int FanLength( int starttri, int startv )
 {
-	int		m1, m2, j, k;
-	dtriangle_t	*last, *check;
-
 	g_used[starttri] = 2;
 
-	last = &g_triangles[starttri];
+	dtriangle_t *last = &g_triangles[starttri];
 
 	g_stripverts[0] = last->vertindex[(startv+0) % 3];
 	g_stripverts[1] = last->vertindex[(startv+1) % 3];
@@ -167,8 +162,10 @@ static int FanLength( int starttri, int startv )
 	g_striptris[0] = starttri;
 	g_stripcount = 1;
 
-	m1 = last->vertindex[(startv+0) % 3];
-	m2 = last->vertindex[(startv+2) % 3];
+	int m1 = last->vertindex[(startv+0) % 3];
+	int m2 = last->vertindex[(startv+2) % 3];
+	int j;
+	dtriangle_t *check;
 
 nexttri:
 	// look for a matching triangle
@@ -177,7 +174,7 @@ nexttri:
 		if( check->facesfront != last->facesfront )
 			continue;
 
-		for( k = 0; k < 3; k++ )
+		for( int k = 0; k < 3; k++ )
 		{
 			if( check->vertindex[k] != m1 )
 				continue;
@@ -220,12 +217,8 @@ for the model, which holds for all frames
 */
 static void BuildTris( void )
 {
-	int	len, bestlen, besttype = 0;
-	int	bestverts[1024];
-	int	besttris[1024];
-	int	type, startv;
-	int	i, j, k;
-	float	s, t;
+	int bestverts[1024];
+	int besttris[1024];
 
 	//
 	// build tristrips
@@ -234,16 +227,18 @@ static void BuildTris( void )
 	g_numcommands = 0;
 	g_numorder = 0;
 
-	for( i = 0; i < m_pAliasHeader->numtris; i++ )
+	for( int i = 0; i < m_pAliasHeader->numtris; i++ )
 	{
 		// pick an unused triangle and start the trifan
 		if( g_used[i] ) continue;
 
-		bestlen = 0;
-		for( type = 0; type < 2; type++ )
+		int bestlen = 0;
+		int besttype = 0;
+		for( int type = 0; type < 2; type++ )
 		{
-			for( startv = 0; startv < 3; startv++ )
+			for( int startv = 0; startv < 3; startv++ )
 			{
+				int len;
 				if( type == 1 ) len = StripLength( i, startv );
 				else len = FanLength( i, startv );
 
@@ -252,32 +247,32 @@ static void BuildTris( void )
 					besttype = type;
 					bestlen = len;
 
-					for( j = 0; j < bestlen + 2; j++ )
+					for( int j = 0; j < bestlen + 2; j++ )
 						bestverts[j] = g_stripverts[j];
 
-					for( j = 0; j < bestlen; j++ )
+					for( int j = 0; j < bestlen; j++ )
 						besttris[j] = g_striptris[j];
 				}
 			}
 		}
 
 		// mark the tris on the best strip as used
-		for( j = 0; j < bestlen; j++ )
+		for( int j = 0; j < bestlen; j++ )
 			g_used[besttris[j]] = 1;
 
 		if( besttype == 1 )
 			g_commands[g_numcommands++] = (bestlen + 2);
 		else g_commands[g_numcommands++] = -(bestlen + 2);
 
-		for( j = 0; j < bestlen + 2; j++ )
+		for( int j = 0; j < bestlen + 2; j++ )
 		{
 			// emit a vertex into the reorder buffer
-			k = bestverts[j];
+			int k = bestverts[j];
 			g_vertexorder[g_numorder++] = k;
 
 			// emit s/t coords into the commands stream
-			s = g_stverts[k].s;
-			t = g_stverts[k].t;
+			float s = g_stverts[k].s;
+			float t = g_stverts[k].t;
 
 			if( !g_triangles[besttris[0]].facesfront && g_stverts[k].onseam )
 				s += m_pAliasHeader->skinwidth / 2;	// on back side
@@ -300,9 +295,6 @@ GL_MakeAliasModelDisplayLists
 */
 static void GL_MakeAliasModelDisplayLists( model_t *m )
 {
-	trivertex_t	*verts;
-	int		i, j;
-
 	BuildTris( );
 
 	// save the data out
@@ -312,11 +304,11 @@ static void GL_MakeAliasModelDisplayLists( model_t *m )
 	memcpy( m_pAliasHeader->commands, g_commands, g_numcommands * 4 );
 
 	m_pAliasHeader->posedata = Mem_Malloc( m->mempool, m_pAliasHeader->numposes * m_pAliasHeader->poseverts * sizeof( trivertex_t ));
-	verts = m_pAliasHeader->posedata;
+	trivertex_t *verts = m_pAliasHeader->posedata;
 
-	for( i = 0; i < m_pAliasHeader->numposes; i++ )
+	for( int i = 0; i < m_pAliasHeader->numposes; i++ )
 	{
-		for( j = 0; j < g_numorder; j++ )
+		for( int j = 0; j < g_numorder; j++ )
 			*verts++ = m_pAliasHeader->pposeverts[i][g_vertexorder[j]];
 	}
 }
@@ -337,9 +329,7 @@ Mod_CreateSkinData
 */
 static rgbdata_t *Mod_CreateSkinData( model_t *mod, const byte *data, int width, int height )
 {
-	static rgbdata_t	skin;
-	char		name[MAX_QPATH];
-	int		i;
+	static rgbdata_t skin;
 
 	skin.width = width;
 	skin.height = height;
@@ -354,7 +344,7 @@ static rgbdata_t *Mod_CreateSkinData( model_t *mod, const byte *data, int width,
 
 	if( !gEngfuncs.Image_CustomPalette() )
 	{
-		for( i = 0; i < skin.width * skin.height; i++ )
+		for( int i = 0; i < skin.width * skin.height; i++ )
 		{
 			if( data[i] > 224 && data[i] != 255 )
 			{
@@ -364,18 +354,13 @@ static rgbdata_t *Mod_CreateSkinData( model_t *mod, const byte *data, int width,
 		}
 	}
 
-	COM_FileBase( mod->name, name, sizeof( name ));
-
 	// for alias models only player can have remap textures
-	if( mod != NULL && !Q_stricmp( name, "player" ))
+	if( mod != NULL && !Q_stricmp( mod->name, "player" ))
 	{
-		texture_t	*tx = NULL;
-		int	i, size;
-
-		i = mod->numtextures;
+		int i = mod->numtextures;
 		mod->textures = (texture_t **)Mem_Realloc( mod->mempool, mod->textures, ( i + 1 ) * sizeof( texture_t* ));
-		size = width * height + 768;
-		tx = Mem_Calloc( mod->mempool, sizeof( *tx ) + size );
+		int size = width * height + 768;
+		texture_t *tx = Mem_Calloc( mod->mempool, sizeof( *tx ) + size );
 		mod->textures[i] = tx;
 
 		Q_strncpy( tx->name, "DM_Skin", sizeof( tx->name ));
@@ -400,11 +385,12 @@ static rgbdata_t *Mod_CreateSkinData( model_t *mod, const byte *data, int width,
 static const void *Mod_LoadSingleSkin( model_t *loadmodel, const daliasskintype_t *pskintype, int skinnum, int size )
 {
 	const byte *ptexture = (const byte *)&pskintype[1];
-	rgbdata_t *pic;
-	string name, lumaname, checkname;
 
+	string name, checkname;
 	Q_snprintf( name, sizeof( name ), "%s:frame%i", loadmodel->name, skinnum );
 	Q_snprintf( checkname, sizeof( checkname ), "%s_%i.tga", loadmodel->name, skinnum );
+
+	rgbdata_t *pic;
 	if( !gEngfuncs.fsapi->FileExists( checkname, false ) || ( pic = gEngfuncs.FS_LoadImage( checkname, NULL, 0 )) == NULL )
 		pic = Mod_CreateSkinData( loadmodel, ptexture, m_pAliasHeader->skinwidth, m_pAliasHeader->skinheight );
 
@@ -416,6 +402,7 @@ static const void *Mod_LoadSingleSkin( model_t *loadmodel, const daliasskintype_
 
 	if( FBitSet( R_GetTexture( m_pAliasHeader->gl_texturenum[skinnum][0] )->flags, TF_HAS_LUMA ))
 	{
+		string lumaname;
 		Q_snprintf( lumaname, sizeof( lumaname ), "%s:luma%i", loadmodel->name, skinnum );
 
 		pic = Mod_CreateSkinData( NULL,	ptexture, m_pAliasHeader->skinwidth, m_pAliasHeader->skinheight );
@@ -431,27 +418,23 @@ static const void *Mod_LoadSingleSkin( model_t *loadmodel, const daliasskintype_
 
 static const void *Mod_LoadGroupSkin( model_t *loadmodel, const daliasskintype_t *pskintype, int skinnum, int size )
 {
-	const daliasskininterval_t *pinskinintervals;
-	const daliasskingroup_t *pinskingroup;
-	const byte *ptexture;
-	rgbdata_t *pic;
-	string name, lumaname;
-	int i, j;
-
 	// animating skin group.  yuck.
-	pinskingroup = (const daliasskingroup_t *)&pskintype[1];
-	pinskinintervals = (const daliasskininterval_t *)(&pinskingroup[1]);
-	ptexture = (const byte *)&pinskinintervals[pinskingroup->numskins];
+	const daliasskingroup_t *pinskingroup = (const daliasskingroup_t *)&pskintype[1];
+	const daliasskininterval_t *pinskinintervals = (const daliasskininterval_t *)(&pinskingroup[1]);
+	const byte *ptexture = (const byte *)&pinskinintervals[pinskingroup->numskins];
 
+	int i;
 	for( i = 0; i < pinskingroup->numskins; i++ )
 	{
+		string name;
 		Q_snprintf( name, sizeof( name ), "%s_%i_%i", loadmodel->name, skinnum, i );
-		pic = Mod_CreateSkinData( loadmodel, ptexture, m_pAliasHeader->skinwidth, m_pAliasHeader->skinheight );
+		rgbdata_t *pic = Mod_CreateSkinData( loadmodel, ptexture, m_pAliasHeader->skinwidth, m_pAliasHeader->skinheight );
 		m_pAliasHeader->gl_texturenum[skinnum][i & 3] = GL_LoadTextureInternal( name, pic, 0 );
 		gEngfuncs.FS_FreeImage( pic );
 
 		if( FBitSet( R_GetTexture( m_pAliasHeader->gl_texturenum[skinnum][i & 3] )->flags, TF_HAS_LUMA ))
 		{
+			string lumaname;
 			Q_snprintf( lumaname, sizeof( lumaname ), "%s_%i_%i_luma", loadmodel->name, skinnum, i );
 			pic = Mod_CreateSkinData( NULL, ptexture, m_pAliasHeader->skinwidth, m_pAliasHeader->skinheight );
 			m_pAliasHeader->fb_texturenum[skinnum][i & 3] = GL_LoadTextureInternal( lumaname, pic, TF_MAKELUMA );
@@ -461,7 +444,7 @@ static const void *Mod_LoadGroupSkin( model_t *loadmodel, const daliasskintype_t
 		ptexture += size;
 	}
 
-	for( j = i; i < 4; i++ )
+	for( int j = i; i < 4; i++ )
 	{
 		m_pAliasHeader->gl_texturenum[skinnum][i & 3] = m_pAliasHeader->gl_texturenum[skinnum][i - j];
 		m_pAliasHeader->fb_texturenum[skinnum][i & 3] = m_pAliasHeader->fb_texturenum[skinnum][i - j];
@@ -477,12 +460,10 @@ Mod_LoadAllSkins
 */
 static const void *Mod_LoadAllSkins( model_t *mod, int numskins, const daliasskintype_t *pskintype )
 {
-	int	i, size;
-
-	size = m_pAliasHeader->skinwidth * m_pAliasHeader->skinheight;
+	int size = m_pAliasHeader->skinwidth * m_pAliasHeader->skinheight;
 
 	// TODO: texture replacement support here
-	for( i = 0; i < numskins; i++ )
+	for( int i = 0; i < numskins; i++ )
 	{
 		if( pskintype->type == ALIAS_SKIN_SINGLE )
 			pskintype = Mod_LoadSingleSkin( mod, pskintype, i, size );
@@ -502,27 +483,22 @@ Mod_LoadAliasModel
 */
 void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded )
 {
-	const daliasskintype_t *pskintype;
-	const dtriangle_t *pintriangles;
-	const daliashdr_t *pinmodel;
-	const stvert_t *pinstverts;
-
 	if( loaded ) *loaded = false;
-	pinmodel = (const daliashdr_t *)buffer;
+	const daliashdr_t *pinmodel = (const daliashdr_t *)buffer;
 	m_pAliasHeader = mod->cache.data;
 	if( !m_pAliasHeader ) return;
 
 	// load the skins
-	pskintype = (const daliasskintype_t *)&pinmodel[1];
+	const daliasskintype_t *pskintype = (const daliasskintype_t *)&pinmodel[1];
 	pskintype = Mod_LoadAllSkins( mod, m_pAliasHeader->numskins, pskintype );
 
 	// load base s and t vertices
-	pinstverts = (const stvert_t *)pskintype;
+	const stvert_t *pinstverts = (const stvert_t *)pskintype;
 	memset( g_stverts, 0, sizeof( g_stverts ));
 	memcpy( g_stverts, pinstverts, sizeof( g_stverts[0] ) * m_pAliasHeader->numverts );
 
 	// load triangle lists
-	pintriangles = (const dtriangle_t *)&pinstverts[m_pAliasHeader->numverts];
+	const dtriangle_t *pintriangles = (const dtriangle_t *)&pinstverts[m_pAliasHeader->numverts];
 	memset( g_triangles, 0, sizeof( g_triangles ));
 	memcpy( g_triangles, pintriangles, sizeof( g_triangles[0] ) * m_pAliasHeader->numtris );
 
@@ -536,18 +512,15 @@ void Mod_LoadAliasModel( model_t *mod, const void *buffer, qboolean *loaded )
 
 void Mod_AliasUnloadTextures( void *data )
 {
-	aliashdr_t	*palias;
-	int		i, j;
-
-	palias = data;
+	aliashdr_t *palias = data;
 	if( !palias ) return; // already freed
 
-	for( i = 0; i < MAX_SKINS; i++ )
+	for( int i = 0; i < MAX_SKINS; i++ )
 	{
 		if( !palias->gl_texturenum[i][0] )
 			break;
 
-		for( j = 0; j < 4; j++ )
+		for( int j = 0; j < 4; j++ )
 		{
 			GL_FreeTexture( palias->gl_texturenum[i][j] );
 			GL_FreeTexture( palias->fb_texturenum[i][j] );
@@ -562,186 +535,6 @@ void Mod_AliasUnloadTextures( void *data )
 
 =============================================================
 */
-
-/*
-===============
-R_AliasDynamicLight
-
-similar to R_StudioDynamicLight
-===============
-*/
-static void R_AliasDynamicLight( cl_entity_t *ent, alight_t *plight )
-{
-	movevars_t	*mv = tr.movevars;
-	vec3_t		lightDir, vecSrc, vecEnd;
-	vec3_t		origin, dist, finalLight;
-	float		add, radius, total;
-	colorVec		light;
-	uint		lnum;
-
-	if( !plight || !ent )
-		return;
-
-	if( !RI.drawWorld || r_fullbright->value || FBitSet( ent->curstate.effects, EF_FULLBRIGHT ))
-	{
-		plight->shadelight = 0;
-		plight->ambientlight = 192;
-
-		VectorSet( plight->plightvec, 0.0f, 0.0f, -1.0f );
-		VectorSet( plight->color, 1.0f, 1.0f, 1.0f );
-		return;
-	}
-
-	// determine plane to get lightvalues from: ceil or floor
-	if( FBitSet( ent->curstate.effects, EF_INVLIGHT ))
-		VectorSet( lightDir, 0.0f, 0.0f, 1.0f );
-	else VectorSet( lightDir, 0.0f, 0.0f, -1.0f );
-
-	VectorCopy( ent->origin, origin );
-
-	VectorSet( vecSrc, origin[0], origin[1], origin[2] - lightDir[2] * 8.0f );
-	light.r = light.g = light.b = light.a = 0;
-
-	if(( mv->skycolor_r + mv->skycolor_g + mv->skycolor_b ) != 0 )
-	{
-		msurface_t	*psurf = NULL;
-		pmtrace_t		trace;
-
-		if( FBitSet( gp_host->features, ENGINE_WRITE_LARGE_COORD ))
-		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 65536.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 65536.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 65536.0f;
-		}
-		else
-		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 8192.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 8192.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 8192.0f;
-		}
-
-		trace = gEngfuncs.CL_TraceLine( vecSrc, vecEnd, PM_STUDIO_IGNORE );
-		if( trace.ent > 0 ) psurf = gEngfuncs.EV_TraceSurface( trace.ent, vecSrc, vecEnd );
-		else psurf = gEngfuncs.EV_TraceSurface( 0, vecSrc, vecEnd );
-
-		if( psurf && FBitSet( psurf->flags, SURF_DRAWSKY ))
-		{
-			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
-
-			light.r = mv->skycolor_r;
-			light.g = mv->skycolor_g;
-			light.b = mv->skycolor_b;
-		}
-	}
-
-	if(( light.r + light.g + light.b ) == 0 )
-	{
-		colorVec	gcolor;
-		float	grad[4];
-
-		VectorScale( lightDir, 2048.0f, vecEnd );
-		VectorAdd( vecEnd, vecSrc, vecEnd );
-
-		light = R_LightVec( vecSrc, vecEnd, g_alias.lightspot, g_alias.lightvec );
-
-		if( VectorIsNull( g_alias.lightvec ))
-		{
-			vecSrc[0] -= 16.0f;
-			vecSrc[1] -= 16.0f;
-			vecEnd[0] -= 16.0f;
-			vecEnd[1] -= 16.0f;
-
-			gcolor = R_LightVec( vecSrc, vecEnd, NULL, NULL );
-			grad[0] = ( gcolor.r + gcolor.g + gcolor.b ) / 768.0f;
-
-			vecSrc[0] += 32.0f;
-			vecEnd[0] += 32.0f;
-
-			gcolor = R_LightVec( vecSrc, vecEnd, NULL, NULL );
-			grad[1] = ( gcolor.r + gcolor.g + gcolor.b ) / 768.0f;
-
-			vecSrc[1] += 32.0f;
-			vecEnd[1] += 32.0f;
-
-			gcolor = R_LightVec( vecSrc, vecEnd, NULL, NULL );
-			grad[2] = ( gcolor.r + gcolor.g + gcolor.b ) / 768.0f;
-
-			vecSrc[0] -= 32.0f;
-			vecEnd[0] -= 32.0f;
-
-			gcolor = R_LightVec( vecSrc, vecEnd, NULL, NULL );
-			grad[3] = ( gcolor.r + gcolor.g + gcolor.b ) / 768.0f;
-
-			lightDir[0] = grad[0] - grad[1] - grad[2] + grad[3];
-			lightDir[1] = grad[1] + grad[0] - grad[2] - grad[3];
-			VectorNormalize( lightDir );
-		}
-		else
-		{
-			VectorCopy( g_alias.lightvec, lightDir );
-		}
-	}
-
-	VectorSet( finalLight, light.r, light.g, light.b );
-	ent->cvFloorColor = light;
-
-	total = Q_max( Q_max( light.r, light.g ), light.b );
-	if( total == 0.0f ) total = 1.0f;
-
-	// scale lightdir by light intentsity
-	VectorScale( lightDir, total, lightDir );
-
-	for( lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
-	{
-		const dlight_t *dl = &tr.dlights[lnum];
-
-		if( dl->die < g_alias.time || !r_dynamic->value )
-			continue;
-
-		VectorSubtract( origin, dl->origin, dist );
-
-		radius = VectorLength( dist );
-		add = dl->radius - radius;
-
-		if( add > 0.0f )
-		{
-			total += add;
-
-			if( radius > 1.0f )
-				VectorScale( dist, ( add / radius ), dist );
-			else VectorScale( dist, add, dist );
-
-			VectorAdd( lightDir, dist, lightDir );
-
-			finalLight[0] += dl->color.r * ( add / 256.0f );
-			finalLight[1] += dl->color.g * ( add / 256.0f );
-			finalLight[2] += dl->color.b * ( add / 256.0f );
-		}
-	}
-
-	VectorScale( lightDir, 0.9f, lightDir );
-
-	plight->shadelight = VectorLength( lightDir );
-	plight->ambientlight = total - plight->shadelight;
-
-	total = Q_max( Q_max( finalLight[0], finalLight[1] ), finalLight[2] );
-
-	if( total > 0.0f )
-	{
-		plight->color[0] = finalLight[0] * ( 1.0f / total );
-		plight->color[1] = finalLight[1] * ( 1.0f / total );
-		plight->color[2] = finalLight[2] * ( 1.0f / total );
-	}
-	else VectorSet( plight->color, 1.0f, 1.0f, 1.0f );
-
-	if( plight->ambientlight > 128 )
-		plight->ambientlight = 128;
-
-	if( plight->ambientlight + plight->shadelight > 255 )
-		plight->shadelight = 255 - plight->ambientlight;
-
-	VectorNormalize2( lightDir, plight->plightvec );
-}
 
 /*
 ===============
@@ -772,15 +565,14 @@ R_AliasLighting
 */
 static void R_AliasLighting( float *lv, const vec3_t normal )
 {
-	float 	illum = g_alias.ambientlight;
-	float	r, lightcos;
+	float illum = g_alias.ambientlight;
 
-	lightcos = DotProduct( normal, g_alias.lightvec_local ); // -1 colinear, 1 opposite
+	float lightcos = DotProduct( normal, g_alias.lightvec_local ); // -1 colinear, 1 opposite
 	if( lightcos > 1.0f ) lightcos = 1.0f;
 
 	illum += g_alias.shadelight;
 
-	r = SHADE_LAMBERT;
+	float r = SHADE_LAMBERT;
 
 	// do modified hemispherical lighting
 	if( r <= 1.0f )
@@ -821,22 +613,16 @@ GL_DrawAliasFrame
 */
 static void GL_DrawAliasFrame( aliashdr_t *paliashdr )
 {
-	float 		lv_tmp;
-	trivertex_t	*verts0;
-	trivertex_t	*verts1;
-	vec3_t		vert, norm;
-	int		*order;
-	int		count;
-
-	verts0 = verts1 = paliashdr->posedata;
+	trivertex_t *verts0 = paliashdr->posedata;
+	trivertex_t *verts1 = paliashdr->posedata;
 	verts0 += g_alias.oldpose * paliashdr->poseverts;
 	verts1 += g_alias.newpose * paliashdr->poseverts;
-	order = paliashdr->commands;
+	int *order = paliashdr->commands;
 
 	while( 1 )
 	{
 		// get the vertex count and primitive type
-		count = *order++;
+		int count = *order++;
 		if( !count ) break; // done
 
 		if( count < 0 )
@@ -863,10 +649,13 @@ static void GL_DrawAliasFrame( aliashdr_t *paliashdr )
 			}
 			order += 2;
 
+			vec3_t norm;
 			VectorLerp( m_bytenormals[verts0->lightnormalindex], g_alias.lerpfrac, m_bytenormals[verts1->lightnormalindex], norm );
 			VectorNormalize( norm );
+			float lv_tmp;
 			R_AliasLighting( &lv_tmp, norm );
 			pglColor4f( g_alias.lightcolor[0] * lv_tmp, g_alias.lightcolor[1] * lv_tmp, g_alias.lightcolor[2] * lv_tmp, tr.blend );
+			vec3_t vert;
 			VectorLerp( verts0->v, g_alias.lerpfrac, verts1->v, vert );
 			pglVertex3fv( vert );
 			verts0++, verts1++;
@@ -883,35 +672,27 @@ GL_DrawAliasShadow
 */
 static void GL_DrawAliasShadow( aliashdr_t *paliashdr )
 {
-	trivertex_t	*verts0;
-	trivertex_t	*verts1;
-	float		vec_x, vec_y;
-	vec3_t		av, point;
-	int		*order;
-	float		height;
-	int		count;
-
 	if( FBitSet( RI.currententity->curstate.effects, EF_NOSHADOW ))
 		return;
 
 	if( glState.stencilEnabled )
 		pglEnable( GL_STENCIL_TEST );
 
-	height = g_alias.lightspot[2] + 1.0f;
-	vec_x = -g_alias.lightvec[0] * 8.0f;
-	vec_y = -g_alias.lightvec[1] * 8.0f;
+	float vec_x = -g_alias.lightvec[0] * 8.0f;
+	float vec_y = -g_alias.lightvec[1] * 8.0f;
 
 	r_stats.c_alias_polys += paliashdr->numtris;
 
-	verts0 = verts1 = paliashdr->posedata;
+	trivertex_t *verts0 = paliashdr->posedata;
+	trivertex_t *verts1 = paliashdr->posedata;
 	verts0 += g_alias.oldpose * paliashdr->poseverts;
 	verts1 += g_alias.newpose * paliashdr->poseverts;
-	order = paliashdr->commands;
+	int *order = paliashdr->commands;
 
 	while( 1 )
 	{
 		// get the vertex count and primitive type
-		count = *order++;
+		int count = *order++;
 		if( !count ) break; // done
 
 		if( count < 0 )
@@ -931,6 +712,7 @@ static void GL_DrawAliasShadow( aliashdr_t *paliashdr )
 			order += 2;
 
 			// normals and vertexes come from the frame list
+			vec3_t av, point;
 			VectorLerp( verts0->v, g_alias.lerpfrac, verts1->v, av );
 			point[0] = av[0] * paliashdr->scale[0] + paliashdr->scale_origin[0];
 			point[1] = av[1] * paliashdr->scale[1] + paliashdr->scale_origin[1];
@@ -1004,13 +786,8 @@ R_SetupAliasFrame
 */
 static void R_SetupAliasFrame( cl_entity_t *e, aliashdr_t *paliashdr )
 {
-	int	newpose, oldpose;
-	int	newframe, oldframe;
-	int	numposes, cycle;
-	float	interval;
-
-	oldframe = e->latched.prevframe;
-	newframe = e->curstate.frame;
+	int oldframe = e->latched.prevframe;
+	int newframe = e->curstate.frame;
 
 	if( newframe < 0 )
 	{
@@ -1026,13 +803,14 @@ static void R_SetupAliasFrame( cl_entity_t *e, aliashdr_t *paliashdr )
 	if(( oldframe >= paliashdr->numframes ) || ( oldframe < 0 ))
 		oldframe = newframe;
 
-	numposes = paliashdr->frames[newframe].numposes;
+	int numposes = paliashdr->frames[newframe].numposes;
 
+	int oldpose, newpose;
 	if( numposes > 1 )
 	{
 		oldpose = newpose = paliashdr->frames[newframe].firstpose;
-		interval = 1.0f / paliashdr->frames[newframe].interval;
-		cycle = (int)(g_alias.time * interval);
+		float interval = 1.0f / paliashdr->frames[newframe].interval;
+		int cycle = (int)(g_alias.time * interval);
 		oldpose += (cycle + 0) % numposes; // lerpframe from
 		newpose += (cycle + 1) % numposes; // lerpframe to
 		g_alias.lerpfrac = ( g_alias.time * interval );
@@ -1058,15 +836,13 @@ R_StudioDrawAbsBBox
 */
 static void R_AliasDrawAbsBBox( cl_entity_t *e, const vec3_t absmin, const vec3_t absmax )
 {
-	vec3_t	p[8];
-	int	i;
-
 	// looks ugly, skip
 	if( r_drawentities->value != 5 || e == tr.viewent )
 		return;
 
 	// compute a full bounding box
-	for( i = 0; i < 8; i++ )
+	vec3_t p[8];
+	for( int i = 0; i < 8; i++ )
 	{
 		p[i][0] = ( i & 1 ) ? absmin[0] : absmax[0];
 		p[i][1] = ( i & 2 ) ? absmin[1] : absmax[1];
@@ -1079,7 +855,7 @@ static void R_AliasDrawAbsBBox( cl_entity_t *e, const vec3_t absmin, const vec3_
 	pglTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 
 	TriBegin( TRI_QUADS );
-	for( i = 0; i < 6; i++ )
+	for( int i = 0; i < 6; i++ )
 	{
 		TriBrightness( g_alias.shadelight / 255.0f );
 		TriVertex3fv( p[boxpnt[i][0]] );
@@ -1135,7 +911,7 @@ init current time for a given model
 */
 static void R_AliasSetupTimings( void )
 {
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 	{
 		// synchronize with server time
 		g_alias.time = gp_cl->time;
@@ -1157,16 +933,9 @@ R_DrawAliasModel
 */
 void R_DrawAliasModel( cl_entity_t *e )
 {
-	model_t		*clmodel;
-	vec3_t		absmin, absmax;
-	remap_info_t	*pinfo = NULL;
-	int		anim, skin;
-	alight_t		lighting;
-	player_info_t	*playerinfo;
-	vec3_t		dir, angles;
+	model_t *clmodel = RI.currententity->model;
 
-	clmodel = RI.currententity->model;
-
+	vec3_t absmin, absmax;
 	VectorAdd( e->origin, clmodel->mins, absmin );
 	VectorAdd( e->origin, clmodel->maxs, absmax );
 
@@ -1183,7 +952,7 @@ void R_DrawAliasModel( cl_entity_t *e )
 	R_AliasSetupTimings();
 
 	// angles will be modify below keep original
-	VectorCopy( e->angles, angles );
+	vec3_t angles = Vec3( e->angles );
 
 	R_AliasLerpMovement( e );
 
@@ -1196,8 +965,12 @@ void R_DrawAliasModel( cl_entity_t *e )
 	//
 	// get lighting information
 	//
-	lighting.plightvec = dir;
-	R_AliasDynamicLight( e, &lighting );
+	vec3_t dir;
+	alight_t lighting =
+	{
+		.plightvec = dir,
+	};
+	R_EntityDynamicLight( e, &lighting, FBitSet( RI.rvp.flags, RF_DRAW_WORLD ), g_alias.time, g_alias.lightspot, g_alias.lightvec );
 
 	r_stats.c_alias_polys += m_pAliasHeader->numtris;
 	r_stats.c_alias_models_drawn++;
@@ -1213,6 +986,7 @@ void R_DrawAliasModel( cl_entity_t *e )
 	GL_SetRenderMode( e->curstate.rendermode );
 
 	// setup remapping only for players
+	player_info_t *playerinfo;
 	if( e->player && ( playerinfo = pfnPlayerInfo( e->curstate.number - 1 )) != NULL )
 	{
 		// get remap colors
@@ -1232,8 +1006,9 @@ void R_DrawAliasModel( cl_entity_t *e )
 		pglScalef( m_pAliasHeader->scale[0], m_pAliasHeader->scale[1], m_pAliasHeader->scale[2] );
 	}
 
-	anim = (int)(g_alias.time * 10) & 3;
-	skin = bound( 0, RI.currententity->curstate.skin, m_pAliasHeader->numskins - 1 );
+	int anim = (int)(g_alias.time * 10) & 3;
+	int skin = bound( 0, RI.currententity->curstate.skin, m_pAliasHeader->numskins - 1 );
+	remap_info_t *pinfo = NULL;
 	if( m_fDoRemap ) pinfo = gEngfuncs.CL_GetRemapInfoForEntity( e );
 
 	if( r_lightmap->value && !r_fullbright->value )

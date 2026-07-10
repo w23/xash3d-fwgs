@@ -17,8 +17,9 @@
 #define SPRITE_H
 
 #include "build.h"
-#include STDINT_H
+#include <stdint.h>
 #include "synctype.h"
+#include "xash3d_types.h"
 
 /*
 ==============================================================================

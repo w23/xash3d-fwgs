@@ -30,6 +30,8 @@ struct ref_state_s
 	// depends on build configuration
 	const char    **short_names;
 	const char    **long_names;
+
+	ref_screen_rotation_t rotation;
 };
 
 extern struct ref_state_s ref;
@@ -39,7 +41,7 @@ extern ref_globals_t refState;
 #define REF_GET_PARM( parm, arg ) ref.dllFuncs.RefGetParm( (parm), (arg) )
 #define GL_LoadTextureInternal( name, pic, flags ) ref.dllFuncs.GL_LoadTextureFromBuffer( (name), (pic), (flags), false )
 #define GL_UpdateTextureInternal( name, pic, flags ) ref.dllFuncs.GL_LoadTextureFromBuffer( (name), (pic), (flags), true )
-#define R_GetBuiltinTexture( name ) ref.dllFuncs.GL_FindTexture( (name) )
+#define R_GetBuiltinTexture( name ) ref.dllFuncs.GL_LoadTexture( (name), 0, 0, 0 )
 
 static inline void R_GetTextureParms( int *w, int *h, int texnum )
 {

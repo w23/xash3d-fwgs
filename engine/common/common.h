@@ -16,40 +16,48 @@ GNU General Public License for more details.
 #ifndef COMMON_H
 #define COMMON_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/*
-===================================================================================================================================
-Legend:
-
-INTERNAL RESOURCE			- function contain hardcoded path to resource that engine required (optional in most cases)
-OBSOLETE, UNUSED			- this function no longer used and leaved here for keep binary compatibility
-TODO				- some functionality not impemented but planned
-FIXME				- code doesn't working properly in some rare cases
-HACKHACK				- unexpected behavior on some input params (or something like)
-BUGBUG				- code doesn't working properly in most cases!
-TESTTEST				- this code may be unstable and needs to be more tested
-g-cont:				- notes from engine author
-XASH SPECIFIC			- sort of hack that works only in Xash3D not in GoldSrc
-===================================================================================================================================
-*/
-
-#include "port.h"
-
-#include "backends.h"
-#include "defaults.h"
-
 #include <stdio.h>
 #include <stdlib.h> // rand, adbs
 #include <stdarg.h> // va
+
+#include "build.h"
 
 #if !XASH_WIN32
 #include <stddef.h> // size_t
 #else
 #include <sys/types.h> // off_t
 #endif
+
+#include "port.h"
+#include "backends.h"
+#include "defaults.h"
+#include "library_suffix.h"
+#include "enginefeatures.h"
+#include "system.h"
+#include "com_model.h"
+#include "com_strings.h"
+#include "crtlib.h"
+#include "cvar.h"
+#include "con_nprint.h"
+#include "crclib.h"
+#include "ref_api.h"
+#include "com_image.h"
+
+/*
+===================================================================================================================================
+Legend:
+
+INTERNAL RESOURCE - function contain hardcoded path to resource that engine required (optional in most cases)
+OBSOLETE, UNUSED  - this function no longer used and leaved here for keep binary compatibility
+TODO              - some functionality not impemented but planned
+FIXME             - code doesn't working properly in some rare cases
+HACKHACK          - unexpected behavior on some input params (or something like)
+BUGBUG            - code doesn't working properly in most cases!
+TESTTEST          - this code may be unstable and needs to be more tested
+g-cont:           - notes from engine author
+XASH SPECIFIC     - sort of hack that works only in Xash3D not in GoldSrc
+===================================================================================================================================
+*/
 
 // configuration
 
@@ -58,21 +66,19 @@ XASH SPECIFIC			- sort of hack that works only in Xash3D not in GoldSrc
 //
 #if XASH_TIMER == TIMER_NULL
 	#error "Please select timer backend"
-#endif
+#endif // XASH_TIMER == TIMER_NULL
 
 #if !XASH_DEDICATED
 	#if XASH_VIDEO == VIDEO_NULL
 		#error "Please select video backend"
-	#endif
-#endif
+	#endif // XASH_VIDEO == VIDEO_NULL
+#endif // !XASH_DEDICATED
 
 #ifndef XASH_SDL
-
-#if XASH_TIMER == TIMER_SDL || XASH_VIDEO == VIDEO_SDL || XASH_SOUND == SOUND_SDL || XASH_INPUT == INPUT_SDL
-#error "SDL backends without XASH_SDL not allowed"
-#endif
-
-#endif
+	#if XASH_TIMER == TIMER_SDL || XASH_VIDEO == VIDEO_SDL || XASH_SOUND == SOUND_SDL || XASH_INPUT == INPUT_SDL
+		#error "SDL backends without XASH_SDL not allowed"
+	#endif // XASH_TIMER == TIMER_SDL || XASH_VIDEO == VIDEO_SDL || XASH_SOUND == SOUND_SDL || XASH_INPUT == INPUT_SDL
+#endif // XASH_SDL
 
 #define HACKS_RELATED_HLMODS		// some HL-mods works differently under Xash and can't be fixed without some hacks at least at current time
 
@@ -94,19 +100,6 @@ typedef enum instance_e
 #else
 #define Host_IsDedicated() ( host.type == HOST_DEDICATED )
 #endif
-
-#include "system.h"
-#include "com_model.h"
-#include "com_strings.h"
-#include "crtlib.h"
-#define FSCALLBACK_OVERRIDE_OPEN
-#define FSCALLBACK_OVERRIDE_LOADFILE
-#define FSCALLBACK_OVERRIDE_MALLOC_LIKE
-#include "fscallback.h"
-#include "cvar.h"
-#include "con_nprint.h"
-#include "crclib.h"
-#include "ref_api.h"
 
 // PERFORMANCE INFO
 #define MIN_FPS         20.0f    // host minimum fps value for maxfps.
@@ -167,6 +160,8 @@ extern convar_t	cl_filterstuffcmd;
 extern convar_t	rcon_password;
 extern convar_t	hpk_custom_file;
 extern convar_t	con_gamemaps;
+extern convar_t	sv_background;
+extern convar_t	cl_background;
 
 #define Mod_AllowMaterials() ( host_allow_materials.value != 0.0f && !FBitSet( host.features, ENGINE_DISABLE_HDTEXTURES ))
 
@@ -306,7 +301,7 @@ typedef struct host_parm_s
 	void   *hWnd;          // main window
 
 	// command line parms
-	char **argv;
+	const char **argv;
 	int	 argc;
 
 	uint     framecount;     // global framecount
@@ -324,28 +319,22 @@ typedef struct host_parm_s
 	// for CL_{Push,Pop}TraceBounds
 	vec3_t player_mins_backup[MAX_MAP_HULLS];
 	vec3_t player_maxs_backup[MAX_MAP_HULLS];
-	qboolean trace_bounds_pushed;
 
-	qboolean allow_console;       // allow console in dev-mode or multiplayer game
-	qboolean allow_console_init;  // initial value to allow the console
-	qboolean key_overstrike;      // key overstrike mode
-	qboolean stuffcmds_pending;   // should execute stuff commands
-	qboolean allow_cheats;        // this host will allow cheating
-	qboolean change_game;         // initialize when game is changed
-	qboolean mouse_visible;       // vgui override cursor control (never change outside Platform_SetCursorType!)
-	qboolean shutdown_issued;     // engine is shutting down
-	qboolean apply_game_config;   // when true apply only to game cvars and ignore all other commands
-	qboolean apply_opengl_config; // when true apply only to opengl cvars and ignore all other commands
-	qboolean config_executed;     // a bit who indicated was config.cfg already executed e.g. from valve.rc
-#if XASH_DLL_LOADER
-	qboolean enabledll;
-#endif
-	qboolean textmode;
-
-	// some settings were changed and needs to global update
-	qboolean userinfo_changed;
-	qboolean movevars_changed;
-	qboolean renderinfo_changed;
+	uint trace_bounds_pushed : 1;
+	uint allow_console       : 1; // allow console in dev-mode or multiplayer game
+	uint allow_console_init  : 1; // initial value to allow the console
+	uint key_overstrike      : 1; // key overstrike mode
+	uint stuffcmds_pending   : 1; // should execute stuff commands
+	uint allow_cheats        : 1; // this host will allow cheating
+	uint change_game         : 1; // initialize when game is changed
+	uint mouse_visible       : 1; // vgui override cursor control (never change outside Platform_SetCursorType!)
+	uint shutdown_issued     : 1; // engine is shutting down
+	uint apply_opengl_config : 1; // when true apply only to opengl cvars and ignore all other commands
+	uint config_executed     : 1; // a bit who indicated was config.cfg already executed e.g. from valve.rc
+	uint textmode            : 1;
+	uint userinfo_changed    : 1; // some settings were changed and needs to global update
+	uint movevars_changed    : 1;
+	uint renderinfo_changed  : 1;
 
 	// for IN_MouseMove() easy access
 	int      window_center_x;
@@ -353,6 +342,9 @@ typedef struct host_parm_s
 	string   gamedll;
 	string   clientlib;
 	string   menulib;
+
+	// default game directory, passed to us from game launcher
+	string default_gamedir;
 } host_parm_t;
 
 extern host_parm_t	host;
@@ -376,20 +368,29 @@ void *_Mem_Realloc( poolhandle_t poolptr, void *memptr, size_t size, qboolean cl
 	ALLOC_CHECK( 3 ) WARN_UNUSED_RESULT;
 void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
 	ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
-poolhandle_t _Mem_AllocPool( const char *name, const char *filename, int fileline )
+poolhandle_t _Mem_AllocPool( const char *name, unsigned int flags, const char *filename, int fileline )
 	WARN_UNUSED_RESULT;
+
+// pool flags
+#define MEM_SMALL_ALLOC_OPT (1U<<0) // use compact header for allocations <= 255 bytes (drops filename/fileline tracking)
+
 void _Mem_FreePool( poolhandle_t *poolptr, const char *filename, int fileline );
 void _Mem_EmptyPool( poolhandle_t poolptr, const char *filename, int fileline );
 void _Mem_Check( const char *filename, int fileline );
 qboolean Mem_IsAllocatedExt( poolhandle_t poolptr, void *data );
-void Mem_PrintList( size_t minallocationsize );
 void Mem_PrintStats( void );
+void Mem_Stats_f( void );
 
 #define Mem_Malloc( pool, size ) _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
 #define Mem_Calloc( pool, size ) _Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
 #define Mem_Realloc( pool, ptr, size ) _Mem_Realloc( pool, ptr, size, true, __FILE__, __LINE__ )
 #define Mem_Free( mem ) _Mem_Free( mem, __FILE__, __LINE__ )
-#define Mem_AllocPool( name ) _Mem_AllocPool( name, __FILE__, __LINE__ )
+#define Mem_Free2( ptr ) { \
+	_Mem_Free( *ptr, __FILE__, __LINE__ ); \
+	*ptr = NULL; }
+
+#define Mem_AllocPool( name ) _Mem_AllocPool( name, 0, __FILE__, __LINE__ )
+#define Mem_AllocPoolExt( name, flags ) _Mem_AllocPool( name, flags, __FILE__, __LINE__ )
 #define Mem_FreePool( pool ) _Mem_FreePool( pool, __FILE__, __LINE__ )
 #define Mem_EmptyPool( pool ) _Mem_EmptyPool( pool, __FILE__, __LINE__ )
 #define Mem_IsAllocated( mem ) Mem_IsAllocatedExt( NULL, mem )
@@ -398,7 +399,7 @@ void Mem_PrintStats( void );
 //
 // filesystem_engine.c
 //
-void FS_Init( const char *basedir );
+void FS_Init( void );
 void FS_Shutdown( void );
 void *FS_GetNativeObject( const char *obj );
 int FS_Close( file_t *file );
@@ -447,9 +448,8 @@ void Cbuf_AddText( const char *text );
 void Cbuf_AddTextf( const char *text, ... ) FORMAT_CHECK( 1 );
 void Cbuf_AddFilteredText( const char *text );
 void Cbuf_InsertText( const char *text );
-void Cbuf_InsertTextLen( const char *text, size_t len, size_t requested_len );
 void Cbuf_ExecStuffCmds( void );
-void Cbuf_Execute (void);
+void Cbuf_Execute( void );
 qboolean Cmd_CurrentCommandIsPrivileged( void );
 void Cmd_Init( void );
 void Cmd_Shutdown( void );
@@ -474,17 +474,15 @@ static inline int Cmd_AddCommandWithFlags( const char *cmd_name, xcommand_t func
 void Cmd_RemoveCommand( const char *cmd_name );
 cmd_t *Cmd_Exists( const char *cmd_name );
 void Cmd_LookupCmds( void *buffer, void *ptr, setpair_t callback );
-int Cmd_ListMaps( search_t *t , char *lastmapname, size_t len );
+int Cmd_ListMaps( search_t *t, char *lastmapname, size_t len, qboolean silent );
 void Cmd_TokenizeString( const char *text );
 void Cmd_ExecuteString( const char *text );
 void Cmd_ForwardToServer( void );
 void Cmd_Escape( char *newCommand, const char *oldCommand, int len );
 
-
 //
 // imagelib
 //
-#include "com_image.h"
 
 void Image_Setup( void );
 void Image_Init( void );
@@ -493,8 +491,7 @@ void Image_AddCmdFlags( uint flags );
 void FS_FreeImage( rgbdata_t *pack );
 rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
 qboolean FS_SaveImage( const char *filename, rgbdata_t *pix );
-rgbdata_t *FS_CopyImage( rgbdata_t *in ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
-extern const bpc_desc_t PFDesc[];	// image get pixelformat
+rgbdata_t *FS_CopyImage( const rgbdata_t *in ) MALLOC_LIKE( FS_FreeImage, 1 ) WARN_UNUSED_RESULT;
 qboolean Image_Process( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 void Image_PaletteHueReplace( byte *palSrc, int newHue, int start, int end, int pal_size );
 void Image_SetForceFlags( uint flags );	// set image force flags on loading
@@ -502,6 +499,8 @@ qboolean Image_CustomPalette( void );
 void Image_ClearForceFlags( void );
 void Image_SetMDLPointer( byte *p );
 void Image_CheckPaletteQ1( void );
+
+extern const bpc_desc_t PFDesc[PF_TOTALCOUNT];	// image get pixelformat
 
 /*
 ========================================================================
@@ -535,7 +534,7 @@ typedef enum sndFlags_e
 typedef struct wavdata_s
 {
 	size_t  size;      // for bounds checking
-	uint    loopStart; // offset at this point sound will be looping while playing more than only once
+	uint    loop_start; // offset at this point sound will be looping while playing more than only once
 	uint    samples;   // total samplecount in wav
 	uint    type;      // compression type
 	uint    flags;     // misc sound flags
@@ -567,7 +566,11 @@ qboolean Sound_SupportedFileFormat( const char *fileext );
 //
 typedef void( *pfnChangeGame )( const char *progname );
 
-qboolean Host_IsQuakeCompatible( void );
+static inline qboolean Host_IsQuakeCompatible( void )
+{
+	return FBitSet( host.features, ENGINE_QUAKE_COMPATIBLE ) ? true : false;
+}
+
 void Host_ShutdownWithReason( const char *reason );
 int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGame, pfnChangeGame func );
 void Host_EndGame( qboolean abort, const char *message, ... ) FORMAT_CHECK( 2 );
@@ -580,7 +583,7 @@ void Host_Error( const char *error, ... ) FORMAT_CHECK( 1 );
 void Host_ValidateEngineFeatures( uint32_t mask, uint32_t features );
 void Host_Frame( double time );
 void Host_Credits( void );
-void Host_ExitInMain( void );
+void Host_ExitInMain( void ) NORETURN;
 
 //
 // host_state.c
@@ -626,18 +629,14 @@ qboolean SV_Active( void );
 
 ==============================================================
 */
-char *COM_MemFgets( byte *pMemFile, int fileSize, int *filePos, char *pBuffer, int bufferSize );
 void COM_HexConvert( const char *pszInput, int nInputLength, byte *pOutput );
 byte COM_Nibble( char c );
 int COM_SaveFile( const char *filename, const void *data, int len );
 byte *COM_LoadFileForMe( const char *filename, int *pLength ) MALLOC_LIKE( free, 1 );
 qboolean COM_IsSafeFileToDownload( const char *filename );
-cvar_t *pfnCVarGetPointer( const char *szVarName );
 int pfnDrawConsoleString( int x, int y, char *string );
 void pfnDrawSetTextColor( float r, float g, float b );
 void pfnDrawConsoleStringLen( const char *pText, int *length, int *height );
-void *Cache_Check( poolhandle_t mempool, struct cache_user_s *c );
-void COM_TrimSpace( const char *source, char *dest );
 void pfnGetModelBounds( model_t *mod, float *mins, float *maxs );
 int COM_CheckParm( char *parm, char **ppnext );
 int pfnGetModelType( model_t *mod );
@@ -647,7 +646,6 @@ void Con_DPrintf( const char *fmt, ... ) FORMAT_CHECK( 1 );
 void Con_Printf( const char *szFmt, ... ) FORMAT_CHECK( 1 );
 int pfnNumberOfEntities( void );
 int pfnIsInGame( void );
-float pfnTime( void );
 #define copystring( s ) _copystring( host.mempool, s, __FILE__, __LINE__ )
 #define copystringpool( pool, s ) _copystring( pool, s, __FILE__, __LINE__ )
 #define SV_CopyString( s ) _copystring( svgame.stringspool, s, __FILE__, __LINE__ )
@@ -680,7 +678,7 @@ void pfnResetTutorMessageDecayData( void );
 //
 // con_utils.c
 //
-void Con_CompleteCommand( field_t *field );
+void Con_CompleteCommand( field_t *field, qboolean print_suggestions );
 void Cmd_AutoComplete( char *complete_string );
 void Cmd_AutoCompleteClear( void );
 void Host_InitializeConfig( file_t *f, const char *config, const char *description );
@@ -697,7 +695,6 @@ int COM_SizeofResourceList( resource_t *pList, resourceinfo_t *ri );
 // cfgscript.c
 //
 int CSCR_LoadDefaultCVars( const char *scriptfilename );
-int CSCR_WriteGameCVars( file_t *cfg, const char *scriptfilename );
 
 //
 // hpak.c
@@ -727,8 +724,8 @@ void HPAK_FlushHostQueue( void );
 typedef enum connprotocol_e
 {
 	PROTO_CURRENT = 0, // Xash3D 49
-	PROTO_LEGACY, // Xash3D 48
-	PROTO_QUAKE, // Quake 15
+	// RIP Xash3D 48
+	PROTO_QUAKE = 2, // Quake 15
 	PROTO_GOLDSRC, // GoldSrc 48
 } connprotocol_t;
 
@@ -747,6 +744,7 @@ qboolean CL_DisableVisibility( void );
 qboolean CL_IsRecordDemo( void );
 qboolean CL_IsPlaybackDemo( void );
 qboolean UI_CreditsActive( void );
+void *UI_GetMenuFactory( void );
 int CL_GetMaxClients( void );
 #else
 static inline qboolean CL_Initialized( void ) { return false; }
@@ -757,6 +755,7 @@ static inline qboolean CL_DisableVisibility( void ) { return false; }
 static inline qboolean CL_IsRecordDemo( void ) { return false; }
 static inline qboolean CL_IsPlaybackDemo( void ) { return false; }
 static inline qboolean UI_CreditsActive( void ) { return false; }
+static inline void *UI_GetMenuFactory( void ) { return NULL; }
 static inline int CL_GetMaxClients( void ) { return SV_GetMaxClients(); }
 #endif
 
@@ -825,7 +824,6 @@ uint LZSS_GetActualSize( const byte *source, size_t input_len );
 byte *LZSS_Compress( byte *pInput, int inputLength, uint *pOutputSize );
 uint LZSS_Decompress( const byte *pInput, byte *pOutput, size_t input_len, size_t output_len );
 void GL_FreeImage( const char *name );
-void VID_InitDefaultResolution( void );
 void VID_Init( void );
 void UI_SetActiveMenu( qboolean fActive );
 void UI_ShowConnectionWarning( void );
@@ -860,13 +858,15 @@ static inline connprotocol_t CL_Protocol( void )
 }
 #endif
 
-static inline qboolean Host_IsLocalGame( void )
+// true in singleplayer only but not specific to local game
+static inline qboolean Host_IsSinglePlayerGame( void )
 {
 	if( SV_Active( ))
 		return SV_GetMaxClients() == 1 ? true : false;
 	return CL_GetMaxClients() == 1 ? true : false;
 }
 
+// true when both server and client running on the same host
 static inline qboolean Host_IsLocalClient( void )
 {
 	return CL_Initialized( ) && SV_Initialized( ) ? true : false;
@@ -895,12 +895,13 @@ intptr_t V_GetGammaPtr( int parm );
 //
 void NET_InitMasters( void );
 void NET_SaveMasters( void );
-qboolean NET_SendToMasters( netsrc_t sock, size_t len, const void *data );
-qboolean NET_IsMasterAdr( netadr_t adr );
+qboolean NET_IsMasterAdr( netadr_t adr, connprotocol_t *proto );
 void NET_MasterHeartbeat( void );
 void NET_MasterClear( void );
 void NET_MasterShutdown( void );
 qboolean NET_GetMaster( netadr_t from, uint *challenge, double *last_heartbeat );
+qboolean NET_MasterQuery( uint32_t key, qboolean net, const char *filter );
+void NET_QueryServerByAddress( netadr_t adr, connprotocol_t proto );
 
 //
 // munge.c
@@ -909,7 +910,6 @@ void COM_Munge( byte *data, size_t len, int seq );
 void COM_UnMunge( byte *data, size_t len, int seq );
 void COM_Munge2( byte *data, size_t len, int seq );
 void COM_UnMunge2( byte *data, size_t len, int seq );
-void COM_Munge3( byte *data, size_t len, int seq );
 void COM_UnMunge3( byte *data, size_t len, int seq );
 
 //
@@ -940,11 +940,17 @@ const char *SoundList_Get( soundlst_group_t group, int idx );
 void SoundList_Init( void );
 void SoundList_Shutdown( void );
 
+//
+// xrcon.c
+//
+void XRcon_Init( void );
+void XRcon_Shutdown( void );
+void XRcon_Frame( void );
+void XRcon_Print( const char *msg );
+qboolean XRcon_IsActive( void );
+
 #ifdef REF_DLL
 #error "common.h in ref_dll"
 #endif
 
-#ifdef __cplusplus
-}
-#endif
 #endif//COMMON_H

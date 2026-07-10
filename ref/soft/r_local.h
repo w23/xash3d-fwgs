@@ -15,36 +15,28 @@ GNU General Public License for more details.
 
 #ifndef GL_LOCAL_H
 #define GL_LOCAL_H
+#include "ref_common.h"
 #include "port.h"
 #include "xash3d_types.h"
 #include "cvardef.h"
-#include "const.h"
-#include "com_model.h"
-#include "cl_entity.h"
-#include "render_api.h"
 #include "protocol.h"
-#include "dlight.h"
-#include "ref_api.h"
-#include "xash3d_mathlib.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
-#include "pm_movevars.h"
 #include "cvardef.h"
+#include "pmove.h"
+
 typedef struct mip_s mip_t;
 
 typedef int fixed8_t;
 typedef int fixed16_t;
 
-#define ASSERT( x ) if( !( x )) gEngfuncs.Host_Error( "assert failed at %s:%i\n", __FILE__, __LINE__ )
-#define Assert( x ) if( !( x )) gEngfuncs.Host_Error( "assert failed at %s:%i\n", __FILE__, __LINE__ )
+#define ASSERT( x ) Assert( x )
 
 #include <stdio.h>
 
 // make mod_ref.h?
 #define LM_SAMPLE_SIZE 16
-
-extern poolhandle_t r_temppool;
 
 #define BLOCK_SIZE         tr.block_size        // lightmap blocksize
 #define BLOCK_SIZE_DEFAULT 128                  // for keep backward compatibility
@@ -69,17 +61,9 @@ extern poolhandle_t r_temppool;
 #define SHADE_LAMBERT     1.4953241
 #define DEFAULT_ALPHATEST 0.0f
 
-// refparams
-#define RP_NONE        0
-#define RP_ENVVIEW     BIT( 0 )                 // used for cubemapshot
-#define RP_OLDVIEWLEAF BIT( 1 )
-#define RP_CLIPPLANE   BIT( 2 )
-
-#define RP_NONVIEWERREF ( RP_ENVVIEW )
 #define R_ModelOpaque( rm )   ( rm == kRenderNormal )
 #define R_StaticEntity( ent ) ( VectorIsNull( ent->origin ) && VectorIsNull( ent->angles ))
 #define RP_LOCALCLIENT( e )   (( e ) != NULL && ( e )->index == ( gp_cl->playernum + 1 ) && e->player )
-#define RP_NORMALPASS()       ( FBitSet( RI.params, RP_NONVIEWERREF ) == 0 )
 
 #define CL_IsViewEntityLocalPlayer() ( gp_cl->viewentity == ( gp_cl->playernum + 1 ))
 
@@ -93,26 +77,6 @@ extern poolhandle_t r_temppool;
 #define MASK( x )           ( BIT( x ) - 1 )
 #define GET_BIT( s, b )     (( s & ( 1 << b )) >> b )
 #define MOVE_BIT( s, f, t ) ( GET_BIT( s, f ) << t )
-
-
-/*
-  skins will be outline flood filled and mip mapped
-  pics and sprites with alpha will be outline flood filled
-  pic won't be mip mapped
-  model skin
-  sprite frame
-  wall texture
-  pic
-*/
-
-typedef enum
-{
-	it_skin,
-	it_sprite,
-	it_wall,
-	it_pic,
-	it_sky
-} imagetype_t;
 
 
 // ===================================================================
@@ -158,27 +122,16 @@ extern viddef_t vid;
 
 typedef struct
 {
-	int         params;             // rendering parameters
-
-	qboolean    drawWorld;                  // ignore world for drawing PlayerModel
-	qboolean    isSkyVisible;               // sky is visible
-	qboolean    onlyClientDraw;             // disabled by client request
-	qboolean    drawOrtho;                  // draw world as orthogonal projection
-
-	float       fov_x, fov_y;       // current view fov
+	ref_viewpass_t rvp;
 
 	cl_entity_t *currententity;
 	model_t     *currentmodel;
 	cl_entity_t *currentbeam;       // same as above but for beams
 
-	int         viewport[4];
 	// gl_frustum_t	frustum;
 
 	mleaf_t     *viewleaf;
 	mleaf_t     *oldviewleaf;
-	vec3_t      pvsorigin;
-	vec3_t      vieworg;                    // locked vieworigin
-	vec3_t      viewangles;
 	vec3_t      vforward;
 	vec3_t      vright;
 	vec3_t      vup;
@@ -252,7 +205,6 @@ typedef struct
 	int          lightmapTextures[MAX_LIGHTMAPS];
 	int          dlightTexture;     // custom dlight texture
 	int          skyboxTextures[6]; // skybox sides
-	int          cinTexture;        // cinematic texture
 
 	// entity lists
 	draw_list_t  draw_stack[MAX_DRAW_STACK];
@@ -279,7 +231,6 @@ typedef struct
 	int          max_recursion;
 
 	byte         visbytes[( MAX_MAP_LEAFS + 7 ) / 8]; // member custom PVS
-	int          lightstylevalue[MAX_LIGHTSTYLES];    // value 0 - 65536
 	int          block_size;                          // lightmap blocksize
 
 	double       frametime;         // special frametime for multipass rendering (will set to 0 on a nextview)
@@ -294,11 +245,9 @@ typedef struct
 
 	// get from engine
 	cl_entity_t  *entities;
-	movevars_t   *movevars;
 	color24      *palette;
 	cl_entity_t  *viewent;
 	lightstyle_t *lightstyles;
-	dlight_t     *dlights;
 	dlight_t     *elights;
 	byte         *texgammatable;
 	uint         *lightgammatable;
@@ -355,11 +304,6 @@ typedef struct image_s
 	// debug info
 	size_t         size;            // upload size for debug targets
 
-	// detail textures stuff
-	float          xscale;
-	float          yscale;
-
-	imagetype_t    type;
 	pixel_t        *pixels[4];                              // mip levels
 	pixel_t        *alpha_pixels;                           // mip levels
 
@@ -371,7 +315,6 @@ typedef struct image_s
 // gl_beams.c
 //
 void CL_DrawBeams( int fTrans, BEAM *active_beams );
-qboolean R_BeamCull( const vec3_t start, const vec3_t end, qboolean pvsOnly );
 
 //
 // gl_decals.c
@@ -390,23 +333,20 @@ void GL_Bind( int tmu, unsigned int texnum );
 // gl_draw.c
 //
 void R_Set2DMode( qboolean enable );
-void R_UploadStretchRaw( int texture, int cols, int rows, int width, int height, const byte *data ); //
+void GL_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt );
 
 // gl_image.c
 //
-void R_SetTextureParameters( void );
 image_t *R_GetTexture( unsigned int texnum );
 #define GL_LoadTextureInternal( name, pic, flags )   GL_LoadTextureFromBuffer( name, pic, flags, false )
 #define GL_UpdateTextureInternal( name, pic, flags ) GL_LoadTextureFromBuffer( name, pic, flags, true )
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
 int GL_LoadTextureArray( const char **names, int flags );
 int GL_LoadTextureFromBuffer( const char *name, rgbdata_t *pic, texFlags_t flags, qboolean update );
-byte *GL_ResampleTexture( const byte *source, int in_w, int in_h, int out_w, int out_h, qboolean isNormalMap );
 int GL_CreateTexture( const char *name, int width, int height, const void *buffer, texFlags_t flags );
 int GL_CreateTextureArray( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 void GL_ProcessTexture( int texnum, float gamma, int topColor, int bottomColor );
 void GL_UpdateTexSize( int texnum, int width, int height, int depth );
-void GL_ApplyTextureParams( image_t *tex );
 int GL_FindTexture( const char *name );
 void GL_FreeTexture( unsigned int texnum );
 const char *GL_Target( unsigned int target );
@@ -416,17 +356,6 @@ void R_InitImages( void );
 void R_ShutdownImages( void );
 int R_TexMemory( void );
 
-#if 1
-//
-// gl_rlight.c
-//
-void CL_RunLightStyles( lightstyle_t *ls );
-void R_PushDlights( void );
-void R_GetLightSpot( vec3_t lightspot );
-void R_MarkLights( dlight_t *light, int bit, mnode_t *node );
-colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lightspot, vec3_t lightvec );
-colorVec R_LightPoint( const vec3_t p0 );
-#endif
 //
 // gl_rmain.c
 //
@@ -447,18 +376,6 @@ void R_PopScene( void );
 void R_DrawFog( void );
 
 //
-// gl_rmath.c
-//
-void Matrix4x4_Concat( matrix4x4 out, const matrix4x4 in1, const matrix4x4 in2 );
-void Matrix4x4_ConcatTranslate( matrix4x4 out, float x, float y, float z );
-void Matrix4x4_ConcatRotate( matrix4x4 out, float angle, float x, float y, float z );
-void Matrix4x4_CreateTranslate( matrix4x4 out, float x, float y, float z );
-void Matrix4x4_CreateRotate( matrix4x4 out, float angle, float x, float y, float z );
-void Matrix4x4_CreateProjection( matrix4x4 out, float xMax, float xMin, float yMax, float yMin, float zNear, float zFar );
-void Matrix4x4_CreateOrtho( matrix4x4 m, float xLeft, float xRight, float yBottom, float yTop, float zNear, float zFar );
-void Matrix4x4_CreateModelview( matrix4x4 out );
-
-//
 // gl_rpart.c
 //
 void CL_DrawParticlesExternal( const ref_viewpass_t *rvp, qboolean trans_pass, float frametime );
@@ -469,26 +386,24 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers );
 //
 // gl_sprite.c
 //
-void R_SpriteInit( void );
-void Mod_LoadSpriteModel( model_t *mod, const void *buffer, qboolean *loaded, uint texFlags );
-mspriteframe_t *R_GetSpriteFrame( const model_t *pModel, int frame, float yaw );
 void R_DrawSpriteModel( cl_entity_t *e );
 
 //
 // gl_studio.c
 //
 void R_StudioInit( void );
+studiohdr_t *R_StudioGetHeader( void );
 void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded );
 void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles );
 struct mstudiotex_s *R_StudioGetTexture( cl_entity_t *e );
 int R_GetEntityRenderMode( cl_entity_t *ent );
 void R_DrawStudioModel( cl_entity_t *e );
 player_info_t *pfnPlayerInfo( int index );
-void R_GatherPlayerLight( void );
 float R_StudioEstimateFrame( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time );
 void R_StudioLerpMovement( cl_entity_t *e, double time, vec3_t origin, vec3_t angles );
 void R_StudioResetPlayerModels( void );
-void CL_InitStudioAPI( void );
+qboolean R_StudioFillAPI( struct engine_studio_api_s *api, struct r_studio_interface_s *pDefaultDraw );
+void R_StudioSetDrawInterface( struct r_studio_interface_s *pDraw );
 void Mod_StudioLoadTextures( model_t *mod, void *data );
 void Mod_StudioUnloadTextures( void *data );
 
@@ -526,7 +441,6 @@ void GL_InitExtensions( void );
 void GL_ClearExtensions( void );
 void VID_CheckChanges( void );
 int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
-void GL_FreeImage( const char *name );
 qboolean VID_ScreenShot( const char *filename, int shot_type );
 qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
 void R_GammaChanged( qboolean do_reset_gamma );
@@ -535,21 +449,17 @@ void R_RenderFrame( const struct ref_viewpass_s *vp );
 void R_EndFrame( void );
 void R_ClearScene( void );
 void R_GetTextureParms( int *w, int *h, int texnum );
-void R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames, int curFrame, const struct model_s *pSprite );
-void R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty );
 void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum );
 qboolean R_SpeedsMessage( char *out, size_t size );
 qboolean R_CullBox( const vec3_t mins, const vec3_t maxs );
 int R_WorldToScreen( const vec3_t point, vec3_t screen );
 void R_ScreenToWorld( const vec3_t screen, vec3_t point );
 qboolean R_AddEntity( struct cl_entity_s *pRefEntity, int entityType );
-void Mod_SpriteUnloadTextures( void *data );
 void Mod_UnloadAliasModel( struct model_s *mod );
 void Mod_AliasUnloadTextures( void *data );
 void GL_SetRenderMode( int mode );
 void R_RunViewmodelEvents( void );
 void R_DrawViewModel( void );
-int R_GetSpriteTexture( const struct model_s *m_pSpriteModel, int frame );
 void R_DecalShoot( int textureIndex, int entityIndex, int modelIndex, vec3_t pos, int flags, float scale );
 void R_DecalRemoveAll( int texture );
 int R_CreateDecalList( decallist_t *pList );
@@ -557,7 +467,6 @@ void R_ClearAllDecals( void );
 byte *Mod_GetCurrentVis( void );
 void Mod_SetOrthoBounds( const float *mins, const float *maxs );
 void R_NewMap( void );
-void CL_AddCustomBeam( cl_entity_t *pEnvBeam );
 
 //
 // gl_triapi.c
@@ -580,15 +489,7 @@ void TriFogParams( float flDensity, int iFogSkybox );
 void TriCullFace( TRICULLSTYLE mode );
 void TriBrightness( float brightness );
 
-#define ENGINE_GET_PARM_ ( *gEngfuncs.EngineGetParm )
-#define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_(( parm ), 0 )
 
-extern ref_api_t     gEngfuncs;
-extern ref_globals_t *gpGlobals;
-extern ref_client_t  *gp_cl;
-extern ref_host_t    *gp_host;
-
-DECLARE_ENGINE_SHARED_CVAR_LIST()
 
 //
 // helper funcs
@@ -1009,7 +910,6 @@ extern int     r_screenwidth;
 
 
 extern int     sintable[1280];
-extern int     intsintable[1280];
 extern int     blanktable[1280];                        // PGM
 
 extern surf_t  *surfaces, *surface_p, *surf_max;
@@ -1128,7 +1028,6 @@ void R_ScanEdges( void );
 //
 // r_surf.c
 //
-void GL_InitRandomTable( void );
 void D_FlushCaches( void );
 
 //
@@ -1176,16 +1075,6 @@ void R_SetUpWorldTransform( void );
 //
 #include "crtlib.h"
 #include "crclib.h"
-void _Mem_Free( void *data, const char *filename, int fileline );
-void *_Mem_Alloc( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
-ALLOC_CHECK( 2 ) MALLOC_LIKE( _Mem_Free, 1 ) WARN_UNUSED_RESULT;
 
-#define Mem_Malloc( pool, size )       _Mem_Alloc( pool, size, false, __FILE__, __LINE__ )
-#define Mem_Calloc( pool, size )       _Mem_Alloc( pool, size, true, __FILE__, __LINE__ )
-#define Mem_Realloc( pool, ptr, size ) gEngfuncs._Mem_Realloc( pool, ptr, size, true, __FILE__, __LINE__ )
-#define Mem_Free( mem )                _Mem_Free( mem, __FILE__, __LINE__ )
-#define Mem_AllocPool( name )          gEngfuncs._Mem_AllocPool( name, __FILE__, __LINE__ )
-#define Mem_FreePool( pool )           gEngfuncs._Mem_FreePool( pool, __FILE__, __LINE__ )
-#define Mem_EmptyPool( pool )          gEngfuncs._Mem_EmptyPool( pool, __FILE__, __LINE__ )
 
 #endif // GL_LOCAL_H

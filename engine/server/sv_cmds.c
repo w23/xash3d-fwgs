@@ -50,8 +50,6 @@ void SV_BroadcastPrintf( sv_client_t *ignore, const char *fmt, ... )
 {
 	char		string[MAX_SYSPATH];
 	va_list		argptr;
-	sv_client_t	*cl;
-	int		i;
 
 	va_start( argptr, fmt );
 	Q_vsnprintf( string, sizeof( string ), fmt, argptr );
@@ -59,6 +57,9 @@ void SV_BroadcastPrintf( sv_client_t *ignore, const char *fmt, ... )
 
 	if( sv.state == ss_active )
 	{
+		sv_client_t	*cl;
+		int		i;
+
 		for( i = 0, cl = svs.clients; i < svs.maxclients; i++, cl++ )
 		{
 			if( FBitSet( cl->flags, FCL_FAKECLIENT ))
@@ -111,9 +112,8 @@ Sets sv_client and sv_player to the player with idnum Cmd_Argv(1)
 */
 static sv_client_t *SV_SetPlayer( void )
 {
-	const char	*s;
 	sv_client_t	*cl;
-	int		i, idnum;
+	int		i;
 
 	if( !svs.clients || sv.background )
 		return NULL;
@@ -124,12 +124,12 @@ static sv_client_t *SV_SetPlayer( void )
 		return svs.clients;
 	}
 
-	s = Cmd_Argv( 1 );
+	const char	*s = Cmd_Argv( 1 );
 
 	// numeric values are just slot numbers
 	if( Q_isdigit( s ) || (s[0] == '-' && Q_isdigit( s + 1 )))
 	{
-		idnum = Q_atoi( s );
+		int	idnum = Q_atoi( s );
 
 		if( idnum < 0 || idnum >= svs.maxclients )
 		{
@@ -169,9 +169,7 @@ check map for typically errors
 */
 static qboolean SV_ValidateMap( const char *pMapName )
 {
-	int	flags;
-
-	flags = SV_MapIsValid( pMapName, NULL );
+	int	flags = SV_MapIsValid( pMapName, NULL );
 
 	if( FBitSet( flags, MAP_INVALID_VERSION ))
 	{
@@ -230,8 +228,6 @@ static void SV_Maps_f( void )
 {
 	const char *separator = "-------------------";
 	const char *argStr = Cmd_Argv( 1 ); // Substr
-	int nummaps;
-	search_t *mapList;
 
 	if( Cmd_Argc() != 2 )
 	{
@@ -239,7 +235,7 @@ static void SV_Maps_f( void )
 		return;
 	}
 
-	mapList = FS_Search( va( "maps/*%s*.bsp", argStr ), true, true );
+	search_t *mapList = FS_Search( va( "maps/*%s*.bsp", argStr ), true, true );
 
 	if( !mapList )
 	{
@@ -247,7 +243,7 @@ static void SV_Maps_f( void )
 		return;
 	}
 
-	nummaps = Cmd_ListMaps( mapList, NULL, 0 );
+	int nummaps = Cmd_ListMaps( mapList, NULL, 0, false );
 
 	Mem_Free( mapList );
 
@@ -264,6 +260,12 @@ Set background map (enable physics in menu)
 static void SV_MapBackground_f( void )
 {
 	char	mapname[MAX_QPATH];
+
+	if( Host_IsDedicated( ))
+	{
+		Con_Printf( S_ERROR "no background maps are allowed in dedicated mode" );
+		return;
+	}
 
 	if( Cmd_Argc() != 2 )
 	{
@@ -304,10 +306,8 @@ For development work
 static void SV_NextMap_f( void )
 {
 	char	nextmap[MAX_QPATH];
-	int	i, next;
-	search_t	*t;
+	search_t	*t = FS_Search( "maps\\*.bsp", true, con_gamemaps.value ); // only in gamedir
 
-	t = FS_Search( "maps\\*.bsp", true, con_gamemaps.value ); // only in gamedir
 	if( !t ) t = FS_Search( "maps/*.bsp", true, con_gamemaps.value ); // only in gamedir
 
 	if( !t )
@@ -316,7 +316,7 @@ static void SV_NextMap_f( void )
 		return;
 	}
 
-	for( i = 0; i < t->numfilenames; i++ )
+	for( int i = 0; i < t->numfilenames; i++ )
 	{
 		const char *ext = COM_FileExtension( t->filenames[i] );
 
@@ -327,7 +327,7 @@ static void SV_NextMap_f( void )
 		if( Q_stricmp( sv_hostmap.string, nextmap ))
 			continue;
 
-		next = ( i + 1 ) % t->numfilenames;
+		int	next = ( i + 1 ) % t->numfilenames;
 		COM_FileBase( t->filenames[next], nextmap, sizeof( nextmap ));
 		Cvar_DirectSet( &sv_hostmap, nextmap );
 
@@ -413,7 +413,7 @@ SV_QuickLoad_f
 */
 static void SV_QuickLoad_f( void )
 {
-	Cbuf_AddText( "echo Quick Loading...; wait; load quick" );
+	Cbuf_AddText( "echo Quick Loading...; wait; load quick\n" );
 }
 
 /*
@@ -451,7 +451,7 @@ SV_QuickSave_f
 */
 static void SV_QuickSave_f( void )
 {
-	Cbuf_AddText( "echo Quick Saving...; wait; save quick" );
+	Cbuf_AddText( "echo Quick Saving...; wait; save quick\n" );
 }
 
 /*
@@ -571,7 +571,6 @@ Kick a user off of the server
 static void SV_Kick_f( void )
 {
 	sv_client_t	*cl;
-	const char *param;
 
 	if( Cmd_Argc() < 2 )
 	{
@@ -579,7 +578,7 @@ static void SV_Kick_f( void )
 		return;
 	}
 
-	param = Cmd_Argv( 1 );
+	const char *param = Cmd_Argv( 1 );
 
 	if( *param == '#' && Q_isdigit( param + 1 ) )
 		cl = SV_ClientById( Q_atoi( param + 1 ) );
@@ -627,8 +626,6 @@ SV_Status_f
 */
 static void SV_Status_f( void )
 {
-	int		i;
-
 #if !XASH_DEDICATED
 	if( !svs.clients && CL_Active( ))
 	{
@@ -646,7 +643,7 @@ static void SV_Status_f( void )
 	Con_Printf( "map: %s\n", sv.name );
 	Con_Printf( "# score ping dev  lastmsg qport useragent\t\tname\t\taddress\n" );
 
-	for( i = 0; i < svs.maxclients; i++ )
+	for( int i = 0; i < svs.maxclients; i++ )
 	{
 		const sv_client_t *cl = &svs.clients[i];
 		int j = 0;
@@ -655,8 +652,6 @@ static void SV_Status_f( void )
 		string version;
 		string os;
 		string arch;
-		int buildnum;
-		int input_devices;
 
 		if( !cl->state )
 			continue;
@@ -672,7 +667,7 @@ static void SV_Status_f( void )
 		else
 			s = va( "%8i", SV_CalcPing( cl ));
 
-		input_devices = Q_atoi( Info_ValueForKey( cl->useragent, "d" ));
+		int input_devices = Q_atoi( Info_ValueForKey( cl->useragent, "d" ));
 
 		if( FBitSet( input_devices, INPUT_DEVICE_MOUSE ))
 			devices[j++] = 'm';
@@ -694,13 +689,13 @@ static void SV_Status_f( void )
 		Q_strncpy( version, Info_ValueForKey( cl->useragent, "v" ), sizeof( version ));
 		Q_strncpy( os, Info_ValueForKey( cl->useragent, "o" ), sizeof( os ));
 		Q_strncpy( arch, Info_ValueForKey( cl->useragent, "a" ), sizeof( arch ));
-		buildnum = Q_atoi( Info_ValueForKey( cl->useragent, "b" ));
+		int buildnum = Q_atoi( Info_ValueForKey( cl->useragent, "b" ));
 
-		if( !COM_CheckStringEmpty( version ))
+		if( COM_StringEmpty( version ))
 			Q_strncpy( version, "n/a", sizeof( version ));
-		if( !COM_CheckStringEmpty( os ))
+		if( COM_StringEmpty( os ))
 			Q_strncpy( os, "n/a", sizeof( os ));
-		if( !COM_CheckStringEmpty( arch ))
+		if( COM_StringEmpty( arch ))
 			Q_strncpy( arch, "n/a", sizeof( arch ));
 
 		Con_Printf( "%2i %5i %4s %4s %.5f %5i %s (%s-%s %i)\t%8s\t%8s\n",
@@ -719,7 +714,6 @@ SV_ConSay_f
 */
 static void SV_ConSay_f( void )
 {
-	const char	*p;
 	char		text[MAX_SYSPATH];
 
 	if( Cmd_Argc() < 2 ) return;
@@ -730,7 +724,7 @@ static void SV_ConSay_f( void )
 		return;
 	}
 
-	p = Cmd_Args();
+	const char	*p = Cmd_Args();
 	Q_strncpy( text, *p == '"' ? p + 1 : p, sizeof( text ));
 
 	if( *p == '"' )
@@ -762,8 +756,6 @@ Examine or change the serverinfo string
 */
 static void SV_ServerInfo_f( void )
 {
-	convar_t	*var;
-
 	if( Cmd_Argc() == 1 )
 	{
 		Con_Printf( "Server info settings:\n" );
@@ -785,7 +777,7 @@ static void SV_ServerInfo_f( void )
 	}
 
 	// if this is a cvar, change it too
-	var = Cvar_FindVar( Cmd_Argv( 1 ));
+	convar_t	*var = Cvar_FindVar( Cmd_Argv( 1 ));
 	if( var )
 	{
 		freestring( var->string ); // free the old value string
@@ -916,15 +908,13 @@ SV_EdictUsage_f
 */
 static void SV_EdictUsage_f( void )
 {
-	int	active;
-
 	if( sv.state != ss_active )
 	{
 		Con_Printf( "^3no server running.\n" );
 		return;
 	}
 
-	active = pfnNumberOfEntities();
+	int	active = pfnNumberOfEntities();
 	Con_Printf( "%5i edicts is used\n", active );
 	Con_Printf( "%5i edicts is free\n", GI->max_edicts - active );
 	Con_Printf( "%5i total\n", GI->max_edicts );
@@ -938,36 +928,33 @@ SV_EntityInfo_f
 */
 static void SV_EntityInfo_f( void )
 {
-	edict_t	*ent;
-	int	i;
-
 	if( sv.state != ss_active )
 	{
 		Con_Printf( "^3no server running.\n" );
 		return;
 	}
 
-	for( i = 0; i < svgame.numEntities; i++ )
+	for( int i = 0; i < svgame.numEntities; i++ )
 	{
-		ent = EDICT_NUM( i );
+		edict_t	*ent = SV_EdictNum( i );
 		if( !SV_IsValidEdict( ent )) continue;
 
 		Con_Printf( "%5i origin: %.f %.f %.f", i, ent->v.origin[0], ent->v.origin[1], ent->v.origin[2] );
 
 		if( ent->v.classname )
-			Con_Printf( ", class: %s", STRING( ent->v.classname ));
+			Con_Printf( ", class: %s", SV_GetString( ent->v.classname ));
 
 		if( ent->v.globalname )
-			Con_Printf( ", global: %s", STRING( ent->v.globalname ));
+			Con_Printf( ", global: %s", SV_GetString( ent->v.globalname ));
 
 		if( ent->v.targetname )
-			Con_Printf( ", name: %s", STRING( ent->v.targetname ));
+			Con_Printf( ", name: %s", SV_GetString( ent->v.targetname ));
 
 		if( ent->v.target )
-			Con_Printf( ", target: %s", STRING( ent->v.target ));
+			Con_Printf( ", target: %s", SV_GetString( ent->v.target ));
 
 		if( ent->v.model )
-			Con_Printf( ", model: %s", STRING( ent->v.model ));
+			Con_Printf( ", model: %s", SV_GetString( ent->v.model ));
 
 		Con_Printf( "\n" );
 	}
@@ -1004,7 +991,7 @@ static void SV_ListMessages_f( void )
 	Con_Printf( "num size name\n" );
 	for( i = 1; i < MAX_USER_MESSAGES; i++ )
 	{
-		if( !COM_CheckStringEmpty( svgame.msg[i].name ))
+		if( COM_StringEmpty( svgame.msg[i].name ))
 			break;
 
 		Con_Printf( "%3d\t%3d\t%s\n", svgame.msg[i].number, svgame.msg[i].size, svgame.msg[i].name );

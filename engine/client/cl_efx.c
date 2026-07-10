@@ -44,21 +44,17 @@ find nearest color in particle palette
 */
 short GAME_EXPORT R_LookupColor( byte r, byte g, byte b )
 {
-	int	i, best;
-	float	diff, bestdiff;
-	float	rf, gf, bf;
+	float	bestdiff = 999999;
+	int	best = -1;
 
-	bestdiff = 999999;
-	best = -1;
-
-	for( i = 0; i < 256; i++ )
+	for( int i = 0; i < 256; i++ )
 	{
-		rf = r - clgame.palette[i].r;
-		gf = g - clgame.palette[i].g;
-		bf = b - clgame.palette[i].b;
+		float rf = r - clgame.palette[i].r;
+		float gf = g - clgame.palette[i].g;
+		float bf = b - clgame.palette[i].b;
 
 		// convert color to monochrome
-		diff = rf * (rf * 0.2f) + gf * (gf * 0.5f) + bf * (bf * 0.3f);
+		float diff = rf * (rf * 0.2f) + gf * (gf * 0.5f) + bf * (bf * 0.3f);
 
 		if ( diff < bestdiff )
 		{
@@ -90,13 +86,11 @@ CL_InitParticles
 */
 void CL_InitParticles( void )
 {
-	int	i;
-
 	cl_particles = Mem_Calloc( cls.mempool, sizeof( particle_t ) * GI->max_particles );
 	CL_ClearParticles ();
 
 	// this is used for EF_BRIGHTFIELD
-	for( i = 0; i < NUMVERTEXNORMALS; i++ )
+	for( int i = 0; i < NUMVERTEXNORMALS; i++ )
 	{
 		cl_avelocities[i][0] = COM_RandomFloat( 0.0f, 2.55f );
 		cl_avelocities[i][1] = COM_RandomFloat( 0.0f, 2.55f );
@@ -116,15 +110,13 @@ CL_ClearParticles
 */
 void CL_ClearParticles( void )
 {
-	int	i;
-
 	if( !cl_particles ) return;
 
 	cl_free_particles = cl_particles;
 	cl_active_particles = NULL;
 	cl_active_tracers = NULL;
 
-	for( i = 0; i < GI->max_particles - 1; i++ )
+	for( int i = 0; i < GI->max_particles - 1; i++ )
 		cl_particles[i].next = &cl_particles[i+1];
 
 	cl_particles[GI->max_particles-1].next = NULL;
@@ -200,15 +192,15 @@ particle_t * GAME_EXPORT R_AllocParticle( void (*callback)( particle_t*, float )
 	p->type = pt_static;
 	VectorClear( p->vel );
 	VectorClear( p->org );
-	p->packedColor = 0;
+	p->unused = 0;
 	p->die = cl.time;
 	p->color = 0;
 	p->ramp = 0;
 
 	if( callback )
 	{
-		p->type = pt_clientcustom;
-		p->callback = callback;
+		p->type = pt_custom;
+		p->think = callback;
 	}
 
 	return p;
@@ -254,7 +246,7 @@ static particle_t *R_AllocTracer( const vec3_t org, const vec3_t vel, float life
 	p->die = cl.time + life;
 	p->ramp = tracerlength.value;
 	p->color = TRACER_COLORINDEX_DEFAULT; // select custom color
-	p->packedColor = 255; // alpha
+	p->unused = 255; // alpha
 
 	return p;
 }
@@ -357,15 +349,13 @@ CL_ClearViewBeams
 */
 void CL_ClearViewBeams( void )
 {
-	int	i;
-
 	if( !cl_viewbeams ) return;
 
 	// clear beams
 	cl_free_beams = cl_viewbeams;
 	cl_active_beams = NULL;
 
-	for( i = 0; i < GI->max_beams - 1; i++ )
+	for( int i = 0; i < GI->max_beams - 1; i++ )
 		cl_viewbeams[i].next = &cl_viewbeams[i+1];
 	cl_viewbeams[GI->max_beams - 1].next = NULL;
 }
@@ -416,7 +406,6 @@ void CL_KillDeadBeams( cl_entity_t *pDeadEntity )
 
 	while( pbeam )
 	{
-		cl_entity_t *beament;
 		pnext = pbeam->next;
 
 		// link into new list.
@@ -471,16 +460,13 @@ Optimized version of pointfile - use beams instead of particles
 */
 void CL_ReadLineFile_f( void )
 {
-	byte *afile;
-	char *pfile;
 	vec3_t		p1, p2;
-	int		count, modelIndex;
+	int		modelIndex;
 	char		filename[MAX_QPATH];
-	model_t		*model;
 	string		token;
 
 	Q_snprintf( filename, sizeof( filename ), "maps/%s.lin", clgame.mapname );
-	afile = FS_LoadFile( filename, NULL, false );
+	byte *afile = FS_LoadFile( filename, NULL, false );
 
 	if( !afile )
 	{
@@ -490,9 +476,9 @@ void CL_ReadLineFile_f( void )
 
 	Con_Printf( "Reading %s...\n", filename );
 
-	count = 0;
-	pfile = (char *)afile;
-	model = CL_LoadModel( DEFAULT_LASERBEAM_PATH, &modelIndex );
+	int count = 0;
+	char *pfile = (char *)afile;
+	model_t *model = CL_LoadModel( DEFAULT_LASERBEAM_PATH, &modelIndex );
 
 	while( 1 )
 	{
@@ -849,6 +835,31 @@ BEAM * GAME_EXPORT R_BeamEnts( int startEnt, int endEnt, int modelIndex, float l
 	return pbeam;
 }
 
+static qboolean R_BeamVisible( const vec3_t start, const vec3_t end )
+{
+	vec3_t mins, maxs;
+
+	for( int i = 0; i < 3; i++ )
+	{
+		if( start[i] < end[i] )
+		{
+			mins[i] = start[i];
+			maxs[i] = end[i];
+		}
+		else
+		{
+			mins[i] = end[i];
+			maxs[i] = start[i];
+		}
+
+		// don't let it be zero sized
+		if( mins[i] == maxs[i] )
+			maxs[i] += 1.0f;
+	}
+
+	return Mod_BoxVisible( mins, maxs, ref.dllFuncs.Mod_GetCurrentVis( ));
+}
+
 /*
 ==============
 R_BeamPoints
@@ -861,7 +872,7 @@ BEAM * GAME_EXPORT R_BeamPoints( vec3_t start, vec3_t end, int modelIndex, float
 {
 	BEAM	*pbeam;
 
-	if( life != 0 && ref.dllFuncs.R_BeamCull( start, end, true ))
+	if( life != 0 && !R_BeamVisible( start, end ))
 		return NULL;
 
 	pbeam = R_BeamAlloc();
@@ -1039,25 +1050,20 @@ set EF_BRIGHTFIELD effect
 */
 void GAME_EXPORT R_EntityParticles( cl_entity_t *ent )
 {
-	float		angle;
-	float		sr, sp, sy, cr, cp, cy;
-	vec3_t		forward;
-	particle_t	*p;
-	int		i;
-
-	for( i = 0; i < NUMVERTEXNORMALS; i++ )
+	for( int i = 0; i < NUMVERTEXNORMALS; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
-		angle = cl.time * cl_avelocities[i][0];
+		float sr, sp, sy, cr, cp, cy;
+		float angle = cl.time * cl_avelocities[i][0];
 		SinCos( angle, &sy, &cy );
 		angle = cl.time * cl_avelocities[i][1];
 		SinCos( angle, &sp, &cp );
 		angle = cl.time * cl_avelocities[i][2];
 		SinCos( angle, &sr, &cr );
 
-		VectorSet( forward, cp * cy, cp * sy, -sp );
+		vec3_t forward = { cp * cy, cp * sy, -sp };
 
 		p->die = cl.time + 0.001f;
 		p->color = 111; // yellow
@@ -1074,19 +1080,16 @@ R_ParticleExplosion
 */
 void GAME_EXPORT R_ParticleExplosion( const vec3_t org )
 {
-	particle_t	*p;
-	int		i, j;
-
-	for( i = 0; i < 1024; i++ )
+	for( int i = 0; i < 1024; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + 5.0f;
 		p->ramp = COM_RandomLong( 0, 3 );
 		p->color = ramp1[0];
 
-		for( j = 0; j < 3; j++ )
+		for( int j = 0; j < 3; j++ )
 		{
 			p->org[j] = org[j] + COM_RandomFloat( -16.0f, 16.0f );
 			p->vel[j] = COM_RandomFloat( -256.0f, 256.0f );
@@ -1105,25 +1108,22 @@ R_ParticleExplosion2
 */
 void GAME_EXPORT R_ParticleExplosion2( const vec3_t org, int colorStart, int colorLength )
 {
-	int		i, j;
-	int		colorMod = 0, packedColor;
-	particle_t	*p;
+	int colorMod = 0;
+	int packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
 
-	packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
-
-	for( i = 0; i < 512; i++ )
+	for( int i = 0; i < 512; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + 0.3f;
 		p->color = colorStart + ( colorMod % colorLength );
-		p->packedColor = packedColor;
+		p->unused = packedColor;
 		colorMod++;
 
 		p->type = pt_blob;
 
-		for( j = 0; j < 3; j++ )
+		for( int j = 0; j < 3; j++ )
 		{
 			p->org[j] = org[j] + COM_RandomFloat( -16.0f, 16.0f );
 			p->vel[j] = COM_RandomFloat( -256.0f, 256.0f );
@@ -1139,18 +1139,15 @@ R_BlobExplosion
 */
 void GAME_EXPORT R_BlobExplosion( const vec3_t org )
 {
-	particle_t	*p;
-	int		i, j, packedColor;
+	int packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
 
-	packedColor = Host_IsQuakeCompatible( ) ? 255 : 0; // use old code for blob particles
-
-	for( i = 0; i < 1024; i++ )
+	for( int i = 0; i < 1024; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + COM_RandomFloat( 1.0f, 1.4f );
-		p->packedColor = packedColor;
+		p->unused = packedColor;
 
 		if( i & 1 )
 		{
@@ -1163,7 +1160,7 @@ void GAME_EXPORT R_BlobExplosion( const vec3_t org )
 			p->color = COM_RandomLong( 150, 155 );
 		}
 
-		for( j = 0; j < 3; j++ )
+		for( int j = 0; j < 3; j++ )
 		{
 			p->org[j] = org[j] + COM_RandomFloat( -16.0f, 16.0f );
 			p->vel[j] = COM_RandomFloat( -256.0f, 256.0f );
@@ -1180,9 +1177,6 @@ PARTICLE_EFFECT on server
 */
 void GAME_EXPORT R_RunParticleEffect( const vec3_t org, const vec3_t dir, int color, int count )
 {
-	particle_t	*p;
-	int		i;
-
 	if( count == 1024 )
 	{
 		// rocket explosion
@@ -1190,9 +1184,9 @@ void GAME_EXPORT R_RunParticleEffect( const vec3_t org, const vec3_t dir, int co
 		return;
 	}
 
-	for( i = 0; i < count; i++ )
+	for( int i = 0; i < count; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->color = (color & ~7) + COM_RandomLong( 0, 7 );
@@ -1214,29 +1208,29 @@ particle spray
 void GAME_EXPORT R_Blood( const vec3_t org, const vec3_t ndir, int pcolor, int speed )
 {
 	vec3_t		pos, dir, vec;
-	float		pspeed = speed * 3.0f;
-	int		i, j;
-	particle_t	*p;
+	int		pspeed = speed * 3;
 
 	VectorNormalize2( ndir, dir );
 
-	for( i = 0; i < (speed / 2); i++ )
+	for( int i = 0; i < (speed / 2); i++ )
 	{
 		VectorAddScalar( org, COM_RandomFloat( -3.0f, 3.0f ), pos );
 		VectorAddScalar( dir, COM_RandomFloat( -0.06f, 0.06f ), vec );
 
-		for( j = 0; j < 7; j++ )
+		for( int j = 0; j < 8; j++ )
 		{
-			p = R_AllocParticle( NULL );
+			particle_t *p = R_AllocParticle( NULL );
 			if( !p ) return;
 
 			p->die = cl.time + 1.5f;
 			p->color = pcolor + COM_RandomLong( 0, 9 );
-			p->type = pt_vox_grav;
+			p->type = pt_8x_slowgrav;
 
 			VectorAddScalar( pos, COM_RandomFloat( -1.0f, 1.0f ), p->org );
 			VectorScale( vec, pspeed, p->vel );
 		}
+
+		pspeed -= speed;
 	}
 }
 
@@ -1249,21 +1243,19 @@ particle spray 2
 */
 void GAME_EXPORT R_BloodStream( const vec3_t org, const vec3_t ndir, int pcolor, int speed )
 {
-	particle_t	*p;
-	int		i, j;
-	float		arc;
 	int		accel = speed; // must be integer due to bug in GoldSrc
 	vec3_t dir;
 
 	VectorNormalize2( ndir, dir );
 
-	for( arc = 0.05f, i = 0; i < 100; i++ )
+	float arc = 0.05f;
+	for( int i = 0; i < 100; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + 2.0f;
-		p->type = pt_vox_grav;
+		p->type = pt_8x_slowgrav;
 		p->color = pcolor + COM_RandomLong( 0, 9 );
 
 		VectorCopy( org, p->org );
@@ -1275,16 +1267,15 @@ void GAME_EXPORT R_BloodStream( const vec3_t org, const vec3_t ndir, int pcolor,
 		accel -= 0.00001f; // so last few will drip
 	}
 
-	for( arc = 0.075f, i = 0; i < ( speed / 5 ); i++ )
+	arc = 0.075f;
+	for( int i = 0; i < ( speed / 5 ); i++ )
 	{
-		float	num;
-
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + 3.0f;
 		p->color = pcolor + COM_RandomLong( 0, 9 );
-		p->type = pt_vox_slowgrav;
+		p->type = pt_4x_slowgrav;
 
 		VectorCopy( org, p->org );
 		VectorCopy( dir, p->vel );
@@ -1292,26 +1283,23 @@ void GAME_EXPORT R_BloodStream( const vec3_t org, const vec3_t ndir, int pcolor,
 		p->vel[2] -= arc;
 		arc -= 0.005f;
 
-		num = COM_RandomFloat( 0.0f, 1.0f );
+		float num = COM_RandomFloat( 0.0f, 1.0f );
 		accel = speed * num;
 		num *= 1.7f;
 
 		VectorScale( p->vel, num, p->vel );
 		VectorScale( p->vel, accel, p->vel );
 
-		for( j = 0; j < 2; j++ )
+		for( int j = 0; j < 2; j++ )
 		{
 			p = R_AllocParticle( NULL );
 			if( !p ) return;
 
 			p->die = cl.time + 3.0f;
 			p->color = pcolor + COM_RandomLong( 0, 9 );
-			p->type = pt_vox_slowgrav;
+			p->type = pt_4x_slowgrav;
 
-			p->org[0] = org[0] + COM_RandomFloat( -1.0f, 1.0f );
-			p->org[1] = org[1] + COM_RandomFloat( -1.0f, 1.0f );
-			p->org[2] = org[2] + COM_RandomFloat( -1.0f, 1.0f );
-
+			VectorAddScalar( org, COM_RandomFloat( -1.0f, 1.0f ), p->org );
 			VectorCopy( dir, p->vel );
 			p->vel[2] -= arc;
 
@@ -1329,18 +1317,15 @@ R_LavaSplash
 */
 void GAME_EXPORT R_LavaSplash( const vec3_t org )
 {
-	particle_t	*p;
-	float		vel;
 	vec3_t		dir;
-	int		i, j, k;
 
-	for( i = -16; i < 16; i++ )
+	for( int i = -16; i < 16; i++ )
 	{
-		for( j = -16; j <16; j++ )
+		for( int j = -16; j <16; j++ )
 		{
-			for( k = 0; k < 1; k++ )
+			for( int k = 0; k < 1; k++ )
 			{
-				p = R_AllocParticle( NULL );
+				particle_t *p = R_AllocParticle( NULL );
 				if( !p ) return;
 
 				p->die = cl.time + COM_RandomFloat( 2.0f, 2.62f );
@@ -1356,7 +1341,7 @@ void GAME_EXPORT R_LavaSplash( const vec3_t org )
 				p->org[2] = org[2] + COM_RandomFloat( 0.0f, 63.0f );
 
 				VectorNormalize( dir );
-				vel = COM_RandomFloat( 50.0f, 113.0f );
+				float vel = COM_RandomFloat( 50.0f, 113.0f );
 				VectorScale( dir, vel, p->vel );
 			}
 		}
@@ -1371,16 +1356,13 @@ R_ParticleBurst
 */
 void GAME_EXPORT R_ParticleBurst( const vec3_t org, int size, int color, float life )
 {
-	particle_t	*p;
 	vec3_t		dir, dest;
-	int		i, j;
-	float		dist;
 
-	for( i = 0; i < 32; i++ )
+	for( int i = 0; i < 32; i++ )
 	{
-		for( j = 0; j < 32; j++ )
+		for( int j = 0; j < 32; j++ )
 		{
-			p = R_AllocParticle( NULL );
+			particle_t *p = R_AllocParticle( NULL );
 			if( !p ) return;
 
 			p->die = cl.time + life + COM_RandomFloat( -0.5f, 0.5f );
@@ -1390,7 +1372,7 @@ void GAME_EXPORT R_ParticleBurst( const vec3_t org, int size, int color, float l
 			VectorCopy( org, p->org );
 			VectorAddScalar( org, COM_RandomFloat( -size, size ), dest );
 			VectorSubtract( dest, p->org, dir );
-			dist = VectorNormalizeLength( dir );
+			float dist = VectorNormalizeLength( dir );
 			VectorScale( dir, ( dist / life ), p->vel );
 		}
 	}
@@ -1404,16 +1386,13 @@ R_LargeFunnel
 */
 void GAME_EXPORT R_LargeFunnel( const vec3_t org, int reverse )
 {
-	particle_t	*p;
-	float		vel, dist;
 	vec3_t		dir, dest;
-	int		i, j;
 
-	for( i = -8; i < 8; i++ )
+	for( int i = -8; i < 8; i++ )
 	{
-		for( j = -8; j < 8; j++ )
+		for( int j = -8; j < 8; j++ )
 		{
-			p = R_AllocParticle( NULL );
+			particle_t *p = R_AllocParticle( NULL );
 			if( !p ) return;
 
 			dest[0] = (i * 32.0f) + org[0];
@@ -1431,10 +1410,10 @@ void GAME_EXPORT R_LargeFunnel( const vec3_t org, int reverse )
 				VectorSubtract( org, p->org, dir );
 			}
 
-			vel = dest[2] / 8.0f;
+			float vel = dest[2] / 8.0f;
 			if( vel < 64.0f ) vel = 64.0f;
 
-			dist = VectorNormalizeLength( dir );
+			float dist = VectorNormalizeLength( dir );
 			vel += COM_RandomFloat( 64.0f, 128.0f );
 			VectorScale( dir, vel, p->vel );
 			p->die = cl.time + (dist / vel );
@@ -1451,18 +1430,15 @@ R_TeleportSplash
 */
 void GAME_EXPORT R_TeleportSplash( const vec3_t org )
 {
-	particle_t	*p;
 	vec3_t		dir;
-	float		vel;
-	int		i, j, k;
 
-	for( i = -16; i < 16; i += 4 )
+	for( int i = -16; i < 16; i += 4 )
 	{
-		for( j = -16; j < 16; j += 4 )
+		for( int j = -16; j < 16; j += 4 )
 		{
-			for( k = -24; k < 32; k += 4 )
+			for( int k = -24; k < 32; k += 4 )
 			{
-				p = R_AllocParticle( NULL );
+				particle_t *p = R_AllocParticle( NULL );
 				if( !p ) return;
 
 				p->die = cl.time + COM_RandomFloat( 0.2f, 0.34f );
@@ -1478,7 +1454,7 @@ void GAME_EXPORT R_TeleportSplash( const vec3_t org )
 				p->org[2] = org[2] + k + COM_RandomFloat( 0.0f, 3.0f );
 
 				VectorNormalize( dir );
-				vel = COM_RandomFloat( 50.0f, 113.0f );
+				float vel = COM_RandomFloat( 50.0f, 113.0f );
 				VectorScale( dir, vel, p->vel );
 			}
 		}
@@ -1615,13 +1591,12 @@ draw line from particles
 */
 static void PM_ParticleLine( const vec3_t start, const vec3_t end, int pcolor, float life, float zvel )
 {
-	float	len, curdist;
 	vec3_t	diff, pos;
 
 	// determine distance
 	VectorSubtract( end, start, diff );
-	len = VectorNormalizeLength( diff );
-	curdist = 0;
+	float len = VectorNormalizeLength( diff );
+	float curdist = 0;
 
 	while( curdist <= len )
 	{
@@ -1655,9 +1630,8 @@ static void PM_DrawBBox( const vec3_t mins, const vec3_t maxs, const vec3_t orig
 {
 	vec3_t	p[8], tmp;
 	float	gap = BOX_GAP;
-	int	i;
 
-	for( i = 0; i < 8; i++ )
+	for( int i = 0; i < 8; i++ )
 	{
 		tmp[0] = (i & 1) ? mins[0] - gap : maxs[0] + gap;
 		tmp[1] = (i & 2) ? mins[1] - gap : maxs[1] + gap ;
@@ -1667,7 +1641,7 @@ static void PM_DrawBBox( const vec3_t mins, const vec3_t maxs, const vec3_t orig
 		VectorCopy( tmp, p[i] );
 	}
 
-	for( i = 0; i < 6; i++ )
+	for( int i = 0; i < 6; i++ )
 	{
 		PM_DrawRectangle( p[boxpnt[i][1]], p[boxpnt[i][0]], p[boxpnt[i][2]], p[boxpnt[i][3]], pcolor, life );
 	}
@@ -1681,9 +1655,7 @@ R_ParticleLine
 */
 void GAME_EXPORT R_ParticleLine( const vec3_t start, const vec3_t end, byte r, byte g, byte b, float life )
 {
-	int	pcolor;
-
-	pcolor = R_LookupColor( r, g, b );
+	int pcolor = R_LookupColor( r, g, b );
 	PM_ParticleLine( start, end, pcolor, life, 0 );
 }
 
@@ -1697,9 +1669,8 @@ void GAME_EXPORT R_ParticleBox( const vec3_t absmin, const vec3_t absmax, byte r
 {
 	vec3_t	mins, maxs;
 	vec3_t	origin;
-	int	pcolor;
 
-	pcolor = R_LookupColor( r, g, b );
+	int pcolor = R_LookupColor( r, g, b );
 
 	VectorAverage( absmax, absmin, origin );
 	VectorSubtract( absmax, origin, maxs );
@@ -1716,20 +1687,18 @@ R_ShowLine
 */
 void GAME_EXPORT R_ShowLine( const vec3_t start, const vec3_t end )
 {
-	vec3_t		dir, org;
-	float		len;
-	particle_t	*p;
+	vec3_t		dir;
 
 	VectorSubtract( end, start, dir );
-	len = VectorNormalizeLength( dir );
+	float len = VectorNormalizeLength( dir );
 	VectorScale( dir, 5.0f, dir );
-	VectorCopy( start, org );
+	vec3_t org = Vec3( start );
 
 	while( len > 0 )
 	{
 		len -= 5.0f;
 
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		p->die = cl.time + 30;
@@ -1748,25 +1717,21 @@ R_BulletImpactParticles
 */
 void GAME_EXPORT R_BulletImpactParticles( const vec3_t pos )
 {
-	int		i, quantity;
-	int		color;
-	float		dist;
 	vec3_t		dir;
-	particle_t	*p;
 
 	VectorSubtract( pos, refState.vieworg, dir );
-	dist = VectorLength( dir );
+	float dist = VectorLength( dir );
 	if( dist > 1000.0f ) dist = 1000.0f;
 
-	quantity = (1000.0f - dist) / 100.0f;
+	int quantity = (1000.0f - dist) / 100.0f;
 	if( quantity == 0 ) quantity = 1;
 
-	color = 3 - ((30 * quantity) / 100 );
+	int color = 3 - ((30 * quantity) / 100 );
 	R_SparkStreaks( pos, 2, -200, 200 );
 
-	for( i = 0; i < quantity * 4; i++ )
+	for( int i = 0; i < quantity * 4; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		VectorCopy( pos, p->org);
@@ -1790,12 +1755,9 @@ R_FlickerParticles
 */
 void GAME_EXPORT R_FlickerParticles( const vec3_t org )
 {
-	particle_t	*p;
-	int		i;
-
-	for( i = 0; i < 15; i++ )
+	for( int i = 0; i < 15; i++ )
 	{
-		p = R_AllocParticle( NULL );
+		particle_t *p = R_AllocParticle( NULL );
 		if( !p ) return;
 
 		VectorCopy( org, p->org );
@@ -1819,15 +1781,13 @@ create a splash of streaks
 void GAME_EXPORT R_StreakSplash( const vec3_t pos, const vec3_t dir, int color, int count, float speed, int velocityMin, int velocityMax )
 {
 	vec3_t		vel, vel2;
-	particle_t	*p;
-	int		i;
 
 	VectorScale( dir, speed, vel );
 
-	for( i = 0; i < count; i++ )
+	for( int i = 0; i < count; i++ )
 	{
 		VectorAddScalar( vel, COM_RandomFloat( velocityMin, velocityMax ), vel2 );
-		p = R_AllocTracer( pos, vel2, COM_RandomFloat( 0.1f, 0.5f ));
+		particle_t *p = R_AllocTracer( pos, vel2, COM_RandomFloat( 0.1f, 0.5f ));
 		if( !p ) return;
 
 		p->type = pt_grav;
@@ -1845,9 +1805,7 @@ pmove debugging particle
 */
 void CL_Particle( const vec3_t org, int color, float life, int zpos, int zvel )
 {
-	particle_t	*p;
-
-	p = R_AllocParticle( NULL );
+	particle_t *p = R_AllocParticle( NULL );
 	if( !p ) return;
 
 	if( org ) VectorCopy( org, p->org );
@@ -1865,17 +1823,15 @@ R_TracerEffect
 void GAME_EXPORT R_TracerEffect( const vec3_t start, const vec3_t end )
 {
 	vec3_t	pos, vel, dir;
-	float	len, speed;
-	float	offset;
 
-	speed = Q_max( tracerspeed.value, 3.0f );
+	float speed = Q_max( tracerspeed.value, 3.0f );
 
 	VectorSubtract( end, start, dir );
-	len = VectorLength( dir );
+	float len = VectorLength( dir );
 	if( len == 0.0f ) return;
 
 	VectorScale( dir, 1.0f / len, dir ); // normalize
-	offset = COM_RandomFloat( -10.0f, 9.0f ) + traceroffset.value;
+	float offset = COM_RandomFloat( -10.0f, 9.0f ) + traceroffset.value;
 	VectorScale( dir, offset, vel );
 	VectorAdd( start, vel, pos );
 	VectorScale( dir, speed, vel );
@@ -1898,8 +1854,8 @@ void GAME_EXPORT R_UserTracerParticle( float *org, float *vel, float life, int c
 
 	if(( p = R_AllocTracer( org, vel, life )) != NULL )
 	{
-		p->context = deathcontext;
-		p->deathfunc = deathfunc;
+		p->userdata = deathcontext;
+		p->on_die = deathfunc;
 		p->color = colorIndex;
 		p->ramp = length;
 	}
@@ -1926,17 +1882,15 @@ create a streak tracers
 */
 void GAME_EXPORT R_SparkStreaks( const vec3_t pos, int count, int velocityMin, int velocityMax )
 {
-	particle_t	*p;
 	vec3_t		vel;
-	int		i;
 
-	for( i = 0; i<count; i++ )
+	for( int i = 0; i<count; i++ )
 	{
 		vel[0] = COM_RandomFloat( velocityMin, velocityMax );
 		vel[1] = COM_RandomFloat( velocityMin, velocityMax );
 		vel[2] = COM_RandomFloat( velocityMin, velocityMax );
 
-		p = R_AllocTracer( pos, vel, COM_RandomFloat( 0.1f, 0.5f ));
+		particle_t *p = R_AllocTracer( pos, vel, COM_RandomFloat( 0.1f, 0.5f ));
 		if( !p ) return;
 
 		p->color = 5;
@@ -1956,14 +1910,11 @@ void GAME_EXPORT R_Implosion( const vec3_t end, float radius, int count, float l
 {
 	float		dist = ( radius / 100.0f );
 	vec3_t		start, temp, vel;
-	float		factor;
-	particle_t	*p;
-	int		i;
 
 	if( life <= 0.0f ) life = 0.1f; // to avoid divide by zero
-	factor = -1.0 / life;
+	float factor = -1.0 / life;
 
-	for ( i = 0; i < count; i++ )
+	for( int i = 0; i < count; i++ )
 	{
 		temp[0] = dist * COM_RandomFloat( -100.0f, 100.0f );
 		temp[1] = dist * COM_RandomFloat( -100.0f, 100.0f );
@@ -1971,7 +1922,8 @@ void GAME_EXPORT R_Implosion( const vec3_t end, float radius, int count, float l
 		VectorScale( temp, factor, vel );
 		VectorAdd( temp, end, start );
 
-		if(( p = R_AllocTracer( start, vel, life )) == NULL )
+		particle_t *p = R_AllocTracer( start, vel, life );
+		if( p == NULL )
 			return;
 
 		p->type = pt_explode;
@@ -1996,9 +1948,9 @@ void R_FreeDeadParticles( particle_t **ppparticles )
 		kill = *ppparticles;
 		if( kill && kill->die < cl.time )
 		{
-			if( kill->deathfunc )
-				kill->deathfunc( kill );
-			kill->deathfunc = NULL;
+			if( kill->on_die )
+				kill->on_die( kill );
+			kill->on_die = NULL;
 			*ppparticles = kill->next;
 			kill->next = cl_free_particles;
 			cl_free_particles = kill;
@@ -2015,9 +1967,9 @@ void R_FreeDeadParticles( particle_t **ppparticles )
 			kill = p->next;
 			if( kill && kill->die < cl.time )
 			{
-				if( kill->deathfunc )
-					kill->deathfunc( kill );
-				kill->deathfunc = NULL;
+				if( kill->on_die )
+					kill->on_die( kill );
+				kill->on_die = NULL;
 				p->next = kill->next;
 				kill->next = cl_free_particles;
 				cl_free_particles = kill;
@@ -2036,16 +1988,12 @@ CL_ReadPointFile_f
 */
 void CL_ReadPointFile_f( void )
 {
-	byte *afile;
-	char *pfile;
 	vec3_t		org;
-	int		count;
-	particle_t	*p;
 	char		filename[64];
 	string		token;
 
 	Q_snprintf( filename, sizeof( filename ), "maps/%s.pts", clgame.mapname );
-	afile = FS_LoadFile( filename, NULL, false );
+	byte *afile = FS_LoadFile( filename, NULL, false );
 
 	if( !afile )
 	{
@@ -2055,8 +2003,8 @@ void CL_ReadPointFile_f( void )
 
 	Con_Printf( "Reading %s...\n", filename );
 
-	count = 0;
-	pfile = (char *)afile;
+	int count = 0;
+	char *pfile = (char *)afile;
 
 	while( 1 )
 	{
@@ -2082,7 +2030,7 @@ void CL_ReadPointFile_f( void )
 
 		// NOTE: can't use R_AllocParticle because this command
 		// may be executed from the console, while frametime is 0
-		p = cl_free_particles;
+		particle_t *p = cl_free_particles;
 		cl_free_particles = p->next;
 		p->next = cl_active_particles;
 		cl_active_particles = p;
@@ -2154,7 +2102,7 @@ void CL_ThinkParticle( double frametime, particle_t *p )
 	float		grav = frametime * clgame.movevars.gravity * 0.05f;
 
 
-	if( p->type != pt_clientcustom )
+	if( p->type != pt_custom )
 	{
 		// update position.
 		VectorMA( p->org, frametime, p->vel, p->org );
@@ -2185,7 +2133,7 @@ void CL_ThinkParticle( double frametime, particle_t *p )
 		p->vel[2] -= grav;
 		break;
 	case pt_blob:
-		if( p->packedColor == 255 )
+		if( p->unused == 255 )
 		{
 			// normal blob explosion
 			VectorMA( p->vel, dvel, p->vel, p->vel );
@@ -2194,7 +2142,7 @@ void CL_ThinkParticle( double frametime, particle_t *p )
 		}
 		// intentionally fallthrough
 	case pt_blob2:
-		if( p->packedColor == 255 )
+		if( p->unused == 255 )
 		{
 			// normal blob explosion
 			p->vel[0] -= p->vel[0] * dvel;
@@ -2217,15 +2165,15 @@ void CL_ThinkParticle( double frametime, particle_t *p )
 	case pt_slowgrav:
 		p->vel[2] -= grav;
 		break;
-	case pt_vox_grav:
+	case pt_8x_slowgrav:
 		p->vel[2] -= grav * 8.0f;
 		break;
-	case pt_vox_slowgrav:
+	case pt_4x_slowgrav:
 		p->vel[2] -= grav * 4.0f;
 		break;
-	case pt_clientcustom:
-		if( p->callback )
-			p->callback( p, frametime );
+	case pt_custom:
+		if( p->think )
+			p->think( p, frametime );
 		break;
 	}
 }

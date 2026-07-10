@@ -1049,7 +1049,8 @@ void R_RenderDrawOnce(r_draw_once_t args) {
 		.material = args.material,
 		.ye_olde_texture = args.ye_olde_texture,
 
-		.max_vertex = args.vertices_count,
+		// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+		.max_vertex = buffer.vertices.unit_offset + args.vertices_count,
 		.vertex_offset = buffer.vertices.unit_offset,
 
 		.element_count = args.indices_count,
