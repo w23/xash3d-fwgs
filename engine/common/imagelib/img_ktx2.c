@@ -114,7 +114,7 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	ktx2_index_t index;
 	size_t total_size = 0;
 	size_t max_offset = 0;
-	int mip;
+	int cursors[6] = {0};
 	const byte *const levels_begin = buffer + KTX2_LEVELS_OFFSET;
 
 	// Sets image.type and image.flags
@@ -202,32 +202,27 @@ static qboolean Image_KTX2Parse( const ktx2_header_t *header, const byte *buffer
 	image.num_mips = header->levelCount;
 
 	image.rgba = Mem_Malloc( host.imagepool, image.size );
-	memcpy( image.rgba, buffer, image.size );
 
-	for( mip = 0; mip < header->levelCount; ++mip )
+	if ( header->faceCount == 6 ) {
+		image.flags |= IMAGE_CUBEMAP;
+
+		for ( int face = 0; face < header->faceCount; ++face )
+			cursors[face] = g_remap_cube_layer[face] * total_size / header->faceCount;
+	}
+
+	for( int mip = 0; mip < header->levelCount; ++mip )
 	{
-		int cursors[6] = {0};
-		if ( header->faceCount == 6 ) {
-			image.flags |= IMAGE_CUBEMAP;
+		ktx2_level_t level;
+		int face_size = 0;
 
-			for ( int face = 0; face < header->faceCount; ++face )
-				cursors[face] = g_remap_cube_layer[face] * total_size / header->faceCount;
-		}
+		memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
+		le_struct_swap( ktx2_level_swap, &level );
+		face_size = level.byteLength / header->faceCount;
 
-		for( int mip = 0; mip < header->levelCount; ++mip )
+		for ( int face = 0; face < header->faceCount; ++face )
 		{
-			ktx2_level_t level;
-			int face_size = 0;
-
-			memcpy( &level, levels_begin + mip * sizeof( level ), sizeof( level ));
-			le_struct_swap( ktx2_level_swap, &level );
-			face_size = level.byteLength / header->faceCount;
-
-			for ( int face = 0; face < header->faceCount; ++face )
-			{
-				memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
-				cursors[face] += face_size;
-			}
+			memcpy( image.rgba + cursors[face], buffer + level.byteOffset + face * face_size, face_size );
+			cursors[face] += face_size;
 		}
 	}
 
