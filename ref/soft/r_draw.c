@@ -22,9 +22,8 @@ R_GetImageParms
 */
 void R_GetTextureParms( int *w, int *h, int texnum )
 {
-	image_t *glt;
+	image_t *glt = R_GetTexture( texnum );
 
-	glt = R_GetTexture( texnum );
 	if( w )
 		*w = glt->srcWidth;
 	if( h )
@@ -33,48 +32,14 @@ void R_GetTextureParms( int *w, int *h, int texnum )
 
 /*
 =============
-R_GetSpriteParms
-
-same as GetImageParms but used
-for sprite models
-=============
-*/
-void GAME_EXPORT R_GetSpriteParms( int *frameWidth, int *frameHeight, int *numFrames, int currentFrame, const model_t *pSprite )
-{
-	mspriteframe_t *pFrame;
-
-	if( !pSprite || pSprite->type != mod_sprite )
-		return;                                       // bad model ?
-	pFrame = R_GetSpriteFrame( pSprite, currentFrame, 0.0f );
-
-	if( frameWidth )
-		*frameWidth = pFrame->width;
-	if( frameHeight )
-		*frameHeight = pFrame->height;
-	if( numFrames )
-		*numFrames = pSprite->numframes;
-}
-
-int GAME_EXPORT R_GetSpriteTexture( const model_t *m_pSpriteModel, int frame )
-{
-	if( !m_pSpriteModel || m_pSpriteModel->type != mod_sprite || !m_pSpriteModel->cache.data )
-		return 0;
-
-	return R_GetSpriteFrame( m_pSpriteModel, frame, 0.0f )->gl_texturenum;
-}
-
-
-/*
-=============
 Draw_StretchPicImplementation
 =============
 */
 static void R_DrawStretchPicImplementation( int x, int y, int w, int h, int s1, int t1, int s2, int t2, image_t *pic )
 {
-	unsigned int height;
-	int          skip, v;
-	qboolean     transparent = false;
-	pixel_t      *buffer;
+	int      skip;
+	qboolean transparent = false;
+	pixel_t  *buffer;
 
 	if( x < 0 )
 	{
@@ -97,7 +62,7 @@ static void R_DrawStretchPicImplementation( int x, int y, int w, int h, int s1, 
 
 	// gEngfuncs.Con_Printf ("pixels is %p\n", pic->pixels[0] );
 
-	height = h;
+	unsigned int height = h;
 
 	if( y < -h ) // out of display, out of bounds
 		return;
@@ -121,18 +86,17 @@ static void R_DrawStretchPicImplementation( int x, int y, int w, int h, int s1, 
 
 
 #pragma omp parallel for schedule(static)
-	for( v = 0; v < height; v++ )
+	for( int v = 0; v < height; v++ )
 	{
 		int     alpha1 = vid.alpha;
 		pixel_t *dest = vid.buffer + ( y + v ) * vid.rowbytes + x;
 		uint    sv = ( skip + v ) * ( t2 - t1 ) / h + t1;
-		uint    u, f, fstep;
 		pixel_t *source = buffer + sv * pic->width + s1;
 
-		f = 0;
-		fstep = (( s2 - s1 ) << 16 ) / w;
+		uint f = 0;
+		uint fstep = (( s2 - s1 ) << 16 ) / w;
 
-		for( u = 0; u < w; u++ )
+		for( uint u = 0; u < w; u++ )
 		{
 			pixel_t src = source[f >> 16];
 			int     alpha = alpha1;
@@ -194,10 +158,8 @@ void GAME_EXPORT R_DrawStretchPic( float x, float y, float w, float h, float s1,
 
 void Draw_Fill( int x, int y, int w, int h )
 {
-	unsigned int height;
-	int          v;
-	pixel_t      src = vid.color;
-	int          alpha = vid.alpha;
+	pixel_t src = vid.color;
+	int     alpha = vid.alpha;
 
 	if( x < 0 )
 		x = 0;
@@ -214,7 +176,7 @@ void Draw_Fill( int x, int y, int w, int h )
 	if( h <= 0 )
 		return;
 
-	height = h;
+	unsigned int height = h;
 	if( y < 0 )
 	{
 		if( h <= -y )
@@ -224,12 +186,11 @@ void Draw_Fill( int x, int y, int w, int h )
 	}
 
 #pragma omp parallel for schedule(static)
-	for( v = 0; v < height; v++ )
+	for( int v = 0; v < height; v++ )
 	{
 		pixel_t *dest = vid.buffer + ( y + v ) * vid.rowbytes + x;
-		uint    u;
 
-		for( u = 0; u < w; u++ )
+		for( uint u = 0; u < w; u++ )
 		{
 			if( alpha == 0 )
 				continue;
@@ -252,39 +213,11 @@ void Draw_Fill( int x, int y, int w, int h )
 
 /*
 =============
-R_DrawStretchRaw
+GL_UpdateTexture
 =============
 */
-void GAME_EXPORT R_DrawStretchRaw( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty )
+void GAME_EXPORT GL_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt )
 {
-	byte    *raw = NULL;
-	image_t *tex;
-
-	raw = (byte *)data;
-
-	// pglDisable( GL_BLEND );
-	// pglDisable( GL_ALPHA_TEST );
-	// pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
-
-	tex = R_GetTexture( tr.cinTexture );
-	GL_Bind( XASH_TEXTURE0, tr.cinTexture );
-}
-
-/*
-=============
-R_UploadStretchRaw
-=============
-*/
-void GAME_EXPORT R_UploadStretchRaw( int texture, int cols, int rows, int width, int height, const byte *data )
-{
-	byte    *raw = NULL;
-	image_t *tex;
-	raw = (byte *)data;
-
-	tex = R_GetTexture( texture );
-	GL_Bind( GL_KEEP_UNIT, texture );
-	tex->width = cols;
-	tex->height = rows;
 }
 
 /*

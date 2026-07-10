@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:app="http://schemas.android.com/apk/res-auto">
 	<EditTextPreference
 		app:defaultValue="-console -log"
 		app:key="arguments"
@@ -11,6 +12,13 @@
 		app:key="use_volume_buttons"
 		app:layout="@layout/switch_preference"
 		app:title="@string/game_settings_volume_buttons" />
+
+	<SwitchPreferenceCompat
+		app:key="enable_yapb_bots"
+		app:layout="@layout/switch_preference"
+		app:title="@string/game_settings_yapb_bots"
+		app:defaultValue="true"
+		app:isPreferenceVisible="false" />
 
 	<SwitchPreferenceCompat
 		app:key="separate_libraries"
@@ -37,5 +45,29 @@
 		app:layout="@layout/list_preference"
 		app:title="@string/preferences_server_package"
 		app:useSimpleSummaryProvider="true"
+		app:isPreferenceVisible="false" />
+
+	<Preference
+		app:key="source_url"
+		app:layout="@layout/edit_text_preference"
+		app:title="@string/source_repo"
+		app:isPreferenceVisible="false" />
+
+	<Preference
+		app:key="source_branch"
+		app:layout="@layout/edit_text_preference"
+		app:title="@string/source_branch"
+		app:isPreferenceVisible="false" />
+
+	<Preference
+		app:key="source_commit"
+		app:layout="@layout/edit_text_preference"
+		app:title="@string/source_commit"
+		app:isPreferenceVisible="false" />
+
+	<Preference
+		app:key="downloaded_at"
+		app:layout="@layout/edit_text_preference"
+		app:title="@string/downloaded_at"
 		app:isPreferenceVisible="false" />
 </PreferenceScreen>

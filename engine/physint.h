@@ -16,7 +16,7 @@ GNU General Public License for more details.
 #ifndef PHYSINT_H
 #define PHYSINT_H
 
-#include "eiface.h" // offsetof
+#include "xash3d_types.h" // offsetof
 
 #define SV_PHYSICS_INTERFACE_VERSION	6
 
@@ -168,6 +168,8 @@ typedef struct physics_interface_s
 	void		*(*SV_HullForBsp)( edict_t *ent, const float *mins, const float *maxs, float *offset );
 	// handle player custom think function
 	int		(*SV_PlayerThink)( edict_t *ent, float frametime, double time );
+	// voice data
+	qboolean	(*pfnVoiceData)( int client, uint frames, uint size, qboolean loopback, const char *received );
 } physics_interface_t;
 
 #endif//PHYSINT_H

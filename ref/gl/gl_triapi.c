@@ -45,21 +45,25 @@ void TriRenderMode( int mode )
 	switch( mode )
 	{
 	case kRenderNormal:
+		R_AllowFog( true );
 		pglDisable( GL_BLEND );
 		pglDepthMask( GL_TRUE );
 		break;
 	case kRenderTransAlpha:
+		R_AllowFog( true );
 		pglEnable( GL_BLEND );
 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 		pglDepthMask( GL_FALSE );
 		break;
 	case kRenderTransColor:
 	case kRenderTransTexture:
+		R_AllowFog( true );
 		pglEnable( GL_BLEND );
 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 		break;
 	case kRenderGlow:
 	case kRenderTransAdd:
+		R_AllowFog( false );
 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
 		pglEnable( GL_BLEND );
 		pglDepthMask( GL_FALSE );
@@ -218,14 +222,12 @@ convert world coordinates (x,y,z) into screen (x, y)
 */
 int TriWorldToScreen( const float *world, float *screen )
 {
-	int	retval;
+	int retval = R_WorldToScreen( world, screen );
 
-	retval = R_WorldToScreen( world, screen );
-
-	screen[0] =  0.5f * screen[0] * (float)RI.viewport[2];
-	screen[1] = -0.5f * screen[1] * (float)RI.viewport[3];
-	screen[0] += 0.5f * (float)RI.viewport[2];
-	screen[1] += 0.5f * (float)RI.viewport[3];
+	screen[0] =  0.5f * screen[0] * (float)RI.rvp.viewport[2];
+	screen[1] = -0.5f * screen[1] * (float)RI.rvp.viewport[3];
+	screen[0] += 0.5f * (float)RI.rvp.viewport[2];
+	screen[1] += 0.5f * (float)RI.rvp.viewport[3];
 
 	return retval;
 }
@@ -239,9 +241,11 @@ bind current texture
 */
 int TriSpriteTexture( model_t *pSpriteModel, int frame )
 {
-	int	gl_texturenum;
+	if( !pSpriteModel || pSpriteModel->type != mod_sprite || !pSpriteModel->cache.data )
+		return 0;
 
-	if(( gl_texturenum = R_GetSpriteTexture( pSpriteModel, frame )) == 0 )
+	int gl_texturenum = gEngfuncs.R_GetSpriteFrame( pSpriteModel, frame, 0.0f )->gl_texturenum;
+	if( gl_texturenum == 0 )
 		return 0;
 
 	if( gl_texturenum <= 0 || gl_texturenum >= MAX_TEXTURES )
@@ -357,11 +361,9 @@ TriBrightness
 */
 void TriBrightness( float brightness )
 {
-	float	r, g, b;
-
-	r = ds.triRGBA[0] * ds.triRGBA[3] * brightness;
-	g = ds.triRGBA[1] * ds.triRGBA[3] * brightness;
-	b = ds.triRGBA[2] * ds.triRGBA[3] * brightness;
+	float r = ds.triRGBA[0] * ds.triRGBA[3] * brightness;
+	float g = ds.triRGBA[1] * ds.triRGBA[3] * brightness;
+	float b = ds.triRGBA[2] * ds.triRGBA[3] * brightness;
 
 	_TriColor4f( r, g, b, 1.0f );
 }

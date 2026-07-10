@@ -174,9 +174,7 @@ void Image_Shutdown( void )
 
 byte *Image_Copy( size_t size )
 {
-	byte	*out;
-
-	out = Mem_Realloc( host.imagepool, image.tempbuffer, size );
+	byte *out = Mem_Realloc( host.imagepool, image.tempbuffer, size );
 	image.tempbuffer = NULL;
 
 	return out;
@@ -285,83 +283,50 @@ int Image_ComparePalette( const byte *pal )
 
 static void Image_SetPalette( const byte *pal, uint *d_table )
 {
-	byte	rgba[4];
-	uint uirgba; // TODO: palette looks byte-swapped on big-endian
-	int	i;
-
-	// setup palette
 	switch( image.d_rendermode )
 	{
 	case LUMP_NORMAL:
-		for( i = 0; i < 256; i++ )
-		{
-			memcpy( rgba, &pal[i * 3], 3 );
-			rgba[3] = 0xFF;
-			memcpy( &uirgba, rgba, sizeof( uirgba ));
-			d_table[i] = uirgba;
-		}
+		for( int i = 0; i < 256; i++ )
+			d_table[i] = HostFourCC( pal[i * 3 + 0], pal[i * 3 + 1], pal[i * 3 + 2], 0xFF );
 		break;
 	case LUMP_TEXGAMMA:
-		for( i = 0; i < 256; i++ )
+		for( int i = 0; i < 256; i++ )
 		{
-			rgba[0] = TextureToGamma( pal[i * 3 + 0] );
-			rgba[1] = TextureToGamma( pal[i * 3 + 1] );
-			rgba[2] = TextureToGamma( pal[i * 3 + 2] );
-			rgba[3] = 0xFF;
-			memcpy( &uirgba, rgba, sizeof( uirgba ));
-			d_table[i] = uirgba;
+			d_table[i] = HostFourCC(
+				TextureToGamma( pal[i * 3 + 0] ),
+				TextureToGamma( pal[i * 3 + 1] ),
+				TextureToGamma( pal[i * 3 + 2] ),
+				0xFF );
 		}
 		break;
 	case LUMP_GRADIENT:
-		for( i = 0; i < 256; i++ )
-		{
-			rgba[0] = pal[765];
-			rgba[1] = pal[766];
-			rgba[2] = pal[767];
-			rgba[3] = i;
-			memcpy( &uirgba, rgba, sizeof( uirgba ));
-			d_table[i] = uirgba;
-		}
+		for( int i = 0; i < 256; i++ )
+			d_table[i] = HostFourCC( pal[765], pal[766], pal[767], i );
 		break;
 	case LUMP_MASKED:
-		for( i = 0; i < 255; i++ )
-		{
-			rgba[0] = pal[i*3+0];
-			rgba[1] = pal[i*3+1];
-			rgba[2] = pal[i*3+2];
-			rgba[3] = 0xFF;
-			memcpy( &uirgba, rgba, sizeof( uirgba ));
-			d_table[i] = uirgba;
-		}
+		for( int i = 0; i < 255; i++ )
+			d_table[i] = HostFourCC( pal[i * 3 + 0], pal[i * 3 + 1], pal[i * 3 + 2], 0xFF );
 		d_table[255] = 0;
 		break;
 	case LUMP_EXTENDED:
-		for( i = 0; i < 256; i++ )
-		{
-			rgba[0] = pal[i*4+0];
-			rgba[1] = pal[i*4+1];
-			rgba[2] = pal[i*4+2];
-			rgba[3] = pal[i*4+3];
-			memcpy( &uirgba, rgba, sizeof( uirgba ));
-			d_table[i] = uirgba;
-		}
+		for( int i = 0; i < 256; i++ )
+			d_table[i] = HostFourCC( pal[i * 4 + 0], pal[i * 4 + 1], pal[i * 4 + 2], pal[i * 4 + 3] );
 		break;
 	}
 }
 
 static void Image_ConvertPalTo24bit( rgbdata_t *pic )
 {
-	byte	*pal32, *pal24;
-	byte	*converted;
-	int	i;
+	byte	*pal24;
 
 	if( pic->type == PF_INDEXED_24 )
 		return; // does nothing
 
+	byte *converted;
 	pal24 = converted = Mem_Malloc( host.imagepool, 768 );
-	pal32 = pic->palette;
+	byte *pal32 = pic->palette;
 
-	for( i = 0; i < 256; i++, pal24 += 3, pal32 += 4 )
+	for( int i = 0; i < 256; i++, pal24 += 3, pal32 += 4 )
 	{
 		pal24[0] = pal32[0];
 		pal24[1] = pal32[1];
@@ -468,27 +433,22 @@ void Image_GetPaletteLMP( const byte *pal, int rendermode )
 
 void Image_PaletteHueReplace( byte *palSrc, int newHue, int start, int end, int pal_size )
 {
-	float	r, g, b;
-	float	maxcol, mincol;
-	float	hue, val, sat;
-	int	i;
-
-	hue = (float)(newHue * ( 360.0f / 255 ));
+	float hue = (float)(newHue * ( 360.0f / 255 ));
 	pal_size = bound( 3, pal_size, 4 );
 
-	for( i = start; i <= end; i++ )
+	for( int i = start; i <= end; i++ )
 	{
-		r = palSrc[i*pal_size+0];
-		g = palSrc[i*pal_size+1];
-		b = palSrc[i*pal_size+2];
+		float r = palSrc[i*pal_size+0];
+		float g = palSrc[i*pal_size+1];
+		float b = palSrc[i*pal_size+2];
 
-		maxcol = Q_max( Q_max( r, g ), b ) / 255.0f;
-		mincol = Q_min( Q_min( r, g ), b ) / 255.0f;
+		float maxcol = Q_max( Q_max( r, g ), b ) / 255.0f;
+		float mincol = Q_min( Q_min( r, g ), b ) / 255.0f;
 
 		if( maxcol == 0 ) continue;
 
-		val = maxcol;
-		sat = (maxcol - mincol) / maxcol;
+		float val = maxcol;
+		float sat = (maxcol - mincol) / maxcol;
 
 		mincol = val * (1.0f - sat);
 
@@ -544,10 +504,9 @@ void Image_PaletteHueReplace( byte *palSrc, int newHue, int start, int end, int 
 static void Image_PaletteTranslate( byte *palSrc, int top, int bottom, int pal_size )
 {
 	byte	dst[256], src[256];
-	int	i;
 
 	pal_size = bound( 3, pal_size, 4 );
-	for( i = 0; i < 256; i++ )
+	for( int i = 0; i < 256; i++ )
 		src[i] = i;
 	memcpy( dst, src, 256 );
 
@@ -558,7 +517,7 @@ static void Image_PaletteTranslate( byte *palSrc, int top, int bottom, int pal_s
 	}
 	else
 	{
-		for( i = 0; i < 16; i++ )
+		for( int i = 0; i < 16; i++ )
 			dst[SHIRT_HUE_START+i] = src[top + 15 - i];
 	}
 
@@ -568,12 +527,12 @@ static void Image_PaletteTranslate( byte *palSrc, int top, int bottom, int pal_s
 	}
 	else
 	{
-		for( i = 0; i < 16; i++ )
+		for( int i = 0; i < 16; i++ )
 			dst[PANTS_HUE_START + i] = src[bottom + 15 - i];
 	}
 
 	// last color isn't changed
-	for( i = 0; i < 255; i++ )
+	for( int i = 0; i < 255; i++ )
 	{
 		palSrc[i*pal_size+0] = palette_q1[dst[i]*3+0];
 		palSrc[i*pal_size+1] = palette_q1[dst[i]*3+1];
@@ -606,8 +565,6 @@ qboolean Image_Copy8bitRGBA( const byte *in, byte *out, int pixels )
 {
 	int	*iout = (int *)out;
 	byte	*fin = (byte *)in;
-	byte	*col;
-	int	i;
 
 	if( !in || !image.d_currentpal )
 		return false;
@@ -615,14 +572,14 @@ qboolean Image_Copy8bitRGBA( const byte *in, byte *out, int pixels )
 	// this is a base image with luma - clear luma pixels
 	if( image.flags & IMAGE_HAS_LUMA )
 	{
-		for( i = 0; i < image.width * image.height; i++ )
-			fin[i] = fin[i] < 224 ? fin[i] : 0;
+		for( int i = 0; i < image.width * image.height; i++ )
+			fin[i] = fin[i] < 224 ? fin[i] : image.black_pixel;
 	}
 
 	// check for color
-	for( i = 0; i < 256; i++ )
+	for( int i = 0; i < 256; i++ )
 	{
-		col = (byte *)&image.d_currentpal[i];
+		byte *col = (byte *)&image.d_currentpal[i];
 		if( col[0] != col[1] || col[1] != col[2] )
 		{
 			image.flags |= IMAGE_HAS_COLOR;
@@ -673,14 +630,15 @@ qboolean Image_Copy8bitRGBA( const byte *in, byte *out, int pixels )
 
 static void Image_Resample32LerpLine( const byte *in, byte *out, int inwidth, int outwidth )
 {
-	int	j, xi, oldx = 0, f, fstep, endx, lerp;
+	int oldx = 0;
 
-	fstep = (int)(inwidth * 65536.0f / outwidth);
-	endx = (inwidth-1);
+	int fstep = (int)(inwidth * 65536.0f / outwidth);
+	int endx = (inwidth-1);
 
+	int j, f;
 	for( j = 0, f = 0; j < outwidth; j++, f += fstep )
 	{
-		xi = f>>16;
+		int xi = f>>16;
 		if( xi != oldx )
 		{
 			in += (xi - oldx) * 4;
@@ -688,7 +646,7 @@ static void Image_Resample32LerpLine( const byte *in, byte *out, int inwidth, in
 		}
 		if( xi < endx )
 		{
-			lerp = f & 0xFFFF;
+			int lerp = f & 0xFFFF;
 			*out++ = (byte)((((in[4] - in[0]) * lerp)>>16) + in[0]);
 			*out++ = (byte)((((in[5] - in[1]) * lerp)>>16) + in[1]);
 			*out++ = (byte)((((in[6] - in[2]) * lerp)>>16) + in[2]);
@@ -706,14 +664,15 @@ static void Image_Resample32LerpLine( const byte *in, byte *out, int inwidth, in
 
 static void Image_Resample24LerpLine( const byte *in, byte *out, int inwidth, int outwidth )
 {
-	int	j, xi, oldx = 0, f, fstep, endx, lerp;
+	int oldx = 0;
 
-	fstep = (int)(inwidth * 65536.0f / outwidth);
-	endx = (inwidth-1);
+	int fstep = (int)(inwidth * 65536.0f / outwidth);
+	int endx = (inwidth-1);
 
+	int j, f;
 	for( j = 0, f = 0; j < outwidth; j++, f += fstep )
 	{
-		xi = f>>16;
+		int xi = f>>16;
 
 		if( xi != oldx )
 		{
@@ -723,7 +682,7 @@ static void Image_Resample24LerpLine( const byte *in, byte *out, int inwidth, in
 
 		if( xi < endx )
 		{
-			lerp = f & 0xFFFF;
+			int lerp = f & 0xFFFF;
 			*out++ = (byte)((((in[3] - in[0]) * lerp)>>16) + in[0]);
 			*out++ = (byte)((((in[4] - in[1]) * lerp)>>16) + in[1]);
 			*out++ = (byte)((((in[5] - in[2]) * lerp)>>16) + in[2]);
@@ -739,20 +698,17 @@ static void Image_Resample24LerpLine( const byte *in, byte *out, int inwidth, in
 
 static void Image_Resample32Lerp( const void *indata, int inwidth, int inheight, void *outdata, int outwidth, int outheight )
 {
-	const byte *inrow;
-	int	i, j, r, yi, oldy = 0, f, fstep, lerp, endy = (inheight - 1);
+	int	i, j, r, yi, oldy = 0, f, lerp, endy = (inheight - 1);
 	int	inwidth4 = inwidth * 4;
 	int	outwidth4 = outwidth * 4;
 	byte	*out = (byte *)outdata;
-	byte	*resamplerow1;
-	byte	*resamplerow2;
 
-	fstep = (int)(inheight * 65536.0f / outheight);
+	int fstep = (int)(inheight * 65536.0f / outheight);
 
-	resamplerow1 = (byte *)Mem_Malloc( host.imagepool, outwidth * 4 * 2);
-	resamplerow2 = resamplerow1 + outwidth * 4;
+	byte *resamplerow1 = (byte *)Mem_Malloc( host.imagepool, outwidth * 4 * 2);
+	byte *resamplerow2 = resamplerow1 + outwidth * 4;
 
-	inrow = (const byte *)indata;
+	const byte *inrow = (const byte *)indata;
 
 	Image_Resample32LerpLine( inrow, resamplerow1, inwidth, outwidth );
 	Image_Resample32LerpLine( inrow + inwidth4, resamplerow2, inwidth, outwidth );
@@ -847,17 +803,15 @@ static void Image_Resample32Lerp( const void *indata, int inwidth, int inheight,
 
 static void Image_Resample32Nolerp( const void *indata, int inwidth, int inheight, void *outdata, int outwidth, int outheight )
 {
-	int	i, j;
-	uint	frac, fracstep;
-	int	*inrow, *out = (int *)outdata; // relies on int being 4 bytes
+	int	*out = (int *)outdata; // relies on int being 4 bytes
 
-	fracstep = inwidth * 0x10000 / outwidth;
+	uint fracstep = inwidth * 0x10000 / outwidth;
 
-	for( i = 0; i < outheight; i++)
+	for( int i = 0; i < outheight; i++)
 	{
-		inrow = (int *)indata + inwidth * (i * inheight / outheight);
-		frac = fracstep>>1;
-		j = outwidth - 4;
+		int *inrow = (int *)indata + inwidth * (i * inheight / outheight);
+		uint frac = fracstep>>1;
+		int j = outwidth - 4;
 
 		while( j >= 0 )
 		{
@@ -886,21 +840,18 @@ static void Image_Resample32Nolerp( const void *indata, int inwidth, int inheigh
 
 static void Image_Resample24Lerp( const void *indata, int inwidth, int inheight, void *outdata, int outwidth, int outheight )
 {
-	const byte *inrow;
-	int	i, j, r, yi, oldy, f, fstep, lerp, endy = (inheight - 1);
+	int	i, j, r, yi, f, lerp, endy = (inheight - 1);
 	int	inwidth3 = inwidth * 3;
 	int	outwidth3 = outwidth * 3;
 	byte	*out = (byte *)outdata;
-	byte	*resamplerow1;
-	byte	*resamplerow2;
 
-	fstep = (int)(inheight * 65536.0f / outheight);
+	int fstep = (int)(inheight * 65536.0f / outheight);
 
-	resamplerow1 = (byte *)Mem_Malloc( host.imagepool, outwidth * 3 * 2 );
-	resamplerow2 = resamplerow1 + outwidth*3;
+	byte *resamplerow1 = (byte *)Mem_Malloc( host.imagepool, outwidth * 3 * 2 );
+	byte *resamplerow2 = resamplerow1 + outwidth*3;
 
-	inrow = (const byte *)indata;
-	oldy = 0;
+	const byte *inrow = (const byte *)indata;
+	int oldy = 0;
 	Image_Resample24LerpLine( inrow, resamplerow1, inwidth, outwidth );
 	Image_Resample24LerpLine( inrow + inwidth3, resamplerow2, inwidth, outwidth );
 
@@ -987,17 +938,17 @@ static void Image_Resample24Lerp( const void *indata, int inwidth, int inheight,
 
 static void Image_Resample24Nolerp( const void *indata, int inwidth, int inheight, void *outdata, int outwidth, int outheight )
 {
-	uint	frac, fracstep;
-	int	i, j, f, inwidth3 = inwidth * 3;
-	byte	*inrow, *out = (byte *)outdata;
+	int	inwidth3 = inwidth * 3;
+	byte	*out = (byte *)outdata;
 
-	fracstep = inwidth * 0x10000 / outwidth;
+	uint fracstep = inwidth * 0x10000 / outwidth;
 
-	for( i = 0; i < outheight; i++)
+	for( int i = 0; i < outheight; i++)
 	{
-		inrow = (byte *)indata + inwidth3 * (i * inheight / outheight);
-		frac = fracstep>>1;
-		j = outwidth - 4;
+		byte *inrow = (byte *)indata + inwidth3 * (i * inheight / outheight);
+		uint frac = fracstep>>1;
+		int j = outwidth - 4;
+		int f;
 
 		while( j >= 0 )
 		{
@@ -1053,20 +1004,17 @@ static void Image_Resample24Nolerp( const void *indata, int inwidth, int inheigh
 
 static void Image_Resample8Nolerp( const void *indata, int inwidth, int inheight, void *outdata, int outwidth, int outheight )
 {
-	int	i, j;
-	byte	*in, *inrow;
-	uint	frac, fracstep;
 	byte	*out = (byte *)outdata;
 
-	in = (byte *)indata;
-	fracstep = inwidth * 0x10000 / outwidth;
+	byte *in = (byte *)indata;
+	uint fracstep = inwidth * 0x10000 / outwidth;
 
-	for( i = 0; i < outheight; i++, out += outwidth )
+	for( int i = 0; i < outheight; i++, out += outwidth )
 	{
-		inrow = in + inwidth*(i*inheight/outheight);
-		frac = fracstep>>1;
+		byte *inrow = in + inwidth*(i*inheight/outheight);
+		uint frac = fracstep>>1;
 
-		for( j = 0; j < outwidth; j++ )
+		for( int j = 0; j < outwidth; j++ )
 		{
 			out[j] = inrow[frac>>16];
 			frac += fracstep;
@@ -1126,7 +1074,7 @@ Image_Flip
 */
 byte *Image_FlipInternal( const byte *in, word *srcwidth, word *srcheight, int type, int flags )
 {
-	int	i, x, y;
+	int	x, y;
 	word	width = *srcwidth;
 	word	height = *srcheight;
 	int	samples = PFDesc[type].bpp;
@@ -1138,7 +1086,6 @@ byte *Image_FlipInternal( const byte *in, word *srcwidth, word *srcheight, int t
 	int	row_ofs = ( flip_y ? ( height - 1 ) * width * samples : 0 );
 	int	col_ofs = ( flip_x ? ( width - 1 ) * samples : 0 );
 	const byte *p, *line;
-	byte	*out;
 
 	// nothing to process
 	if( !FBitSet( flags, IMAGE_FLIP_X|IMAGE_FLIP_Y|IMAGE_ROT_90 ))
@@ -1158,20 +1105,20 @@ byte *Image_FlipInternal( const byte *in, word *srcwidth, word *srcheight, int t
 		return (byte *)in;
 	}
 
-	out = image.tempbuffer;
+	byte *out = image.tempbuffer;
 
 	if( flip_i )
 	{
 		for( x = 0, line = in + col_ofs; x < width; x++, line += col_inc )
 			for( y = 0, p = line + row_ofs; y < height; y++, p += row_inc, out += samples )
-				for( i = 0; i < samples; i++ )
+				for( int i = 0; i < samples; i++ )
 					out[i] = p[i];
 	}
 	else
 	{
 		for( y = 0, line = in + row_ofs; y < height; y++, line += row_inc )
 			for( x = 0, p = line + col_ofs; x < width; x++, p += col_inc, out += samples )
-				for( i = 0; i < samples; i++ )
+				for( int i = 0; i < samples; i++ )
 					out[i] = p[i];
 	}
 
@@ -1193,7 +1140,6 @@ byte *Image_FlipInternal( const byte *in, word *srcwidth, word *srcheight, int t
 static byte *Image_MakeLuma( byte *fin, int width, int height, int type, int flags )
 {
 	byte	*out;
-	int	i;
 
 	if( !FBitSet( flags, IMAGE_HAS_LUMA ))
 		return (byte *)fin;
@@ -1203,8 +1149,8 @@ static byte *Image_MakeLuma( byte *fin, int width, int height, int type, int fla
 	case PF_INDEXED_24:
 	case PF_INDEXED_32:
 		out = image.tempbuffer = Mem_Realloc( host.imagepool, image.tempbuffer, width * height );
-		for( i = 0; i < width * height; i++ )
-			*out++ = fin[i] >= 224 ? fin[i] : 0;
+		for( int i = 0; i < width * height; i++ )
+			*out++ = fin[i] >= 224 ? fin[i] : image.black_pixel;
 		break;
 	default:
 		// another formats does ugly result :(
@@ -1248,15 +1194,12 @@ force to unpack any image to 32-bit buffer
 */
 static qboolean Image_Decompress( const byte *data )
 {
-	byte	*fin, *fout;
-	int	i, size;
-
 	if( !data ) return false;
-	fin = (byte *)data;
+	byte *fin = (byte *)data;
 
-	size = image.width * image.height * 4;
+	int size = image.width * image.height * 4;
 	image.tempbuffer = Mem_Realloc( host.imagepool, image.tempbuffer, size );
-	fout = image.tempbuffer;
+	byte *fout = image.tempbuffer;
 
 	switch( PFDesc[image.type].format )
 	{
@@ -1275,7 +1218,7 @@ static qboolean Image_Decompress( const byte *data )
 			return false;
 		break;
 	case PF_BGR_24:
-		for (i = 0; i < image.width * image.height; i++ )
+		for( int i = 0; i < image.width * image.height; i++ )
 		{
 			fout[(i<<2)+0] = fin[i*3+2];
 			fout[(i<<2)+1] = fin[i*3+1];
@@ -1284,7 +1227,7 @@ static qboolean Image_Decompress( const byte *data )
 		}
 		break;
 	case PF_RGB_24:
-		for (i = 0; i < image.width * image.height; i++ )
+		for( int i = 0; i < image.width * image.height; i++ )
 		{
 			fout[(i<<2)+0] = fin[i*3+0];
 			fout[(i<<2)+1] = fin[i*3+1];
@@ -1293,7 +1236,7 @@ static qboolean Image_Decompress( const byte *data )
 		}
 		break;
 	case PF_BGRA_32:
-		for( i = 0; i < image.width * image.height; i++ )
+		for( int i = 0; i < image.width * image.height; i++ )
 		{
 			fout[i*4+0] = fin[i*4+2];
 			fout[i*4+1] = fin[i*4+1];
@@ -1340,12 +1283,11 @@ static rgbdata_t *Image_DecompressInternal( rgbdata_t *pic )
 static rgbdata_t *Image_LightGamma( rgbdata_t *pic )
 {
 	byte	*in = (byte *)pic->buffer;
-	int	i;
 
 	if( pic->type != PF_RGBA_32 )
 		return pic;
 
-	for( i = 0; i < pic->width * pic->height; i++, in += 4 )
+	for( int i = 0; i < pic->width * pic->height; i++, in += 4 )
 	{
 		in[0] = LightToTexGamma( in[0] );
 		in[1] = LightToTexGamma( in[1] );
@@ -1464,16 +1406,25 @@ qboolean Image_Process( rgbdata_t **pix, int width, int height, uint flags, floa
 	return result;
 }
 
-// This codebase has too many copies of this function:
-// - ref_gl has one
-// - ref_vk has one
-// - ref_soft has one
-// - many more places probably have one too
-// TODO figure out how to make it available for ref_*
+/*
+============
+Image_ComputeSize
+============
+*/
 size_t Image_ComputeSize( int type, int width, int height, int depth )
 {
+	depth = Q_max( 1, depth );
+
 	switch( type )
 	{
+	case PF_LUMINANCE:
+		return ( width * height * depth );
+	case PF_BGR_24:
+	case PF_RGB_24:
+		return ( width * height * depth * 3 );
+	case PF_BGRA_32:
+	case PF_RGBA_32:
+		return ( width * height * depth * 4 );
 	case PF_DXT1:
 	case PF_BC4_SIGNED:
 	case PF_BC4_UNSIGNED:
@@ -1486,12 +1437,8 @@ size_t Image_ComputeSize( int type, int width, int height, int depth )
 	case PF_BC6H_SIGNED:
 	case PF_BC6H_UNSIGNED:
 	case PF_BC7_UNORM:
-	case PF_BC7_SRGB: return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
-	case PF_LUMINANCE: return ( width * height * depth );
-	case PF_BGR_24:
-	case PF_RGB_24: return ( width * height * depth * 3 );
-	case PF_BGRA_32:
-	case PF_RGBA_32: return ( width * height * depth * 4 );
+	case PF_BC7_SRGB:
+		return ((( width + 3 ) / 4 ) * (( height + 3 ) / 4 ) * depth * 16 );
 	}
 
 	return 0;
@@ -1510,22 +1457,17 @@ void Image_GenerateMipmaps( const byte *source, int width, int height, byte *mip
 		{ width / 8, height / 8 }
 	};
 	byte *mipmaps[3] = { mip1, mip2, mip3 };
-	int m;
 
-	for( m = 0; m < 3; ++m )
+	for( int m = 0; m < 3; ++m )
 	{
-		int mw, mh, step, y;
-
 		if( !mipmaps[m] )
 			continue;
-		mw = sizes[m][0];
-		mh = sizes[m][1];
-		step = 1 << ( m + 1 );
-		for( y = 0; y < mh; ++y )
+		int mw = sizes[m][0];
+		int mh = sizes[m][1];
+		int step = 1 << ( m + 1 );
+		for( int y = 0; y < mh; ++y )
 		{
-			int x;
-
-			for( x = 0; x < mw; ++x )
+			for( int x = 0; x < mw; ++x )
 			{
 				mipmaps[m][y * mw + x] = source[( y * step ) * width + ( x * step )];
 			}

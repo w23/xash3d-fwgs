@@ -17,8 +17,8 @@ GNU General Public License for more details.
 #include "gl_local.h"
 #include "xash3d_mathlib.h"
 
-char		r_speeds_msg[MAX_SYSPATH];
-ref_speeds_t	r_stats;	// r_speeds counters
+static char r_speeds_msg[MAX_SYSPATH];
+ref_speeds_t r_stats; // r_speeds counters
 
 /*
 ===============
@@ -44,25 +44,6 @@ qboolean R_SpeedsMessage( char *out, size_t size )
 
 /*
 ==============
-R_Speeds_Printf
-
-helper to print into r_speeds message
-==============
-*/
-static void R_Speeds_Printf( const char *msg, ... )
-{
-	va_list	argptr;
-	char	text[2048];
-
-	va_start( argptr, msg );
-	Q_vsnprintf( text, sizeof( text ), msg, argptr );
-	va_end( argptr );
-
-	Q_strncat( r_speeds_msg, text, sizeof( r_speeds_msg ));
-}
-
-/*
-==============
 GL_BackendStartFrame
 ==============
 */
@@ -78,16 +59,10 @@ GL_BackendEndFrame
 */
 void GL_BackendEndFrame( void )
 {
-	mleaf_t	*curleaf;
-
-	if( r_speeds->value <= 0 || !RI.drawWorld )
+	if( r_speeds->value <= 0 || !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		return;
 
-	if( !RI.viewleaf )
-		curleaf = WORLDMODEL->leafs;
-	else curleaf = RI.viewleaf;
-
-	R_Speeds_Printf( "Renderer: ^1Engine^7\n\n" );
+	mleaf_t *curleaf = RI.viewleaf ? RI.viewleaf : WORLDMODEL->leafs;
 
 	switch( (int)r_speeds->value )
 	{
@@ -96,8 +71,11 @@ void GL_BackendEndFrame( void )
 			r_stats.c_world_polys, r_stats.c_alias_polys, r_stats.c_studio_polys, r_stats.c_sprite_polys );
 		break;
 	case 2:
-		R_Speeds_Printf( "visible leafs:\n%3i leafs\ncurrent leaf %3i\n", r_stats.c_world_leafs, curleaf - WORLDMODEL->leafs );
-		R_Speeds_Printf( "ReciusiveWorldNode: %3lf secs\nDrawTextureChains %lf\n", r_stats.t_world_node, r_stats.t_world_draw );
+		Q_snprintf( r_speeds_msg, sizeof( r_speeds_msg ),
+			"Renderer: ^1Engine^7\n\n"
+			"visible leafs:\n%3i leafs\ncurrent leaf %3i\n"
+			"ReciusiveWorldNode: %3lf secs\nDrawTextureChains %lf",
+			r_stats.c_world_leafs, (int)( curleaf - WORLDMODEL->leafs ), r_stats.t_world_node, r_stats.t_world_draw );
 		break;
 	case 3:
 		Q_snprintf( r_speeds_msg, sizeof( r_speeds_msg ), "%3i alias models drawn\n%3i studio models drawn\n%3i sprites drawn",
@@ -162,13 +140,14 @@ void GL_LoadIdentityTexMatrix( void )
 GL_SelectTexture
 =================
 */
-void GL_SelectTexture( GLint tmu )
+void GL_SelectTexture( int tmu )
 {
 	if( !GL_Support( GL_ARB_MULTITEXTURE ))
 		return;
 
 	// don't allow negative texture units
-	if( tmu < 0 ) return;
+	if( tmu < 0 )
+		return;
 
 	if( tmu >= GL_MaxTextureUnits( ))
 	{
@@ -191,6 +170,46 @@ void GL_SelectTexture( GLint tmu )
 }
 
 /*
+=================
+GL_Bind
+=================
+*/
+void GL_Bind( int tmu, unsigned int texnum )
+{
+	// missed or invalid texture?
+	if( texnum <= 0 || texnum >= MAX_TEXTURES )
+	{
+		if( texnum != 0 )
+			gEngfuncs.Con_DPrintf( S_ERROR "%s: invalid texturenum %d\n", __func__, texnum );
+		texnum = tr.defaultTexture;
+	}
+
+	if( tmu != GL_KEEP_UNIT )
+		GL_SelectTexture( tmu );
+	else tmu = glState.activeTMU;
+
+	const gl_texture_t *texture = R_GetTexture( texnum );
+	GLuint glTarget = texture->target;
+
+	if( glTarget == GL_TEXTURE_2D_ARRAY_EXT )
+		glTarget = GL_TEXTURE_2D;
+
+	if( glState.currentTextureTargets[tmu] != glTarget )
+	{
+		GL_EnableTextureUnit( tmu, false );
+		glState.currentTextureTargets[tmu] = glTarget;
+		GL_EnableTextureUnit( tmu, true );
+	}
+
+	if( glState.currentTextures[tmu] == texture->texnum )
+		return;
+
+	pglBindTexture( texture->target, texture->texnum );
+	glState.currentTextures[tmu] = texture->texnum;
+	glState.currentTexturesIndex[tmu] = texnum;
+}
+
+/*
 ==============
 GL_DisableAllTexGens
 ==============
@@ -210,9 +229,7 @@ GL_CleanUpTextureUnits
 */
 void GL_CleanUpTextureUnits( int last )
 {
-	int	i;
-
-	for( i = glState.activeTMU; i > (last - 1); i-- )
+	for( int i = glState.activeTMU; i > (last - 1); i-- )
 	{
 		// disable upper units
 		if( glState.currentTextureTargets[i] != GL_NONE )
@@ -248,7 +265,7 @@ void GL_CleanupAllTextureUnits( void )
 GL_MultiTexCoord2f
 =================
 */
-void GL_MultiTexCoord2f( GLenum texture, GLfloat s, GLfloat t )
+void GL_MultiTexCoord2f( int tmu, GLfloat s, GLfloat t )
 {
 	if( !GL_Support( GL_ARB_MULTITEXTURE ))
 		return;
@@ -256,7 +273,7 @@ void GL_MultiTexCoord2f( GLenum texture, GLfloat s, GLfloat t )
 #ifndef XASH_GL_STATIC
 	if( pglMultiTexCoord2f != NULL )
 #endif
-		pglMultiTexCoord2f( texture + GL_TEXTURE0_ARB, s, t );
+		pglMultiTexCoord2f( tmu + GL_TEXTURE0_ARB, s, t );
 }
 
 /*
@@ -335,19 +352,19 @@ void GL_TexGen( GLenum coord, GLenum mode )
 
 	if( mode )
 	{
-		if( !( glState.genSTEnabled[tmu] & bit ))
+		if( !FBitSet( glState.genSTEnabled[tmu], bit ))
 		{
 			pglEnable( gen );
-			glState.genSTEnabled[tmu] |= bit;
+			SetBits( glState.genSTEnabled[tmu], bit );
 		}
 		pglTexGeni( coord, GL_TEXTURE_GEN_MODE, mode );
 	}
 	else
 	{
-		if( glState.genSTEnabled[tmu] & bit )
+		if( FBitSet( glState.genSTEnabled[tmu], bit ))
 		{
 			pglDisable( gen );
-			glState.genSTEnabled[tmu] &= ~bit;
+			ClearBits( glState.genSTEnabled[tmu], bit );
 		}
 	}
 }
@@ -366,15 +383,20 @@ void GL_SetTexCoordArrayMode( GLenum mode )
 		bit = 1;
 	else if( mode == GL_TEXTURE_CUBE_MAP_ARB )
 		bit = 2;
-	else bit = 0;
+	else
+		bit = 0;
 
 	if( cmode != bit )
 	{
-		if( cmode == 1 ) pglDisableClientState( GL_TEXTURE_COORD_ARRAY );
-		else if( cmode == 2 ) pglDisable( GL_TEXTURE_CUBE_MAP_ARB );
+		if( cmode == 1 )
+			pglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		else if( cmode == 2 )
+			pglDisable( GL_TEXTURE_CUBE_MAP_ARB );
 
-		if( bit == 1 ) pglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		else if( bit == 2 ) pglEnable( GL_TEXTURE_CUBE_MAP_ARB );
+		if( bit == 1 )
+			pglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+		else if( bit == 2 )
+			pglEnable( GL_TEXTURE_CUBE_MAP_ARB );
 
 		glState.texCoordArrayMode[tmu] = bit;
 	}
@@ -407,29 +429,85 @@ void GL_SetRenderMode( int mode )
 	{
 	case kRenderNormal:
 	default:
+		R_AllowFog( true );
 		pglDisable( GL_BLEND );
 		pglDisable( GL_ALPHA_TEST );
 		break;
 	case kRenderTransColor:
 	case kRenderTransTexture:
+		R_AllowFog( true );
 		pglEnable( GL_BLEND );
 		pglDisable( GL_ALPHA_TEST );
 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 		break;
 	case kRenderTransAlpha:
+		R_AllowFog( true );
 		pglDisable( GL_BLEND );
 		pglEnable( GL_ALPHA_TEST );
 		break;
 	case kRenderGlow:
 	case kRenderTransAdd:
+		R_AllowFog( false );
 		pglEnable( GL_BLEND );
 		pglDisable( GL_ALPHA_TEST );
 		pglBlendFunc( GL_SRC_ALPHA, GL_ONE );
 		break;
 	case kRenderScreenFadeModulate:
+		R_AllowFog( true );
 		pglEnable( GL_BLEND );
 		pglDisable( GL_ALPHA_TEST );
 		pglBlendFunc( GL_ZERO, GL_SRC_COLOR );
+	}
+}
+
+/*
+==============
+GL_PushPolygonOffset
+
+enable polygon offset and push it onto the stack
+==============
+*/
+void GL_PushPolygonOffset( float factor, float units )
+{
+	if( glState.num_polyoffsets >= ARRAYSIZE( glState.polyoffset_state ))
+	{
+		gEngfuncs.Con_Reportf( "%s: overflow\n", __func__ );
+		return;
+	}
+
+	if( glState.num_polyoffsets == 0 )
+		pglEnable( GL_POLYGON_OFFSET_FILL );
+
+	pglPolygonOffset( factor, units );
+
+	glState.polyoffset_state[glState.num_polyoffsets].factor = factor;
+	glState.polyoffset_state[glState.num_polyoffsets].units = units;
+	glState.num_polyoffsets++;
+}
+
+/*
+==============
+GL_PopPolygonOffset
+
+pop polygon offset from the stack and restore previous state
+==============
+*/
+void GL_PopPolygonOffset( void )
+{
+	if( glState.num_polyoffsets <= 0 )
+	{
+		gEngfuncs.Con_Reportf( "%s: underflow\n", __func__ );
+		return;
+	}
+
+	glState.num_polyoffsets--;
+
+	if( glState.num_polyoffsets == 0 )
+		pglDisable( GL_POLYGON_OFFSET_FILL );
+	else
+	{
+		pglPolygonOffset( glState.polyoffset_state[glState.num_polyoffsets - 1].factor,
+			glState.polyoffset_state[glState.num_polyoffsets - 1].units );
 	}
 }
 
@@ -447,7 +525,7 @@ typedef struct envmap_s
 	int	flags;
 } envmap_t;
 
-const envmap_t r_skyBoxInfo[6] =
+static const envmap_t r_skyBoxInfo[6] =
 {
 {{   0, 270, 180}, IMAGE_FLIP_X },
 {{   0,  90, 180}, IMAGE_FLIP_X },
@@ -457,7 +535,7 @@ const envmap_t r_skyBoxInfo[6] =
 {{   0, 180, 180}, IMAGE_FLIP_X },
 };
 
-const envmap_t r_envMapInfo[6] =
+static const envmap_t r_envMapInfo[6] =
 {
 {{  0,   0,  90}, 0 },
 {{  0, 180, -90}, 0 },
@@ -469,12 +547,10 @@ const envmap_t r_envMapInfo[6] =
 
 qboolean VID_ScreenShot( const char *filename, int shot_type )
 {
-	rgbdata_t *r_shot;
-	uint	flags = IMAGE_FLIP_Y;
-	int	width = 0, height = 0;
-	qboolean	result;
+	uint flags = IMAGE_FLIP_Y;
+	int width = 0, height = 0;
 
-	r_shot = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
+	rgbdata_t *r_shot = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
 	r_shot->width = (gpGlobals->width + 3) & ~3;
 	r_shot->height = (gpGlobals->height + 3) & ~3;
 	r_shot->flags = IMAGE_HAS_COLOR;
@@ -509,7 +585,7 @@ qboolean VID_ScreenShot( const char *filename, int shot_type )
 	gEngfuncs.Image_Process( &r_shot, width, height, flags, 0.0f );
 
 	// write image
-	result = gEngfuncs.FS_SaveImage( filename, r_shot );
+	qboolean result = gEngfuncs.FS_SaveImage( filename, r_shot );
 	gEngfuncs.fsapi->AllowDirectPaths( false );			// always reset after store screenshot
 	gEngfuncs.FS_FreeImage( r_shot );
 
@@ -523,16 +599,11 @@ VID_CubemapShot
 */
 qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot )
 {
-	rgbdata_t		*r_shot, *r_side;
-	byte		*temp = NULL;
-	byte		*buffer = NULL;
-	string		basename;
-	int		i = 1, flags, result;
-
-	if( !RI.drawWorld || !WORLDMODEL )
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ) || !WORLDMODEL )
 		return false;
 
 	// make sure the specified size is valid
+	int i = 1;
 	while( i < size ) i<<=1;
 
 	if( i != size ) return false;
@@ -540,19 +611,20 @@ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qbo
 		return false;
 
 	// alloc space
-	temp = Mem_Malloc( r_temppool, size * size * 3 );
-	buffer = Mem_Malloc( r_temppool, size * size * 3 * 6 );
-	r_shot = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
-	r_side = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
+	byte *temp = Mem_Malloc( r_temppool, size * size * 3 );
+	byte *buffer = Mem_Malloc( r_temppool, size * size * 3 * 6 );
+	rgbdata_t *r_shot = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
+	rgbdata_t *r_side = Mem_Calloc( r_temppool, sizeof( rgbdata_t ));
 
 	// use client vieworg
-	if( !vieworg ) vieworg = RI.vieworg;
+	if( !vieworg ) vieworg = RI.rvp.vieworigin;
 
 	for( i = 0; i < 6; i++ )
 	{
 		// go into 3d mode
 		R_Set2DMode( false );
 
+		int flags;
 		if( skyshot )
 		{
 			R_DrawCubemapView( vieworg, r_skyBoxInfo[i].angles, size );
@@ -585,11 +657,12 @@ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qbo
 	r_shot->buffer = buffer;
 
 	// make sure what we have right extension
+	string basename;
 	Q_strncpy( basename, base, sizeof( basename ));
 	COM_ReplaceExtension( basename, ".tga", sizeof( basename ));
 
 	// write image as 6 sides
-	result = gEngfuncs.FS_SaveImage( basename, r_shot );
+	int result = gEngfuncs.FS_SaveImage( basename, r_shot );
 	gEngfuncs.FS_FreeImage( r_shot );
 	gEngfuncs.FS_FreeImage( r_side );
 
@@ -597,195 +670,6 @@ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qbo
 }
 
 //=======================================================
-
-/*
-===============
-R_ShowTextures
-
-Draw all the images to the screen, on top of whatever
-was there.  This is used to test for texture thrashing.
-===============
-*/
-void R_ShowTextures( void )
-{
-	float		w, h;
-	int		start, k;
-	int base_w, base_h;
-	rgba_t		color = { 255, 255, 255, 255 };
-	int		charHeight;
-	static qboolean	showHelp = true;
-	float	time;	//nc add
-	float	time_cubemap;	//nc add
-	float	cbm_cos, cbm_sin;	//nc add
-	int		per_page; //nc add
-	qboolean empty_page;
-	int skipped_empty_pages;
-
-	if( !r_showtextures->value )
-		return;
-
-	if( showHelp )
-	{
-		gEngfuncs.CL_CenterPrint( "use '<-' and '->' keys to change atlas page, ESC to quit", 0.25f );
-		showHelp = false;
-	}
-
-	pglClear( GL_COLOR_BUFFER_BIT );
-
-	w = 200;
-	h = 200;
-
-	time = gp_cl->time * 0.5f;
-	time -= floor( time );
-	time_cubemap = gp_cl->time * 0.25f;
-	time_cubemap -= floor( time_cubemap );
-	time_cubemap *= 6.2831853f;
-	SinCos( time_cubemap, &cbm_sin, &cbm_cos );
-
-	gEngfuncs.Con_DrawStringLen( NULL, NULL, &charHeight );
-
-	base_w = gpGlobals->width / w;
-	base_h = gpGlobals->height / ( h + charHeight * 2 );
-	per_page = base_w * base_h;
-	start = per_page * ( r_showtextures->value - 1 ) + 1; // skip empty null texture
-
-	GL_SetRenderMode( kRenderTransTexture );	// nc changed from normal to trans, Con_DrawString does this anyway
-
-	empty_page = true;
-	skipped_empty_pages = 0;
-	while( empty_page )
-	{
-		for( k = 0; k < per_page; k++ )
-		{
-			const gl_texture_t *image;
-			int i;
-
-			i = k + start;
-			if( i >= MAX_TEXTURES )
-			{
-				empty_page = false;
-				break;
-			}
-
-			image = R_GetTexture( i );
-			if( pglIsTexture( image->texnum ))
-			{
-				empty_page = false;
-				break;
-			}
-		}
-
-		if( empty_page )
-		{
-			start += per_page;
-			skipped_empty_pages++;
-		}
-	}
-
-	if( skipped_empty_pages > 0 )
-	{
-		char text[MAX_VA_STRING];
-		Q_snprintf( text, sizeof( text ), "%s: skipped %d empty texture pages", __func__, skipped_empty_pages );
-		gEngfuncs.CL_CenterPrint( text, 0.25f );
-	}
-
-	for( k = 0; k < per_page; k++ )
-	{
-		const gl_texture_t *image;
-		int textlen, i;
-		char text[MAX_VA_STRING];
-		string shortname;
-		float x, y;
-
-		i = k + start;
-		if ( i >= MAX_TEXTURES )
-			break;
-
-		image = R_GetTexture( i );
-		if( !pglIsTexture( image->texnum ))
-			continue;
-
-		x = k % base_w * gpGlobals->width / base_w;
-		y = k / base_w * gpGlobals->height / base_h;
-
-		pglColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
-		GL_Bind( XASH_TEXTURE0, image->texnum );
-
-		if( FBitSet( image->flags, TF_DEPTHMAP ) && !FBitSet( image->flags, TF_NOCOMPARE ))
-			pglTexParameteri( image->target, GL_TEXTURE_COMPARE_MODE_ARB, GL_NONE );
-
-		pglBegin( GL_QUADS );
-
-#if XASH_NANOGL
-#undef pglTexCoord3f
-#define pglTexCoord3f( s, t, u ) pglTexCoord2f( s, t ) // not really correct but it requires nanogl rework
-#endif // XASH_GLES
-
-		if( image->target == GL_TEXTURE_CUBE_MAP_ARB )
-		{
-			pglTexCoord3f( 0.75 * cbm_cos - cbm_sin, 0.75 * cbm_sin + cbm_cos, 1.0 );
-			pglVertex2f( x, y );
-			pglTexCoord3f( 0.75 * cbm_cos + cbm_sin, 0.75 * cbm_sin - cbm_cos, 1.0 );
-			pglVertex2f( x + w, y );
-			pglTexCoord3f( 0.75 * cbm_cos + cbm_sin, 0.75 * cbm_sin - cbm_cos, -1.0 );
-			pglVertex2f( x + w, y + h );
-			pglTexCoord3f( 0.75 * cbm_cos - cbm_sin, 0.75 * cbm_sin + cbm_cos, -1.0 );
-			pglVertex2f( x, y + h );
-		}
-		else if( image->target == GL_TEXTURE_RECTANGLE_EXT )
-		{
-			pglTexCoord2f( 0, 0 );
-			pglVertex2f( x, y );
-			pglTexCoord2f( image->width, 0 );
-			pglVertex2f( x + w, y );
-			pglTexCoord2f( image->width, image->height );
-			pglVertex2f( x + w, y + h );
-			pglTexCoord2f( 0, image->height );
-			pglVertex2f( x, y + h );
-		}
-		else
-		{
-			pglTexCoord3f( 0, 0, time );
-			pglVertex2f( x, y );
-			pglTexCoord3f( 1, 0, time );
-			pglVertex2f( x + w, y );
-			pglTexCoord3f( 1, 1, time );
-			pglVertex2f( x + w, y + h );
-			pglTexCoord3f( 0, 1, time);
-			pglVertex2f( x, y + h );
-		}
-		pglEnd();
-
-		if( FBitSet( image->flags, TF_DEPTHMAP ) && !FBitSet( image->flags, TF_NOCOMPARE ))
-			pglTexParameteri( image->target, GL_TEXTURE_COMPARE_MODE_ARB, GL_COMPARE_R_TO_TEXTURE_ARB );
-
-		COM_FileBase( image->name, shortname, sizeof( shortname ));
-		gEngfuncs.Con_DrawStringLen( shortname, &textlen, NULL );
-
-		if( textlen > w )
-		{
-			// cutoff too long names, it looks ugly
-			shortname[16] = '.';
-			shortname[17] = '.';
-			shortname[18] = '\0';
-		}
-
-		gEngfuncs.Con_DrawString( x + 1, y + h, shortname, color );
-		if( image->target == GL_TEXTURE_3D || image->target == GL_TEXTURE_2D_ARRAY_EXT )
-			Q_snprintf( text, sizeof( text ), "%ix%ix%i %s", image->width, image->height, image->depth, GL_TargetToString( image->target ));
-		else
-			Q_snprintf( text, sizeof( text ), "%ix%i %s", image->width, image->height, GL_TargetToString( image->target ));
-		gEngfuncs.Con_DrawString( x + 1, y + h + charHeight, text, color );
-
-		Q_strncpy( text, Q_memprint( image->size ), sizeof( text ));
-		gEngfuncs.Con_DrawStringLen( text, &textlen, NULL );
-		gEngfuncs.Con_DrawString(( x + w ) - textlen - 1, y + h + charHeight, text, color );
-	}
-
-	gEngfuncs.CL_DrawCenterPrint ();
-	pglFinish();
-}
-
 /*
 ================
 SCR_TimeRefresh_f
@@ -795,20 +679,16 @@ timerefresh [noflip]
 */
 void SCR_TimeRefresh_f( void )
 {
-	int	i;
-	double	start, stop;
-	double	time;
-
 	if( ENGINE_GET_PARM( PARM_CONNSTATE ) != ca_active )
 		return;
 
-	start = gEngfuncs.pfnTime();
+	double start = gEngfuncs.pfnTime();
 
 	// run without page flipping like GoldSrc
 	if( gEngfuncs.Cmd_Argc() == 1 )
 	{
 		pglDrawBuffer( GL_FRONT );
-		for( i = 0; i < 128; i++ )
+		for( int i = 0; i < 128; i++ )
 		{
 			gpGlobals->viewangles[1] = i / 128.0f * 360.0f;
 			R_RenderScene();
@@ -818,7 +698,7 @@ void SCR_TimeRefresh_f( void )
 	}
 	else
 	{
-		for( i = 0; i < 128; i++ )
+		for( int i = 0; i < 128; i++ )
 		{
 			R_BeginFrame( true );
 			gpGlobals->viewangles[1] = i / 128.0f * 360.0f;
@@ -827,7 +707,7 @@ void SCR_TimeRefresh_f( void )
 		}
 	}
 
-	stop = gEngfuncs.pfnTime ();
-	time = (stop - start);
+	double stop = gEngfuncs.pfnTime ();
+	double time = (stop - start);
 	gEngfuncs.Con_Printf( "%f seconds (%f fps)\n", time, 128 / time );
 }

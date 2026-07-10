@@ -157,7 +157,7 @@ qboolean Sound_LoadOggVorbis( const char *name, const byte *buffer, fs_offset_t 
 	SetBits( sound.flags, SOUND_RESAMPLE );
 	Sound_ScanVorbisComments( &vorbisFile );
 
-	while(( ret = ov_read( &vorbisFile, (char *)sound.wav + written, sound.size - written, 0, sound.width, 1, &section )) != 0 )
+	while(( ret = ov_read( &vorbisFile, (char *)sound.wav + written, sound.size - written, XASH_BIG_ENDIAN, sound.width, 1, &section )) != 0 )
 	{
 		if( ret < 0 )
 		{
@@ -232,7 +232,7 @@ int Stream_ReadOggVorbis( stream_t *stream, int needBytes, void *buffer )
 
 		if( !stream->buffsize )
 		{
-			stream->pos = ov_read( &ctx->vf, (char *)stream->temp, OUTBUF_SIZE, 0, stream->width, 1, &section );
+			stream->pos = ov_read( &ctx->vf, (char *)stream->temp, OUTBUF_SIZE, XASH_BIG_ENDIAN, stream->width, 1, &section );
 			if( stream->pos == 0 )
 			{
 				break; // end of file
@@ -268,9 +268,9 @@ int Stream_ReadOggVorbis( stream_t *stream, int needBytes, void *buffer )
 
 int Stream_SetPosOggVorbis( stream_t *stream, int newpos )
 {
-	int ret;
 	vorbis_streaming_ctx_t *ctx = (vorbis_streaming_ctx_t *)stream->ptr;
-	if(( ret = ov_raw_seek_lap( &ctx->vf, newpos )) == 0 )
+	int ret = ov_raw_seek_lap( &ctx->vf, newpos );
+	if( ret == 0 )
 	{
 		stream->buffsize = 0; // flush any previous data
 		return true;

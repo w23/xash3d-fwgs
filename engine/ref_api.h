@@ -19,18 +19,19 @@ GNU General Public License for more details.
 #include <stdarg.h>
 #include "com_image.h"
 #include "vgui_api.h"
+#include "const.h"
+#include "com_model.h"
+#include "cl_entity.h"
 #include "render_api.h"
 #include "triangleapi.h"
-#include "const.h"
-#include "cl_entity.h"
-#include "com_model.h"
 #include "studio.h"
 #include "r_efx.h"
-#include "com_image.h"
 #include "filesystem.h"
 #include "ref_vulkan.h"
 #include "ref_device.h"
 #include "common/protocol.h"
+#include "cvardef.h"
+#include "q_client.h"
 
 // RefAPI changelog:
 // 1. Initial release
@@ -60,7 +61,24 @@ GNU General Public License for more details.
 //    Removed R_DrawTileClear and Mod_LoadMapSprite, as they're implemented on engine side
 //    Removed FillRGBABlend. Now FillRGBA accepts rendermode parameter.
 // 10. Added R_GetWindowHandle to retrieve platform-specific window object.
-#define REF_API_VERSION 10
+// 11. Added size argument to Mod_ProcessRenderData
+// 12. Added Image_CalcImageSize
+// 13. Removed ignore_flags argument from GetCvarPointer
+// 14. Removed reserved functions, they are leftover from RenderAPI
+//     Removed CL_AddCustomBeam, it's now handled through R_AddEntity
+// 15. Replaced CL_InitStudioAPI with R_StudioFillAPI + R_StudioSetDrawInterface
+//     Engine now builds engine_studio_api_t and handles client DLL negotiation
+//     Replaced R_DrawStretchRaw and AVI_UploadRawFrame with GL_UpdateTexture
+//     Added GL_CreateTexture, R_GetDetailScaleForTexture, R_SetDetailScaleForTexture
+//     Removed R_Flush, VGUI_UploadTextureBlock, R_BeamCull, pfnGetStudioModelInterface
+//     Moved RenderAPI and TriAPI filling to renderer via R_FillRenderAPI and R_FillTriAPI
+//     Moved detail textures parsing and cinematic texture management to engine
+//     Moved creation of default textures to the engine
+// 16. RefGetParm return type changed from int to intptr_t.
+// 17. _Mem_AllocPool now takes a flags argument (see MEM_SMALL_ALLOC_OPT in engine/common/common.h).
+//     Pools that opt into MEM_SMALL_ALLOC_OPT use a compact 16/24-byte header for allocations
+//     <= 255 bytes, dropping per-allocation filename/fileline tracking.
+#define REF_API_VERSION 17
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -88,10 +106,11 @@ GNU General Public License for more details.
 #define MODEL_CLIENT		BIT( 30 )	// client sprite
 
 // goes into world.flags
-#define FWORLD_SKYSPHERE		BIT( 0 )
-#define FWORLD_CUSTOM_SKYBOX		BIT( 1 )
-#define FWORLD_WATERALPHA		BIT( 2 )
-#define FWORLD_HAS_DELUXEMAP		BIT( 3 )
+#define FWORLD_SKYSPHERE     BIT( 0 )
+#define FWORLD_CUSTOM_SKYBOX BIT( 1 )
+#define FWORLD_WATERALPHA    BIT( 2 )
+#define FWORLD_HAS_DELUXEMAP BIT( 3 )
+#define FWORLD_HAS_LITWATER  BIT( 4 )
 
 // special rendermode for screenfade modulate
 // (probably will be expanded at some point)
@@ -106,6 +125,14 @@ typedef enum
 	DEMO_QUAKE1
 } demo_mode;
 
+typedef enum window_mode_e
+{
+	WINDOW_MODE_WINDOWED = 0,
+	WINDOW_MODE_FULLSCREEN,
+	WINDOW_MODE_BORDERLESS,
+	WINDOW_MODE_COUNT,
+} window_mode_t;
+
 typedef enum ref_window_type_e
 {
 	REF_WINDOW_TYPE_NULL = 0,
@@ -113,7 +140,8 @@ typedef enum ref_window_type_e
 	REF_WINDOW_TYPE_X11, // Display*
 	REF_WINDOW_TYPE_WAYLAND, // wl_display*
 	REF_WINDOW_TYPE_MACOS, // NSWindow*
-	REF_WINDOW_TYPE_SDL, // SDL_Window*
+	REF_WINDOW_TYPE_SDL2, // SDL2 SDL_Window*
+	REF_WINDOW_TYPE_SDL3, // SDL3 SDL_Window*
 } ref_window_type_t;
 
 typedef struct
@@ -126,11 +154,11 @@ typedef struct ref_globals_s
 {
 	qboolean developer;
 
-	// viewport width and height
+	// viewport width and height (physical window size)
 	int      width;
 	int      height;
 
-	qboolean fullScreen;
+	window_mode_t window_mode;
 	qboolean wideScreen;
 
 	vec3_t vieworg;
@@ -145,6 +173,10 @@ typedef struct ref_globals_s
 	size_t		visbytes;		// cluster size
 
 	int desktopBitsPixel;
+
+	// scaling factor of physical window size compared to logical
+	float scale_x;
+	float scale_y;
 } ref_globals_t;
 
 typedef struct ref_client_s
@@ -206,14 +238,14 @@ enum ref_defaultsprite_e
 };
 
 // the order of first three is important!
-// so you can use this value in IEngineStudio.StudioIsHardware
-enum ref_graphic_apis_e
+// so you can use this value in IEngineStudio.StudioIsHardware (but shouldn't)
+typedef enum ref_graphic_apis_e
 {
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
 	REF_VULKAN, // Vulkan
-};
+} ref_graphic_apis_t;
 
 typedef enum
 {
@@ -304,7 +336,7 @@ typedef enum
 	PARM_WATER_LEVEL       = -8, // cl.local.water_level
 	PARM_GET_WORLD_PTR     = -9, // world
 	PARM_LOCAL_HEALTH      = -10, // cl.local.health
-	PARM_LOCAL_GAME        = -11,
+	PARM_SINGLEPLAYER_GAME = -11, // was PARM_LOCAL_GAME
 	PARM_NUMENTITIES       = -12, // local game only
 	PARM_GET_MOVEVARS_PTR  = -13, // clgame.movevars
 	PARM_GET_PALETTE_PTR   = -14, // clgame.palette
@@ -318,6 +350,7 @@ typedef enum
 	PARM_GET_LIGHTSTYLES_PTR = -20,
 	PARM_GET_DLIGHTS_PTR = -21,
 	PARM_GET_ELIGHTS_PTR = -22,
+	PARM_GET_STUDIO_HDR = -23, // current m_pStudioHeader in renderer
 
 	// implemented by ref_dll
 
@@ -332,7 +365,7 @@ typedef struct ref_api_s
 
 	// cvar handlers
 	cvar_t   *(*Cvar_Get)( const char *szName, const char *szValue, int flags, const char *description );
-	cvar_t   *(*pfnGetCvarPointer)( const char *name, int ignore_flags );
+	cvar_t   *(*pfnGetCvarPointer)( const char *name );
 	float       (*pfnGetCvarFloat)( const char *szName );
 	const char *(*pfnGetCvarString)( const char *szName ) PFN_RETURNS_NONNULL;
 	void        (*Cvar_SetValue)( const char *name, float value );
@@ -373,7 +406,7 @@ typedef struct ref_api_s
 	// brushes
 	int (*Mod_SampleSizeForFace)( const struct msurface_s *surf );
 	qboolean (*Mod_BoxVisible)( const vec3_t mins, const vec3_t maxs, const byte *visbits );
-	mleaf_t *(*Mod_PointInLeaf)( const vec3_t p, mnode_t *node );
+	mleaf_t *(*Mod_PointInLeaf)( const vec3_t p, mnode_t *node, struct model_s *mod );
 	void (*R_DrawWorldHull)( void );
 	void (*R_DrawModelHull)( model_t *mod );
 
@@ -386,7 +419,7 @@ typedef struct ref_api_s
 	void (*CL_ThinkParticle)( double frametime, particle_t *p );
 	void (*R_FreeDeadParticles)( particle_t **ppparticles );
 	particle_t *(*CL_AllocParticleFast)( void ); // unconditionally give new particle pointer from cl_free_particles
-	struct dlight_s *(*CL_AllocElight)( int key );
+	dlight_t *(*CL_AllocElight)( int key );
 	struct model_s *(*GetDefaultSprite)( enum ref_defaultsprite_e spr );
 	void		(*R_StoreEfrags)( struct efrag_s **ppefrag, int framecount );// store efrags for static entities
 
@@ -415,10 +448,9 @@ typedef struct ref_api_s
 	void *(*Mod_CacheCheck)( struct cache_user_s *c );
 	void (*Mod_LoadCacheFile)( const char *path, struct cache_user_s *cu );
 	void *(*Mod_Calloc)( int number, size_t size );
-	int	(*pfnGetStudioModelInterface)( int version, struct r_studio_interface_s **ppinterface, struct engine_studio_api_s *pstudio );
 
 	// memory
-	poolhandle_t (*_Mem_AllocPool)( const char *name, const char *filename, int fileline )
+	poolhandle_t (*_Mem_AllocPool)( const char *name, unsigned int flags, const char *filename, int fileline )
 		WARN_UNUSED_RESULT;
 	void  (*_Mem_FreePool)( poolhandle_t *poolptr, const char *filename, int fileline );
 	void *(*_Mem_Alloc)( poolhandle_t poolptr, size_t size, qboolean clear, const char *filename, int fileline )
@@ -435,7 +467,7 @@ typedef struct ref_api_s
 	// video init
 	// try to create window
 	// will call GL_SetupAttributes in case of REF_GL
-	qboolean  (*R_Init_Video)( int type ); // will also load and execute renderer config(see R_GetConfigName)
+	qboolean (*R_Init_Video)( ref_graphic_apis_t type ); // will also load and execute renderer config(see R_GetConfigName)
 	void (*R_Free_Video)( void );
 
 	// GL
@@ -469,10 +501,11 @@ typedef struct ref_api_s
 	qboolean (*Image_Process)( rgbdata_t **pix, int width, int height, uint flags, float reserved );
 	rgbdata_t *(*FS_LoadImage)( const char *filename, const byte *buffer, size_t size );
 	qboolean (*FS_SaveImage)( const char *filename, rgbdata_t *pix );
-	rgbdata_t *(*FS_CopyImage)( rgbdata_t *in );
+	rgbdata_t *(*FS_CopyImage)( const rgbdata_t *in );
 	void (*FS_FreeImage)( rgbdata_t *pack );
 	void (*Image_SetMDLPointer)( byte *p );
 	const struct bpc_desc_s *(*Image_GetPFDesc)( int idx );
+	size_t (*Image_CalcImageSize)( int type, int width, int height, int depth );
 
 	// client exports
 	void	(*pfnDrawNormalTriangles)( void );
@@ -484,6 +517,9 @@ typedef struct ref_api_s
 
 	// for abstracting the engine's rendering
 	ref_window_type_t (*R_GetWindowHandle)( void **handle, ref_window_type_t type );
+
+	// sprites
+	struct mspriteframe_s *(*R_GetSpriteFrame)( const struct model_s *pModel, int frame, float yaw );
 
 	int (*XVK_GetInstanceExtensions)( unsigned int count, const char **pNames );
 	void *(*XVK_GetVkGetInstanceProcAddr)( void );
@@ -522,10 +558,7 @@ typedef struct ref_interface_s
 	void (*GL_SetRenderMode)( int renderMode );
 
 	qboolean (*R_AddEntity)( struct cl_entity_s *clent, int type );
-	void (*CL_AddCustomBeam)( cl_entity_t *pEnvBeam );
 	void (*R_ProcessEntData)( qboolean allocate, cl_entity_t *entities, unsigned int max_entities );
-	void (*R_Flush)( unsigned int flush_flags );
-
 	// debug
 	void (*R_ShowTextures)( void );
 
@@ -537,7 +570,6 @@ typedef struct ref_interface_s
 
 	// 2D
 	void (*R_Set2DMode)( qboolean enable );
-	void (*R_DrawStretchRaw)( float x, float y, float w, float h, int cols, int rows, const byte *data, qboolean dirty );
 	void (*R_DrawStretchPic)( float x, float y, float w, float h, float s1, float t1, float s2, float t2, int texnum );
 	void (*FillRGBA)( int rendermode, float x, float y, float w, float h, byte r, byte g, byte b, byte a ); // in screen space
 	int  (*WorldToScreen)( const vec3_t world, vec3_t screen );  // Returns 1 if it's z clipped
@@ -559,75 +591,45 @@ typedef struct ref_interface_s
 	// studio interface
 	float (*R_StudioEstimateFrame)( cl_entity_t *e, mstudioseqdesc_t *pseqdesc, double time );
 	void (*R_StudioLerpMovement)( cl_entity_t *e, double time, vec3_t origin, vec3_t angles );
-	void (*CL_InitStudioAPI)( void );
+	qboolean (*R_StudioFillAPI)( struct engine_studio_api_s *api, struct r_studio_interface_s *pDefaultDraw );
+	void (*R_StudioSetDrawInterface)( struct r_studio_interface_s *pDraw );
 
 	// bmodel
 	void (*R_SetSkyCloudsTextures)( int solidskyTexture, int alphaskyTexture );
 	void (*GL_SubdivideSurface)( model_t *mod, msurface_t *fa );
 	void (*CL_RunLightStyles)( lightstyle_t *ls );
 
-	// sprites
-	void (*R_GetSpriteParms)( int *frameWidth, int *frameHeight, int *numFrames, int currentFrame, const model_t *pSprite );
-	int (*R_GetSpriteTexture)( const model_t *m_pSpriteModel, int frame );
 
 	// model management
 	// flags ignored for everything except spritemodels
-	qboolean (*Mod_ProcessRenderData)( model_t *mod, qboolean create, const byte *buffer );
+	qboolean (*Mod_ProcessRenderData)( model_t *mod, qboolean create, const byte *buffer, size_t buffersize );
 	void (*Mod_StudioLoadTextures)( model_t *mod, void *data );
 
 	// efx implementation
 	void (*CL_DrawParticles)( double frametime, particle_t *particles, float partsize );
 	void (*CL_DrawTracers)( double frametime, particle_t *tracers );
 	void (*CL_DrawBeams)( int fTrans , BEAM *beams );
-	qboolean (*R_BeamCull)( const vec3_t start, const vec3_t end, qboolean pvsOnly );
 
 	// Xash3D Render Interface
-	// Get renderer info (doesn't changes engine state at all)
-	int			(*RefGetParm)( int parm, int arg );	// generic
-	void		(*GetDetailScaleForTexture)( int texture, float *xScale, float *yScale );
-	void		(*GetExtraParmsForTexture)( int texture, byte *red, byte *green, byte *blue, byte *alpha );
-	float		(*GetFrameTime)( void );
+	intptr_t		(*RefGetParm)( int parm, int arg );	// generic
 
-	// Set renderer info (tell engine about changes)
-	void		(*R_SetCurrentEntity)( struct cl_entity_s *ent ); // tell engine about both currententity and currentmodel
-	void		(*R_SetCurrentModel)( struct model_s *mod );	// change currentmodel but leave currententity unchanged
+	// detail texture scale
+	void	(*R_GetDetailScaleForTexture)( int texture, float *xScale, float *yScale );
+	void	(*R_SetDetailScaleForTexture)( int texture, float xScale, float yScale );
 
-	// Texture tools
+	// Texture tools (used by engine directly)
+	int		(*GL_CreateTexture)( const char *name, int width, int height, const void *buffer, texFlags_t flags );
 	int		(*GL_FindTexture)( const char *name );
 	const char*	(*GL_TextureName)( unsigned int texnum );
 	const byte*	(*GL_TextureData)( unsigned int texnum ); // may be NULL
 	int		(*GL_LoadTexture)( const char *name, const byte *buf, size_t size, int flags );
-	int		(*GL_CreateTexture)( const char *name, int width, int height, const void *buffer, texFlags_t flags );
-	int		(*GL_LoadTextureArray)( const char **names, int flags );
-	int		(*GL_CreateTextureArray)( const char *name, int width, int height, int depth, const void *buffer, texFlags_t flags );
 	void		(*GL_FreeTexture)( unsigned int texnum );
 	void	(*R_OverrideTextureSourceSize)( unsigned int texnum, unsigned int srcWidth, unsigned int srcHeight ); // used to override decal size for texture replacement
 
-	// Decals manipulating (draw & remove)
-	void		(*DrawSingleDecal)( struct decal_s *pDecal, struct msurface_s *fa );
-	float		*(*R_DecalSetupVerts)( struct decal_s *pDecal, struct msurface_s *surf, int texture, int *outCount );
-	void		(*R_EntityRemoveDecals)( struct model_s *mod ); // remove all the decals from specified entity (BSP only)
+	void		(*GL_UpdateTexture)( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt );
 
-	// AVI
-	void		(*AVI_UploadRawFrame)( int texture, int cols, int rows, int width, int height, const byte *data );
-
-	// glState related calls (must use this instead of normal gl-calls to prevent de-synchornize local states between engine and the client)
+	// glState related calls (used by engine directly)
 	void		(*GL_Bind)( int tmu, unsigned int texnum );
-	void		(*GL_SelectTexture)( int tmu );
-	void		(*GL_LoadTextureMatrix)( const float *glmatrix );
-	void		(*GL_TexMatrixIdentity)( void );
-	void		(*GL_CleanUpTextureUnits)( int last );	// pass 0 for clear all the texture units
-	void		(*GL_TexGen)( unsigned int coord, unsigned int mode );
-	void		(*GL_TextureTarget)( unsigned int target ); // change texture unit mode without bind texture
-	void		(*GL_TexCoordArrayMode)( unsigned int texmode );
-	void		(*GL_UpdateTexSize)( int texnum, int width, int height, int depth ); // recalc statistics
-	void		(*GL_Reserved0)( void );	// for potential interface expansion without broken compatibility
-	void		(*GL_Reserved1)( void );
-
-	// Misc renderer functions
-	void		(*GL_DrawParticles)( const struct ref_viewpass_s *rvp, qboolean trans_pass, float frametime );
-	colorVec		(*LightVec)( const float *start, const float *end, float *lightspot, float *lightvec );
-	struct mstudiotex_s *( *StudioGetTexture )( struct cl_entity_s *e );
 
 	// passed through R_RenderFrame (0 - use engine renderer, 1 - use custom client renderer)
 	void		(*GL_RenderFrame)( const struct ref_viewpass_s *rvp );
@@ -641,28 +643,23 @@ typedef struct ref_interface_s
 	void		(*R_NewMap)( void );
 	// clear the render entities before each frame
 	void		(*R_ClearScene)( void );
-	// GL_GetProcAddress for client renderer
-	void*		(*R_GetProcAddress)( const char *name );
 
-	// TriAPI Interface
-	// NOTE: implementation isn't required to be compatible
+	// TriAPI Interface (functions used by engine wrappers)
 	void	(*TriRenderMode)( int mode );
 	void	(*Begin)( int primitiveCode );
 	void	(*End)( void );
 	void	(*Color4f)( float r, float g, float b, float a ); // real glColor4f
 	void	(*Color4ub)( unsigned char r, unsigned char g, unsigned char b, unsigned char a ); // real glColor4ub
-	void	(*TexCoord2f)( float u, float v );
 	void	(*Vertex3fv)( const float *worldPnt );
 	void	(*Vertex3f)( float x, float y, float z );
-	void	(*Fog)( float flFogColor[3], float flStart, float flEnd, int bOn ); //Works just like GL_FOG, flFogColor is r/g/b.
-	void	(*ScreenToWorld)( const float *screen, float *world  );
-	void	(*GetMatrix)( const int pname, float *matrix );
-	void	(*FogParams)( float flDensity, int iFogSkybox );
 	void    (*CullFace)( TRICULLSTYLE mode );
+
+	// fill render_api_t and triangleapi_t with renderer-specific functions
+	void	(*R_FillRenderAPI)( struct render_api_s *api );
+	void	(*R_FillTriAPI)( struct triangleapi_s *api );
 
 	// vgui drawing implementation
 	void	(*VGUI_SetupDrawing)( qboolean rect );
-	void	(*VGUI_UploadTextureBlock)( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight );
 
 	// only Vulkan manages devices in renderer code
 	const ref_device_t *(*pfnGetVulkanRenderDevice)( unsigned int idx );
@@ -675,13 +672,13 @@ typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* 
 #define DEFINE_ENGINE_SHARED_CVAR( x, y ) cvar_t *x = NULL;
 #define DECLARE_ENGINE_SHARED_CVAR( x, y ) extern cvar_t *x;
 #define RETRIEVE_ENGINE_SHARED_CVAR( x, y ) \
-	if(!( x = gEngfuncs.pfnGetCvarPointer( #y, 0 ) )) \
+	if(!( x = gEngfuncs.pfnGetCvarPointer( #y ) )) \
 		gEngfuncs.Host_Error( S_ERROR "engine didn't gave us %s cvar pointer\n", #y );
 #define ENGINE_SHARED_CVAR_NAME( f, x, y ) f( x, y )
 #define ENGINE_SHARED_CVAR( f, x ) ENGINE_SHARED_CVAR_NAME( f, x, x )
 
 // cvars that's logic is shared between renderer and engine
-// actually, they are just created on engine side for convinience
+// actually, they are just created on engine side for convenience
 // and must be retrieved by renderer side
 // sometimes it's done to standartize cvars to make it easier for users
 #define ENGINE_SHARED_CVAR_LIST( f ) \
@@ -711,6 +708,7 @@ typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* 
 	ENGINE_SHARED_CVAR( f, r_drawviewmodel ) \
 	ENGINE_SHARED_CVAR( f, r_glowshellfreq ) \
 	ENGINE_SHARED_CVAR( f, host_allow_materials ) \
+	ENGINE_SHARED_CVAR( f, r_pvs_radius ) \
 
 #define DECLARE_ENGINE_SHARED_CVAR_LIST() \
 	ENGINE_SHARED_CVAR_LIST( DECLARE_ENGINE_SHARED_CVAR )

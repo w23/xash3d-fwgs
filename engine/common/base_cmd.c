@@ -25,8 +25,8 @@ struct base_command_hashmap_s
 {
 	base_command_t         *basecmd; // base command: cvar, alias or command
 	base_command_hashmap_t *next;
-	base_command_type_e     type;    // type for faster searching
-	char                    name[]; // key for searching
+	base_command_type_e    type;     // type for faster searching
+	char                   name[];   // key for searching
 };
 
 static base_command_hashmap_t *hashed_cmds[HASH_SIZE];
@@ -43,16 +43,12 @@ Find base command in bucket
 */
 static base_command_hashmap_t *BaseCmd_FindInBucket( base_command_hashmap_t *bucket, base_command_type_e type, const char *name )
 {
-	base_command_hashmap_t *i;
-
-	for( i = bucket; i != NULL; i = i->next )
+	for( base_command_hashmap_t *i = bucket; i != NULL; i = i->next )
 	{
-		int cmp;
-
 		if( i->type != type )
 			continue;
 
-		cmp = Q_stricmp( i->name, name );
+		int cmp = Q_stricmp( i->name, name );
 
 		if( cmp < 0 )
 			continue;
@@ -147,16 +143,16 @@ Add new typed base command to hashmap
 */
 void BaseCmd_Insert( base_command_type_e type, base_command_t *basecmd, const char *name )
 {
-	base_command_hashmap_t *elem, *cur, *find;
 	uint hash = BaseCmd_HashKey( name );
 	size_t len = Q_strlen( name );
+	base_command_hashmap_t *elem = Mem_Malloc( basecmd_pool, sizeof( base_command_hashmap_t ) + len + 1 );
 
-	elem = Mem_Malloc( basecmd_pool, sizeof( base_command_hashmap_t ) + len + 1 );
 	elem->basecmd = basecmd;
 	elem->type = type;
 	Q_strncpy( elem->name, name, len + 1 );
 
 	// link the variable in alphanumerical order
+	base_command_hashmap_t *cur, *find;
 	for( cur = NULL, find = hashed_cmds[hash];
 		  find && Q_stricmp( find->name, elem->name ) < 0;
 		  cur = find, find = find->next );
@@ -181,12 +177,10 @@ void BaseCmd_Remove( base_command_type_e type, const char *name )
 
 	for( prev = NULL, i = hashed_cmds[hash]; i != NULL; prev = i, i = i->next )
 	{
-		int cmp;
-
 		if( i->type != type )
 			continue;
 
-		cmp = Q_stricmp( i->name, name );
+		int cmp = Q_stricmp( i->name, name );
 
 		if( cmp < 0 )
 			continue;
@@ -220,7 +214,7 @@ initialize base command hashmap system
 */
 void BaseCmd_Init( void )
 {
-	basecmd_pool = Mem_AllocPool( "BaseCmd" );
+	basecmd_pool = Mem_AllocPoolExt( "BaseCmd", MEM_SMALL_ALLOC_OPT );
 	memset( hashed_cmds, 0, sizeof( hashed_cmds ) );
 }
 
@@ -237,15 +231,14 @@ BaseCmd_Stats_f
 */
 void BaseCmd_Stats_f( void )
 {
-	int i, minsize = 99999, maxsize = -1, empty = 0;
+	int minsize = 99999, maxsize = -1, empty = 0;
 
-	for( i = 0; i < HASH_SIZE; i++ )
+	for( int i = 0; i < HASH_SIZE; i++ )
 	{
-		base_command_hashmap_t *hm;
 		int len = 0;
 
 		// count bucket length
-		for( hm = hashed_cmds[i]; hm; hm = hm->next, len++ );
+		for( base_command_hashmap_t *hm = hashed_cmds[i]; hm; hm = hm->next, len++ );
 
 		if( len == 0 )
 		{
@@ -264,15 +257,15 @@ void BaseCmd_Stats_f( void )
 	Con_Printf( "min length: %d, max length: %d, empty: %d\n", minsize, maxsize, empty );
 }
 
-typedef struct
+struct basecmd_test_stats_s
 {
 	qboolean valid;
 	int lookups;
-} basecmd_test_stats_t;
+};
 
 static void BaseCmd_CheckCvars( const char *key, const char *value, const void *unused, void *ptr )
 {
-	basecmd_test_stats_t *stats = ptr;
+	struct basecmd_test_stats_s *stats = ptr;
 
 	stats->lookups++;
 	if( !BaseCmd_Find( HM_CVAR, key ))
@@ -291,22 +284,17 @@ testing order matches cbuf execute
 */
 void BaseCmd_Test_f( void )
 {
-	basecmd_test_stats_t stats;
-	double start, end, dt;
-	int i;
-
-	stats.valid = true;
-	stats.lookups = 0;
-
-	start = Sys_DoubleTime() * 1000;
-
-	for( i = 0; i < 1000; i++ )
+	struct basecmd_test_stats_s stats =
 	{
-		cmdalias_t *a;
-		void *cmd;
+		.valid = true,
+	};
 
+	double start = Platform_DoubleTime() * 1000;
+
+	for( int i = 0; i < 1000; i++ )
+	{
 		// Cmd_LookupCmds don't allows to check alias, so just iterate
-		for( a = Cmd_AliasGetList(); a; a = a->next, stats.lookups++ )
+		for( cmdalias_t *a = Cmd_AliasGetList(); a; a = a->next, stats.lookups++ )
 		{
 			if( !BaseCmd_Find( HM_CMDALIAS, a->name ))
 			{
@@ -315,7 +303,7 @@ void BaseCmd_Test_f( void )
 			}
 		}
 
-		for( cmd = Cmd_GetFirstFunctionHandle(); cmd;
+		for( void *cmd = Cmd_GetFirstFunctionHandle(); cmd;
 			 cmd = Cmd_GetNextFunctionHandle( cmd ), stats.lookups++ )
 		{
 			if( !BaseCmd_Find( HM_CMD, Cmd_GetName( cmd )))
@@ -328,9 +316,8 @@ void BaseCmd_Test_f( void )
 		Cvar_LookupVars( 0, NULL, &stats.valid, (setpair_t)BaseCmd_CheckCvars );
 	}
 
-	end = Sys_DoubleTime() * 1000;
-
-	dt = end - start;
+	double end = Platform_DoubleTime() * 1000;
+	double dt = end - start;
 
 	if( !stats.valid )
 		Con_Printf( "BaseCmd is valid\n" );

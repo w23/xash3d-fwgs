@@ -117,7 +117,7 @@ void COM_ChangeLevel( char const *pNewLevel, char const *pLandmarkName, qboolean
 	Q_strncpy( GameState->levelName, pNewLevel, sizeof( GameState->levelName ));
 	GameState->backgroundMap = background;
 
-	if( COM_CheckString( pLandmarkName ))
+	if( !COM_StringEmptyOrNULL( pLandmarkName ))
 	{
 		Q_strncpy( GameState->landmarkName, pLandmarkName, sizeof( GameState->landmarkName ));
 		GameState->loadGame = true;
@@ -193,14 +193,13 @@ void Host_AbortCurrentFrame( void )
 
 void COM_Frame( double time )
 {
-	int	loopCount = 0;
-
 	if( setjmp( g_abortframe ))
 		return;
 
+	int loopCount = 0;
 	while( 1 )
 	{
-		int	oldState = GameState->curstate;
+		int oldState = GameState->curstate;
 
 		// execute the current state (and transition to the next state if not in STATE_RUNFRAME)
 		switch( GameState->curstate )

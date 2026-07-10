@@ -40,23 +40,20 @@ qboolean R_CullBox( const vec3_t mins, const vec3_t maxs )
 R_CullModel
 =============
 */
-int R_CullModel( cl_entity_t *e, const vec3_t absmin, const vec3_t absmax )
+qboolean R_CullModel( const cl_entity_t *e, const vec3_t absmin, const vec3_t absmax )
 {
 	if( e == tr.viewent )
 	{
 		if( ENGINE_GET_PARM( PARM_DEV_OVERVIEW ))
-			return 1;
+			return true;
 
-		if( RP_NORMALPASS() && !ENGINE_GET_PARM( PARM_THIRDPERSON ) && CL_IsViewEntityLocalPlayer())
-			return 0;
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) && !ENGINE_GET_PARM( PARM_THIRDPERSON ) && CL_IsViewEntityLocalPlayer())
+			return false;
 
-		return 1;
+		return true;
 	}
 
-	if( R_CullBox( absmin, absmax ))
-		return 1;
-
-	return 0;
+	return R_CullBox( absmin, absmax );
 }
 
 /*
@@ -66,29 +63,29 @@ R_CullSurface
 cull invisible surfaces
 =================
 */
-int R_CullSurface( msurface_t *surf, gl_frustum_t *frustum, uint clipflags )
+int R_CullSurface( const msurface_t *surf, const gl_frustum_t *frustum, uint clipflags )
 {
-	cl_entity_t	*e = RI.currententity;
+	const cl_entity_t *e = RI.currententity;
 
-	if( !surf || !surf->texinfo || !surf->texinfo->texture )
-		return CULL_OTHER;
-
-	if( r_nocull.value )
-		return CULL_VISIBLE;
-
-	// world surfaces can be culled by vis frame too
-	if( RI.currententity == CL_GetEntityByIndex( 0 ) && surf->visframe != tr.framecount )
+	if( surf->visframe != tr.framecount && e == CL_GetEntityByIndex( 0 ))
 		return CULL_VISFRAME;
 
-	// only static ents can be culled by frustum
-	if( !R_StaticEntity( e )) frustum = NULL;
+	if( unlikely( !surf->texinfo || !surf->texinfo->texture ))
+		return CULL_OTHER;
 
-	if( !VectorIsNull( surf->plane->normal ))
+	if( unlikely( r_nocull.value ))
+		return CULL_VISIBLE;
+
+	// only static ents can be culled by frustum
+	if( !R_StaticEntity( e ))
+		frustum = NULL;
+
+	if( glState.faceCull != GL_NONE && !VectorIsNull( surf->plane->normal ))
 	{
 		float	dist;
 
 		// can use normal.z for world (optimisation)
-		if( RI.drawOrtho )
+		if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 		{
 			vec3_t	orthonormal;
 
@@ -98,35 +95,22 @@ int R_CullSurface( msurface_t *surf, gl_frustum_t *frustum, uint clipflags )
 		}
 		else dist = PlaneDiff( tr.modelorg, surf->plane );
 
+		if( FBitSet( surf->flags, SURF_PLANEBACK ))
+			dist = -dist;
+
 		if( glState.faceCull == GL_FRONT )
 		{
-			if( FBitSet( surf->flags, SURF_PLANEBACK ))
-			{
-				if( dist >= -BACKFACE_EPSILON )
-					return CULL_BACKSIDE; // wrong side
-			}
-			else
-			{
-				if( dist <= BACKFACE_EPSILON )
-					return CULL_BACKSIDE; // wrong side
-			}
+			if( dist <= BACKFACE_EPSILON )
+				return CULL_BACKSIDE;
 		}
-		else if( glState.faceCull == GL_BACK )
+		else // if( glState.faceCull == GL_BACK )
 		{
-			if( FBitSet( surf->flags, SURF_PLANEBACK ))
-			{
-				if( dist <= BACKFACE_EPSILON )
-					return CULL_BACKSIDE; // wrong side
-			}
-			else
-			{
-				if( dist >= -BACKFACE_EPSILON )
-					return CULL_BACKSIDE; // wrong side
-			}
+			if( dist >= -BACKFACE_EPSILON )
+				return CULL_BACKSIDE;
 		}
 	}
 
-	if( frustum && GL_FrustumCullBox( frustum, surf->info->mins, surf->info->maxs, clipflags ))
+	if( frustum && clipflags && GL_FrustumCullBox( frustum, surf->info->mins, surf->info->maxs, clipflags ))
 		return CULL_FRUSTUM;
 
 	return CULL_VISIBLE;

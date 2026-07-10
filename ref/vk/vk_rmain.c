@@ -109,7 +109,7 @@ static void Mod_UnloadTextures( model_t *mod )
 		R_BrushUnloadTextures( mod );
 		break;
 	case mod_sprite:
-		Mod_SpriteUnloadTextures( mod->cache.data );
+		// Sprite textures are managed by the engine (Mod_SpriteUnloadTextures)
 		break;
 	default:
 		ASSERT( 0 );
@@ -117,7 +117,7 @@ static void Mod_UnloadTextures( model_t *mod )
 	}
 }
 
-static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer )
+static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte *buffer, size_t buffersize )
 {
 	qboolean loaded = true;
 
@@ -137,7 +137,8 @@ static qboolean Mod_ProcessRenderData( model_t *mod, qboolean create, const byte
 				// TODO we might benefit a tiny bit (a few ms loading time) from reusing studio models from previous map
 				break;
 			case mod_sprite:
-				Mod_LoadSpriteModel( mod, buffer, &loaded, mod->numtexinfo );
+				// Sprite textures are loaded by the engine (Mod_SpriteLoadTextures)
+				// Nothing to do here
 				break;
 			case mod_alias:
 				// TODO what ARE mod_alias? We just don't know.
@@ -226,7 +227,7 @@ static const char *getParmName(int parm)
 	}
 }
 
-static int VK_RefGetParm( int parm, int arg )
+static intptr_t VK_RefGetParm( int parm, int arg )
 {
 	// TODO all PARM_TEX handle in r_texture internally
 	switch(parm){
@@ -257,7 +258,7 @@ static int VK_RefGetParm( int parm, int arg )
 	case PARM_WIDESCREEN:
 		return gpGlobals->wideScreen;
 	case PARM_FULLSCREEN:
-		return gpGlobals->fullScreen;
+		return gpGlobals->window_mode != WINDOW_MODE_WINDOWED;
 	case PARM_SCREEN_WIDTH:
 		return gpGlobals->width;
 	case PARM_SCREEN_HEIGHT:
@@ -477,9 +478,67 @@ static void VGUI_SetupDrawing( qboolean rect ) {
 	PRINT_NOT_IMPLEMENTED_ARGS("rect=%d", rect);
 }
 
-static void VGUI_UploadTextureBlock( int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight ) {
-	PRINT_NOT_IMPLEMENTED_ARGS("drawX=%d drawY=%d rgba=%p blockWidth=%d blockHeight=%d",
-		drawX, drawY, rgba, blockWidth, blockHeight);
+// Fill render_api_t with renderer-specific functions (called by engine)
+static void R_FillRenderAPI( render_api_t *api )
+{
+	api->GetDetailScaleForTexture  = GetDetailScaleForTexture;
+	api->GetExtraParmsForTexture   = GetExtraParmsForTexture;
+	api->GetFrameTime              = GetFrameTime;
+	api->R_SetCurrentEntity        = R_SetCurrentEntity;
+	api->R_SetCurrentModel         = R_SetCurrentModel;
+
+	// Texture tools
+	api->GL_FindTexture            = R_TextureFindByName;
+	api->GL_TextureName            = R_TextureGetNameByIndex;
+	api->GL_TextureData            = R_TextureData_UNUSED;
+	api->GL_LoadTexture            = R_TextureUploadFromFile;
+	api->GL_CreateTexture          = R_CreateTexture_UNUSED;
+	api->GL_LoadTextureArray       = R_LoadTextureArray_UNUSED;
+	api->GL_CreateTextureArray     = R_CreateTextureArray_UNUSED;
+	api->GL_FreeTexture            = R_TextureFree;
+
+	// Decals manipulating (draw & remove)
+	api->DrawSingleDecal           = R_DrawSingleDecal;
+	api->R_DecalSetupVerts         = R_DecalSetupVerts;
+	api->R_EntityRemoveDecals      = R_EntityRemoveDecals;
+
+	// AVIkit support
+	api->AVI_UploadRawFrame        = AVI_UploadRawFrame;
+
+	// glState related calls
+	api->GL_Bind                   = GL_Bind;
+	api->GL_SelectTexture          = GL_SelectTexture;
+	api->GL_LoadTextureMatrix      = GL_LoadTextureMatrix;
+	api->GL_TexMatrixIdentity      = GL_TexMatrixIdentity;
+	api->GL_CleanUpTextureUnits    = GL_CleanUpTextureUnits;
+	api->GL_TexGen                 = GL_TexGen;
+	api->GL_TextureTarget          = GL_TextureTarget;
+	api->GL_TexCoordArrayMode      = GL_TexCoordArrayMode;
+	api->GL_GetProcAddress         = R_GetProcAddress;
+	api->GL_UpdateTexSize          = GL_UpdateTexSize;
+
+	// Misc renderer functions
+	api->GL_DrawParticles          = GL_DrawParticles;
+	api->LightVec                  = R_LightVec;
+	api->StudioGetTexture          = R_StudioGetTexture;
+}
+
+// Fill triangleapi_t with renderer-specific functions (called by engine)
+static void R_FillTriAPI( triangleapi_t *api )
+{
+	api->RenderMode    = TriRenderMode;
+	api->Begin         = TriBegin;
+	api->End           = TriEnd;
+	api->Color4f       = TriColor4f;
+	api->Color4ub      = TriColor4ub;
+	api->TexCoord2f    = TriTexCoord2f;
+	api->Vertex3fv     = TriVertex3fv;
+	api->Vertex3f      = TriVertex3f;
+	api->Fog           = TriFog;
+	api->ScreenToWorld = R_ScreenToWorld;
+	api->GetMatrix     = TriGetMatrix;
+	api->FogParams     = TriFogParams;
+	api->CullFace      = TriCullFace;
 }
 
 static const ref_interface_t gReffuncs =
@@ -510,9 +569,7 @@ static const ref_interface_t gReffuncs =
 	.GL_SetRenderMode = GL_SetRenderMode,
 
 	.R_AddEntity = R_AddEntity,
-	.CL_AddCustomBeam = CL_AddCustomBeam,
 	.R_ProcessEntData = R_ProcessEntData,
-	.R_Flush = NULL,
 
 	// debug
 	.R_ShowTextures = R_ShowTextures_UNUSED,
@@ -525,7 +582,6 @@ static const ref_interface_t gReffuncs =
 
 	// 2D
 	.R_Set2DMode = R_Set2DMode,
-	.R_DrawStretchRaw = R_DrawStretchRaw,
 	.R_DrawStretchPic = R_DrawStretchPic,
 	.FillRGBA = CL_FillRGBA,
 	.WorldToScreen = R_WorldToScreen,
@@ -545,14 +601,12 @@ static const ref_interface_t gReffuncs =
 
 	.R_StudioEstimateFrame = R_StudioEstimateFrame,
 	.R_StudioLerpMovement = R_StudioLerpMovement,
-	.CL_InitStudioAPI = CL_InitStudioAPI,
+	.R_StudioFillAPI = R_StudioFillAPI,
+	.R_StudioSetDrawInterface = R_StudioSetDrawInterface,
 
 	.R_SetSkyCloudsTextures = R_SetSkyCloudsTextures,
 	.GL_SubdivideSurface = GL_SubdivideSurface,
 	.CL_RunLightStyles = VK_RunLightStyles,
-
-	.R_GetSpriteParms = R_GetSpriteParms,
-	.R_GetSpriteTexture = R_GetSpriteTexture,
 
 	.Mod_ProcessRenderData = Mod_ProcessRenderData,
 	.Mod_StudioLoadTextures = Mod_StudioLoadTextures,
@@ -560,74 +614,54 @@ static const ref_interface_t gReffuncs =
 	.CL_DrawParticles = CL_DrawParticles,
 	.CL_DrawTracers = CL_DrawTracers,
 	.CL_DrawBeams = CL_DrawBeams,
-	.R_BeamCull = R_BeamCull,
 
 	.RefGetParm = VK_RefGetParm,
-	.GetDetailScaleForTexture = GetDetailScaleForTexture,
-	.GetExtraParmsForTexture = GetExtraParmsForTexture,
-	.GetFrameTime = GetFrameTime,
 
-	.R_SetCurrentEntity = R_SetCurrentEntity,
-	.R_SetCurrentModel = R_SetCurrentModel,
+	// detail texture scale
+	.R_GetDetailScaleForTexture = GetDetailScaleForTexture,
+	.R_SetDetailScaleForTexture = NULL, // not implemented
 
-	// Texture tools
+	// Texture tools (used by engine directly)
+	.GL_CreateTexture = R_CreateTexture_UNUSED,
 	.GL_FindTexture = R_TextureFindByName,
 	.GL_TextureName = R_TextureGetNameByIndex,
 	.GL_TextureData = R_TextureData_UNUSED,
 	.GL_LoadTexture = R_TextureUploadFromFile,
-	.GL_CreateTexture = R_CreateTexture_UNUSED,
-	.GL_LoadTextureArray = R_LoadTextureArray_UNUSED,
-	.GL_CreateTextureArray = R_CreateTextureArray_UNUSED,
 	.GL_FreeTexture = R_TextureFree,
 	.R_OverrideTextureSourceSize = R_OverrideTextureSourceSize,
 
-	// Decals manipulating (draw & remove)
-	.DrawSingleDecal = R_DrawSingleDecal,
-	.R_DecalSetupVerts = R_DecalSetupVerts,
-	.R_EntityRemoveDecals = R_EntityRemoveDecals,
-
-	.AVI_UploadRawFrame = AVI_UploadRawFrame,
-
+	// glState related calls (used by engine directly)
+	.GL_UpdateTexture = NULL, // not implemented
 	.GL_Bind = GL_Bind,
-	.GL_SelectTexture = GL_SelectTexture,
-	.GL_LoadTextureMatrix = GL_LoadTextureMatrix,
-	.GL_TexMatrixIdentity = GL_TexMatrixIdentity,
-	.GL_CleanUpTextureUnits = GL_CleanUpTextureUnits,
-	.GL_TexGen = GL_TexGen,
-	.GL_TextureTarget = GL_TextureTarget,
-	.GL_TexCoordArrayMode = GL_TexCoordArrayMode,
-	.GL_UpdateTexSize = GL_UpdateTexSize,
-	NULL, // Reserved0
-	NULL, // Reserved1
 
-	.GL_DrawParticles = GL_DrawParticles,
-	.LightVec = R_LightVec,
-	.StudioGetTexture = R_StudioGetTexture,
-
+	// passed through R_RenderFrame (0 - use engine renderer, 1 - use custom client renderer)
 	.GL_RenderFrame = VK_RenderFrame,
+	// setup map bounds for ortho-projection when we in dev_overview mode
 	.GL_OrthoBounds = GL_OrthoBounds,
+	// grab r_speeds message
 	.R_SpeedsMessage = R_SpeedsMessage,
+	// get visdata for current frame from custom renderer
 	.Mod_GetCurrentVis = Mod_GetCurrentVis,
+	// tell the renderer what new map is started
 	.R_NewMap = R_NewMap,
+	// clear the render entities before each frame
 	.R_ClearScene = R_ClearScene,
-	.R_GetProcAddress = R_GetProcAddress,
 
+	// TriAPI Interface (functions used by engine wrappers)
 	.TriRenderMode = TriRenderMode,
 	.Begin = TriBegin,
 	.End = TriEnd,
 	.Color4f = TriColor4f,
 	.Color4ub = TriColor4ub,
-	.TexCoord2f = TriTexCoord2f,
 	.Vertex3fv = TriVertex3fv,
 	.Vertex3f = TriVertex3f,
-	.Fog = TriFog,
-	.ScreenToWorld = R_ScreenToWorld,
-	.GetMatrix = TriGetMatrix,
-	.FogParams= TriFogParams,
 	.CullFace = TriCullFace,
 
+	// fill render_api_t and triangleapi_t with renderer-specific functions
+	.R_FillRenderAPI = R_FillRenderAPI,
+	.R_FillTriAPI = R_FillTriAPI,
+
 	.VGUI_SetupDrawing = VGUI_SetupDrawing,
-	.VGUI_UploadTextureBlock = VGUI_UploadTextureBlock,
 
 	.pfnGetVulkanRenderDevice = pfnGetRenderDevice,
 };

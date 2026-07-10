@@ -93,29 +93,15 @@ void GAME_EXPORT Platform_SetMousePos( int x, int y )
 
 void GAME_EXPORT Platform_GetMousePos( int *x, int *y )
 {
-	float m_x = 0.0f, m_y = 0.0f;
+	SDL_FPoint p = { 0 };
 
-	SDL_GetMouseState( &m_x, &m_y );
+	SDL_GetMouseState( &p.x, &p.y );
 
 	if( x )
-	{
-		if( window_width.value && window_width.value != refState.width )
-		{
-			float factor = refState.width / window_width.value;
-			*x = m_x * factor;
-		}
-		else *x = m_x;
-	}
+		*x = p.x;
 
 	if( y )
-	{
-		if( window_height.value && window_height.value != refState.height )
-		{
-			float factor = refState.height / window_height.value;
-			*y = m_y * factor;
-		}
-		else *y = m_y;
-	}
+		*y = p.y;
 }
 
 void Platform_SetCursorType( VGUI_DefaultCursor type )
@@ -164,12 +150,12 @@ void Platform_EnableTextInput( qboolean enable )
 
 int Platform_GetClipboardText( char *buffer, size_t size )
 {
-	int len;
 	char *text = SDL_GetClipboardText();
 
 	if( !text )
 		return 0;
 
+	int len;
 	if( buffer && size > 0 )
 		len = Q_strncpy( buffer, text, size );
 	else
@@ -213,3 +199,5 @@ key_modifier_t Platform_GetKeyModifiers( void )
 
 	return result_flags;
 }
+
+

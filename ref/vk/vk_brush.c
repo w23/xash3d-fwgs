@@ -518,6 +518,9 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 		});
 
 		args.geometries[i].vertex_offset = args.wmodel->geometry.vertices.unit_offset + vertices_offset;
+		// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+		// firstVertex = vertex_offset, indices are relative (0..vertices-1)
+		args.geometries[i].max_vertex = args.geometries[i].vertex_offset + vertices;
 		args.geometries[i].index_offset = args.wmodel->geometry.indices.unit_offset + indices_offset;
 
 		vertices_offset += vertices;
@@ -1575,7 +1578,10 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			model_geometry->surf_deprecate = surf;
 
 			model_geometry->vertex_offset = args.base_vertex_offset;
-			model_geometry->max_vertex = vertex_offset + surf->numedges;
+			// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+			// Indices are written as (local_vertex_offset + k), and firstVertex adds base_vertex_offset.
+			// So maxVertex must include base_vertex_offset to account for firstVertex being added.
+			model_geometry->max_vertex = args.base_vertex_offset + vertex_offset + surf->numedges;
 
 			model_geometry->index_offset = index_offset;
 

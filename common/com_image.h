@@ -1,4 +1,23 @@
-#pragma once
+/*
+com_image.h - image definitions common between client and server
+Copyright (C) 2007 Uncle Mike
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+*/
+
+#ifndef COM_IMAGE_H
+#define COM_IMAGE_H
+
+#include "xash3d_types.h"
+
 /*
 ========================================================================
 
@@ -8,21 +27,9 @@ typically expanded to rgba buffer
 NOTE: number at end of pixelformat name it's a total bitscount e.g. PF_RGB_24 == PF_RGB_888
 ========================================================================
 */
-#define ImageRAW( type )	(type == PF_RGBA_32 || type == PF_BGRA_32 || type == PF_RGB_24 || type == PF_BGR_24 || type == PF_LUMINANCE)
-#define ImageCompressed( type ) \
-	(  type == PF_DXT1 \
-	|| type == PF_DXT3 \
-	|| type == PF_DXT5 \
-	|| type == PF_ATI2 \
-	|| type == PF_BC4_SIGNED \
-	|| type == PF_BC4_UNSIGNED \
-	|| type == PF_BC5_SIGNED \
-	|| type == PF_BC5_UNSIGNED \
-	|| type == PF_BC6H_SIGNED \
-	|| type == PF_BC6H_UNSIGNED \
-	|| type == PF_BC7_UNORM \
-	|| type == PF_BC7_SRGB \
-	|| type == PF_KTX2_RAW )
+#define ImageRAW( type )        ( type >= PF_RGBA_32 && type <= PF_LUMINANCE )
+#define ImageCompressed( type ) ( type >= PF_DXT1 && type <= PF_KTX2_RAW )
+#define ImageBigEndian( type )  ( type == PF_BGRA_32 || type == PF_BGR_24 )
 
 typedef enum
 {
@@ -50,11 +57,20 @@ typedef enum
 	PF_TOTALCOUNT,	// must be last
 } pixformat_t;
 
+typedef enum
+{
+	RF_COMPRESSED,
+	RF_RGBA,
+	RF_BGRA,
+	RF_BGR,
+	RF_LUMINANCE
+} rawformat_t;
+
 typedef struct bpc_desc_s
 {
 	int	format;	// pixelformat
 	char	name[16];	// used for debug
-	uint	glFormat;	// RGBA format
+	rawformat_t rawformat;
 	int	bpp;	// channels (e.g. rgb = 3, rgba = 4)
 } bpc_desc_t;
 
@@ -70,6 +86,8 @@ typedef enum
 	IL_OVERVIEW	= BIT(6),	// overview required some unque operations
 	IL_LOAD_PLAYER_DECAL = BIT(7), // special mode for player decals
 	IL_KTX2_RAW = BIT(8), // renderer can consume raw KTX2 files (e.g. ref_vk)
+	IL_ALLOW_WAD3_LUMA = BIT(9), // allow usage of luma textures in wad3 (tilde textures)
+	IL_HOST_ENDIAN = BIT(10), // buffer is already in host endian, skip byte-swapping
 } ilFlags_t;
 
 // goes into rgbdata_t->encode
@@ -99,6 +117,8 @@ typedef enum
 	IMAGE_MULTILAYER	= BIT(8),		// to differentiate from 3D texture
 	IMAGE_ONEBIT_ALPHA	= BIT(9),		// binary alpha
 	IMAGE_QUAKEPAL	= BIT(10),	// image has quake1 palette
+	IMAGE_PREMULTIPLIED	= BIT(11),
+	IMAGE_PLAYERDECAL	= BIT(12),	// loaded with IL_LOAD_PLAYER_DECAL (custom player spray)
 
 	// Image_Process manipulation flags
 	IMAGE_FLIP_X	= BIT(16),	// flip the image by width
@@ -132,3 +152,4 @@ typedef struct rgbdata_s
 	size_t	size;		// for bounds checking
 } rgbdata_t;
 
+#endif//COM_IMAGE_H

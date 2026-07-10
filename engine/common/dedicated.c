@@ -35,9 +35,7 @@ const char *CL_MsgInfo( int cmd )
 	}
 	else if( cmd > svc_lastmsg && cmd <= ( svc_lastmsg + MAX_USER_MESSAGES ))
 	{
-		int	i;
-
-		for( i = 0; i < MAX_USER_MESSAGES; i++ )
+		for( int i = 0; i < MAX_USER_MESSAGES; i++ )
 		{
 			if( svgame.msg[i].number == cmd )
 			{
@@ -88,11 +86,6 @@ void Host_InputFrame( void )
 {
 }
 
-void VID_InitDefaultResolution( void )
-{
-
-}
-
 void Con_Init( void )
 {
 
@@ -109,11 +102,6 @@ void IN_TouchInitConfig( void )
 }
 
 void CL_Disconnect( void )
-{
-
-}
-
-void R_ClearStaticEntities( void )
 {
 
 }
