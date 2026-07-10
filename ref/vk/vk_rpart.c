@@ -249,7 +249,9 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			}
 
 			pColor = &gTracerColors[p->color];
-			TriColor4ub_( pColor->r, pColor->g, pColor->b, p->unused );
+			int alpha = 255 * (p->die - gp_cl->time) * 2;
+			if( alpha > 255 ) alpha = 255;
+			TriColor4ub_( pColor->r, pColor->g, pColor->b, alpha );
 
 			TriBegin( TRI_QUADS );
 				TriTexCoord2f( 0.0f, 0.8f );
@@ -260,7 +262,7 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 				TriVertex3fv( verts[1] );
 				TriTexCoord2f( 0.0f, 0.0f );
 				TriVertex3fv( verts[0] );
-			const vec4_t color = { 1, 1, 1, 1 }; //pColor->r / 255.f, pColor->g / 255.f, pColor->b / 255.f, p->unused / 255.f };
+			const vec4_t color = { 1, 1, 1, 1 };
 			TriEndEx( color, "tracer" );
 		}
 
@@ -272,9 +274,6 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			p->vel[0] *= scale;
 			p->vel[1] *= scale;
 			p->vel[2] -= gravity;
-
-			p->unused = 255 * (p->die - gp_cl->time) * 2;
-			if( p->unused > 255 ) p->unused = 255;
 		}
 		else if( p->type == pt_slowgrav )
 		{
