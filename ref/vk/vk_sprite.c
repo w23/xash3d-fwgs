@@ -718,9 +718,3 @@ void R_VkSpriteDrawModel( cl_entity_t *e, float blend )
 	}
 	*/
 }
-
-void Mod_SpriteUnloadTextures( void *data )
-{
-	// Sprite textures are managed by the engine (Mod_SpriteUnloadTextures in cl_sprite.c)
-	// Nothing to do here
-}
