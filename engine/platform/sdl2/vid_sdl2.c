@@ -961,6 +961,7 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 	switch( type )
 	{
 	case REF_SOFTWARE:
+		glw_state.software = true;
 		break;
 	case REF_GL:
 		if( !glw_state.safe && Sys_GetParmFromCmdLine( "-safegl", safe ) )

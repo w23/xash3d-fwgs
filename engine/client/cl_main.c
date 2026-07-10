@@ -1169,7 +1169,6 @@ static void CL_WriteSteamTicket( sizebuf_t *send )
 		return;
 	}
 
-
 	ID_GetMD5ForAddress( key, adr, sizeof( key ));
 	CRC32_Init( &crc );
 	CRC32_ProcessBuffer( &crc, key, Q_strlen( key ));

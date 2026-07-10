@@ -1,5 +1,4 @@
 #!/bin/bash
-set -x
 
 # As e2k builds for distro that's vastly different from Ubuntu/Debian and specially handles cross-compiling
 # keep it in separate script for now
