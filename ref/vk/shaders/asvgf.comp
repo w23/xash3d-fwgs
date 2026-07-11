@@ -46,7 +46,9 @@ layout(set = 0, binding = 30, rgba32f) uniform readonly image2D final_atrous_ind
 
 #define LOAD_REFLECTION_RAY_LENGTH(pix) imageLoad(indirect_specular_ray_length, pix).r
 #define ASVGF_REPROJECTION_PARAMS ubo.ubo.asvgf.direct_diffuse
+#define REPROJECTION_LOAD_PREV_DEPTH_META(pix_) imageLoad(prev_temporal_asvgf_reproj_depth, (pix_))
 #include "temporal_reprojection.glsl"
+#undef REPROJECTION_LOAD_PREV_DEPTH_META
 
 const int ASVGF_INDIRECT_SCALE = 2;
 #define ASVGF ubo.ubo.asvgf
@@ -610,12 +612,8 @@ void main() {
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_REPROJECTION) == 0) {
 		const vec3 prev_position = imageLoad(geometry_prev_position, pix).rgb;
 		ivec2 reproj_pix = ivec2(-1);
-		float depth_necessary = 0.0;
 		float depth_treshold = 0.0;
-		reprojectToPrevFramePixel(prev_position, res, reproj_pix, depth_necessary, depth_treshold);
 		const vec3 prev_origin = (ubo.ubo.prev_inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-		float better_depth_offset = depth_treshold;
-		float better_depth_score = 1e20;
 		bool has_base_history = false;
 
 		vec3 history_diffuse = direct_diffuse;
@@ -647,68 +645,90 @@ void main() {
 		const float direct_specular_compatibility = 1.0;
 		const float indirect_specular_compatibility = clamp(pre_asvgf_indirect_specular_sample.a, 0.0, 1.0);
 		const bool mirror_surface = (metalness >= 0.999) && (current_roughness <= 0.001);
+		const bool use_reflection_parallax = separated_reflection || mirror_surface;
 
-		if (all(greaterThanEqual(reproj_pix, ivec2(0))) && all(lessThan(reproj_pix, res))) {
-			const ivec2 projected_reproj_pix = reproj_pix;
-			const float projected_depth_threshold = depth_treshold;
-			for (int candidate_y = -1; candidate_y <= 1; ++candidate_y) {
-				for (int candidate_x = -1; candidate_x <= 1; ++candidate_x) {
-					const ivec2 candidate_pix = projected_reproj_pix + ivec2(candidate_x, candidate_y);
-					if (any(lessThan(candidate_pix, ivec2(0))) || any(greaterThanEqual(candidate_pix, res))) {
-						continue;
-					}
+		ivec2 base_history_taps[4];
+		float base_history_weights[4];
+		int base_history_tap_count = 0;
+		vec2 reproj_uv_center = vec2(-1.0);
+		has_base_history = buildValidatedReprojectionHistoryTaps(
+			prev_position,
+			geometry_normal,
+			pix,
+			res,
+			base_history_taps,
+			base_history_weights,
+			base_history_tap_count,
+			reproj_uv_center,
+			depth_treshold);
 
-					const vec4 history_depth_meta = imageLoad(prev_temporal_asvgf_reproj_depth, candidate_pix);
-					const float history_depth = decodeReprojectionDepth(history_depth_meta.r);
-					if (!isValidReprojectionDepth(history_depth)) {
-						continue;
-					}
-
-					float expected_depth = depth_necessary;
-					float plane_depth = 0.0;
-					if (computePlaneDepthInPrevFrame(candidate_pix, res, prev_position, geometry_normal, plane_depth)) {
-						expected_depth = plane_depth;
-					}
-
-					const float depth_offset = abs(history_depth - expected_depth);
-					const float history_depth_threshold = makeReprojectionDepthThreshold(expected_depth, history_depth, projected_depth_threshold);
-					const float depth_score = depth_offset / max(history_depth_threshold, 1e-6);
-					if (depth_offset < history_depth_threshold && depth_score < better_depth_score) {
-						const vec4 history_diffuse_sample = imageLoad(prev_temporal_asvgf_direct_diffuse, candidate_pix);
-						const vec4 history_indirect_diffuse_sample = imageLoad(prev_temporal_asvgf_indirect_diffuse, candidate_pix);
-						reproj_pix = candidate_pix;
-						better_depth_offset = depth_offset;
-						better_depth_score = depth_score;
-						depth_treshold = history_depth_threshold;
-						has_base_history = true;
-						history_diffuse = history_diffuse_sample.rgb;
-						history_indirect_diffuse = history_indirect_diffuse_sample.rgb;
-						diffuse_history_samples = max(history_diffuse_sample.a, 0.0);
-						indirect_diffuse_history_samples = max(history_indirect_diffuse_sample.a, 0.0);
-						diffuse_compatibility = direct_diffuse_compatibility;
-						indirect_diffuse_history_compatibility = indirect_diffuse_direct_compatibility;
-						history_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_diffuse_stats, candidate_pix));
-						history_indirect_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_diffuse_stats, candidate_pix));
-					}
+		if (has_base_history) {
+			float best_tap_weight = -1.0;
+			for (int i = 0; i < 4; ++i) {
+				if (i >= base_history_tap_count) break;
+				if (base_history_weights[i] > best_tap_weight) {
+					best_tap_weight = base_history_weights[i];
+					reproj_pix = base_history_taps[i];
 				}
 			}
+
+			history_diffuse = vec3(0.0);
+			history_indirect_diffuse = vec3(0.0);
+			diffuse_history_samples = 0.0;
+			indirect_diffuse_history_samples = 0.0;
+			history_diffuse_stats = makeLuminanceStats(0.0, 0.0);
+			history_indirect_diffuse_stats = makeLuminanceStats(0.0, 0.0);
+
+			for (int i = 0; i < 4; ++i) {
+				if (i >= base_history_tap_count) break;
+				const ivec2 candidate_pix = base_history_taps[i];
+				const float w = base_history_weights[i];
+				const vec4 history_diffuse_sample = imageLoad(prev_temporal_asvgf_direct_diffuse, candidate_pix);
+				const vec4 history_indirect_diffuse_sample = imageLoad(prev_temporal_asvgf_indirect_diffuse, candidate_pix);
+				history_diffuse += history_diffuse_sample.rgb * w;
+				history_indirect_diffuse += history_indirect_diffuse_sample.rgb * w;
+				diffuse_history_samples += max(history_diffuse_sample.a, 0.0) * w;
+				indirect_diffuse_history_samples += max(history_indirect_diffuse_sample.a, 0.0) * w;
+
+				const LuminanceStats tap_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_diffuse_stats, candidate_pix));
+				const LuminanceStats tap_indirect_diffuse_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_diffuse_stats, candidate_pix));
+				history_diffuse_stats.mean += tap_diffuse_stats.mean * w;
+				history_diffuse_stats.variance += tap_diffuse_stats.variance * w;
+				history_diffuse_stats.deflicker_luma += tap_diffuse_stats.deflicker_luma * w;
+				history_indirect_diffuse_stats.mean += tap_indirect_diffuse_stats.mean * w;
+				history_indirect_diffuse_stats.variance += tap_indirect_diffuse_stats.variance * w;
+				history_indirect_diffuse_stats.deflicker_luma += tap_indirect_diffuse_stats.deflicker_luma * w;
+			}
+
+			diffuse_compatibility = direct_diffuse_compatibility;
+			indirect_diffuse_history_compatibility = indirect_diffuse_direct_compatibility;
 		}
 
-		const float average_ray_length = (separated_reflection || mirror_surface)
+		const float average_ray_length = use_reflection_parallax
 			? sampleAverageReflectionRayLength(pix, res, ASVGF_INDIRECT_SCALE, 1)
 			: 0.0;
-		ivec2 direct_specular_history_pix = reproj_pix;
 		if (has_base_history) {
-			const vec4 history_direct_specular_sample = imageLoad(prev_temporal_asvgf_direct_specular, direct_specular_history_pix);
-			history_direct_specular = history_direct_specular_sample.xyz;
-			direct_specular_history_samples = max(history_direct_specular_sample.a, 0.0);
+			history_direct_specular = vec3(0.0);
+			direct_specular_history_samples = 0.0;
+			history_direct_specular_stats = makeLuminanceStats(0.0, 0.0);
+			for (int i = 0; i < 4; ++i) {
+				if (i >= base_history_tap_count) break;
+				const ivec2 candidate_pix = base_history_taps[i];
+				const float w = base_history_weights[i];
+				const vec4 history_direct_specular_sample = imageLoad(prev_temporal_asvgf_direct_specular, candidate_pix);
+				history_direct_specular += history_direct_specular_sample.xyz * w;
+				direct_specular_history_samples += max(history_direct_specular_sample.a, 0.0) * w;
+				const LuminanceStats tap_direct_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_specular_stats, candidate_pix));
+				history_direct_specular_stats.mean += tap_direct_specular_stats.mean * w;
+				history_direct_specular_stats.variance += tap_direct_specular_stats.variance * w;
+				history_direct_specular_stats.deflicker_luma += tap_direct_specular_stats.deflicker_luma * w;
+			}
 			direct_specular_history_compatibility = direct_specular_compatibility;
-			history_direct_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_direct_specular_stats, direct_specular_history_pix));
 		}
 
 		ivec2 indirect_parallax_pix = ivec2(-1);
 		bool has_indirect_specular_reprojection = false;
-		if (separated_reflection || mirror_surface) {
+		if (use_reflection_parallax) {
 			has_indirect_specular_reprojection = parallaxReprojectToPrevFramePixel(
 				position,
 				prev_position,
@@ -724,7 +744,7 @@ void main() {
 
 		bool use_indirect_specular_parallax = false;
 		ivec2 indirect_specular_history_pix = reproj_pix;
-		if ((separated_reflection || mirror_surface) && has_base_history && has_indirect_specular_reprojection) {
+		if (use_reflection_parallax && has_base_history && has_indirect_specular_reprojection) {
 			vec4 parallax_history_meta = imageLoad(prev_temporal_asvgf_reproj_depth, indirect_parallax_pix);
 			parallax_history_meta.r = decodeReprojectionDepth(parallax_history_meta.r);
 			float parallax_plane_depth = 0.0;
@@ -746,13 +766,28 @@ void main() {
 		if (has_base_history) {
 			if (use_indirect_specular_parallax) {
 				indirect_specular_history_pix = indirect_parallax_pix;
+				const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_asvgf_indirect_specular, indirect_specular_history_pix);
+				history_indirect_specular = history_indirect_specular_sample.xyz;
+				indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
+				history_indirect_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_specular_stats, indirect_specular_history_pix));
+			} else {
+				history_indirect_specular = vec3(0.0);
+				indirect_specular_history_samples = 0.0;
+				history_indirect_specular_stats = makeLuminanceStats(0.0, 0.0);
+				for (int i = 0; i < 4; ++i) {
+					if (i >= base_history_tap_count) break;
+					const ivec2 candidate_pix = base_history_taps[i];
+					const float w = base_history_weights[i];
+					const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_asvgf_indirect_specular, candidate_pix);
+					history_indirect_specular += history_indirect_specular_sample.xyz * w;
+					indirect_specular_history_samples += max(history_indirect_specular_sample.a, 0.0) * w;
+					const LuminanceStats tap_indirect_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_specular_stats, candidate_pix));
+					history_indirect_specular_stats.mean += tap_indirect_specular_stats.mean * w;
+					history_indirect_specular_stats.variance += tap_indirect_specular_stats.variance * w;
+					history_indirect_specular_stats.deflicker_luma += tap_indirect_specular_stats.deflicker_luma * w;
+				}
 			}
-
-			const vec4 history_indirect_specular_sample = imageLoad(prev_temporal_asvgf_indirect_specular, indirect_specular_history_pix);
-			history_indirect_specular = history_indirect_specular_sample.xyz;
-			indirect_specular_history_samples = max(history_indirect_specular_sample.a, 0.0);
 			indirect_specular_history_compatibility = indirect_diffuse_direct_compatibility * indirect_specular_compatibility;
-			history_indirect_specular_stats = decodeLuminanceStats(imageLoad(prev_temporal_asvgf_indirect_specular_stats, indirect_specular_history_pix));
 		}
 
 #ifdef DEBUG_VALIDATE_EXTRA
