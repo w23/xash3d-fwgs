@@ -16,8 +16,10 @@ GNU General Public License for more details.
 #ifndef COM_MODEL_H
 #define COM_MODEL_H
 
-#include "xash3d_types.h"
+#include "const.h"
 #include "bspfile.h"	// we need some declarations from it
+
+#include "xash3d_mathlib.h" // mplane_t
 
 /*
 ==============================================================================
@@ -45,15 +47,6 @@ typedef enum
 	mod_alias,
 	mod_studio
 } modtype_t;
-
-typedef struct mplane_s
-{
-	vec3_t		normal;
-	float		dist;
-	byte		type;		// for fast side tests
-	byte		signbits;		// signx + (signy<<1) + (signz<<1)
-	byte		pad[2];
-} mplane_t;
 
 typedef struct
 {
@@ -619,9 +612,9 @@ static inline mnode_t *node_child( const mnode_t *n, int side, const model_t *mo
 		}
 	}
 
-	return n->children_[side];
+	return n->children_[side ? 1 : 0];
 #else
-	return n->children_[side];
+	return n->children_[side ? 1 : 0];
 #endif
 }
 

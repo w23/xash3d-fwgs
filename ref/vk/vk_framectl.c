@@ -232,8 +232,8 @@ static void waitForFrameFence( void ) {
 static void updateGamma( void ) {
 	// FIXME when
 	{
-		cvar_t* vid_gamma = gEngine.pfnGetCvarPointer( "gamma", 0 );
-		cvar_t* vid_brightness = gEngine.pfnGetCvarPointer( "brightness", 0 );
+		cvar_t* vid_gamma = gEngine.pfnGetCvarPointer( "gamma" );
+		cvar_t* vid_brightness = gEngine.pfnGetCvarPointer( "brightness" );
 		if( gEngine.R_DoResetGamma( ))
 		{
 			// paranoia cubemaps uses this

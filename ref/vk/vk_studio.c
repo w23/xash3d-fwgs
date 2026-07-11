@@ -19,10 +19,10 @@
 #include "triangleapi.h"
 #include "studio.h"
 #include "pm_local.h"
-#include "pmtrace.h"
+#include "pmove.h"
 #include "protocol.h"
 #include "enginefeatures.h"
-#include "pm_movevars.h"
+#include "pmove.h"
 
 #include <memory.h>
 #include <stdlib.h>
@@ -350,10 +350,7 @@ static void R_StudioComputeSkinMatrix( const mstudioboneweight_t *boneweights, m
 }
 
 
-static model_t *R_GetChromeSprite( void )
-{
-	return gEngine.GetDefaultSprite( REF_CHROME_SPRITE );
-}
+
 
 static void R_StudioPlayerBlend( mstudioseqdesc_t *pseqdesc, int *pBlend, float *pPitch )
 {
@@ -1126,22 +1123,22 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	VectorSet( vecSrc, origin[0], origin[1], origin[2] - lightDir[2] * 8.0f );
 	light.r = light.g = light.b = light.a = 0;
 
-	if(( mv->skycolor_r + mv->skycolor_g + mv->skycolor_b ) != 0 )
+	if(( mv->skycolor[0] + mv->skycolor[1] + mv->skycolor[2] ) != 0 )
 	{
 		msurface_t	*psurf = NULL;
 		pmtrace_t		trace;
 
 		if( FBitSet( ENGINE_GET_PARM( PARM_FEATURES ), ENGINE_WRITE_LARGE_COORD ))
 		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 65536.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 65536.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 65536.0f;
+			vecEnd[0] = origin[0] - mv->skyvec[0] * 65536.0f;
+			vecEnd[1] = origin[1] - mv->skyvec[1] * 65536.0f;
+			vecEnd[2] = origin[2] - mv->skyvec[2] * 65536.0f;
 		}
 		else
 		{
-			vecEnd[0] = origin[0] - mv->skyvec_x * 8192.0f;
-			vecEnd[1] = origin[1] - mv->skyvec_y * 8192.0f;
-			vecEnd[2] = origin[2] - mv->skyvec_z * 8192.0f;
+			vecEnd[0] = origin[0] - mv->skyvec[0] * 8192.0f;
+			vecEnd[1] = origin[1] - mv->skyvec[1] * 8192.0f;
+			vecEnd[2] = origin[2] - mv->skyvec[2] * 8192.0f;
 		}
 
 		trace = gEngine.CL_TraceLine( vecSrc, vecEnd, PM_WORLD_ONLY );
@@ -1150,11 +1147,11 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 		if( FBitSet( ent->model->flags, STUDIO_FORCE_SKYLIGHT ) || ( psurf && FBitSet( psurf->flags, SURF_DRAWSKY )))
 		{
-			VectorSet( lightDir, mv->skyvec_x, mv->skyvec_y, mv->skyvec_z );
+			VectorSet( lightDir, mv->skyvec[0], mv->skyvec[1], mv->skyvec[2] );
 
-			light.r = LightToTexGamma( bound( 0, mv->skycolor_r, 255 ));
-			light.g = LightToTexGamma( bound( 0, mv->skycolor_g, 255 ));
-			light.b = LightToTexGamma( bound( 0, mv->skycolor_b, 255 ));
+			light.r = LightToTexGamma( bound( 0, mv->skycolor[0], 255 ));
+			light.g = LightToTexGamma( bound( 0, mv->skycolor[1], 255 ));
+			light.b = LightToTexGamma( bound( 0, mv->skycolor[2], 255 ));
 		}
 	}
 
@@ -1796,7 +1793,9 @@ static void buildSubmodelMeshGeometry( build_submodel_mesh_t args ) {
 		.ye_olde_texture = args.texture,
 
 		.vertex_offset = args.vertices_offset,
-		.max_vertex = num_vertices,
+		// max_vertex must satisfy: maxVertex >= firstVertex + maxIndexValue (VUID-10774)
+		// firstVertex = vertex_offset, indices are relative (0..num_vertices-1)
+		.max_vertex = args.vertices_offset + num_vertices,
 
 		.index_offset = args.indices_offset,
 		.element_count = num_indices,
@@ -2389,7 +2388,7 @@ static model_t *R_StudioSetupPlayerModel( int index )
 	state = &g_studio.player_models[index];
 
 	// g-cont: force for "dev-mode", non-local games and menu preview
-	if(( gpGlobals->developer || !ENGINE_GET_PARM( PARM_LOCAL_GAME ) || !RI.drawWorld ) && info->model[0] )
+	if(( gpGlobals->developer || !ENGINE_GET_PARM( PARM_SINGLEPLAYER_GAME ) || !RI.drawWorld ) && info->model[0] )
 	{
 		if( Q_strcmp( state->name, info->model ))
 		{
@@ -2599,11 +2598,6 @@ static void R_StudioSetChromeOrigin( void )
 	VectorCopy( g_camera.vieworg, g_studio.chrome_origin );
 }
 
-static int pfnIsHardware( void )
-{
-	return 3;	// 0 is Software, 1 is OpenGL, 2 is Direct3D, 3 is Vulkan
-}
-
 static void R_StudioDrawPointsShadow( void )
 {
 	/*float		*av, height;*/
@@ -2746,7 +2740,7 @@ static void R_StudioRenderModel( void )
 		R_StudioRenderFinal( );
 
 		R_StudioSetForceFaceFlags( STUDIO_NF_CHROME );
-		TriSpriteTexture( R_GetChromeSprite(), 0 );
+		TriSpriteTexture( gEngine.GetDefaultSprite( REF_CHROME_SPRITE ), 0 );
 		RI.currententity->curstate.renderfx = kRenderFxGlowShell;
 
 		R_StudioRenderFinal( );
@@ -3445,11 +3439,6 @@ static player_info_t *pfnPlayerInfo( int index )
 	return gEngine.pfnPlayerInfo( index );
 }
 
-static model_t *pfnMod_ForName( const char *model, int crash )
-{
-	return gEngine.Mod_ForName( model, crash, false );
-}
-
 static entity_state_t *R_StudioGetPlayerState( int index )
 {
 	if( !RI.drawWorld )
@@ -3458,15 +3447,8 @@ static entity_state_t *R_StudioGetPlayerState( int index )
 	return gEngine.pfnGetPlayerState( index );
 }
 
-static cl_entity_t *pfnGetViewEntity( void )
-{
-	return globals.viewent;
-}
-
 static void pfnGetEngineTimes( int *framecount, double *current, double *old )
 {
-	// TODO is framecount enough? Should it be "REAL" framecount?
-	/* if( framecount ) *framecount = tr.realframecount; */
 	if( framecount ) *framecount = g_studio.framecount;
 	if( current ) *current = gp_cl->time;
 	if( old ) *old =   gp_cl->oldtime;
@@ -3478,36 +3460,6 @@ static void pfnGetViewInfo( float *origin, float *upv, float *rightv, float *for
 	if( forwardv ) VectorCopy( g_camera.vforward, forwardv );
 	if( rightv ) VectorCopy( g_camera.vright, rightv );
 	if( upv ) VectorCopy( g_camera.vup, upv );
-}
-
-static model_t *pfnModelHandle( int modelindex )
-{
-	return gp_cl->models[modelindex];
-}
-
-static void *pfnMod_CacheCheck( struct cache_user_s *c )
-{
-	return gEngine.Mod_CacheCheck( c );
-}
-
-static void *pfnMod_StudioExtradata( model_t *mod )
-{
-	return gEngine.Mod_Extradata( mod_studio, mod );
-}
-
-static void pfnMod_LoadCacheFile( const char *path, struct cache_user_s *cu )
-{
-	gEngine.Mod_LoadCacheFile( path, cu );
-}
-
-static cvar_t *pfnGetCvarPointer( const char *name )
-{
-	return (cvar_t*)gEngine.pfnGetCvarPointer( name, 0 );
-}
-
-static void *pfnMod_Calloc( int number, size_t size )
-{
-	return gEngine.Mod_Calloc( number, size );
 }
 
 static void R_StudioDrawHulls( void )
@@ -3531,12 +3483,6 @@ static void pfnGetModelCounters( int **s, int **a )
 	*a = &g_studio_stats.models_count;
 }
 
-static void pfnGetAliasScale( float *x, float *y )
-{
-	if( x ) *x = 1.0f;
-	if( y ) *y = 1.0f;
-}
-
 static float ****pfnStudioGetBoneTransform( void )
 {
 	return PTR_CAST(float ***, g_studio.bonestransform);
@@ -3547,88 +3493,60 @@ static float ****pfnStudioGetLightTransform( void )
 	return PTR_CAST(float ***, g_studio.lighttransform);
 }
 
-static float ***pfnStudioGetAliasTransform( void )
-{
-	return NULL;
-}
-
 static float ***pfnStudioGetRotationMatrix( void )
 {
 	return PTR_CAST(float **, g_studio.rotationmatrix);
 }
 
-static engine_studio_api_t gStudioAPI =
+qboolean R_StudioFillAPI( engine_studio_api_t *api, r_studio_interface_t *pDefaultDraw )
 {
-	pfnMod_Calloc,
-	pfnMod_CacheCheck,
-	pfnMod_LoadCacheFile,
-	pfnMod_ForName,
-	pfnMod_StudioExtradata,
-	pfnModelHandle,
-	pfnGetCurrentEntity,
-	pfnPlayerInfo,
-	R_StudioGetPlayerState,
-	pfnGetViewEntity,
-	pfnGetEngineTimes,
-	pfnGetCvarPointer,
-	pfnGetViewInfo,
-	R_GetChromeSprite,
-	pfnGetModelCounters,
-	pfnGetAliasScale,
-	pfnStudioGetBoneTransform,
-	pfnStudioGetLightTransform,
-	pfnStudioGetAliasTransform,
-	pfnStudioGetRotationMatrix,
-	R_StudioSetupModel,
-	R_StudioCheckBBox,
-	R_StudioDynamicLight,
-	R_StudioEntityLight,
-	R_StudioSetupLighting,
-	R_StudioDrawPoints,
-	R_StudioDrawHulls,
-	R_StudioDrawAbsBBox,
-	R_StudioDrawBones,
-	(void*)R_StudioSetupSkin,
-	R_StudioSetRemapColors,
-	R_StudioSetupPlayerModel,
-	R_StudioClientEvents,
-	R_StudioGetForceFaceFlags,
-	R_StudioSetForceFaceFlags,
-	(void*)R_StudioSetHeader,
-	R_StudioSetRenderModel,
-	R_StudioSetupRenderer,
-	R_StudioRestoreRenderer,
-	R_StudioSetChromeOrigin,
-	pfnIsHardware,
-	GL_StudioDrawShadow,
-	GL_StudioSetRenderMode,
-	R_StudioSetRenderamt,
-	R_StudioSetCullState,
-	R_StudioRenderShadow,
-};
+	cl_righthand = gEngine.pfnGetCvarPointer( "cl_righthand" );
 
-static r_studio_interface_t gStudioDraw =
+	api->GetCurrentEntity        = pfnGetCurrentEntity;
+	api->PlayerInfo              = pfnPlayerInfo;
+	api->GetPlayerState          = R_StudioGetPlayerState;
+	api->GetTimes                = pfnGetEngineTimes;
+	api->GetViewInfo             = pfnGetViewInfo;
+	api->GetModelCounters        = pfnGetModelCounters;
+	api->StudioGetBoneTransform  = pfnStudioGetBoneTransform;
+	api->StudioGetLightTransform = pfnStudioGetLightTransform;
+	api->StudioGetRotationMatrix = pfnStudioGetRotationMatrix;
+	api->StudioSetupModel        = R_StudioSetupModel;
+	api->StudioCheckBBox         = R_StudioCheckBBox;
+	api->StudioDynamicLight      = R_StudioDynamicLight;
+	api->StudioEntityLight       = R_StudioEntityLight;
+	api->StudioSetupLighting     = R_StudioSetupLighting;
+	api->StudioDrawPoints        = R_StudioDrawPoints;
+	api->StudioDrawHulls         = R_StudioDrawHulls;
+	api->StudioDrawAbsBBox       = R_StudioDrawAbsBBox;
+	api->StudioDrawBones         = R_StudioDrawBones;
+	api->StudioSetupSkin         = (void *)R_StudioSetupSkin;
+	api->StudioSetRemapColors    = R_StudioSetRemapColors;
+	api->SetupPlayerModel        = R_StudioSetupPlayerModel;
+	api->StudioClientEvents      = R_StudioClientEvents;
+	api->GetForceFaceFlags       = R_StudioGetForceFaceFlags;
+	api->SetForceFaceFlags       = R_StudioSetForceFaceFlags;
+	api->StudioSetHeader         = (void *)R_StudioSetHeader;
+	api->SetRenderModel          = R_StudioSetRenderModel;
+	api->SetupRenderer           = R_StudioSetupRenderer;
+	api->RestoreRenderer         = R_StudioRestoreRenderer;
+	api->SetChromeOrigin         = R_StudioSetChromeOrigin;
+	api->GL_StudioDrawShadow     = GL_StudioDrawShadow;
+	api->GL_SetRenderMode        = GL_StudioSetRenderMode;
+	api->StudioSetRenderamt      = R_StudioSetRenderamt;
+	api->StudioSetCullState      = R_StudioSetCullState;
+	api->StudioRenderShadow      = R_StudioRenderShadow;
+
+	pDefaultDraw->version         = STUDIO_INTERFACE_VERSION;
+	pDefaultDraw->StudioDrawModel  = R_StudioDrawModel;
+	pDefaultDraw->StudioDrawPlayer = R_StudioDrawPlayer;
+
+	return true;
+}
+
+void R_StudioSetDrawInterface( r_studio_interface_t *pDraw )
 {
-	STUDIO_INTERFACE_VERSION,
-	R_StudioDrawModel,
-	R_StudioDrawPlayer,
-};
-
-void CL_InitStudioAPI( void )
-{
-	pStudioDraw = &gStudioDraw;
-
-	// trying to grab them from client.dll
-	cl_righthand = gEngine.pfnGetCvarPointer( "cl_righthand", 0 );
-
-	// Xash will be used internal StudioModelRenderer
-	if( gEngine.pfnGetStudioModelInterface( STUDIO_INTERFACE_VERSION, &pStudioDraw, &gStudioAPI ))
-		return;
-
-	// NOTE: we always return true even if game interface was not correct
-	// because we need Draw our StudioModels
-	// just restore pointer to builtin function
-	pStudioDraw = &gStudioDraw;
+	pStudioDraw = pDraw;
 }
 
 void VK_StudioInit( void )

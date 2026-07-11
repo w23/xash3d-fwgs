@@ -5,7 +5,7 @@
 build_hlsdk()
 {
 	echo "Building HLSDK: $1 branch..."
-	git checkout $1
+	git checkout "$1" || die
 
 	# This is not our bug if HLSDK doesn't build with -Werrors enabled
 	./waf configure -T release --nswitch --disable-werror || die_configure
@@ -40,6 +40,10 @@ echo "Building libsolder..."
 
 make -C libsolder install || die
 
+# Remove devkitPro's outdated mbedTLS as we only target 4.x+
+echo "Removing devkitPro's mbedTLS port..."
+dkp-pacman -R --noconfirm switch-libssh2 switch-mbedtls || true
+
 echo "Building engine..."
 
 ./waf configure -T release --nswitch || die_configure
@@ -50,9 +54,9 @@ echo "Building HLSDK..."
 pushd hlsdk-portable || die
 build_hlsdk mobile_hacks valve
 build_hlsdk opfor gearbox
-popd
+popd || die
 
 # bshift can be used from mobile_hacks branch
-pushd pkgtemp/xash3d
+pushd pkgtemp/xash3d || die
 cp -v valve/dlls/hl_nswitch_arm64.so bshift/dlls/bshift_nswitch_arm64.so
-popd
+popd || die

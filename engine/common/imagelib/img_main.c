@@ -15,7 +15,6 @@ GNU General Public License for more details.
 
 #include <math.h>
 #include "imagelib.h"
-#include "eiface.h" // ARRAYSIZE
 
 #define DEBUG_LOOKUPS_COUNT 0
 #define USE_FS_SEARCH_FOR_LOOKUPS 1
@@ -74,20 +73,29 @@ static const cubepack_t load_cubemap[] =
 };
 
 // soul of ImageLib - table of image format constants
-const bpc_desc_t PFDesc[] =
+const bpc_desc_t PFDesc[PF_TOTALCOUNT] =
 {
-{ PF_UNKNOWN,	"raw",	0x1908, 0 },
-{ PF_INDEXED_24,	"pal 24",	0x1908, 1 },
-{ PF_INDEXED_32,	"pal 32",	0x1908, 1 },
-{ PF_RGBA_32,	"RGBA 32",0x1908, 4 },
-{ PF_BGRA_32,	"BGRA 32",0x80E1, 4 },
-{ PF_RGB_24,	"RGB 24",	0x1908, 3 },
-{ PF_BGR_24,	"BGR 24",	0x80E0, 3 },
-{ PF_LUMINANCE,	"LUM 8",	0x1909, 1 },
-{ PF_DXT1,	"DXT 1",	0x83F1, 4 },
-{ PF_DXT3,	"DXT 3",	0x83F2, 4 },
-{ PF_DXT5,	"DXT 5",	0x83F3, 4 },
-{ PF_ATI2,	"ATI 2",	0x8837, 4 },
+{ PF_UNKNOWN,       "raw",       RF_RGBA,       0 },
+{ PF_INDEXED_24,    "pal 24",    RF_RGBA,       1 },
+{ PF_INDEXED_32,    "pal 32",    RF_RGBA,       1 },
+{ PF_RGBA_32,       "RGBA 32",   RF_RGBA,       4 },
+{ PF_BGRA_32,       "BGRA 32",   RF_BGRA,       4 },
+{ PF_RGB_24,        "RGB 24",    RF_RGBA,       3 },
+{ PF_BGR_24,        "BGR 24",    RF_BGR,        3 },
+{ PF_LUMINANCE,     "LUM 8",     RF_LUMINANCE,  1 },
+{ PF_DXT1,          "DXT 1",     RF_COMPRESSED, 4 },
+{ PF_DXT3,          "DXT 3",     RF_COMPRESSED, 4 },
+{ PF_DXT5,          "DXT 5",     RF_COMPRESSED, 4 },
+{ PF_ATI2,          "ATI 2",     RF_COMPRESSED, 4 },
+{ PF_BC4_SIGNED,    "BC4 S",     RF_COMPRESSED, 4 },
+{ PF_BC4_UNSIGNED,  "BC4 U",     RF_COMPRESSED, 4 },
+{ PF_BC5_SIGNED,    "BC5 S",     RF_COMPRESSED, 4 },
+{ PF_BC5_UNSIGNED,  "BC5 U",     RF_COMPRESSED, 4 },
+{ PF_BC6H_SIGNED,   "BC6H S",    RF_COMPRESSED, 4 },
+{ PF_BC6H_UNSIGNED, "BC6H U",    RF_COMPRESSED, 4 },
+{ PF_BC7_UNORM,     "BC7 UNORM", RF_COMPRESSED, 4 },
+{ PF_BC7_SRGB,      "BC7 SRGB",  RF_COMPRESSED, 4 },
+{ PF_KTX2_RAW,      "KTX2",      RF_COMPRESSED, 4 },
 };
 
 #if DEBUG_LOOKUPS_COUNT
@@ -108,7 +116,7 @@ static void Image_ReportLookupsCount( const char *name )
 
 static void Image_IncrementLookupTime( void )
 {
-	double t = Sys_DoubleTime();
+	double t = Platform_DoubleTime();
 	double dt = t - g_lookup_start;
 
 	g_lookup_time += dt;
@@ -116,7 +124,7 @@ static void Image_IncrementLookupTime( void )
 	g_lookups++;
 	g_lookups_total++;
 
-	g_lookup_start = Sys_DoubleTime();
+	g_lookup_start = Platform_DoubleTime();
 }
 #else
 static void Image_ReportLookupsCount( const char *name )
@@ -142,6 +150,7 @@ void Image_Reset( void )
 	image.fogParams[1] = 0;
 	image.fogParams[2] = 0;
 	image.fogParams[3] = 0;
+	image.black_pixel = 0;
 
 	// pointers will be saved with prevoius picture struct
 	// don't care about it
@@ -154,15 +163,16 @@ void Image_Reset( void )
 #if DEBUG_LOOKUPS_COUNT
 	g_lookups = 0;
 	g_lookup_time = 0.0f;
-	g_lookup_start = Sys_DoubleTime();
+	g_lookup_start = Platform_DoubleTime();
 #endif // DEBUG_LOOKUPS_COUNT
 }
 
 static MALLOC_LIKE( FS_FreeImage, 1 ) rgbdata_t *ImagePack( const char *name )
 {
-	rgbdata_t	*pack;
-
 	Image_ReportLookupsCount( name );
+
+	if( Image_CheckFlag( IL_LOAD_PLAYER_DECAL ))
+		SetBits( image.flags, IMAGE_PLAYERDECAL );
 
 	// clear any force flags
 	image.force_flags = 0;
@@ -173,7 +183,7 @@ static MALLOC_LIKE( FS_FreeImage, 1 ) rgbdata_t *ImagePack( const char *name )
 		return NULL;
 	}
 
-	pack = Mem_Calloc( host.imagepool, sizeof( *pack ));
+	rgbdata_t *pack = Mem_Calloc( host.imagepool, sizeof( *pack ));
 
 	if( image.cubemap )
 	{
@@ -216,7 +226,6 @@ FS_AddSideToPack
 */
 static qboolean FS_AddSideToPack( int adjust_flags )
 {
-	byte	*out, *flipped;
 	qboolean	resampled = false;
 
 	// first side set average size for all cubemap sides!
@@ -237,12 +246,12 @@ static qboolean FS_AddSideToPack( int adjust_flags )
 		return false;
 
 	// flip image if needed
-	flipped = Image_FlipInternal( image.rgba, &image.width, &image.height, image.source_type, adjust_flags );
+	byte *flipped = Image_FlipInternal( image.rgba, &image.width, &image.height, image.source_type, adjust_flags );
 	if( !flipped ) return false; // try to reasmple dxt?
 	if( flipped != image.rgba ) image.rgba = Image_Copy( image.size );
 
 	// resampling image if needed
-	out = Image_ResampleInternal((uint *)image.rgba, image.width, image.height, image.source_width, image.source_height, image.source_type, &resampled );
+	byte *out = Image_ResampleInternal((uint *)image.rgba, image.width, image.height, image.source_width, image.source_height, image.source_type, &resampled );
 	if( !out ) return false; // try to reasmple dxt?
 	if( resampled ) image.rgba = Image_Copy( image.size );
 
@@ -258,12 +267,10 @@ static qboolean FS_AddSideToPack( int adjust_flags )
 
 static const loadpixformat_t *Image_GetLoadFormatForExtension( const char *ext )
 {
-	const loadpixformat_t *format;
-
-	if( !COM_CheckStringEmpty( ext ))
+	if( COM_StringEmpty( ext ))
 		return NULL;
 
-	for( format = image.loadformats; format->ext; format++ )
+	for( const loadpixformat_t *format = image.loadformats; format->ext; format++ )
 	{
 		if( !Q_stricmp( ext, format->ext ))
 			return format;
@@ -306,10 +313,9 @@ static qboolean Image_ProbeLoad_( const loadpixformat_t *fmt, const char *name, 
 	qboolean success = false;
 	fs_offset_t filesize;
 	string path;
-	byte *f;
 
 	Q_snprintf( path, sizeof( path ), "%s%s.%s", name, suffix, fmt->ext );
-	f = FS_LoadFile( path, &filesize, false );
+	byte *f = FS_LoadFile( path, &filesize, false );
 
 	Image_IncrementLookupTime();
 
@@ -325,24 +331,21 @@ static qboolean Image_ProbeLoad_( const loadpixformat_t *fmt, const char *name, 
 
 static qboolean Image_ProbeLoad2( const char *name, const char *suffix, int override_hint )
 {
-	const loadpixformat_t *fmt;
-	search_t *t;
 	string pattern;
-	int i;
 
 	Q_snprintf( pattern, sizeof( pattern ), "%s%s.*", name, suffix );
 
-	t = FS_Search( pattern, true, false );
+	search_t *t = FS_Search( pattern, true, false );
 
 	if( !t )
 		return false;
 
 	// we now have to check every extension
 	// to keep the loading order
-	for( fmt = image.loadformats; fmt->ext; fmt++ )
+	for( const loadpixformat_t *fmt = image.loadformats; fmt->ext; fmt++ )
 	{
 		fs_offset_t filesize;
-		byte *data;
+		int i;
 
 		for( i = 0; i < t->numfilenames; i++ )
 		{
@@ -356,7 +359,7 @@ static qboolean Image_ProbeLoad2( const char *name, const char *suffix, int over
 		if( i == t->numfilenames )
 			continue;
 
-		data = FS_LoadFile( t->filenames[i], &filesize, false );
+		byte *data = FS_LoadFile( t->filenames[i], &filesize, false );
 		Image_IncrementLookupTime();
 
 		// can't load file, ignore
@@ -407,14 +410,13 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 {
 	const char	*ext = COM_FileExtension( filename );
 	string		loadname;
-	int		i, j;
-	const loadpixformat_t *extfmt;
 
 	Q_strncpy( loadname, filename, sizeof( loadname ));
 
 	// we needs to compare file extension with list of supported formats
 	// and be sure what is real extension, not a filename with dot
-	if(( extfmt = Image_GetLoadFormatForExtension( ext )))
+	const loadpixformat_t *extfmt = Image_GetLoadFormatForExtension( ext );
+	if( extfmt )
 		COM_StripExtension( loadname );
 
 	Image_Reset(); // clear old image
@@ -427,11 +429,11 @@ rgbdata_t *FS_LoadImage( const char *filename, const byte *buffer, size_t size )
 		return ImagePack( filename );
 
 	// check all cubemap sides with package suffix
-	for( j = 0; j < ARRAYSIZE( load_cubemap ); j++ )
+	for( int j = 0; j < ARRAYSIZE( load_cubemap ); j++ )
 	{
 		const cubepack_t	*cmap = &load_cubemap[j];
 
-		for( i = 0; i < 6; i++ )
+		for( int i = 0; i < 6; i++ )
 		{
 			if( Image_ProbeLoad( extfmt, loadname, cmap->type[i].suf, cmap->type[i].hint ))
 			{
@@ -495,9 +497,8 @@ writes image as any known format
 qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 {
 	const char	*ext = COM_FileExtension( filename );
-	qboolean		anyformat = !COM_CheckStringEmpty( ext );
+	qboolean		anyformat = COM_StringEmpty( ext );
 	string		path, savename;
-	const savepixformat_t *format;
 
 	if( !pix || !pix->buffer || anyformat )
 	{
@@ -512,7 +513,6 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 	if( pix->flags & (IMAGE_CUBEMAP|IMAGE_SKYBOX))
 	{
 		size_t		realSize = pix->size; // keep real pic size
-		byte		*picBuffer; // to avoid corrupt memory on free data
 		const suffix_t	*box;
 		int		i;
 
@@ -528,10 +528,10 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 		}
 
 		pix->size /= 6; // now set as side size
-		picBuffer = pix->buffer;
+		byte *picBuffer = pix->buffer;
 
 		// save all sides seperately
-		for( format = image.saveformats; format && format->ext; format++ )
+		for( const savepixformat_t *format = image.saveformats; format && format->ext; format++ )
 		{
 			if( !Q_stricmp( ext, format->ext ))
 			{
@@ -555,7 +555,7 @@ qboolean FS_SaveImage( const char *filename, rgbdata_t *pix )
 	}
 	else
 	{
-		for( format = image.saveformats; format && format->ext; format++ )
+		for( const savepixformat_t *format = image.saveformats; format && format->ext; format++ )
 		{
 			if( !Q_stricmp( ext, format->ext ))
 			{
@@ -598,14 +598,14 @@ FS_CopyImage
 make an image copy
 ================
 */
-rgbdata_t *FS_CopyImage( rgbdata_t *in )
+rgbdata_t *FS_CopyImage( const rgbdata_t *in )
 {
-	rgbdata_t	*out;
 	int	palSize = 0;
 
-	if( !in ) return NULL;
+	if( !in )
+		return NULL;
 
-	out = Mem_Malloc( host.imagepool, sizeof( rgbdata_t ));
+	rgbdata_t *out = Mem_Malloc( host.imagepool, sizeof( *out ));
 	*out = *in;
 
 	switch( in->type )
@@ -649,10 +649,8 @@ static void GeneratePixel( byte *pix, uint i, uint j, uint w, uint h, qboolean g
 
 static void Test_CheckImage( const char *name, rgbdata_t *rgb )
 {
-	rgbdata_t *load;
-
 	// test reading
-	load = FS_LoadImage( name, NULL, 0 );
+	rgbdata_t *load = FS_LoadImage( name, NULL, 0 );
 	TASSERT( load->width == rgb->width )
 	TASSERT( load->height == rgb->height )
 	TASSERT( load->type == rgb->type )
@@ -666,9 +664,7 @@ static void Test_CheckImage( const char *name, rgbdata_t *rgb )
 void Test_RunImagelib( void )
 {
 	rgbdata_t rgb = { 0 };
-	byte *buf;
 	const char *extensions[] = { "tga", "png", "bmp" };
-	uint i, j;
 
 	Image_Setup();
 
@@ -678,26 +674,25 @@ void Test_RunImagelib( void )
 	rgb.type = PF_RGBA_32;
 	rgb.flags = IMAGE_HAS_ALPHA;
 	rgb.size = rgb.width * rgb.height * 4;
-	buf = rgb.buffer = Z_Malloc( rgb.size );
+	byte *buf = rgb.buffer = Z_Malloc( rgb.size );
 
-	for( i = 0; i < rgb.height; i++ )
+	for( uint i = 0; i < rgb.height; i++ )
 	{
-		for( j = 0; j < rgb.width; j++ )
+		for( uint j = 0; j < rgb.width; j++ )
 		{
 			GeneratePixel( buf, i, j, rgb.width, rgb.height, true );
 			buf += 4;
 		}
 	}
 
-	for( i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++ )
+	for( uint i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++ )
 	{
-		qboolean ret;
 		char name[MAX_VA_STRING];
 
 		Q_snprintf( name, sizeof( name ), "test_gen.%s", extensions[i] );
 
 		// test saving
-		ret = FS_SaveImage( name, &rgb );
+		qboolean ret = FS_SaveImage( name, &rgb );
 		Con_Printf( "Checking if we can save images in '%s' format...\n", extensions[i] );
 		ASSERT(ret == true);
 
@@ -708,9 +703,13 @@ void Test_RunImagelib( void )
 
 	Z_Free( rgb.buffer );
 }
+#endif // XASH_ENGINE_TESTS
+
+#if XASH_LLVM_LIBFUZZER
+#include "sprite.h"
 
 #define IMPLEMENT_IMAGELIB_FUZZ_TARGET( export, target ) \
-int export( const uint8_t *Data, size_t Size ); \
+int EXPORT export( const uint8_t *Data, size_t Size ); \
 int EXPORT export( const uint8_t *Data, size_t Size ) \
 { \
 	rgbdata_t *rgb; \
@@ -731,4 +730,29 @@ IMPLEMENT_IMAGELIB_FUZZ_TARGET( Fuzz_Image_LoadPNG, Image_LoadPNG )
 IMPLEMENT_IMAGELIB_FUZZ_TARGET( Fuzz_Image_LoadDDS, Image_LoadDDS )
 IMPLEMENT_IMAGELIB_FUZZ_TARGET( Fuzz_Image_LoadTGA, Image_LoadTGA )
 
-#endif /* XASH_ENGINE_TESTS */
+int EXPORT Fuzz_Image_LoadSPR( const uint8_t *Data, size_t Size );
+int EXPORT Fuzz_Image_LoadSPR( const uint8_t *Data, size_t Size )
+{
+	rgbdata_t *rgb;
+
+	// the real caller passes only the pixel data size, the frame header is extra
+	if( Size < sizeof( dspriteframe_t ))
+		return 0;
+
+	host.type = HOST_NORMAL;
+	Memory_Init();
+	Image_Init();
+
+	image.hint = IL_HINT_Q1; // installs the Quake palette so the decoder runs
+
+	if( Image_LoadSPR( "#internal.spr", Data, Size - sizeof( dspriteframe_t )))
+	{
+		rgb = ImagePack( "#internal.spr" );
+		FS_FreeImage( rgb );
+	}
+
+	Image_Shutdown();
+	return 0;
+}
+
+#endif // XASH_LLVM_LIBFUZZER

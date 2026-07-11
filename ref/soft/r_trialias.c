@@ -9,9 +9,9 @@ affinetridesc_t r_affinetridesc;
 int           r_aliasblendcolor;
 
 
-float         aliastransform[3][4];
-float         aliasworldtransform[3][4];
-float         aliasoldworldtransform[3][4];
+static float aliastransform[3][4];
+static float aliasworldtransform[3][4];
+static float aliasoldworldtransform[3][4];
 
 float         s_ziscale;
 static vec3_t s_alias_forward, s_alias_right, s_alias_up;
@@ -24,11 +24,7 @@ float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 };
 
 
-void R_AliasSetUpTransform( void );
 void R_AliasProjectAndClipTestFinalVert( finalvert_t *fv );
-
-void R_AliasTransformFinalVerts( int numpoints, finalvert_t *fv, dtrivertx_t *oldv, dtrivertx_t *newv );
-
 
 /*
 ================
@@ -55,7 +51,6 @@ R_SetUpWorldTransform
 */
 void R_SetUpWorldTransform( void )
 {
-	int          i;
 	static float viewmatrix[3][4];
 	vec3_t       angles;
 
@@ -75,16 +70,16 @@ void R_SetUpWorldTransform( void )
 	memset( aliasworldtransform, 0, sizeof( aliasworldtransform ));
 	memset( aliasoldworldtransform, 0, sizeof( aliasworldtransform ));
 
-	for( i = 0; i < 3; i++ )
+	for( int i = 0; i < 3; i++ )
 	{
 		aliasoldworldtransform[i][0] = aliasworldtransform[i][0] = s_alias_forward[i];
 		aliasoldworldtransform[i][0] = aliasworldtransform[i][1] = -s_alias_right[i];
 		aliasoldworldtransform[i][0] = aliasworldtransform[i][2] = s_alias_up[i];
 	}
 
-	aliasworldtransform[0][3] = -RI.vieworg[0];
-	aliasworldtransform[1][3] = -RI.vieworg[1];
-	aliasworldtransform[2][3] = -RI.vieworg[2];
+	aliasworldtransform[0][3] = -RI.rvp.vieworigin[0];
+	aliasworldtransform[1][3] = -RI.rvp.vieworigin[1];
+	aliasworldtransform[2][3] = -RI.rvp.vieworigin[2];
 
 	// aliasoldworldtransform[0][3] = RI.currententity->oldorigin[0]-r_origin[0];
 	// aliasoldworldtransform[1][3] = RI.currententity->oldorigin[1]-r_origin[1];
@@ -120,79 +115,6 @@ void R_SetUpWorldTransform( void )
 	// aliasoldworldtransform[2][3] = RI.currententity->oldorigin[2];
 }
 
-
-/*
-================
-R_AliasSetUpTransform
-================
-*/
-void R_AliasSetUpTransform( void )
-{
-	int          i;
-	static float viewmatrix[3][4];
-	vec3_t       angles;
-
-// TODO: should really be stored with the entity instead of being reconstructed
-// TODO: should use a look-up table
-// TODO: could cache lazily, stored in the entity
-//
-
-	s_ziscale = (float)0x8000 * (float)0x10000;
-	angles[ROLL] = RI.currententity->angles[ROLL];
-	angles[PITCH] = RI.currententity->angles[PITCH];
-	angles[YAW] = RI.currententity->angles[YAW];
-	AngleVectors( angles, s_alias_forward, s_alias_right, s_alias_up );
-
-// TODO: can do this with simple matrix rearrangement
-
-	memset( aliasworldtransform, 0, sizeof( aliasworldtransform ));
-	memset( aliasoldworldtransform, 0, sizeof( aliasworldtransform ));
-
-	for( i = 0; i < 3; i++ )
-	{
-		aliasoldworldtransform[i][0] = aliasworldtransform[i][0] = s_alias_forward[i];
-		aliasoldworldtransform[i][0] = aliasworldtransform[i][1] = -s_alias_right[i];
-		aliasoldworldtransform[i][0] = aliasworldtransform[i][2] = s_alias_up[i];
-	}
-
-	aliasworldtransform[0][3] = RI.currententity->origin[0] - RI.vieworg[0];
-	aliasworldtransform[1][3] = RI.currententity->origin[1] - RI.vieworg[1];
-	aliasworldtransform[2][3] = RI.currententity->origin[2] - RI.vieworg[2];
-
-	// aliasoldworldtransform[0][3] = RI.currententity->oldorigin[0]-r_origin[0];
-	// aliasoldworldtransform[1][3] = RI.currententity->oldorigin[1]-r_origin[1];
-	// aliasoldworldtransform[2][3] = RI.currententity->oldorigin[2]-r_origin[2];
-
-// FIXME: can do more efficiently than full concatenation
-//	memcpy( rotationmatrix, t2matrix, sizeof( rotationmatrix ) );
-
-//	R_ConcatTransforms (t2matrix, tmatrix, rotationmatrix);
-
-// TODO: should be global, set when vright, etc., set
-	VectorCopy( RI.vright, viewmatrix[0] );
-	VectorCopy( RI.vup, viewmatrix[1] );
-	VectorInverse( viewmatrix[1] );
-	// VectorScale(viewmatrix[1], -1, viewmatrix[1]);
-	VectorCopy( RI.vforward, viewmatrix[2] );
-
-	viewmatrix[0][3] = 0;
-	viewmatrix[1][3] = 0;
-	viewmatrix[2][3] = 0;
-
-//	memcpy( aliasworldtransform, rotationmatrix, sizeof( aliastransform ) );
-
-	// R_ConcatTransforms (viewmatrix, aliasworldtransform, aliastransform);
-	Matrix3x4_ConcatTransforms( aliastransform, viewmatrix, aliasworldtransform );
-
-	aliasworldtransform[0][3] = RI.currententity->origin[0];
-	aliasworldtransform[1][3] = RI.currententity->origin[1];
-	aliasworldtransform[2][3] = RI.currententity->origin[2];
-
-	// aliasoldworldtransform[0][3] = RI.currententity->oldorigin[0];
-	// aliasoldworldtransform[1][3] = RI.currententity->oldorigin[1];
-	// aliasoldworldtransform[2][3] = RI.currententity->oldorigin[2];
-}
-
 /*
 ================
 R_AliasProjectAndClipTestFinalVert
@@ -200,14 +122,11 @@ R_AliasProjectAndClipTestFinalVert
 */
 void R_AliasProjectAndClipTestFinalVert( finalvert_t *fv )
 {
-	float zi;
-	float x, y, z;
-
 	// project points
-	x = fv->xyz[0];
-	y = fv->xyz[1];
-	z = fv->xyz[2];
-	zi = 1.0f / z;
+	float x = fv->xyz[0];
+	float y = fv->xyz[1];
+	float z = fv->xyz[2];
+	float zi = 1.0f / z;
 
 	fv->zi = zi * s_ziscale;
 

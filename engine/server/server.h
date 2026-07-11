@@ -21,8 +21,8 @@ GNU General Public License for more details.
 #include "eiface.h"
 #include "physint.h"	// physics interface
 #include "mod_local.h"
+#include "pmove.h"
 #include "pm_defs.h"
-#include "pm_movevars.h"
 #include "entity_state.h"
 #include "protocol.h"
 #include "netchan.h"
@@ -53,16 +53,8 @@ extern int SV_UPDATE_BACKUP;
 #define GROUP_OP_AND	0
 #define GROUP_OP_NAND	1
 
-#ifdef NDEBUG
-#define SV_IsValidEdict( e )	( e && !e->free )
-#else
 #define SV_IsValidEdict( e )	SV_CheckEdict( e, __FILE__, __LINE__ )
-#endif
 #define NUM_FOR_EDICT(e)	((int)((edict_t *)(e) - svgame.edicts))
-#define EDICT_NUM( num )	SV_EdictNum( num )
-#define STRING( offset )	SV_GetString( offset )
-#define ALLOC_STRING(str)	SV_AllocString( str )
-#define MAKE_STRING(str)	SV_MakeString( str )
 
 #define MAX_PUSHED_ENTS	256
 #define MAX_VIEWENTS	128
@@ -81,6 +73,7 @@ extern int SV_UPDATE_BACKUP;
 #define FCL_HLTV_PROXY	BIT( 8 )	// this is a proxy for a HLTV client (spectator)
 #define FCL_SEND_RESOURCES	BIT( 9 )
 #define FCL_FORCE_UNMODIFIED	BIT( 10 )
+#define FCL_EXPECT_RESOURCELIST	BIT( 11 )	// engine sent svc_resourcerequest, expect one clc_resourcelist in response
 
 typedef enum
 {
@@ -133,7 +126,7 @@ typedef struct server_s
 	struct sv_client_s	*current_client;	// current client who network message sending on
 
 	int		hostflags;	// misc server flags: predicting etc
-	CRC32_t		worldmapCRC;	// check crc for catch cheater maps
+	uint32_t worldmapCRC;	// check crc for catch cheater maps
 	int		progsCRC;		// this is used with feature ENGINE_QUAKE_COMPATIBLE
 
 	char		name[MAX_QPATH];	// map name
@@ -233,7 +226,7 @@ typedef struct sv_client_s
 	double next_messagetime;   // time when we should send next world state update
 	double next_checkpingtime; // time to send all players pings to client
 	double next_sendinfotime;  // time to send info about all players
-	double cl_updaterate;      // client requested updaterate
+	double next_messageinterval; // update rate, clamped
 	double timebase;           // client timebase
 	double connection_started;
 
@@ -249,7 +242,7 @@ typedef struct sv_client_s
 	float  latency;
 
 	int     ignored_ents; // if visibility list is full we should know how many entities will be ignored
-	edict_t *edict;       // EDICT_NUM(clientnum+1)
+	edict_t *edict;       // SV_EdictNum(clientnum+1)
 	edict_t *pViewEntity; // svc_setview member
 	edict_t *viewentity[MAX_VIEWENTS]; // list of portal cameras in player PVS
 	int     num_viewents; // num of portal cameras that can merge PVS
@@ -260,6 +253,7 @@ typedef struct sv_client_s
 	double userinfo_penalty;
 
 	double overflow_warn_time;
+	double resourcelist_next_changetime;
 
 	client_frame_t *frames; // updates can be delta'd from here
 	event_state_t  events;  // delta-updated events cycle
@@ -414,6 +408,7 @@ extern convar_t		sv_wateralpha;
 extern convar_t		sv_wateramp;
 extern convar_t		sv_voiceenable;
 extern convar_t		sv_voicequality;
+extern convar_t		sv_voice_singleplayer;
 extern convar_t		sv_maxvelocity;
 extern convar_t		sv_stepsize;
 extern convar_t		sv_skyname;
@@ -426,6 +421,7 @@ extern convar_t		sv_skyvec_z;
 extern convar_t		sv_consistency;
 extern convar_t		sv_password;
 extern convar_t		sv_uploadmax;
+extern convar_t		sv_upload_penalty_time;
 extern convar_t		sv_trace_messages;
 extern convar_t		sv_enttools_enable;
 extern convar_t		sv_enttools_maxfire;
@@ -478,7 +474,7 @@ qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent );
 //
 // sv_init.c
 //
-qboolean SV_InitGame( void );
+qboolean SV_InitGame( qboolean silent );
 void SV_ActivateServer( int runPhysics );
 qboolean SV_SpawnServer( const char *server, const char *startspot, qboolean background );
 void SV_DeactivateServer( void );
@@ -528,7 +524,6 @@ void SV_ClientPrintf( sv_client_t *cl, const char *fmt, ... ) FORMAT_CHECK( 2 );
 //
 // sv_client.c
 //
-void SV_RefreshUserinfo( void );
 void SV_TogglePause( const char *msg );
 qboolean SV_ShouldUpdatePing( sv_client_t *cl );
 const char *SV_GetClientIDString( sv_client_t *cl );
@@ -550,7 +545,7 @@ void SV_GetPlayerCount( int *clients, int *bots );
 
 static inline qboolean SV_HavePassword( void )
 {
-	if( COM_CheckStringEmpty( sv_password.string ) && Q_stricmp( sv_password.string, "none" ))
+	if( !COM_StringEmpty( sv_password.string ) && Q_stricmp( sv_password.string, "none" ))
 		return true;
 
 	return false;
@@ -606,7 +601,6 @@ void SV_FreeEdict( edict_t *pEdict );
 void SV_InitEdict( edict_t *pEdict );
 const char *SV_ClassName( const edict_t *e );
 void SV_CopyTraceToGlobal( trace_t *trace );
-qboolean SV_CheckEdict( const edict_t *e, const char *file, const int line );
 void SV_SetMinMaxSize( edict_t *e, const float *min, const float *max, qboolean relink );
 void SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word eventindex, float delay, float *origin,
 	float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2 );
@@ -638,6 +632,20 @@ void SV_SetModel( edict_t *ent, const char *name );
 int pfnDecalIndex( const char *m );
 void SV_CreateDecal( sizebuf_t *msg, const float *origin, int decalIndex, int entityIndex, int modelIndex, int flags, float scale );
 qboolean SV_RestoreCustomDecal( struct decallist_s *entry, edict_t *pEdict, qboolean adjacent );
+
+static inline qboolean SV_CheckEdict( const edict_t *e, const char *file, const int line )
+{
+	if( !e )
+		return false; // may be NULL
+
+	int n = ((int)((edict_t *)(e) - svgame.edicts));
+
+	if(( n >= 0 ) && ( n < GI->max_edicts ))
+		return !e->free;
+
+	Con_Printf( "bad entity %i (called at %s:%i)\n", n, file, line );
+	return false;
+}
 
 static inline edict_t *SV_EdictNum( int n )
 {

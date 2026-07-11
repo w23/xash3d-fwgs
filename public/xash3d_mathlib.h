@@ -17,7 +17,7 @@ GNU General Public License for more details.
 #define XASH3D_MATHLIB_H
 
 #include <math.h>
-#if HAVE_TGMATH_H
+#if HAVE_TGMATH_H && !__cplusplus
 #include <tgmath.h>
 #endif
 #include <string.h>
@@ -46,8 +46,12 @@ CONSTANTS AND HELPER MACROS
 #define M_PI_F  ((float)(M_PI))
 #define M_PI2_F ((float)(M_PI2))
 
+#ifndef RAD2DEG
 #define RAD2DEG( x ) ((double)(x) * (double)(180.0 / M_PI))
+#endif
+#ifndef DEG2RAD
 #define DEG2RAD( x ) ((double)(x) * (double)(M_PI / 180.0))
+#endif
 
 #define NUMVERTEXNORMALS 162
 
@@ -74,8 +78,12 @@ CONSTANTS AND HELPER MACROS
 #define INV255F          ( 1.0f / 255.0f )
 #define MAKE_SIGNED( x ) ((( x ) * INV127F ) - 1.0f )
 
+#ifndef Q_min
 #define Q_min( a, b ) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef Q_max
 #define Q_max( a, b ) (((a) > (b)) ? (a) : (b))
+#endif
 #define Q_equal_e( a, b, e ) (((a) >= ((b) - (e))) && ((a) <= ((b) + (e))))
 #define Q_equal( a, b ) Q_equal_e( a, b, EQUAL_EPSILON )
 #define Q_floor( a )    ((float)(int)(a))
@@ -97,6 +105,9 @@ CONSTANTS AND HELPER MACROS
 #define Vector2Copy(a,b) ((b)[0]=(a)[0],(b)[1]=(a)[1])
 #define VectorCopy(a,b) ((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2])
 #define Vector4Copy(a,b) ((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
+#define Vec2(v) { (v)[0], (v)[1] }
+#define Vec3(v) { (v)[0], (v)[1], (v)[2] }
+#define Vec4(v) { (v)[0], (v)[1], (v)[2], (v)[3] }
 #define VectorScale(in, scale, out) ((out)[0] = (in)[0] * (scale),(out)[1] = (in)[1] * (scale),(out)[2] = (in)[2] * (scale))
 #define VectorCompare(v1,v2)	((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2])
 #define VectorDivide( in, d, out ) VectorScale( in, (1.0f / (d)), out )
@@ -117,9 +128,9 @@ CONSTANTS AND HELPER MACROS
 #define VectorClear(x) ((x)[0]=(x)[1]=(x)[2]=0)
 #define Vector2Lerp( v1, lerp, v2, c ) ((c)[0] = (v1)[0] + (lerp) * ((v2)[0] - (v1)[0]), (c)[1] = (v1)[1] + (lerp) * ((v2)[1] - (v1)[1]))
 #define VectorLerp( v1, lerp, v2, c ) ((c)[0] = (v1)[0] + (lerp) * ((v2)[0] - (v1)[0]), (c)[1] = (v1)[1] + (lerp) * ((v2)[1] - (v1)[1]), (c)[2] = (v1)[2] + (lerp) * ((v2)[2] - (v1)[2]))
-#define VectorNormalize( v ) { float ilength = (float)sqrt(DotProduct(v, v));if (ilength) ilength = 1.0f / ilength;v[0] *= ilength;v[1] *= ilength;v[2] *= ilength; }
-#define VectorNormalize2( v, dest ) {float ilength = (float)sqrt(DotProduct(v,v));if (ilength) ilength = 1.0f / ilength;dest[0] = v[0] * ilength;dest[1] = v[1] * ilength;dest[2] = v[2] * ilength; }
-#define VectorNormalizeFast( v ) {float ilength = (float)Q_rsqrt(DotProduct(v,v)); v[0] *= ilength; v[1] *= ilength; v[2] *= ilength; }
+#define VectorNormalize( v ) { float ilength = (float)sqrt(DotProduct((v), (v)));if (ilength) ilength = 1.0f / ilength;(v)[0] *= ilength;(v)[1] *= ilength;(v)[2] *= ilength; }
+#define VectorNormalize2( v, dest ) {float ilength = (float)sqrt(DotProduct((v),(v)));if (ilength) ilength = 1.0f / ilength;(dest)[0] = (v)[0] * ilength;(dest)[1] = (v)[1] * ilength;(dest)[2] = (v)[2] * ilength; }
+#define VectorNormalizeFast( v ) {float ilength = (float)Q_rsqrt(DotProduct((v),(v))); (v)[0] *= ilength; (v)[1] *= ilength; (v)[2] *= ilength; }
 #define VectorNormalizeLength( v ) VectorNormalizeLength2((v), (v))
 #define VectorNegate(x, y) ((y)[0] = -(x)[0], (y)[1] = -(x)[1], (y)[2] = -(x)[2])
 #define VectorM(scale1, b1, c) ((c)[0] = (scale1) * (b1)[0],(c)[1] = (scale1) * (b1)[1],(c)[2] = (scale1) * (b1)[2])
@@ -141,7 +152,9 @@ CONSTANTS GLOBALS
 */
 // a1ba: we never return pointers to these globals
 // so help compiler optimize constants away
+#ifndef __cplusplus
 #define vec3_origin ((vec3_t){ 0.0f, 0.0f, 0.0f })
+#endif // __cplusplus
 
 extern const int       boxpnt[6][4];
 extern const float     m_bytenormals[NUMVERTEXNORMALS][3];
@@ -154,7 +167,17 @@ MATH FUNCTIONS
 
 ===========================
 */
-typedef struct mplane_s mplane_t;
+// plane_t structure
+// !!! if this is changed, it must be changed in asm_i386.h too !!!
+typedef struct mplane_s
+{
+	vec3_t  normal;
+	float   dist;
+	byte    type;                   // for texture axis selection and fast side tests
+	byte    signbits;               // signx + signy<<1 + signz<<1
+	byte    pad[2];
+} mplane_t;
+
 typedef struct mstudiobone_s mstudiobone_t;
 typedef struct mstudioanim_s mstudioanim_t;
 
@@ -165,20 +188,44 @@ void RoundUpHullSize( vec3_t size );
 void VectorVectors( const vec3_t forward, vec3_t right, vec3_t up );
 void VectorAngles( const float *forward, float *angles );
 void VectorsAngles( const vec3_t forward, const vec3_t right, const vec3_t up, vec3_t angles );
-void PlaneIntersect( const mplane_t *plane, const vec3_t p0, const vec3_t p1, vec3_t out );
 qboolean SphereIntersect( const vec3_t vSphereCenter, float fSphereRadiusSquared, const vec3_t vLinePt, const vec3_t vLineDir );
 void QuaternionSlerp( const vec4_t p, const vec4_t q, float t, vec4_t qt );
 
 void R_StudioCalcBones( int frame, float s, const mstudiobone_t *pbone, const mstudioanim_t *panim, const float *adj, vec3_t pos, vec4_t q );
 int BoxOnPlaneSide( const vec3_t emins, const vec3_t emaxs, const mplane_t *p );
-#define BOX_ON_PLANE_SIDE( emins, emaxs, p )           \
-	((( p )->type < 3 ) ?                              \
-	(                                                  \
-		((p)->dist <= (emins)[(p)->type]) ? 1 :        \
-		(                                              \
-			((p)->dist >= (emaxs)[(p)->type] ) ? 2 : 3 \
-		)                                              \
-	) : BoxOnPlaneSide(( emins ), ( emaxs ), ( p )))
+
+static inline int BOX_ON_PLANE_SIDE( const vec3_t emins, const vec3_t emaxs, const mplane_t *p )
+{
+	if( p->type < 3 )
+	{
+		if( p->dist <= emins[p->type] )
+			return 1;
+
+		if( p->dist >= emaxs[p->type] )
+			return 2;
+
+		return 3;
+	}
+
+	return BoxOnPlaneSide( emins, emaxs, p );
+}
+
+/*
+=================
+PlaneIntersect
+
+find point where ray
+was intersect with plane
+=================
+*/
+static inline void PlaneIntersect( const mplane_t *plane, const vec3_t p0, const vec3_t p1, vec3_t out )
+{
+	float distToPlane = PlaneDiff( p0, plane );
+	float planeDotRay = DotProduct( plane->normal, p1 );
+	float sect = -(distToPlane) / planeDotRay;
+
+	VectorMA( p0, sect, p1, out );
+}
 
 //
 // matrixlib.c
@@ -252,18 +299,26 @@ static inline float UintAsFloat( uint32_t u )
 	bits.u = u;
 	return bits.fl;
 }
-#endif // __cplusplus
+
+static inline float SwapFloat( float bf )
+{
+	uint32_t bi = FloatAsUint( bf );
+	uint32_t li = Swap32( bi );
+	return UintAsFloat( li );
+}
 
 // isnan implementation is broken on IRIX as reported in https://github.com/FWGS/xash3d-fwgs/pull/1211
 #if defined( XASH_IRIX ) || !defined( isnan )
 static inline int IS_NAN( float x )
 {
 	int32_t i = FloatAsInt( x ); // only C
-	return i & ( 255 << 23 ) == ( 255 << 23 );
+	return ( i & ( 255 << 23 ) ) == ( 255 << 23 );
 }
 #else
 #define IS_NAN isnan
 #endif
+#endif // __cplusplus
+
 
 static inline float anglemod( float a )
 {
@@ -466,8 +521,9 @@ static inline void Matrix3x4_OriginFromMatrix( const matrix3x4 in, float *out )
 
 static inline void QuaternionAngle( const vec4_t q, vec3_t angles )
 {
-	matrix3x4	mat;
-	Matrix3x4_FromOriginQuat( mat, q, vec3_origin );
+	matrix3x4 mat;
+	vec3_t origin = { 0, 0, 0 };
+	Matrix3x4_FromOriginQuat( mat, q, origin );
 	Matrix3x4_AnglesFromMatrix( mat, angles );
 }
 

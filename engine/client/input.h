@@ -25,12 +25,10 @@ INPUT
 */
 
 #include "keydefs.h"
-#include "usercmd.h"
 
 //
 // input.c
 //
-extern qboolean	in_mouseinitialized;
 void IN_Init( void );
 void Host_InputFrame( void );
 void IN_Shutdown( void );
@@ -41,6 +39,11 @@ void IN_DeactivateMouse( void );
 void IN_MouseSavePos( void );
 void IN_MouseRestorePos( void );
 void IN_ToggleClientMouse( int newstate, int oldstate );
+void IN_GyroInit( void );
+void IN_GyroCheckAvailability( void );
+void IN_GyroEvent( vec3_t data );
+void IN_GyroFinalizeMove( float *fw, float *side, float *dpitch, float *dyaw );
+void IN_GyroDrawDebug( void );
 
 uint IN_CollectInputDevices( void );
 void IN_LockInputDevices( qboolean lock );
@@ -51,6 +54,8 @@ void IN_SetMouseGrab( qboolean set );
 
 extern convar_t m_yaw;
 extern convar_t m_pitch;
+extern convar_t touch_enable;
+
 //
 // in_touch.c
 //
@@ -61,8 +66,23 @@ typedef enum
 	event_motion
 } touchEventType;
 
-extern convar_t touch_enable;
-
+#if XASH_NO_TOUCH
+static inline void Touch_Draw( void ) { }
+static inline void Touch_SetClientOnly( byte state ) { }
+static inline void Touch_RemoveButton( const char *name, qboolean privileged ) { }
+static inline void Touch_HideButtons( const char *name, unsigned char hide, qboolean privileged ) { }
+static inline void Touch_AddClientButton( const char *name, const char *texture, const char *command, float x1, float y1, float x2, float y2, byte *color, int round, float aspect, int flags ) { }
+static inline void Touch_AddDefaultButton( const char *name, const char *texturefile, const char *command, float x1, float y1, float x2, float y2, byte *color, int round, float aspect, int flags ) { }
+static inline void Touch_WriteConfig( void ) { }
+static inline void Touch_Init( void ) { }
+static inline void Touch_Shutdown( void ) { }
+static inline void Touch_GetMove( float * forward, float *side, float *pitch, float *yaw ) { }
+static inline void Touch_ResetDefaultButtons( void ) { }
+static inline int IN_TouchEvent( touchEventType type, int fingerID, float x, float y, float dx, float dy ) { return 0; }
+static inline void Touch_KeyEvent( int key, int down ) { }
+static inline qboolean Touch_WantVisibleCursor( void ) { return false; }
+static inline void Touch_NotifyResize( void ) { }
+#else
 void Touch_Draw( void );
 void Touch_SetClientOnly( byte state );
 void Touch_RemoveButton( const char *name, qboolean privileged );
@@ -72,12 +92,22 @@ void Touch_AddDefaultButton( const char *name, const char *texturefile, const ch
 void Touch_WriteConfig( void );
 void Touch_Init( void );
 void Touch_Shutdown( void );
-void Touch_GetMove( float * forward, float *side, float *yaw, float *pitch );
+void Touch_GetMove( float * forward, float *side, float *pitch, float *yaw );
 void Touch_ResetDefaultButtons( void );
 int IN_TouchEvent( touchEventType type, int fingerID, float x, float y, float dx, float dy );
 void Touch_KeyEvent( int key, int down );
 qboolean Touch_WantVisibleCursor( void );
 void Touch_NotifyResize( void );
+#endif
+
+//
+// in_osk.c
+//
+extern convar_t osk_enable;
+void OSK_Init( void );
+qboolean OSK_KeyEvent( int key, int down );
+void OSK_EnableTextInput( qboolean enable, qboolean force );
+void OSK_Draw( void );
 
 //
 // in_joy.c
@@ -103,7 +133,7 @@ typedef enum engineAxis_e
 	JOY_AXIS_YAW,
 	JOY_AXIS_RT,
 	JOY_AXIS_LT,
-	JOY_AXIS_NULL
+	MAX_AXES,
 } engineAxis_t;
 
 typedef enum joy_calibration_state_s
@@ -120,6 +150,7 @@ void Joy_SetCalibrationState( joy_calibration_state_t state );
 void Joy_AxisMotionEvent( engineAxis_t engineAxis, short value );
 void Joy_GyroEvent( vec3_t data );
 void Joy_FinalizeMove( float *fw, float *side, float *dpitch, float *dyaw );
+void Joy_DrawDebug( void );
 void Joy_Init( void );
 void Joy_Shutdown( void );
 

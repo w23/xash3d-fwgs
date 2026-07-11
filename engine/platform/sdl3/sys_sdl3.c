@@ -21,7 +21,6 @@ double Platform_DoubleTime( void )
 {
 	static Uint64 g_PerformanceFrequency;
 	static Uint64 g_ClockStart;
-	Uint64 CurrentTime;
 
 	if( !g_PerformanceFrequency )
 	{
@@ -31,7 +30,7 @@ double Platform_DoubleTime( void )
 		return 0.0;
 	}
 
-	CurrentTime = SDL_GetPerformanceCounter();
+	Uint64 CurrentTime = SDL_GetPerformanceCounter();
 	return (double)( CurrentTime - g_ClockStart ) / (double)( g_PerformanceFrequency );
 }
 
@@ -93,6 +92,12 @@ static void SDLCALL SDLash_LogOutputFunction( void *userdata, int category, SDL_
 
 void SDLash_Init( const char *basedir )
 {
+	(void)basedir;
+
+	// TODO: initial state, to be filled from gameinfo!
+	SDL_SetAppMetadata( XASH_ENGINE_NAME, XASH_VERSION, "su.xash.engine" );
+	SDL_SetAppMetadataProperty( SDL_PROP_APP_METADATA_TYPE_STRING, "game" );
+
 	SDL_SetLogOutputFunction( SDLash_LogOutputFunction, NULL );
 
 	if( host_developer.value >= 2 )

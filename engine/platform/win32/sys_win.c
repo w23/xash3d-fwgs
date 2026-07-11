@@ -25,13 +25,14 @@ double Platform_DoubleTime( void )
 {
 	static LARGE_INTEGER	g_PerformanceFrequency;
 	static LARGE_INTEGER	g_ClockStart;
-	LARGE_INTEGER		CurrentTime;
 
 	if( !g_PerformanceFrequency.QuadPart )
 	{
 		QueryPerformanceFrequency( &g_PerformanceFrequency );
 		QueryPerformanceCounter( &g_ClockStart );
 	}
+
+	LARGE_INTEGER CurrentTime;
 	QueryPerformanceCounter( &CurrentTime );
 
 	return (double)( CurrentTime.QuadPart - g_ClockStart.QuadPart ) / (double)( g_PerformanceFrequency.QuadPart );
@@ -84,11 +85,10 @@ void Win32_Shutdown( void )
 
 qboolean Win32_NanoSleep( int nsec )
 {
-	LARGE_INTEGER ts;
-
 	if( !g_waitable_timer )
 		return false;
 
+	LARGE_INTEGER ts;
 	ts.QuadPart = -nsec / 100;
 
 	if( !SetWaitableTimer( g_waitable_timer, &ts, 0, NULL, NULL, FALSE ))
@@ -111,9 +111,6 @@ qboolean Platform_DebuggerPresent( void )
 
 void Platform_ShellExecute( const char *path, const char *parms )
 {
-	if( !Q_strcmp( path, GENERIC_UPDATE_PAGE ) || !Q_strcmp( path, PLATFORM_UPDATE_PAGE ))
-		path = DEFAULT_UPDATE_PAGE;
-
 	ShellExecuteA( NULL, "open", path, parms, NULL, SW_SHOW );
 }
 

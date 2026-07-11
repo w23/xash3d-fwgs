@@ -68,6 +68,16 @@ double GAME_EXPORT Sys_DoubleTime( void )
 }
 
 /*
+===============
+Sys_FloatTime
+===============
+*/
+float GAME_EXPORT Sys_FloatTime( void )
+{
+	return (float)Platform_DoubleTime();
+}
+
+/*
 ================
 Sys_DebugBreak
 ================
@@ -85,7 +95,7 @@ void Sys_DebugBreak( void )
 		Platform_SetMouseGrab( false );
 	}
 
-#if _MSC_VER
+#if XASH_WIN32 // both MSVC and MinGW support it
 	__debugbreak();
 #else // !_MSC_VER
 	INLINE_RAISE( SIGINT );
@@ -141,14 +151,14 @@ const char *Sys_GetCurrentUser( void )
 #elif XASH_PSVITA
 	static string username;
 	sceAppUtilSystemParamGetString( SCE_SYSTEM_PARAM_ID_USERNAME, username, sizeof( username ) - 1 );
-	if( COM_CheckStringEmpty( username ))
+	if( !COM_StringEmpty( username ))
 		return username;
 #elif XASH_POSIX && !XASH_ANDROID && !XASH_NSWITCH
 	static string username;
 	struct passwd *pw = getpwuid( geteuid( ));
 
 	// POSIX standard says pw _might_ point to static area, so let's make a copy
-	if( pw && COM_CheckString( pw->pw_name ))
+	if( pw && !COM_StringEmptyOrNULL( pw->pw_name ))
 	{
 		Q_strncpy( username, pw->pw_name, sizeof( username ));
 		return username;
@@ -163,28 +173,27 @@ Sys_ParseCommandLine
 
 ==================
 */
-void Sys_ParseCommandLine( int argc, char** argv )
+void Sys_ParseCommandLine( int argc, const char **argv )
 {
 	const char	*blank = "censored";
-	int		i;
 
 	host.argc = argc;
 	host.argv = argv;
 
 	if( !host.change_game ) return;
 
-	for( i = 0; i < host.argc; i++ )
+	for( int i = 0; i < host.argc; i++ )
 	{
 		// we don't want to return to first game
-			 if( !Q_stricmp( "-game", host.argv[i] )) host.argv[i] = (char *)blank;
+			 if( !Q_stricmp( "-game", host.argv[i] )) host.argv[i] = blank;
 		// probably it's timewaster, because engine rejected second change
-		else if( !Q_stricmp( "+game", host.argv[i] )) host.argv[i] = (char *)blank;
+		else if( !Q_stricmp( "+game", host.argv[i] )) host.argv[i] = blank;
 		// you sure that map exists in new game?
-		else if( !Q_stricmp( "+map", host.argv[i] )) host.argv[i] = (char *)blank;
+		else if( !Q_stricmp( "+map", host.argv[i] )) host.argv[i] = blank;
 		// just stupid action
-		else if( !Q_stricmp( "+load", host.argv[i] )) host.argv[i] = (char *)blank;
+		else if( !Q_stricmp( "+load", host.argv[i] )) host.argv[i] = blank;
 		// changelevel beetwen games? wow it's great idea!
-		else if( !Q_stricmp( "+changelevel", host.argv[i] )) host.argv[i] = (char *)blank;
+		else if( !Q_stricmp( "+changelevel", host.argv[i] )) host.argv[i] = blank;
 	}
 }
 
@@ -198,9 +207,7 @@ where the given parameter apears, or 0 if not present
 */
 int Sys_CheckParm( const char *parm )
 {
-	int	i;
-
-	for( i = 1; i < host.argc; i++ )
+	for( int i = 1; i < host.argc; i++ )
 	{
 		if( !host.argv[i] )
 			continue;
@@ -249,7 +256,6 @@ qboolean Sys_GetIntFromCmdLine( const char* argName, int *out )
 //=======================================================================
 qboolean Sys_LoadLibrary( dll_info_t *dll )
 {
-	size_t i;
 	string		errorstring;
 
 	// check errors
@@ -275,7 +281,7 @@ qboolean Sys_LoadLibrary( dll_info_t *dll )
 	}
 
 	// Get the function adresses
-	for( i = 0; i < dll->num_fcts; i++ )
+	for( size_t i = 0; i < dll->num_fcts; i++ )
 	{
 		const dllfunc_t *func = &dll->fcts[i];
 		if( !( *func->func = COM_GetProcAddress( dll->link, func->name )))
@@ -362,7 +368,7 @@ void Sys_Warn( const char *format, ... )
 
 	Sys_DebugBreak();
 
-	Msg( "%s: %s\n", __func__, text );
+	Con_Printf( "%s: %s\n", __func__, text );
 
 	if( !Host_IsDedicated() ) // dedicated server should not hang on messagebox
 		Platform_MessageBox( "Xash Warning", text, true );
@@ -425,16 +431,6 @@ void Sys_Error( const char *error, ... )
 	Sys_Quit( "caught an error" );
 }
 
-#if XASH_EMSCRIPTEN
-#include <emscripten.h>
-#define exit my_exit
-void my_exit( int ret )
-{
-	emscripten_cancel_main_loop();
-	emscripten_force_exit( ret );
-}
-#endif
-
 /*
 ================
 Sys_Quit
@@ -443,11 +439,7 @@ Sys_Quit
 void Sys_Quit( const char *reason )
 {
 	Host_ShutdownWithReason( reason );
-#if XASH_ANDROID
 	Host_ExitInMain();
-#else
-	exit( error_on_exit );
-#endif
 }
 
 /*
@@ -529,6 +521,26 @@ void Sys_Print( const char *pMsg )
 
 /*
 ==================
+Sys_CanRestart
+
+Returns true if execv-like syscall is available
+==================
+*/
+qboolean Sys_CanRestart( void )
+{
+#if XASH_NSWITCH || XASH_PSVITA
+	return true;
+#elif XASH_IOS
+	return false;
+#else
+	int exelen = wai_getExecutablePath( NULL, 0, NULL );
+
+	return exelen > 0;
+#endif
+}
+
+/*
+==================
 Sys_ChangeGame
 
 This is a special function
@@ -540,42 +552,61 @@ it explicitly doesn't use internal allocation or string copy utils
 */
 qboolean Sys_NewInstance( const char *gamedir, const char *finalmsg )
 {
+	qboolean replaced_arg = false;
+
 #if XASH_NSWITCH
 	char newargs[4096];
 	const char *exe = host.argv[0]; // arg 0 is always the full NRO path
 
-	// TODO: carry over the old args (assuming you can even pass any)
-	Q_snprintf( newargs, sizeof( newargs ), "%s -game %s", exe, gamedir );
+	for( int i = 0; i < host.argc; i++ )
+	{
+		Q_strncat( newargs, host.argv[i], sizeof( newargs ));
+		Q_strncat( newargs, " ", sizeof( newargs ));
+
+		if( !Q_stricmp( host.argv[i], "-game" ))
+		{
+			Q_strncat( newargs, gamedir, sizeof( newargs ));
+			Q_strncat( newargs, " ", sizeof( newargs ));
+			replaced_arg = true;
+			i++;
+		}
+	}
+
+	if( !replaced_arg )
+	{
+		Q_strncat( newargs, "-game ", sizeof( newargs ));
+		Q_strncat( newargs, gamedir, sizeof( newargs ));
+	}
+
+	Q_strncat( newargs, " -changegame", sizeof( newargs ));
+
 	// just restart the entire thing
 	printf( "envSetNextLoad exe: `%s`\n", exe );
 	printf( "envSetNextLoad argv:\n`%s`\n", newargs );
+
 	Host_ShutdownWithReason( finalmsg );
 	envSetNextLoad( exe, newargs );
 	exit( 0 );
 #else
-	int i = 0;
-	qboolean replacedArg = false;
-	size_t exelen;
-	char *exe, **newargs;
-
+	char *exe = NULL;
 	// don't use engine allocation utils here
 	// they will be freed after Host_Shutdown
-	newargs = calloc( host.argc + 4, sizeof( *newargs ));
-	while( i < host.argc )
+	char **newargs = calloc( host.argc + 4, sizeof( *newargs ));
+	int i;
+
+	for( i = 0; i < host.argc; i++ )
 	{
 		newargs[i] = strdup( host.argv[i] );
 
-		// replace existing -game argument
 		if( !Q_stricmp( newargs[i], "-game" ))
 		{
 			newargs[i + 1] = strdup( gamedir );
-			replacedArg = true;
-			i += 2;
+			replaced_arg = true;
+			i++;
 		}
-		else i++;
 	}
 
-	if( !replacedArg )
+	if( !replaced_arg )
 	{
 		newargs[i++] = strdup( "-game" );
 		newargs[i++] = strdup( gamedir );
@@ -584,24 +615,26 @@ qboolean Sys_NewInstance( const char *gamedir, const char *finalmsg )
 	newargs[i++] = strdup( "-changegame" );
 	newargs[i] = NULL;
 
+	Host_ShutdownWithReason( finalmsg );
+
 #if XASH_PSVITA
 	// under normal circumstances it's always going to be the same path
 	exe = strdup( "app0:/eboot.bin" );
-	Host_ShutdownWithReason( finalmsg );
 	sceAppMgrLoadExec( exe, newargs, NULL );
 #else
-	exelen = wai_getExecutablePath( NULL, 0, NULL );
-	exe = malloc( exelen + 1 );
-	wai_getExecutablePath( exe, exelen, NULL );
-	exe[exelen] = 0;
+	int exelen = wai_getExecutablePath( NULL, 0, NULL );
+	if( exelen >= 0 )
+	{
+		exe = malloc( exelen + 1 );
+		wai_getExecutablePath( exe, exelen, NULL );
+		exe[exelen] = 0;
 
-	Host_ShutdownWithReason( finalmsg );
+		execv( exe, newargs );
 
-	execv( exe, newargs );
+		// if execv returned, it's probably an error
+		printf( "execv failed: %s", strerror( errno ));
+	}
 #endif
-
-	// if execv returned, it's probably an error
-	printf( "execv failed: %s", strerror( errno ));
 
 	for( ; i >= 0; i-- )
 		free( newargs[i] );
@@ -622,12 +655,13 @@ Get platform-specific native object
 */
 void *Sys_GetNativeObject( const char *obj )
 {
-	void *ptr;
-
-	if( !COM_CheckString( obj ))
+	if( COM_StringEmptyOrNULL( obj ))
 		return NULL;
 
-	ptr = FS_GetNativeObject( obj );
+	if( !Q_strcmp( obj, "MenuFactory" ))
+		return UI_GetMenuFactory();
+
+	void *ptr = FS_GetNativeObject( obj );
 
 	if( ptr )
 		return ptr;
