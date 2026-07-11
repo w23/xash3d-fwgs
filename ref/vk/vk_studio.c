@@ -1155,9 +1155,9 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec[0], mv->skyvec[1], mv->skyvec[2] );
 
-			light.r = bound( 0, mv->skycolor[0], 255 );
-			light.g = bound( 0, mv->skycolor[1], 255 );
-			light.b = bound( 0, mv->skycolor[2], 255 );
+			light.r = LightToTexGamma( bound( 0, mv->skycolor[0], 255 ));
+			light.g = LightToTexGamma( bound( 0, mv->skycolor[1], 255 ));
+			light.b = LightToTexGamma( bound( 0, mv->skycolor[2], 255 ));
 		}
 	}
 
