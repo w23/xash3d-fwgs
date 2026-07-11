@@ -1,3 +1,4 @@
+import com.android.build.api.dsl.ApplicationExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.time.LocalDateTime
 import java.time.Month
@@ -5,12 +6,11 @@ import java.time.temporal.ChronoUnit
 
 plugins {
 	alias(libs.plugins.android.application)
-	alias(libs.plugins.kotlin.android)
 }
 
-android {
+extensions.configure<ApplicationExtension> {
 	namespace = "su.xash.engine"
-	ndkVersion = "28.2.13676358"
+	ndkVersion = "29.0.14206865"
 	compileSdk = 35
 
 	defaultConfig {
@@ -20,10 +20,12 @@ android {
 		minSdk = 21
 		targetSdk = 35
 
+		buildConfigField("String", "GIT_HASH", "\"${getGitHash()}\"")
+
 		externalNativeBuild {
 			val engineRoot = projectDir.parentFile.parent
 
-			experimentalProperties["ninja.abiFilters"] = setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+			experimentalProperties["ninja.abiFilters"] = setOf("armeabi-v7a", "arm64-v8a", "x86")
 			experimentalProperties["ninja.path"] = File(engineRoot, "wscript").path
 			experimentalProperties["ninja.configure"] = "run-python"
 			experimentalProperties["ninja.arguments"] = setOf(
@@ -34,7 +36,7 @@ android {
 				"--configuration-dir=\${ndk.buildRoot}",
 				"--ndk-version=\${ndk.moduleNdkVersion}",
 				"--min-sdk-version=\${ndk.minPlatform}",
-				"--ndk-root=${android.ndkDirectory}",
+				"--ndk-root=${androidComponents.sdkComponents.ndkDirectory.get()}",
 				// shut up, fake options
 				"-p:Configuration=\${ndk.variantName}",
 				"-p:Platform=\${ndk.abi}"
@@ -58,6 +60,15 @@ android {
 		buildConfig = true
 	}
 
+	signingConfigs {
+		create("androidDebugKey") {
+			storeFile = File(projectDir.parentFile, "debug.keystore")
+			storePassword = "android"
+			keyAlias = "androiddebugkey"
+			keyPassword = "android"
+		}
+	}
+
 	lint {
 		abortOnError = false
 	}
@@ -77,8 +88,8 @@ android {
 
 	sourceSets {
 		getByName("main") {
-			assets.srcDirs("../../3rdparty/extras/xash-extras")
-			java.srcDir("../../3rdparty/SDL/android-project/app/src/main/java")
+			assets.directories.add("../../3rdparty/extras/xash-extras")
+			java.directories.add("../../3rdparty/SDL/android-project/app/src/main/java")
 		}
 	}
 
@@ -91,6 +102,7 @@ android {
 			proguardFiles(
 				getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
 			)
+			buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
 		}
 
 		release {
@@ -99,6 +111,7 @@ android {
 			proguardFiles(
 				getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
 			)
+			buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "false")
 		}
 
 		register("asan") {
@@ -108,6 +121,8 @@ android {
 		register("continuous") {
 			initWith(getByName("release"))
 			applicationIdSuffix = ".test"
+			buildConfigField("boolean", "ENABLE_AUTO_UPDATE", "true")
+			signingConfig = signingConfigs.getByName("androidDebugKey")
 		}
 	}
 }

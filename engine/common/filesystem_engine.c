@@ -27,6 +27,10 @@ GNU General Public License for more details.
 #include "library.h"
 #include "platform/platform.h"
 
+#if XASH_WIN32
+#include <direct.h>
+#endif
+
 static CVAR_DEFINE_AUTO( fs_mount_hd, "0", FCVAR_PRIVILEGED, "mount high definition content folder" );
 static CVAR_DEFINE_AUTO( fs_mount_lv, "0", FCVAR_PRIVILEGED, "mount low violence models content folder" );
 static CVAR_DEFINE_AUTO( fs_mount_addon, "0", FCVAR_PRIVILEGED, "mount addon content folder" );
@@ -66,9 +70,7 @@ byte *FS_LoadDirectFile( const char *path, fs_offset_t *filesizeptr )
 
 static void COM_StripDirectorySlash( char *pname )
 {
-	size_t len;
-
-	len = Q_strlen( pname );
+	size_t len = Q_strlen( pname );
 	if( len > 0 && pname[len - 1] == '/' )
 		pname[len - 1] = 0;
 }
@@ -124,9 +126,9 @@ static void FS_LoadVFSConfig( const char *gamedir )
 
 void FS_SaveVFSConfig( void )
 {
-	file_t *f;
+	const qboolean force_save = !FS_FileExists( "vfs.cfg", true );
 
-	if( !FBitSet( fs_mount_hd.flags|fs_mount_lv.flags|fs_mount_l10n.flags|fs_mount_addon.flags|ui_language.flags, FCVAR_CHANGED ))
+	if( !force_save && !FBitSet( fs_mount_hd.flags|fs_mount_lv.flags|fs_mount_l10n.flags|fs_mount_addon.flags|ui_language.flags, FCVAR_CHANGED ))
 	{
 		Con_Reportf( "%s: no need to save vfs.cfg\n", __func__ );
 		return;
@@ -134,10 +136,10 @@ void FS_SaveVFSConfig( void )
 
 	Con_Printf( "%s()\n", __func__ );
 
-	f = FS_Open( "vfs.cfg.new", "w", true );
+	file_t *f = FS_Open( "vfs.cfg.new", "w", true );
 	if( !f )
 	{
-		Con_Printf( S_ERROR "%s: couldn't open vfs.cfg for write\n", __func__ );
+		Con_Printf( S_ERROR "%s: can't open %s for write\n", __func__, "vfs.cfg.new" );
 		return;
 	}
 
@@ -171,6 +173,16 @@ static void FS_ClearPaths_f( void )
 static void FS_Path_f_( void )
 {
 	FS_Path_f();
+}
+
+static void FS_FindFile_f_( void )
+{
+	if( Cmd_Argc() < 2 )
+	{
+		Con_Printf( S_USAGE "fs_find <filepath>\n" );
+		return;
+	}
+	g_fsapi.FindFile_f( Cmd_Argv( 1 ));
 }
 
 static void FS_MakeGameInfo_f( void )
@@ -214,7 +226,6 @@ static void FS_UnloadProgs( void )
 static qboolean FS_LoadProgs( void )
 {
 	const char *name = FILESYSTEM_STDIO_DLL;
-	FSAPI GetFSAPI;
 
 	fs_hInstance = COM_LoadLibrary( name, false, true );
 
@@ -224,6 +235,7 @@ static qboolean FS_LoadProgs( void )
 		return false;
 	}
 
+	FSAPI GetFSAPI;
 	if( !( GetFSAPI = (FSAPI)COM_GetProcAddress( fs_hInstance, GET_FS_API )))
 	{
 		FS_UnloadProgs();
@@ -253,24 +265,15 @@ static qboolean FS_DetermineRootDirectory( char *out, size_t size )
 {
 	const char *path = getenv( "XASH3D_BASEDIR" );
 
-	if( COM_CheckString( path ))
+	if( !COM_StringEmptyOrNULL( path ))
 	{
 		Q_strncpy( out, path, size );
 		return true;
 	}
 
-#if TARGET_OS_IOS
+#if XASH_IOS
 	Q_strncpy( out, IOS_GetDocsDir(), size );
 	return true;
-#elif XASH_ANDROID && XASH_SDL
-	path = SDL_AndroidGetExternalStoragePath();
-	if( path != NULL )
-	{
-		Q_strncpy( out, path, size );
-		return true;
-	}
-	Sys_Error( "couldn't determine Android external storage path: %s", SDL_GetError( ));
-	return false;
 #elif XASH_PSVITA
 	if( PSVita_GetBasePath( out, size ))
 		return true;
@@ -318,11 +321,16 @@ static qboolean FS_DetermineReadOnlyRootDirectory( char *out, size_t size )
 	if( _Sys_GetParmFromCmdLine( "-rodir", out, size ))
 		return true;
 
-	if( COM_CheckString( env_rodir ))
+	if( !COM_StringEmptyOrNULL( env_rodir ))
 	{
 		Q_strncpy( out, env_rodir, size );
 		return true;
 	}
+
+#if XASH_IOS
+	Q_strncpy( out, IOS_GetExecDir(), size );
+	return true;
+#endif
 
 	return false;
 }
@@ -332,13 +340,13 @@ static qboolean FS_DetermineReadOnlyRootDirectory( char *out, size_t size )
 FS_Init
 ================
 */
-void FS_Init( const char *basedir )
+void FS_Init( void )
 {
 	string gamedir;
 	char rodir[MAX_OSPATH], rootdir[MAX_OSPATH];
 	rodir[0] = rootdir[0] = 0;
 
-	if( !FS_DetermineRootDirectory( rootdir, sizeof( rootdir )) || !COM_CheckStringEmpty( rootdir ))
+	if( !FS_DetermineRootDirectory( rootdir, sizeof( rootdir )) || COM_StringEmpty( rootdir ))
 	{
 		Sys_Error( "couldn't determine current directory (empty string)" );
 		return;
@@ -356,7 +364,7 @@ void FS_Init( const char *basedir )
 		if( env )
 			Q_strncpy( gamedir, env, sizeof( gamedir ));
 		else
-			Q_strncpy( gamedir, basedir, sizeof( gamedir )); // gamedir == basedir
+			Q_strncpy( gamedir, host.default_gamedir, sizeof( gamedir )); // gamedir == basedir
 	}
 
 	FS_LoadProgs();
@@ -368,7 +376,7 @@ void FS_Init( const char *basedir )
 	// and this better be reworked at some point
 	g_fsapi.SetCurrentDirectory( rootdir );
 
-	if( !g_fsapi.InitStdio( true, rootdir, basedir, gamedir, rodir ))
+	if( !g_fsapi.InitStdio( true, rootdir, host.default_gamedir, gamedir, rodir ))
 	{
 		Sys_Error( "Can't init filesystem_stdio!\n" );
 		return;
@@ -376,6 +384,7 @@ void FS_Init( const char *basedir )
 
 	Cmd_AddRestrictedCommand( "fs_rescan", FS_Rescan_f, "rescan filesystem search pathes" );
 	Cmd_AddRestrictedCommand( "fs_path", FS_Path_f_, "show filesystem search pathes" );
+	Cmd_AddRestrictedCommand( "fs_find", FS_FindFile_f_, "find file across search pathes and show all occurences" );
 	Cmd_AddRestrictedCommand( "fs_clearpaths", FS_ClearPaths_f, "clear filesystem search pathes" );
 	Cmd_AddRestrictedCommand( "fs_make_gameinfo", FS_MakeGameInfo_f, "create gameinfo.txt for current running game" );
 

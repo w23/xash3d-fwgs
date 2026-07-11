@@ -15,80 +15,115 @@ GNU General Public License for more details.
 
 #include "common.h"
 
-// while this is mostly POSIX-compatible functions
-// the contents of ucontext_t is platform-dependent
-// before adding new OS here, check platform.h
-#define _XOPEN_SOURCE 1 // required for ucontext
 #if XASH_FREEBSD || XASH_NETBSD || XASH_OPENBSD || XASH_ANDROID || XASH_LINUX || XASH_APPLE
-#ifndef XASH_OPENBSD
-	#include <ucontext.h>
-#endif
 #include <signal.h>
 #include <sys/mman.h>
+#if XASH_ANDROID
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <android/log.h>
+#endif
 #include "library.h"
 #include "input.h"
 #include "crash.h"
 
-static qboolean have_libbacktrace = false;
+#if XASH_ANDROID
+static char crashlog_path[MAX_OSPATH];
+static char enginelog_path[MAX_OSPATH];
+#endif
 
-static struct sigaction oldFilter;
+static qboolean have_libbacktrace = false;
+static char crash_message[8192];
 
 static void Sys_Crash( int signal, siginfo_t *si, void *context )
 {
-	char message[8192];
-	int len, logfd, i = 0;
-	qboolean detailed_message = false;
-
-	// flush buffers before writing directly to descriptors
-	fflush( stdout );
-	fflush( stderr );
-
 	// safe actions first, stack and memory may be corrupted
-	len = Q_snprintf( message, sizeof( message ), "Ver: " XASH_ENGINE_NAME " " XASH_VERSION " (build %i-%s-%s, %s-%s)\n",
-					  Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch() );
+	int len = Q_snprintf( crash_message, sizeof( crash_message ), "Ver: " XASH_ENGINE_NAME " " XASH_VERSION " (build %i-%s-%s, %s-%s)\n",
+		Q_buildnum(), g_buildcommit, g_buildbranch, Q_buildos(), Q_buildarch() );
 
 #if !XASH_FREEBSD && !XASH_NETBSD && !XASH_OPENBSD && !XASH_APPLE
-	len += Q_snprintf( message + len, sizeof( message ) - len, "Crash: signal %d errno %d with code %d at %p %p\n", signal, si->si_errno, si->si_code, si->si_addr, si->si_ptr );
+	len += Q_snprintf( crash_message + len, sizeof( crash_message ) - len, "Crash: signal %d errno %d with code %d at %p %p\n", signal, si->si_errno, si->si_code, si->si_addr, si->si_ptr );
 #else
-	len += Q_snprintf( message + len, sizeof( message ) - len, "Crash: signal %d errno %d with code %d at %p\n", signal, si->si_errno, si->si_code, si->si_addr );
+	len += Q_snprintf( crash_message + len, sizeof( crash_message ) - len, "Crash: signal %d errno %d with code %d at %p\n", signal, si->si_errno, si->si_code, si->si_addr );
 #endif
 
-	write( STDERR_FILENO, message, len );
+	ssize_t unused = write( STDERR_FILENO, crash_message, len );
+
+#if XASH_ANDROID
+	__android_log_write( ANDROID_LOG_FATAL, "Xash", crash_message );
+#endif
 
 	// now get log fd and write trace directly to log
-	logfd = Sys_LogFileNo();
-	write( logfd, message, len );
+	int logfd = Sys_LogFileNo();
+	if( logfd >= 0 )
+		unused = write( logfd, crash_message, len );
+	(void)unused;
 
 #if HAVE_LIBBACKTRACE
+	qboolean detailed_message = false;
 	if( have_libbacktrace && !detailed_message )
 	{
-		len = Sys_CrashDetailsLibbacktrace( logfd, message, len, sizeof( message ));
+		len = Sys_CrashDetailsLibbacktrace( logfd, crash_message, len, sizeof( crash_message ));
 		detailed_message = true;
 	}
 #endif // HAVE_LIBBACKTRACE
 
-#if HAVE_EXECINFO
-	if( !detailed_message )
+#if XASH_ANDROID
+	// also write to a dedicated crash report file the Java side picks up on next launch
+	if( crashlog_path[0] )
 	{
-		len = Sys_CrashDetailsExecinfo( logfd, message, len, sizeof( message ));
-		detailed_message = true;
+		int crashfd = open( crashlog_path, O_WRONLY|O_CREAT|O_TRUNC, 0644 );
+		if( crashfd >= 0 )
+		{
+			write( crashfd, crash_message, len );
+			close( crashfd );
+		}
 	}
-#endif // HAVE_EXECINFO
 
-	// put MessageBox as Sys_Error
-	Msg( "%s\n", message );
+	// make a copy of engine.log in staging directory
+	// TODO: dump log from console buffers, if -log not enabled
+	if( logfd >= 0 && enginelog_path[0] && lseek( logfd, 0, SEEK_SET ) == 0 )
+	{
+		int outfd = open( enginelog_path, O_WRONLY|O_CREAT|O_TRUNC, 0644 );
+		if( outfd >= 0 )
+		{
+			static char buf[8192];
+			while( 1 )
+			{
+				ssize_t n = read( logfd, buf, sizeof( buf ));
+				if( n <= 0 )
+					break;
+				if( write( outfd, buf, (size_t)n ) != n )
+					break;
+			}
+			close( outfd );
+		}
+	}
+
+	// JNI/SDL calls aren't safe from a signal handler on Android
+	_exit( 128 + signal );
+#else
 #if !XASH_DEDICATED
 	IN_SetMouseGrab( false );
 #endif
 	host.status = HOST_CRASHED;
-	Platform_MessageBox( "Xash Error", message, false );
+
+	// put MessageBox as Sys_Error
+	Platform_MessageBox( "Xash Error", crash_message, false );
 
 	// log saved, now we can try to save configs and close log correctly, it may crash
 	if( host.type == HOST_NORMAL )
 		CL_Crashed();
 
 	Sys_Quit( "crashed" );
+#endif // XASH_ANDROID
 }
+
+static struct sigaction old_segv_act;
+static struct sigaction old_abrt_act;
+static struct sigaction old_bus_act;
+static struct sigaction old_ill_act;
 
 void Sys_SetupCrashHandler( const char *argv0 )
 {
@@ -98,23 +133,41 @@ void Sys_SetupCrashHandler( const char *argv0 )
 		.sa_flags = SA_SIGINFO | SA_ONSTACK,
 	};
 
+#if XASH_ANDROID
+	const char *crashdir = getenv( "XASH3D_CRASH_DIR" );
+
+	if( !COM_StringEmptyOrNULL( crashdir ))
+	{
+		Q_snprintf( crashlog_path, sizeof( crashlog_path ), "%s/crash.log", crashdir );
+		Q_snprintf( enginelog_path, sizeof( enginelog_path ), "%s/engine.log", crashdir );
+	}
+
+	// unblock the engine/SDL_main thread just in case
+	sigset_t set;
+	sigemptyset( &set );
+	sigaddset( &set, SIGSEGV );
+	sigaddset( &set, SIGABRT );
+	sigaddset( &set, SIGBUS );
+	sigaddset( &set, SIGILL );
+	pthread_sigmask( SIG_UNBLOCK, &set, NULL );
+#endif
+
 #if HAVE_LIBBACKTRACE
 	have_libbacktrace = Sys_SetupLibbacktrace( argv0 );
 #endif // HAVE_LIBBACKTRACE
 
-	sigaction( SIGSEGV, &act, &oldFilter );
-	sigaction( SIGABRT, &act, &oldFilter );
-	sigaction( SIGBUS,  &act, &oldFilter );
-	sigaction( SIGILL,  &act, &oldFilter );
-
+	sigaction( SIGSEGV, &act, &old_segv_act );
+	sigaction( SIGABRT, &act, &old_abrt_act );
+	sigaction( SIGBUS,  &act, &old_bus_act );
+	sigaction( SIGILL,  &act, &old_ill_act );
 }
 
 void Sys_RestoreCrashHandler( void )
 {
-	sigaction( SIGSEGV, &oldFilter, NULL );
-	sigaction( SIGABRT, &oldFilter, NULL );
-	sigaction( SIGBUS,  &oldFilter, NULL );
-	sigaction( SIGILL,  &oldFilter, NULL );
+	sigaction( SIGSEGV, &old_segv_act, NULL );
+	sigaction( SIGABRT, &old_abrt_act, NULL );
+	sigaction( SIGBUS,  &old_bus_act, NULL );
+	sigaction( SIGILL,  &old_ill_act, NULL );
 }
 
 #endif // XASH_FREEBSD || XASH_NETBSD || XASH_OPENBSD || XASH_ANDROID || XASH_LINUX

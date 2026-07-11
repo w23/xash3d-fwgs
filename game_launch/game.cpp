@@ -22,7 +22,8 @@ GNU General Public License for more details.
 #include <stdarg.h>
 
 #if XASH_POSIX
-#define XASHLIB "libxash." OS_LIB_EXT
+#include <dlfcn.h>
+#define XASHLIB OS_LIB_PREFIX "xash." OS_LIB_EXT
 #define FreeLibrary( x ) dlclose( x )
 #elif XASH_WIN32
 #include <shellapi.h> // CommandLineToArgvW
@@ -51,7 +52,6 @@ typedef void (*pfnShutdown)( void );
 
 static pfnInit     Host_Main;
 static pfnShutdown Host_Shutdown = NULL;
-static char        szGameDir[128]; // safe place to keep gamedir
 static int         szArgc;
 static char        **szArgv;
 static HINSTANCE   hEngine;
@@ -140,8 +140,11 @@ static void Sys_LoadEngine( void )
 
 static void Sys_UnloadEngine( void )
 {
-	if( Host_Shutdown ) Host_Shutdown( );
-	if( hEngine ) FreeLibrary( hEngine );
+	if( Host_Shutdown )
+		Host_Shutdown( );
+
+	if( hEngine )
+		FreeLibrary( hEngine );
 
 	hEngine = NULL;
 	Host_Main = NULL;
@@ -150,31 +153,14 @@ static void Sys_UnloadEngine( void )
 
 static void Sys_ChangeGame( const char *progname )
 {
-	// a1ba: may never be called within engine
-	// if platform supports execv() function
-	if( !progname || !progname[0] )
-	{
-		Launch_Error( "Sys_ChangeGame: NULL gamedir" );
-		return;
-	}
-
-	if( Host_Shutdown == NULL )
-	{
-		Launch_Error( "Sys_ChangeGame: missed 'Host_Shutdown' export\n" );
-		return;
-	}
-
-	strncpy( szGameDir, progname, sizeof( szGameDir ) - 1 );
-
-	Sys_UnloadEngine();
-	Sys_LoadEngine ();
-	Host_Main( szArgc, szArgv, szGameDir, 1, Sys_ChangeGame );
+	// presence of this function tells the engine to allow change game
+	// but it's never called
+	return;
 }
 
 static int Sys_Start( void )
 {
 	int ret;
-	pfnChangeGame changeGame = NULL;
 
 #if XASH_SAILFISH
 	const char *home = getenv( "HOME" );
@@ -182,22 +168,11 @@ static int Sys_Start( void )
 
 	snprintf( buf, sizeof( buf ), "%s/xash", home );
 	setenv( "XASH3D_BASEDIR", buf, true );
-#if XASH_AURORAOS
-	setenv( "XASH3D_RODIR", "/usr/share/su.xash.Engine/rodir", true );
-#else
 	setenv( "XASH3D_RODIR", "/usr/share/harbour-xash3d-fwgs/rodir", true );
-#endif // XASH_AURORAOS
 #endif // XASH_SAILFISH
 
-	strncpy( szGameDir, XASH_GAMEDIR, sizeof( szGameDir ) - 1 );
-
 	Sys_LoadEngine();
-
-	if( Host_Shutdown )
-		changeGame = Sys_ChangeGame;
-
-	ret = Host_Main( szArgc, szArgv, szGameDir, 0, XASH_DISABLE_MENU_CHANGEGAME ? NULL : changeGame );
-
+	ret = Host_Main( szArgc, szArgv, XASH_GAMEDIR, 0, XASH_DISABLE_MENU_CHANGEGAME ? NULL : Sys_ChangeGame );
 	Sys_UnloadEngine();
 
 	return ret;

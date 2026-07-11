@@ -41,12 +41,29 @@ enum
 
 // a1ba: not using BIT macro, so flags can be copypasted into
 // exported APIs headers and will not get warning in case of changing values
-#define PFILE_IGNOREBRACKET (1<<0)
-#define PFILE_HANDLECOLON   (1<<1)
-#define PFILE_IGNOREHASHCMT (1<<2)
 
-#define PFILE_TOKEN_MAX_LENGTH 1024
-#define PFILE_FS_TOKEN_MAX_LENGTH 512
+// do NOT interpret brackets as separate token
+// e.g. (a b) will be parsed as "(a", "b)"
+#define PFILE_NO_BRACKETS_AS_TOKEN     ( 1U << 0 )
+
+// interpret ':' as separate token
+// e.g. a:b will be parsed as "a", ":", "b"
+#define PFILE_COLON_AS_TOKEN           ( 1U << 1 )
+
+// ignore the whole line starting with '#' interpreting it as comment
+#define PFILE_HASH_AS_COMMENT          ( 1U << 2 )
+
+// when encountering double quotes, do not interpret what's inside as single token
+#define PFILE_NO_QUOTED_TOKENS         ( 1U << 3 )
+
+// do NOT interpret ''' as separate token
+#define PFILE_NO_SINGLE_QUOTE_AS_TOKEN ( 1U << 4 )
+
+// do NOT interpret comma as token
+#define PFILE_NO_COMMA_AS_TOKEN        ( 1U << 5 )
+
+// interpret '\n' as separate token
+#define PFILE_NEWLINE_AS_TOKEN         ( 1U << 6 )
 
 #ifdef __cplusplus
 #define restrict
@@ -55,27 +72,34 @@ enum
 //
 // build.c
 //
-int Q_buildnum( void );
 int Q_buildnum_iso( const char *date );
-int Q_buildnum_compat( void );
-const char *Q_PlatformStringByID( const int platform );
-const char *Q_buildos( void );
-const char *Q_ArchitectureStringByID( const int arch, const uint abi, const int endianness, const qboolean is64 );
-const char *Q_buildarch( void );
+
+// to use build information, add "build_vcs" to dependencies
+int Q_buildnum( void );
 extern const char *g_buildcommit;
 extern const char *g_buildbranch;
-extern const char *g_build_date;
 extern const char *g_buildcommit_date;
+
+static inline int Q_buildnum_compat( void )
+{
+	// this magical number below is Xash3D base build number
+	// as Xash3D isn't in development anymore,
+	// it's probably gonna stay at this number forever
+	return 4529;
+}
+
 
 //
 // crtlib.c
 //
+int Q_strcmp_constant_time( const char *s1, const char *s2 );
 void Q_strnlwr( const char *in, char *out, size_t size_out );
 #define Q_strlen( str ) (( str ) ? strlen(( str )) : 0 )
 int Q_atoi_hex( int sign, const char *str );
 int Q_atoi( const char *str );
 float Q_atof( const char *str );
 void Q_atov( float *vec, const char *str, size_t siz );
+char *Q_memfgets( byte *data, int data_len, int *data_offset, char *dst, int dst_size );
 #define Q_strchr  strchr
 #define Q_strrchr strrchr
 qboolean Q_stricmpext( const char *pattern, const char *text );
@@ -88,19 +112,23 @@ int Q_snprintf( char *buffer, size_t buffersize, const char *format, ... ) FORMA
 #define Q_strpbrk strpbrk
 void COM_StripColors( const char *in, char *out );
 #define Q_memprint( val ) Q_pretifymem( val, 2 )
-char *Q_pretifymem( float value, int digitsafterdecimal );
+char *Q_pretifymem( float value, int digitsafterdecimal ) RETURNS_NONNULL;
 void COM_FileBase( const char *in, char *out, size_t size );
 const char *COM_FileExtension( const char *in ) RETURNS_NONNULL;
 void COM_DefaultExtension( char *path, const char *extension, size_t size );
 void COM_ReplaceExtension( char *path, const char *extension, size_t size );
 void COM_ExtractFilePath( const char *path, char *dest );
-const char *COM_FileWithoutPath( const char *in );
+const char *COM_FileWithoutPath( const char *in ) RETURNS_NONNULL;
 void COM_StripExtension( char *path );
 void COM_RemoveLineFeed( char *str, size_t bufsize );
 void COM_PathSlashFix( char *path );
-// return 0 on empty or null string, 1 otherwise
-#define COM_CheckString( string ) ( ( !string || !*string ) ? 0 : 1 )
-#define COM_CheckStringEmpty( string ) ( ( !*string ) ? 0 : 1 )
+void COM_TrimSpace( char *dst, const char *src, size_t size );
+int COM_CheckNastyPath( const char *path );
+
+// returns true on empty or NULL string, false otherwise
+#define COM_StringEmpty( string )       (( string )[0] ? false : true )
+#define COM_StringEmptyOrNULL( string ) (( string ) && ( string )[0] ? false : true )
+
 char *COM_ParseFileSafe( char *data, char *token, const int size, unsigned int flags, int *len, qboolean *quoted );
 #define COM_ParseFile( data, token, size ) COM_ParseFileSafe( data, token, size, 0, NULL, NULL )
 int matchpattern( const char *in, const char *pattern, qboolean caseinsensitive );
@@ -144,9 +172,15 @@ static inline qboolean Q_istype( const char *str, int (*istype)( int c ))
 {
 	if( likely( str && *str ))
 	{
-		while( istype( *str )) str++;
-		if( !*str ) return true;
+		// a1ba: explicitly cast char to unsigned char to not trigger UB
+		// in ctype functions
+		while( istype((byte)*str ))
+			str++;
+
+		if( !*str )
+			return true;
 	}
+
 	return false;
 }
 
@@ -292,7 +326,7 @@ static inline char *Q_stristr( const char *s1, const char *s2 )
 char *Q_stristr( const char *s1, const char *s2 );
 #endif // !HAVE_STRCASESTR
 
-#if HAVE_STRCHRNUL
+#if HAVE_STRCHRNUL && !XASH_IOS
 #define Q_strchrnul strchrnul
 #else // !HAVE_STRCHRNUL
 static inline char *Q_strchrnul( const char *s, int c )
@@ -335,13 +369,24 @@ static inline int Q_splitstr( char *str, int delim, void *userdata,
 ============
 COM_FixSlashes
 
-Changes all '\' characters into '/' characters, in place.
+Changes all '\' characters into '/' characters and removes duplicate slashes, in place.
 ============
 */
 static inline void COM_FixSlashes( char *pname )
 {
-	while(( pname = Q_strchr( pname, '\\' )))
-		*pname = '/';
+	char *s = pname;
+	int i, j;
+
+	while(( s = Q_strchr( s, '\\' )))
+		*s = '/';
+
+	for( i = 0, j = 0; pname[i]; i++ )
+	{
+		if( pname[i] == '/' && pname[i+1] == '/' )
+			continue;
+		pname[j++] = pname[i];
+	}
+	pname[j] = 0;
 }
 
 #ifdef __cplusplus

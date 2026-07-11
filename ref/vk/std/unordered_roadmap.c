@@ -57,7 +57,7 @@ void urmomInit(const urmom_desc_t* desc) {
 }
 
 static uint32_t hashKey(urmom_type_t type, const char *key) {
-	uint32_t hash;
+	uint32_t hash = 0;
 	switch (type) {
 		case kUrmomString:
 			hash = hash32FNV1aStr(key);

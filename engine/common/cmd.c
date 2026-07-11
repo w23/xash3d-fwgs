@@ -24,24 +24,13 @@ GNU General Public License for more details.
 
 typedef struct
 {
-	byte *const data;
-	const int maxsize;
-	int cursize;
+	byte data[MAX_CMD_BUFFER];
+	int  cursize;
 } cmdbuf_t;
 
-static qboolean cmd_wait;
-static byte     cmd_text_buf[MAX_CMD_BUFFER];
-static byte     filteredcmd_text_buf[MAX_CMD_BUFFER];
-static cmdbuf_t cmd_text =
-{
-	.data = cmd_text_buf,
-	.maxsize = ARRAYSIZE( cmd_text_buf ),
-};
-static cmdbuf_t filteredcmd_text =
-{
-	.data = filteredcmd_text_buf,
-	.maxsize = ARRAYSIZE( filteredcmd_text_buf ),
-};
+static int cmd_wait;
+static cmdbuf_t cmd_text;
+static cmdbuf_t filteredcmd_text;
 static cmdalias_t *cmd_alias;
 static uint cmd_condition;
 static int  cmd_condlevel;
@@ -65,9 +54,9 @@ Cbuf_Clear
 */
 void Cbuf_Clear( void )
 {
-	memset( cmd_text.data, 0, cmd_text.maxsize );
-	memset( filteredcmd_text.data, 0, filteredcmd_text.maxsize );
-	cmd_text.cursize = filteredcmd_text.cursize = 0;
+	memset( &cmd_text, 0, sizeof( cmd_text ));
+	memset( &filteredcmd_text, 0, sizeof( filteredcmd_text ));
+	cmd_wait = 0;
 }
 
 /*
@@ -77,15 +66,13 @@ Cbuf_GetSpace
 */
 static void *Cbuf_GetSpace( cmdbuf_t *buf, int length )
 {
-	void    *data;
-
-	if(( buf->cursize + length ) > buf->maxsize )
+	if(( buf->cursize + length ) >= sizeof( buf->data ))
 	{
 		buf->cursize = 0;
 		Host_Error( "%s: overflow\n", __func__ );
 	}
 
-	data = buf->data + buf->cursize;
+	void *data = buf->data + buf->cursize;
 	buf->cursize += length;
 
 	return data;
@@ -95,7 +82,7 @@ static void Cbuf_AddTextToBuffer( cmdbuf_t *buf, const char *text )
 {
 	int l = Q_strlen( text );
 
-	if(( buf->cursize + l ) >= buf->maxsize )
+	if(( buf->cursize + l ) >= sizeof( buf->data ))
 	{
 		Con_Reportf( S_WARN "%s: overflow\n", __func__ );
 		return;
@@ -147,7 +134,7 @@ Adds command text immediately after the current command
 */
 static void Cbuf_InsertTextToBuffer( cmdbuf_t *buf, const char *text, size_t len, size_t requested_len )
 {
-	if(( buf->cursize + requested_len ) >= buf->maxsize )
+	if(( buf->cursize + requested_len ) >= sizeof( buf->data ))
 	{
 		Con_Reportf( S_WARN "%s: overflow\n", __func__ );
 	}
@@ -159,7 +146,7 @@ static void Cbuf_InsertTextToBuffer( cmdbuf_t *buf, const char *text, size_t len
 	}
 }
 
-void Cbuf_InsertTextLen( const char *text, size_t len, size_t requested_len )
+static void Cbuf_InsertTextLen( const char *text, size_t len, size_t requested_len )
 {
 	// sometimes we need to insert more data than we have
 	// but also prevent overflow
@@ -179,17 +166,13 @@ Cbuf_Execute
 */
 static void Cbuf_ExecuteCommandsFromBuffer( cmdbuf_t *buf, qboolean isPrivileged, int cmdsToExecute )
 {
-	char	*text;
 	char	line[MAX_CMD_LINE];
-	int	i, quotes;
-	char	*comment;
+	int	i;
 
 	while( buf->cursize )
 	{
 		if( cmd_wait > 0 )
 		{
-			// skip out while text still remains in buffer,
-			// leaving it for next frame
 			cmd_wait--;
 			break;
 		}
@@ -202,10 +185,10 @@ static void Cbuf_ExecuteCommandsFromBuffer( cmdbuf_t *buf, qboolean isPrivileged
 		}
 
 		// find a \n or ; line break
-		text = (char *)buf->data;
+		char *text = (char *)buf->data;
 
-		quotes = false;
-		comment = NULL;
+		int quotes = false;
+		char *comment = NULL;
 
 		for( i = 0; i < buf->cursize; i++ )
 		{
@@ -379,13 +362,13 @@ bind g "cmd use rocket ; +attack ; wait ; -attack ; cmd use blaster"
 */
 static void Cmd_Wait_f( void )
 {
-	if ( Cmd_Argc() > 1 )
+	int frame = 1;
+	if( Cmd_Argc() > 1 )
 	{
-		const char *arg = Cmd_Argv( 1 );
-		cmd_wait = atoi( arg );
+		frame = Q_atoi( Cmd_Argv( 1 ) );
+		frame = Q_max( 1, frame );
 	}
-
-	cmd_wait = Q_max( cmd_wait, 1 );
+	cmd_wait = frame;
 }
 
 /*
@@ -397,9 +380,7 @@ Just prints the rest of the line to the console
 */
 static void Cmd_Echo_f( void )
 {
-	int	i;
-
-	for( i = 1; i < Cmd_Argc(); i++ )
+	for( int i = 1; i < Cmd_Argc(); i++ )
 		Con_Printf( "%s ", Cmd_Argv( i ));
 	Con_Printf( "\n" );
 }
@@ -415,8 +396,6 @@ static void Cmd_Alias_f( void )
 {
 	cmdalias_t	*a;
 	char		cmd[MAX_CMD_LINE];
-	int		i, c;
-	const char		*s;
 
 	if( Cmd_Argc() == 1 )
 	{
@@ -426,7 +405,7 @@ static void Cmd_Alias_f( void )
 		return;
 	}
 
-	s = Cmd_Argv( 1 );
+	const char *s = Cmd_Argv( 1 );
 
 	if( Q_strlen( s ) >= MAX_ALIAS_NAME )
 	{
@@ -459,17 +438,15 @@ static void Cmd_Alias_f( void )
 		else cmd_alias = a;
 		a->next = cur;
 
-#if defined( XASH_HASHED_VARS )
 		BaseCmd_Insert( HM_CMDALIAS, a, a->name );
-#endif
 	}
 
 	// copy the rest of the command line
 	cmd[0] = 0; // start out with a null string
 
-	c = Cmd_Argc();
+	int c = Cmd_Argc();
 
-	for( i = 2; i < c; i++ )
+	for( int i = 2; i < c; i++ )
 	{
 		if( i != 2 ) Q_strncat( cmd, " ", sizeof( cmd ));
 		Q_strncat( cmd, Cmd_Argv( i ), sizeof( cmd ));
@@ -488,28 +465,22 @@ Remove existing aliases.
 */
 static void Cmd_UnAlias_f ( void )
 {
-	cmdalias_t	*a, *p;
-	const char	*s;
-	int		i;
-
 	if( Cmd_Argc() == 1 )
 	{
 		Con_Printf( S_USAGE "unalias alias1 [alias2 ...]\n" );
 		return;
 	}
 
-	for( i = 1; i < Cmd_Argc(); i++ )
+	for( int i = 1; i < Cmd_Argc(); i++ )
 	{
-		s = Cmd_Argv( i );
-		p = NULL;
+		const char *s = Cmd_Argv( i );
+		cmdalias_t *a, *p = NULL;
 
 		for( a = cmd_alias; a; p = a, a = a->next )
 		{
 			if( !Q_strcmp( s, a->name ))
 			{
-#if defined( XASH_HASHED_VARS )
 				BaseCmd_Remove( HM_CMDALIAS, a->name );
-#endif
 				if( a == cmd_alias )
 					cmd_alias = a->next;
 				if( p ) p->next = a->next;
@@ -603,10 +574,9 @@ will point into this temporary buffer.
 void Cmd_TokenizeString( const char *text )
 {
 	char	cmd_token[MAX_CMD_BUFFER];
-	int	i;
 
 	// clear the args from the last string
-	for( i = 0; i < cmd_argc; i++ )
+	for( int i = 0; i < cmd_argc; i++ )
 		Mem_Free( cmd_argv[i] );
 
 	cmd_argc = 0; // clear previous args
@@ -632,8 +602,11 @@ void Cmd_TokenizeString( const char *text )
 		if( !*text )
 			return;
 
-		if( cmd_argc == 1 )
-			 cmd_args = text;
+		switch( cmd_argc )
+		{
+		case 0: cmd_args = "";   break;
+		case 1: cmd_args = text; break;
+		}
 
 		text = COM_ParseFileSafe( (char*)text, cmd_token, sizeof( cmd_token ), PFILE_IGNOREBRACKET, NULL, NULL );
 
@@ -656,22 +629,24 @@ int Cmd_AddCommandEx( const char *cmd_name, xcommand_t function, const char *cmd
 {
 	cmd_t  *cmd, *cur, *prev;
 	size_t desc_len;
+	convar_t *cvar;
+	cmdalias_t *alias;
 
-	if( !COM_CheckString( cmd_name ))
+	if( COM_StringEmptyOrNULL( cmd_name ))
 	{
 		Con_Reportf( S_ERROR "%s: NULL name\n", funcname );
 		return 0;
 	}
 
 	// fail if the command is a variable name
-	if( Cvar_FindVar( cmd_name ))
+	BaseCmd_FindAll( cmd_name, &cmd, &alias, &cvar );
+	if( cvar )
 	{
 		Con_DPrintf( S_ERROR "%s: %s already defined as a var\n", funcname, cmd_name );
 		return 0;
 	}
 
 	// fail if the command already exists and cannot be overriden
-	cmd = Cmd_Exists( cmd_name );
 	if( cmd )
 	{
 		// some mods register commands that share the name with some engine's commands
@@ -709,9 +684,7 @@ int Cmd_AddCommandEx( const char *cmd_name, xcommand_t function, const char *cmd
 	else cmd_functions = cmd;
 	cmd->next = cur;
 
-#if defined(XASH_HASHED_VARS)
 	BaseCmd_Insert( HM_CMD, cmd, cmd->name );
-#endif
 
 	return 1;
 }
@@ -723,22 +696,18 @@ Cmd_RemoveCommand
 */
 void GAME_EXPORT Cmd_RemoveCommand( const char *cmd_name )
 {
-	cmd_t	*cmd, **back;
-
 	if( !cmd_name || !*cmd_name )
 		return;
 
-	back = &cmd_functions;
+	cmd_t **back = &cmd_functions;
 	while( 1 )
 	{
-		cmd = *back;
+		cmd_t *cmd = *back;
 		if( !cmd ) return;
 
 		if( !Q_strcmp( cmd_name, cmd->name ))
 		{
-#if defined(XASH_HASHED_VARS)
 			BaseCmd_Remove( HM_CMD, cmd->name );
-#endif
 
 			*back = cmd->next;
 
@@ -759,20 +728,17 @@ Cmd_LookupCmds
 */
 void Cmd_LookupCmds( void *buffer, void *ptr, setpair_t callback )
 {
-	cmd_t	*cmd;
-	cmdalias_t	*alias;
-
 	// nothing to process ?
 	if( !callback ) return;
 
-	for( cmd = cmd_functions; cmd; cmd = cmd->next )
+	for( cmd_t *cmd = cmd_functions; cmd; cmd = cmd->next )
 	{
 		if( !buffer ) callback( cmd->name, (char *)cmd->function, cmd->desc, ptr );
 		else callback( cmd->name, (char *)cmd->function, buffer, ptr );
 	}
 
 	// lookup an aliases too
-	for( alias = cmd_alias; alias; alias = alias->next )
+	for( cmdalias_t *alias = cmd_alias; alias; alias = alias->next )
 		callback( alias->name, alias->value, buffer, ptr );
 }
 
@@ -783,17 +749,7 @@ Cmd_Exists
 */
 cmd_t *Cmd_Exists( const char *cmd_name )
 {
-#if defined(XASH_HASHED_VARS)
 	return BaseCmd_Find( HM_CMD, cmd_name );
-#else
-	cmd_t	*cmd;
-	for( cmd = cmd_functions; cmd; cmd = cmd->next )
-	{
-		if( !Q_strcmp( cmd_name, cmd->name ))
-			return cmd;
-	}
-	return NULL;
-#endif
 }
 
 /*
@@ -872,14 +828,13 @@ static void Cmd_Else_f( void )
 static qboolean Cmd_ShouldAllowCommand( cmd_t *cmd, qboolean isPrivileged )
 {
 	const char *prefixes[] = { "cl_", "gl_", "r_", "m_", "hud_", "joy_", "con_", "scr_" };
-	int i;
 
 	// always allow local commands
 	if( isPrivileged )
 		return true;
 
 	// never allow local only commands from remote
-	if( FBitSet( cmd->flags, CMD_PRIVILEGED ))
+	if( FBitSet( cmd->flags, CMD_PRIVILEGED ) || cmd->name[0] == '@' )
 		return false;
 
 	// allow engine commands if user don't mind
@@ -889,7 +844,7 @@ static qboolean Cmd_ShouldAllowCommand( cmd_t *cmd, qboolean isPrivileged )
 	if( FBitSet( cmd->flags, CMD_FILTERABLE ))
 		return false;
 
-	for( i = 0; i < ARRAYSIZE( prefixes ); i++ )
+	for( int i = 0; i < ARRAYSIZE( prefixes ); i++ )
 	{
 		if( !Q_strnicmp( cmd->name, prefixes[i], Q_strlen( prefixes[i] )))
 			return false;
@@ -964,80 +919,46 @@ static void Cmd_ExecuteStringWithPrivilegeCheck( const char *text, qboolean isPr
 
 	if( !Cmd_Argc( )) return; // no tokens
 
-#if defined( XASH_HASHED_VARS )
 	BaseCmd_FindAll( cmd_argv[0], &cmd, &a, &cvar );
-#endif
 
-	if( !host.apply_game_config )
+	// check aliases
+	if( a )
 	{
-#if !defined( XASH_HASHED_VARS )
-		// check aliases
-		for( a = cmd_alias; a; a = a->next )
-		{
-			if( !Q_stricmp( cmd_argv[0], a->name ))
-				break;
-		}
-#endif
-
-		if( a )
-		{
-			size_t len = Q_strlen( a->value );
-			Cbuf_InsertTextToBuffer(
-				isPrivileged ? &cmd_text : &filteredcmd_text,
-				a->value, len, len );
-			return;
-		}
+		size_t len = Q_strlen( a->value );
+		Cbuf_InsertTextToBuffer( isPrivileged ? &cmd_text : &filteredcmd_text, a->value, len, len );
+		return;
 	}
 
-	// special mode for restore game.dll archived cvars
-	if( !host.apply_game_config || !Q_strcmp( cmd_argv[0], "exec" ))
+	// check functions
+	if( cmd && cmd->function )
 	{
-#if !defined( XASH_HASHED_VARS )
-		for( cmd = cmd_functions; cmd; cmd = cmd->next )
+		if( Cmd_ShouldAllowCommand( cmd, isPrivileged ))
 		{
-			if( !Q_stricmp( cmd_argv[0], cmd->name ) && cmd->function )
-				break;
+			cmd_currentCommandIsPrivileged = isPrivileged;
+			cmd->function();
+			cmd_currentCommandIsPrivileged = true;
 		}
-#endif
-
-		// check functions
-		if( cmd && cmd->function )
+		else
 		{
-			if( Cmd_ShouldAllowCommand( cmd, isPrivileged ))
-			{
-				cmd_currentCommandIsPrivileged = isPrivileged;
-				cmd->function();
-				cmd_currentCommandIsPrivileged = true;
-			}
-			else
-			{
-				Con_Printf( S_WARN "Could not execute privileged command %s\n", cmd->name );
-			}
-
-			return;
+			Con_Printf( S_WARN "Could not execute privileged command %s\n", cmd->name );
 		}
+		return;
 	}
 
 	// check cvars
-	if( Cvar_CommandWithPrivilegeCheck( cvar, isPrivileged )) return;
-
-	if( host.apply_game_config )
-		return; // don't send nothing to server: we are a server!
+	if( Cvar_CommandWithPrivilegeCheck( cvar, isPrivileged ))
+		return;
 
 	// forward the command line to the server, so the entity DLL can parse it
-	if( host.type == HOST_NORMAL )
-	{
 #if !XASH_DEDICATED
-		if( cls.state >= ca_connected )
-		{
-			Cmd_ForwardToServer();
-		}
-		else
+	if( cls.state >= ca_connected )
+	{
+		Cmd_ForwardToServer();
+	}
+	else
 #endif // XASH_DEDICATED
-		if( Cvar_VariableInteger( "host_gameloaded" ))
-		{
-			Con_Printf( S_WARN "Unknown command \"%s\"\n", Cmd_Argv( 0 ) );
-		}
+	{
+		Con_Printf( S_WARN "Unknown command \"%s\"\n", Cmd_Argv( 0 ) );
 	}
 }
 
@@ -1058,7 +979,7 @@ so when they are typed in at the console, they will need to be forwarded.
 #if !XASH_DEDICATED
 void Cmd_ForwardToServer( void )
 {
-	char	str[MAX_CMD_BUFFER];
+	char str[MAX_CMD_BUFFER];
 
 	if( cls.demoplayback )
 	{
@@ -1098,7 +1019,6 @@ Cmd_List_f
 */
 static void Cmd_List_f( void )
 {
-	cmd_t	*cmd;
 	int	i = 0;
 	size_t	matchlen = 0;
 	const char *match = NULL;
@@ -1109,7 +1029,7 @@ static void Cmd_List_f( void )
 		matchlen = Q_strlen( match );
 	}
 
-	for( cmd = cmd_functions; cmd; cmd = cmd->next )
+	for( cmd_t *cmd = cmd_functions; cmd; cmd = cmd->next )
 	{
 		if( cmd->name[0] == '@' )
 			continue;	// never show system cmds
@@ -1133,8 +1053,6 @@ unlink all commands with specified flag
 */
 void Cmd_Unlink( int group )
 {
-	cmd_t	*cmd;
-	cmd_t	**prev;
 	int	count = 0;
 
 	if( FBitSet( group, CMD_SERVERDLL ) && Cvar_VariableInteger( "host_gameloaded" ))
@@ -1146,11 +1064,11 @@ void Cmd_Unlink( int group )
 	if( FBitSet( group, CMD_GAMEUIDLL ) && Cvar_VariableInteger( "host_gameuiloaded" ))
 		return;
 
-	prev = &cmd_functions;
+	cmd_t **prev = &cmd_functions;
 
 	while( 1 )
 	{
-		cmd = *prev;
+		cmd_t *cmd = *prev;
 		if( !cmd ) break;
 
 		// do filter by specified group
@@ -1160,9 +1078,7 @@ void Cmd_Unlink( int group )
 			continue;
 		}
 
-#if defined(XASH_HASHED_VARS)
 		BaseCmd_Remove( HM_CMD, cmd->name );
-#endif
 
 		*prev = cmd->next;
 
@@ -1177,10 +1093,6 @@ void Cmd_Unlink( int group )
 
 static void Cmd_Apropos_f( void )
 {
-	cmd_t *cmd;
-	convar_t *var;
-	cmdalias_t *alias;
-	const char *partial;
 	int count = 0;
 	char buf[MAX_VA_STRING];
 
@@ -1190,7 +1102,7 @@ static void Cmd_Apropos_f( void )
 		return;
 	}
 
-	partial = Cmd_Args();
+	const char *partial = Cmd_Args();
 
 	if( !Q_strpbrk( partial, "*?" ))
 	{
@@ -1198,7 +1110,7 @@ static void Cmd_Apropos_f( void )
 		partial = buf;
 	}
 
-	for( var = (convar_t*)Cvar_GetList(); var; var = var->next )
+	for( convar_t *var = (convar_t*)Cvar_GetList(); var; var = var->next )
 	{
 		if( !matchpattern_with_separator( var->name, partial, true, "", false ) )
 		{
@@ -1224,7 +1136,7 @@ static void Cmd_Apropos_f( void )
 		count++;
 	}
 
-	for( cmd = Cmd_GetFirstFunctionHandle(); cmd; cmd = Cmd_GetNextFunctionHandle( cmd ) )
+	for( cmd_t *cmd = Cmd_GetFirstFunctionHandle(); cmd; cmd = Cmd_GetNextFunctionHandle( cmd ) )
 	{
 		if( cmd->name[0] == '@' )
 			continue;	// never show system cmds
@@ -1237,7 +1149,7 @@ static void Cmd_Apropos_f( void )
 		count++;
 	}
 
-	for( alias = Cmd_AliasGetList(); alias; alias = alias->next )
+	for( cmdalias_t *alias = Cmd_AliasGetList(); alias; alias = alias->next )
 	{
 		// proceed a bit differently here as an alias value always got a final \n
 		if( !matchpattern_with_separator( alias->name, partial, true, "", false ) &&
@@ -1281,12 +1193,7 @@ static void Cmd_MakePrivileged_f( void )
 		return;
 	}
 
-#if defined( XASH_HASHED_VARS )
 	BaseCmd_FindAll( s, &cmd, &alias, &cv );
-#else
-	cmd = Cmd_Exists( s );
-	cv = Cvar_FindVar( s );
-#endif
 
 	if( !cv && !cmd )
 	{
@@ -1305,6 +1212,177 @@ static void Cmd_MakePrivileged_f( void )
 		SetBits( cmd->flags, CMD_PRIVILEGED );
 		Con_Printf( "Command %s set to be privileged\n", cmd->name );
 	}
+}
+
+/*
+===============
+Cmd_ExecScript
+===============
+*/
+static void Cmd_ExecScript( const char *filename )
+{
+	fs_offset_t len;
+	byte *f = FS_LoadFile( filename, &len, false );
+
+	if( !f )
+	{
+		Con_Reportf( "couldn't exec %s\n", filename );
+		return;
+	}
+
+	// len is fs_offset_t, which can be larger than size_t
+	if( len >= SIZE_MAX )
+	{
+		Con_Reportf( "%s: %s is too long\n", __func__, filename );
+		Mem_Free( f );
+		return;
+	}
+
+	if( f[len - 1] != '\n' )
+	{
+		Cbuf_InsertTextLen( f, len, len + 1 );
+		Cbuf_InsertTextLen( "\n", 1, 1 );
+	}
+	else Cbuf_InsertTextLen( f, len, len );
+
+	Mem_Free( f );
+}
+
+/*
+===============
+Cmd_UnprivilegedExec_f
+===============
+*/
+static void Cmd_UnprivilegedExec_f( void )
+{
+	string cfgpath;
+	qboolean allow = false;
+
+	if( Cmd_Argc() != 2 )
+		return;
+
+	Q_strncpy( cfgpath, Cmd_Argv( 1 ), sizeof( cfgpath ));
+	COM_DefaultExtension( cfgpath, ".cfg", sizeof( cfgpath ));
+
+	if( SV_GetMaxClients() == 1 )
+		allow = true;
+
+#if !XASH_DEDICATED
+	if( !allow && !Q_stricmp( GI->gamefolder, "tfc" ))
+	{
+		const char *const unprivileged_whitelist[] =
+		{
+			"civilian.cfg", "demoman.cfg", "engineer.cfg",
+			"hwguy.cfg", "mapdefault.cfg", "medic.cfg", "pyro.cfg",
+			"scout.cfg", "sniper.cfg", "soldier.cfg", "spy.cfg",
+		};
+		char mapcfg[MAX_VA_STRING];
+
+		Q_snprintf( mapcfg, sizeof( mapcfg ), "%s.cfg", clgame.mapname );
+
+		if( !Q_stricmp( mapcfg, cfgpath ))
+		{
+			allow = true;
+		}
+		else for( int i = 0; i < ARRAYSIZE( unprivileged_whitelist ); i++ )
+		{
+			if( !Q_strcmp( cfgpath, unprivileged_whitelist[i] ))
+			{
+				allow = true;
+				break;
+			}
+		}
+	}
+#endif
+
+	if( allow )
+		Cmd_ExecScript( cfgpath );
+	else
+		Con_Printf( "exec %s: not privileged or in whitelist\n", cfgpath );
+}
+
+/*
+===============
+Cmd_Exec_f
+===============
+*/
+static void Cmd_Exec_f( void )
+{
+	string cfgpath;
+
+	// early exit for stuffcmd
+	if( !Cmd_CurrentCommandIsPrivileged())
+	{
+		Cmd_UnprivilegedExec_f();
+		return;
+	}
+
+	if( Cmd_Argc() != 2 )
+	{
+		Con_Printf( S_USAGE "exec <PATTERN>\n"
+			"PATTERN single file or wildcard pattern to match\n"
+			"Wildcards: * matches any characters, ? matches single character\n"
+			"Example: file.cfg   - single file.cfg\n"
+			"\tdirectory/*       - all .cfg files in directory\n"
+			"\tdirectory/???.cfg - all .cfg files in directory with 3 character names\n" );
+		return;
+	}
+
+	Q_strncpy( cfgpath, Cmd_Argv( 1 ), sizeof( cfgpath ));
+	COM_DefaultExtension( cfgpath, ".cfg", sizeof( cfgpath ));
+
+	if( Q_strpbrk( cfgpath, "*?" ))
+	{
+		search_t *search = FS_Search( cfgpath, true, false );
+		if( !search || !search->numfilenames )
+		{
+			Con_Printf( "couldn't exec %s\n", Cmd_Argv( 1 ));
+			if( search ) Mem_Free( search );
+			return;
+		}
+
+		Con_Printf( "execing %d file%s from " S_GREEN "%s" S_DEFAULT "\n",
+			search->numfilenames, search->numfilenames > 1 ? "s" : "", Cmd_Argv( 1 ));
+
+		for( int i = 0; i < search->numfilenames; i++ )
+			Cmd_ExecScript( search->filenames[i] );
+
+		Mem_Free( search );
+		return;
+	}
+
+	// don't execute game.cfg in singleplayer
+	if( SV_GetMaxClients() == 1 && !Q_stricmp( "game.cfg", cfgpath ))
+		return;
+
+	if( !Q_stricmp( "config.cfg", cfgpath ))
+		host.config_executed = true;
+
+	Con_Printf( "execing " S_GREEN "%s" S_DEFAULT "\n", Cmd_Argv( 1 ));
+
+	Cmd_ExecScript( cfgpath );
+}
+
+/*
+=================
+Cmd_Userconfigd_f
+=================
+*/
+static void Cmd_Userconfigd_f( void )
+{
+	search_t *t;
+	int i;
+
+	t = FS_Search( "userconfig.d/*.cfg", true, false );
+	if( !t )
+		return;
+
+	for( i = 0; i < t->numfilenames; i++ )
+	{
+		Cbuf_AddTextf( "exec %s\n", t->filenames[i] );
+	}
+
+	Mem_Free( t );
 }
 
 /*
@@ -1348,19 +1426,20 @@ Cmd_Init
 */
 void Cmd_Init( void )
 {
-	cmd_pool = Mem_AllocPool( "Console Commands" );
+	cmd_pool = Mem_AllocPoolExt( "Console Commands", MEM_SMALL_ALLOC_OPT );
 	cmd_functions = NULL;
 	cmd_condition = 0;
+	cmd_wait = 0;
 	cmd_alias = NULL;
 	cmd_args = NULL;
 	cmd_argc = 0;
 
 	// register our commands
 	Cmd_AddCommand( "echo", Cmd_Echo_f, "print a message to the console (useful in scripts)" );
-	Cmd_AddCommand( "wait", Cmd_Wait_f, "make script execution wait for some rendered frames" );
-	Cmd_AddCommand( "cmdlist", Cmd_List_f, "display all console commands beginning with the specified prefix" );
+	Cmd_AddRestrictedCommand( "wait", Cmd_Wait_f, "make script execution wait for some rendered frames" );
+	Cmd_AddRestrictedCommand( "cmdlist", Cmd_List_f, "display all console commands beginning with the specified prefix" );
 	Cmd_AddRestrictedCommand( "stuffcmds", Cmd_StuffCmds_f, "execute commandline parameters (must be present in .rc script)" );
-	Cmd_AddCommand( "apropos", Cmd_Apropos_f, "lists all console variables/commands/aliases containing the specified string in the name or description" );
+	Cmd_AddRestrictedCommand( "apropos", Cmd_Apropos_f, "lists all console variables/commands/aliases containing the specified string in the name or description" );
 #if !XASH_DEDICATED
 	Cmd_AddCommand( "cmd", Cmd_ForwardToServer, "send a console commandline to the server" );
 #endif // XASH_DEDICATED
@@ -1371,10 +1450,10 @@ void Cmd_Init( void )
 
 	Cmd_AddRestrictedCommand( "make_privileged", Cmd_MakePrivileged_f, "makes command or variable privileged (protected from access attempts from server)" );
 
-#if defined(XASH_HASHED_VARS)
-	Cmd_AddCommand( "basecmd_stats", BaseCmd_Stats_f, "print info about basecmd usage" );
-	Cmd_AddCommand( "basecmd_test", BaseCmd_Test_f, "test basecmd" );
-#endif
+	Cmd_AddRestrictedCommand( "basecmd_stats", BaseCmd_Stats_f, "print info about basecmd usage" );
+	Cmd_AddRestrictedCommand( "basecmd_test", BaseCmd_Test_f, "test basecmd" );
+	Cmd_AddCommand( "exec", Cmd_Exec_f, "execute a script file" );
+	Cmd_AddRestrictedCommand( "userconfigd", Cmd_Userconfigd_f, "execute all scripts from userconfig.d" );
 }
 
 void Cmd_Shutdown( void )

@@ -29,13 +29,16 @@ def check_repo(name, branch, url, path):
 
 
 def run_cmake(root, out, toolchain, abi, build_type, ndk_root, min_sdk, *args):
-	cmake_exec = ["cmake", "-H{}".format(root), "-DCMAKE_BUILD_TYPE={}".format(build_type),
-				  "-DCMAKE_TOOLCHAIN_FILE={}".format(toolchain), "-DANDROID_ABI={}".format(abi),
-				  "-DANDROID_NDK={}".format(ndk_root),
-				  "-DANDROID_PLATFORM=android-{}".format(min_sdk),
-				  "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-				  "-DCMAKE_SYSTEM_NAME=Android", "-DCMAKE_SYSTEM_VERSION={}".format(min_sdk),
-				  "-B{}".format(out), "-GNinja"]
+	cmake_exec = ["cmake", "-H{}".format(root),
+		"-DCMAKE_BUILD_TYPE={}".format(build_type),
+		"-DCMAKE_TOOLCHAIN_FILE={}".format(toolchain),
+		"-DANDROID_ABI={}".format(abi),
+		"-DANDROID_NDK={}".format(ndk_root),
+		"-DANDROID_PLATFORM=android-{}".format(min_sdk),
+		"-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+		"-DCMAKE_SYSTEM_NAME=Android",
+		"-DCMAKE_SYSTEM_VERSION={}".format(min_sdk),
+		"-B{}".format(out), "-GNinja"]
 
 	cmake_exec.extend(args)
 	cmake_process = subprocess.Popen(cmake_exec)
@@ -79,6 +82,13 @@ def main():
 	run_cmake(hlsdk_path, hlsdk_out_path, cmake_toolchain_path, abi, cmake_build_type, args.ndk_root,
 			  args.min_sdk_version, "-DANDROID_APK=ON")
 
+	# configure mainui_cpp
+	mainui_path = os.path.join(args.wscript_path, "3rdparty", "mainui")
+	mainui_out_path = os.path.join(args.configuration_dir, "mainui")
+
+	run_cmake(mainui_path, mainui_out_path, cmake_toolchain_path, abi, cmake_build_type, args.ndk_root,
+		args.min_sdk_version, "-DBUILD_AS_PART_OF_ENGINE=ON")
+
 	# waf configure
 	waf_path = os.path.join(args.wscript_path, "waf")
 	out_path = os.path.join(args.configuration_dir, "xash3d-fwgs")
@@ -92,7 +102,7 @@ def main():
 
 	waf_exec = [sys.executable, waf_path, "configure", "-t", args.wscript_path, "-o", out_path,
 				"-T", waf_build_type, "--android={},,{}".format(abi, args.min_sdk_version), "-s",
-				sdl_path, "--skip-sdl2-sanity-check", "--enable-bundled-deps", "ninja"]
+				sdl_path, "--skip-sdl2-sanity-check", "--enable-bundled-deps", "--disable-soft", "ninja"]
 
 	process = subprocess.Popen(waf_exec, env=env)
 	process.communicate()

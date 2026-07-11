@@ -25,6 +25,7 @@ AVI PLAYING
 */
 
 static movie_state_t	*cin_state;
+static int		cin_texture;
 
 /*
 ==================
@@ -68,7 +69,11 @@ static void SCR_CreateStartupVids( void )
 	file_t	*f;
 
 	f = FS_Open( DEFAULT_VIDEOLIST_PATH, "w", false );
-	if( !f ) return;
+	if( !f )
+	{
+		Con_Printf( S_ERROR "%s: can't open %s for write\n", __func__, DEFAULT_VIDEOLIST_PATH );
+		return;
+	}
 
 	// make standard video playlist: sierra, valve
 	FS_Print( f, "media/sierra.avi\n" );
@@ -170,6 +175,9 @@ qboolean SCR_DrawCinematic( void )
 	if( !ref.initialized )
 		return false;
 
+	ref.dllFuncs.GL_SetRenderMode( kRenderNormal );
+	ref.dllFuncs.R_DrawStretchPic( 0, 0, refState.width, refState.height, 0, 0, 1, 1, R_GetBuiltinTexture( REF_BLACK_TEXTURE ));
+
 	if( !AVI_Think( cin_state ))
 		return SCR_NextMovie();
 
@@ -184,10 +192,8 @@ SCR_PlayCinematic
 qboolean SCR_PlayCinematic( const char *arg )
 {
 	int x, y, w, h;
-	const char	*fullpath;
+	const char	*fullpath = FS_GetDiskPath( arg, false );
 	double video_ratio, screen_ratio, scale;
-
-	fullpath = FS_GetDiskPath( arg, false );
 
 	if( FS_FileExists( arg, false ) && !fullpath )
 	{
@@ -274,6 +280,12 @@ void SCR_InitCinematic( void )
 {
 	AVI_Initailize ();
 	cin_state = AVI_GetState( CIN_MAIN );
+	cin_texture = ref.dllFuncs.GL_CreateTexture( "*cintexture", 64, 64, NULL, TF_NOMIPMAP|TF_CLAMP );
+}
+
+int SCR_GetCinematicTexture( void )
+{
+	return cin_texture;
 }
 
 /*

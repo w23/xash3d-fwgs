@@ -83,9 +83,6 @@ _TriColor4f
 void GAME_EXPORT _TriColor4f( float rr, float gg, float bb, float aa )
 {
 	// pglColor4f( r, g, b, a );
-	unsigned short r, g, b;
-	unsigned int   major, minor;
-
 	if( vid.rendermode == kRenderTransAdd || vid.rendermode == kRenderGlow )
 		rr *= aa, gg *= aa, bb *= aa;
 
@@ -107,7 +104,7 @@ void GAME_EXPORT _TriColor4f( float rr, float gg, float bb, float aa )
 		vid.color = COLOR_WHITE;
 		return;
 	}
-	r = rr * 31, g = gg * 63, b = bb * 31;
+	unsigned short r = rr * 31, g = gg * 63, b = bb * 31;
 	if( r > 31 )
 		r = 31;
 	if( g > 63 )
@@ -116,10 +113,10 @@ void GAME_EXPORT _TriColor4f( float rr, float gg, float bb, float aa )
 		b = 31;
 
 
-	major = ((( r >> 2 ) & MASK( 3 )) << 5 ) | (((( g >> 3 ) & MASK( 3 )) << 2 )) | ((( b >> 3 ) & MASK( 2 )));
+	unsigned int major = ((( r >> 2 ) & MASK( 3 )) << 5 ) | (((( g >> 3 ) & MASK( 3 )) << 2 )) | ((( b >> 3 ) & MASK( 2 )));
 
 	// save minor GBRGBRGB
-	minor = MOVE_BIT( r, 1, 5 ) | MOVE_BIT( r, 0, 2 ) | MOVE_BIT( g, 2, 7 ) | MOVE_BIT( g, 1, 4 ) | MOVE_BIT( g, 0, 1 ) | MOVE_BIT( b, 2, 6 ) | MOVE_BIT( b, 1, 3 ) | MOVE_BIT( b, 0, 0 );
+	unsigned int minor = MOVE_BIT( r, 1, 5 ) | MOVE_BIT( r, 0, 2 ) | MOVE_BIT( g, 2, 7 ) | MOVE_BIT( g, 1, 4 ) | MOVE_BIT( g, 0, 1 ) | MOVE_BIT( b, 2, 6 ) | MOVE_BIT( b, 1, 3 ) | MOVE_BIT( b, 0, 0 );
 
 	vid.color = major << 8 | ( minor & 0xFF );
 }
@@ -286,7 +283,10 @@ int TriSpriteTexture( model_t *pSpriteModel, int frame )
 {
 	int gl_texturenum;
 
-	if(( gl_texturenum = R_GetSpriteTexture( pSpriteModel, frame )) == 0 )
+	if( !pSpriteModel || pSpriteModel->type != mod_sprite || !pSpriteModel->cache.data )
+		return 0;
+
+	if(( gl_texturenum = gEngfuncs.R_GetSpriteFrame( pSpriteModel, frame, 0.0f )->gl_texturenum ) == 0 )
 		return 0;
 
 	if( gl_texturenum <= 0 || gl_texturenum >= MAX_TEXTURES )
@@ -346,11 +346,9 @@ TriBrightness
 */
 void TriBrightness( float brightness )
 {
-	float r, g, b;
-
-	r = ds.triRGBA[0] * ds.triRGBA[3] * brightness;
-	g = ds.triRGBA[1] * ds.triRGBA[3] * brightness;
-	b = ds.triRGBA[2] * ds.triRGBA[3] * brightness;
+	float r = ds.triRGBA[0] * ds.triRGBA[3] * brightness;
+	float g = ds.triRGBA[1] * ds.triRGBA[3] * brightness;
+	float b = ds.triRGBA[2] * ds.triRGBA[3] * brightness;
 
 	_TriColor4f( r, g, b, 1.0f );
 }

@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "r_studioint.h"
 #include "library.h"
 #include "ref_common.h"
+#include "swaplib.h"
 
 typedef int (*STUDIOAPI)( int, sv_blending_interface_t**, server_studio_api_t*,  float (*transform)[3][4], float (*bones)[MAXSTUDIOBONES][3][4] );
 
@@ -58,6 +59,151 @@ static int			cache_current;
 static int			cache_current_hull;
 static int			cache_current_plane;
 
+le_struct_begin( studiohdr_swap )
+	le_struct_field( studiohdr_t, ident )
+	le_struct_field( studiohdr_t, version )
+	le_struct_field( studiohdr_t, length )
+	le_struct_array( studiohdr_t, eyeposition, 3 )
+	le_struct_array( studiohdr_t, min, 3 )
+	le_struct_array( studiohdr_t, max, 3 )
+	le_struct_array( studiohdr_t, bbmin, 3 )
+	le_struct_array( studiohdr_t, bbmax, 3 )
+	le_struct_field( studiohdr_t, flags )
+	le_struct_field( studiohdr_t, numbones )
+	le_struct_field( studiohdr_t, boneindex )
+	le_struct_field( studiohdr_t, numbonecontrollers )
+	le_struct_field( studiohdr_t, bonecontrollerindex )
+	le_struct_field( studiohdr_t, numhitboxes )
+	le_struct_field( studiohdr_t, hitboxindex )
+	le_struct_field( studiohdr_t, numseq )
+	le_struct_field( studiohdr_t, seqindex )
+	le_struct_field( studiohdr_t, numseqgroups )
+	le_struct_field( studiohdr_t, seqgroupindex )
+	le_struct_field( studiohdr_t, numtextures )
+	le_struct_field( studiohdr_t, textureindex )
+	le_struct_field( studiohdr_t, texturedataindex )
+	le_struct_field( studiohdr_t, numskinref )
+	le_struct_field( studiohdr_t, numskinfamilies )
+	le_struct_field( studiohdr_t, skinindex )
+	le_struct_field( studiohdr_t, numbodyparts )
+	le_struct_field( studiohdr_t, bodypartindex )
+	le_struct_field( studiohdr_t, numattachments )
+	le_struct_field( studiohdr_t, attachmentindex )
+	le_struct_field( studiohdr_t, studiohdr2index )
+	le_struct_field( studiohdr_t, numtransitions )
+	le_struct_field( studiohdr_t, transitionindex )
+le_struct_end();
+
+le_struct_begin( mstudiobone_swap )
+	le_struct_field( mstudiobone_t, parent )
+	le_struct_field( mstudiobone_t, unused )
+	le_struct_array( mstudiobone_t, bonecontroller, 6 )
+	le_struct_array( mstudiobone_t, value, 6 )
+	le_struct_array( mstudiobone_t, scale, 6 )
+le_struct_end();
+
+le_struct_begin( mstudiobonecontroller_swap )
+	le_struct_field( mstudiobonecontroller_t, bone )
+	le_struct_field( mstudiobonecontroller_t, type )
+	le_struct_field( mstudiobonecontroller_t, start )
+	le_struct_field( mstudiobonecontroller_t, end )
+	le_struct_field( mstudiobonecontroller_t, unused )
+	le_struct_field( mstudiobonecontroller_t, index )
+le_struct_end();
+
+le_struct_begin( mstudiobbox_swap )
+	le_struct_field( mstudiobbox_t, bone )
+	le_struct_field( mstudiobbox_t, group )
+	le_struct_array( mstudiobbox_t, bbmin, 3 )
+	le_struct_array( mstudiobbox_t, bbmax, 3 )
+le_struct_end();
+
+le_struct_begin( mstudioseqgroup_swap )
+	// should we even swap seqgroup?
+	le_struct_field( mstudioseqgroup_t, unused )
+	le_struct_field( mstudioseqgroup_t, unused2 )
+le_struct_end();
+
+le_struct_begin( mstudioseqdesc_swap )
+	le_struct_field( mstudioseqdesc_t, fps )
+	le_struct_field( mstudioseqdesc_t, flags )
+	le_struct_field( mstudioseqdesc_t, activity )
+	le_struct_field( mstudioseqdesc_t, actweight )
+	le_struct_field( mstudioseqdesc_t, numevents )
+	le_struct_field( mstudioseqdesc_t, eventindex )
+	le_struct_field( mstudioseqdesc_t, numframes )
+	le_struct_field( mstudioseqdesc_t, weightlistindex )
+	le_struct_field( mstudioseqdesc_t, iklockindex )
+	le_struct_field( mstudioseqdesc_t, motiontype )
+	le_struct_field( mstudioseqdesc_t, motionbone )
+	le_struct_array( mstudioseqdesc_t, linearmovement, 3 )
+	le_struct_field( mstudioseqdesc_t, autolayerindex )
+	le_struct_field( mstudioseqdesc_t, keyvalueindex )
+	le_struct_array( mstudioseqdesc_t, bbmin, 3 )
+	le_struct_array( mstudioseqdesc_t, bbmax, 3 )
+	le_struct_field( mstudioseqdesc_t, numblends )
+	le_struct_field( mstudioseqdesc_t, animindex )
+	le_struct_array( mstudioseqdesc_t, blendtype, 2 )
+	le_struct_array( mstudioseqdesc_t, blendstart, 2 )
+	le_struct_array( mstudioseqdesc_t, blendend, 2 )
+	le_struct_field( mstudioseqdesc_t, seqgroup )
+	le_struct_field( mstudioseqdesc_t, entrynode )
+	le_struct_field( mstudioseqdesc_t, exitnode )
+	le_struct_field( mstudioseqdesc_t, animdescindex )
+le_struct_end();
+
+le_struct_begin( mstudioevent_swap )
+	le_struct_field( mstudioevent_t, frame )
+	le_struct_field( mstudioevent_t, event )
+	le_struct_field( mstudioevent_t, unused )
+le_struct_end();
+
+le_struct_begin( mstudioattachment_swap )
+	le_struct_field( mstudioattachment_t, flags )
+	le_struct_field( mstudioattachment_t, bone )
+	le_struct_array( mstudioattachment_t, org, 3 )
+le_struct_end();
+
+le_struct_begin( mstudiobodyparts_swap )
+	le_struct_field( mstudiobodyparts_t, nummodels )
+	le_struct_field( mstudiobodyparts_t, base )
+	le_struct_field( mstudiobodyparts_t, modelindex )
+le_struct_end();
+
+le_struct_begin( mstudiotexture_swap )
+	le_struct_field( mstudiotexture_t, flags )
+	le_struct_field( mstudiotexture_t, width )
+	le_struct_field( mstudiotexture_t, height )
+	le_struct_field( mstudiotexture_t, index )
+le_struct_end();
+
+le_struct_begin( mstudiomodel_swap )
+	le_struct_field( mstudiomodel_t, unused )
+	le_struct_field( mstudiomodel_t, unused2 )
+	le_struct_field( mstudiomodel_t, nummesh )
+	le_struct_field( mstudiomodel_t, meshindex )
+	le_struct_field( mstudiomodel_t, numverts )
+	le_struct_field( mstudiomodel_t, vertinfoindex )
+	le_struct_field( mstudiomodel_t, vertindex )
+	le_struct_field( mstudiomodel_t, numnorms )
+	le_struct_field( mstudiomodel_t, norminfoindex )
+	le_struct_field( mstudiomodel_t, normindex )
+	le_struct_field( mstudiomodel_t, blendvertinfoindex )
+	le_struct_field( mstudiomodel_t, blendnorminfoindex )
+le_struct_end();
+
+le_struct_begin( mstudiomesh_swap )
+	le_struct_field( mstudiomesh_t, numtris )
+	le_struct_field( mstudiomesh_t, triindex )
+	le_struct_field( mstudiomesh_t, skinref )
+	le_struct_field( mstudiomesh_t, numnorms )
+	le_struct_field( mstudiomesh_t, unused )
+le_struct_end();
+
+le_struct_begin( mstudioanim_swap )
+	le_struct_array( mstudioanim_t, offset, 6 )
+le_struct_end();
+
 /*
 ====================
 Mod_InitStudioHull
@@ -65,12 +211,10 @@ Mod_InitStudioHull
 */
 void Mod_InitStudioHull( void )
 {
-	int	i;
-
 	if( studio_hull[0].planes != NULL )
 		return;	// already initailized
 
-	for( i = 0; i < MAXSTUDIOBONES; i++ )
+	for( int i = 0; i < MAXSTUDIOBONES; i++ )
 	{
 		studio_hull[i].clipnodes16 = (mclipnode16_t *)box_clipnodes16;
 		studio_hull[i].planes = &studio_planes[i*6];
@@ -86,6 +230,19 @@ void Mod_InitStudioHull( void )
 
 ===============================================================================
 */
+/*
+===============
+Mod_StudioExtradata
+
+===============
+*/
+void *GAME_EXPORT Mod_StudioExtradata( model_t *mod )
+{
+	if( mod && mod->type == mod_studio )
+		return mod->cache.data;
+	return NULL;
+}
+
 /*
 ====================
 ClearStudioCache
@@ -106,13 +263,11 @@ AddToStudioCache
 */
 static void Mod_AddToStudioCache( float frame, int sequence, vec3_t angles, vec3_t origin, vec3_t size, byte *pcontroller, byte *pblending, model_t *model, hull_t *hull, int numhitboxes )
 {
-	mstudiocache_t *pCache;
-
 	if( numhitboxes + cache_current_hull >= MAXSTUDIOBONES )
 		Mod_ClearStudioCache();
 
 	cache_current++;
-	pCache = &cache_studio[cache_current & STUDIO_CACHEMASK];
+	mstudiocache_t *pCache = &cache_studio[cache_current & STUDIO_CACHEMASK];
 
 	pCache->frame = frame;
 	pCache->sequence = sequence;
@@ -143,12 +298,9 @@ CheckStudioCache
 */
 static mstudiocache_t *Mod_CheckStudioCache( model_t *model, float frame, int sequence, vec3_t angles, vec3_t origin, vec3_t size, byte *controller, byte *blending )
 {
-	mstudiocache_t	*pCached;
-	int		i;
-
-	for( i = 0; i < STUDIO_CACHESIZE; i++ )
+	for( int i = 0; i < STUDIO_CACHESIZE; i++ )
 	{
-		pCached = &cache_studio[(cache_current - i) & STUDIO_CACHEMASK];
+		mstudiocache_t *pCached = &cache_studio[(cache_current - i) & STUDIO_CACHEMASK];
 
 		if( pCached->model != model )
 			continue;
@@ -218,18 +370,13 @@ NOTE: pEdict may be NULL
 */
 hull_t *Mod_HullForStudio( model_t *model, float frame, int sequence, vec3_t angles, vec3_t origin, vec3_t size, byte *pcontroller, byte *pblending, int *numhitboxes, edict_t *pEdict )
 {
-	vec3_t		angles2;
-	mstudiocache_t	*bonecache;
-	mstudiobbox_t	*phitbox;
-	qboolean		bSkipShield;
-	int		i, j;
+	qboolean	bSkipShield = false;
 
-	bSkipShield = false;
 	*numhitboxes = 0; // assume error
 
 	if( mod_studiocache.value )
 	{
-		bonecache = Mod_CheckStudioCache( model, frame, sequence, angles, origin, size, pcontroller, pblending );
+		mstudiocache_t *bonecache = Mod_CheckStudioCache( model, frame, sequence, angles, origin, size, pcontroller, pblending );
 
 		if( bonecache != NULL )
 		{
@@ -245,18 +392,18 @@ hull_t *Mod_HullForStudio( model_t *model, float frame, int sequence, vec3_t ang
 	mod_studiohdr = Mod_StudioExtradata( model );
 	if( !mod_studiohdr ) return NULL; // probably not a studiomodel
 
-	VectorCopy( angles, angles2 );
+	vec3_t angles2 = Vec3( angles );
 
 	if( !FBitSet( host.features, ENGINE_COMPENSATE_QUAKE_BUG ))
 		angles2[PITCH] = -angles2[PITCH]; // stupid quake bug
 
 	pBlendAPI->SV_StudioSetupBones( model, frame, sequence, angles2, origin, pcontroller, pblending, -1, pEdict );
-	phitbox = (mstudiobbox_t *)((byte *)mod_studiohdr + mod_studiohdr->hitboxindex);
+	mstudiobbox_t *phitbox = (mstudiobbox_t *)((byte *)mod_studiohdr + mod_studiohdr->hitboxindex);
 
 	if( SV_IsValidEdict( pEdict ) && pEdict->v.gamestate == 1 )
 		bSkipShield = 1;
 
-	for( i = j = 0; i < mod_studiohdr->numhitboxes; i++, j += 6 )
+	for( int i = 0, j = 0; i < mod_studiohdr->numhitboxes; i++, j += 6 )
 	{
 		if( world.version == QBSP2_VERSION )
 			studio_hull[i].clipnodes32 = (mclipnode32_t *)box_clipnodes32;
@@ -391,6 +538,38 @@ static void Mod_StudioCalcRotations( int boneused[], int numbones, const byte *p
 }
 
 
+void Mod_SwapStudioSeqGroupAnims( studiohdr_t *phdr, mstudioseqdesc_t *pseq, byte *buf )
+{
+	mstudioanim_t *panim = (mstudioanim_t *)( buf + pseq->animindex );
+	int numanims = pseq->numblends * phdr->numbones;
+
+	for( int j = 0; j < numanims; j++, panim++ )
+	{
+		le_struct_swap( mstudioanim_swap, panim );
+
+		for( int k = 0; k < 6; k++ )
+		{
+			if( panim->offset[k] == 0 )
+				continue;
+
+			mstudioanimvalue_t *panimvalue = (mstudioanimvalue_t *)((byte *)panim + panim->offset[k] );
+
+			int frames = pseq->numframes;
+			while( frames > 0 )
+			{
+				int valid = panimvalue->num.valid;
+				int total = panimvalue->num.total;
+
+				for( int l = 1; l <= valid; l++ )
+					panimvalue[l].value = LittleShort( panimvalue[l].value );
+
+				panimvalue += valid + 1;
+				frames -= total;
+			}
+		}
+	}
+}
+
 /*
 ====================
 StudioGetAnim
@@ -399,17 +578,10 @@ StudioGetAnim
 */
 void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstudioseqdesc_t *pseqdesc )
 {
-	mstudioseqgroup_t	*pseqgroup;
-	cache_user_t	*paSequences;
-	fs_offset_t	filesize;
-	byte		*buf;
-
-	pseqgroup = (mstudioseqgroup_t *)((byte *)m_pStudioHeader + m_pStudioHeader->seqgroupindex) + pseqdesc->seqgroup;
 	if( pseqdesc->seqgroup == 0 )
 		return ((byte *)m_pStudioHeader + pseqdesc->animindex);
 
-	paSequences = (cache_user_t *)m_pSubModel->submodels;
-
+	cache_user_t *paSequences = (cache_user_t *)m_pSubModel->submodels;
 	if( paSequences == NULL )
 	{
 		paSequences = (cache_user_t *)Mem_Calloc( com_studiocache, MAXSTUDIOGROUPS * sizeof( cache_user_t ));
@@ -419,23 +591,31 @@ void *R_StudioGetAnim( studiohdr_t *m_pStudioHeader, model_t *m_pSubModel, mstud
 	// check for already loaded
 	if( !Mod_CacheCheck(( cache_user_t *)&( paSequences[pseqdesc->seqgroup] )))
 	{
-		string	filepath, modelname, modelpath;
-
+		string modelname;
 		COM_FileBase( m_pSubModel->name, modelname, sizeof( modelname ));
+
+		string modelpath;
 		COM_ExtractFilePath( m_pSubModel->name, modelpath );
 
 		// NOTE: here we build real sub-animation filename because stupid user may rename model without recompile
+		string filepath;
 		Q_snprintf( filepath, sizeof( filepath ), "%s/%s%i%i.mdl", modelpath, modelname, pseqdesc->seqgroup / 10, pseqdesc->seqgroup % 10 );
 
-		buf = FS_LoadFile( filepath, &filesize, false );
-		if( !buf || !filesize ) Host_Error( "%s: can't load %s\n", __func__, filepath );
-		if( IDSEQGRPHEADER != *(uint *)buf ) Host_Error( "%s: %s is corrupted\n", __func__, filepath );
+		fs_offset_t filesize;
+		byte *buf = FS_LoadFile( filepath, &filesize, false );
+		if( !buf || !filesize )
+			Host_Error( "%s: can't load %s\n", __func__, filepath );
+		if( LittleLong( IDSEQGRPHEADER ) != *(uint *)buf )
+			Host_Error( "%s: %s is corrupted\n", __func__, filepath );
 
 		Con_Printf( "loading: %s\n", filepath );
 
 		paSequences[pseqdesc->seqgroup].data = Mem_Calloc( com_studiocache, filesize );
 		memcpy( paSequences[pseqdesc->seqgroup].data, buf, filesize );
 		Mem_Free( buf );
+
+		Mod_SwapStudioSeqGroupAnims( m_pStudioHeader, pseqdesc,
+			(byte *)paSequences[pseqdesc->seqgroup].data );
 	}
 
 	return ((byte *)paSequences[pseqdesc->seqgroup].data + pseqdesc->animindex);
@@ -551,7 +731,6 @@ StudioGetAttachment
 void Mod_StudioGetAttachment( const edict_t *e, int iAtt, float *origin, float *angles )
 {
 	mstudioattachment_t		*pAtt;
-	vec3_t			angles2;
 	matrix3x4			localPose;
 	matrix3x4			worldPose;
 	model_t			*mod;
@@ -574,7 +753,7 @@ void Mod_StudioGetAttachment( const edict_t *e, int iAtt, float *origin, float *
 	// calculate attachment origin and angles
 	pAtt = (mstudioattachment_t *)((byte *)mod_studiohdr + mod_studiohdr->attachmentindex) + iAtt;
 
-	VectorCopy( e->v.angles, angles2 );
+	vec3_t angles2 = Vec3( e->v.angles );
 
 	if( !FBitSet( host.features, ENGINE_COMPENSATE_QUAKE_BUG ))
 		angles2[PITCH] = -angles2[PITCH];
@@ -664,20 +843,18 @@ static void Mod_StudioAccumulateBoneVerts( vec3_t mins, vec3_t maxs, int *numver
 StudioComputeBounds
 ====================
 */
-void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qboolean ignore_sequences )
+static void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qboolean ignore_sequences )
 {
 	int		i, j, k, numseq;
 	studiohdr_t	*pstudiohdr;
 	mstudiobodyparts_t	*pbodypart;
 	mstudiomodel_t	*m_pSubModel;
-	mstudioseqgroup_t	*pseqgroup;
 	mstudioseqdesc_t	*pseqdesc;
 	mstudiobone_t	*pbones;
 	mstudioanim_t	*panim;
 	vec3_t		bone_mins, bone_maxs;
 	vec3_t		vert_mins, vert_maxs;
 	int		vert_count, bone_count;
-	int		bodyCount = 0;
 	vec3_t		pos, *pverts;
 
 	vert_count = bone_count = 0;
@@ -693,18 +870,16 @@ void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qboolean i
 	// each body part has nummodels variations so there are as many total variations as there
 	// are in a matrix of each part by each other part
 	for( i = 0; i < pstudiohdr->numbodyparts; i++ )
-		bodyCount += pbodypart[i].nummodels;
-
-	// The studio models we want are vec3_t mins, vec3_t maxsight after the bodyparts (still need to
-	// find a detailed breakdown of the mdl format).  Move pointer there.
-	m_pSubModel = (mstudiomodel_t *)(&pbodypart[pstudiohdr->numbodyparts]);
-
-	for( i = 0; i < bodyCount; i++ )
 	{
-		pverts = (vec3_t *)((byte *)pstudiohdr + m_pSubModel[i].vertindex);
+		m_pSubModel = (mstudiomodel_t *)((byte *)pstudiohdr + pbodypart[i].modelindex);
 
-		for( j = 0; j < m_pSubModel[i].numverts; j++ )
-			Mod_StudioBoundVertex( bone_mins, bone_maxs, &vert_count, pverts[j] );
+		for( j = 0; j < pbodypart[i].nummodels; j++ )
+		{
+			pverts = (vec3_t *)((byte *)pstudiohdr + m_pSubModel[j].vertindex);
+
+			for( k = 0; k < m_pSubModel[j].numverts; k++ )
+				Mod_StudioBoundVertex( bone_mins, bone_maxs, &vert_count, pverts[k] );
+		}
 	}
 
 	pbones = (mstudiobone_t *)((byte *)pstudiohdr + pstudiohdr->boneindex);
@@ -713,7 +888,6 @@ void Mod_StudioComputeBounds( void *buffer, vec3_t mins, vec3_t maxs, qboolean i
 	for( i = 0; i < numseq; i++ )
 	{
 		pseqdesc = (mstudioseqdesc_t *)((byte *)pstudiohdr + pstudiohdr->seqindex) + i;
-		pseqgroup = (mstudioseqgroup_t *)((byte *)pstudiohdr + pstudiohdr->seqgroupindex) + pseqdesc->seqgroup;
 
 		if( pseqdesc->seqgroup == 0 )
 			panim = (mstudioanim_t *)((byte *)pstudiohdr + pseqdesc->animindex);
@@ -807,26 +981,121 @@ static int Mod_StudioBodyVariations( model_t *mod )
 	return count;
 }
 
+static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buffersize )
+{
+	studiohdr_t *phdr = buffer;
+
+	if( buffersize < sizeof( studiohdr_t ))
+		return false;
+
+	le_struct_swap( studiohdr_swap, phdr );
+
+	if( phdr->ident != IDSTUDIOHEADER || phdr->version != STUDIO_VERSION )
+		return false;
+
+#if XASH_BIG_ENDIAN
+	byte *mod_base = buffer;
+
+	if( phdr->studiohdr2index > 0 && phdr->studiohdr2index < phdr->length )
+	{
+		Con_Printf( S_ERROR "byteswapping extended studio model \"%s\" is unsupoprted\n", name );
+		return false;
+	}
+
+	for( int i = 0; i < phdr->numbones; i++ )
+		le_struct_swap( mstudiobone_swap, (mstudiobone_t *)( mod_base + phdr->boneindex ) + i );
+
+	for( int i = 0; i < phdr->numbonecontrollers; i++ )
+		le_struct_swap( mstudiobonecontroller_swap, (mstudiobonecontroller_t *)( mod_base + phdr->bonecontrollerindex ) + i );
+
+	for( int i = 0; i < phdr->numhitboxes; i++ )
+		le_struct_swap( mstudiobbox_swap, (mstudiobbox_t *)( mod_base + phdr->hitboxindex ) + i );
+
+	for( int i = 0; i < phdr->numseqgroups; i++ )
+		le_struct_swap( mstudioseqgroup_swap, (mstudioseqgroup_t *)( mod_base + phdr->seqgroupindex ) + i );
+
+	for( int i = 0; i < phdr->numattachments; i++ )
+	{
+		mstudioattachment_t *pattach = (mstudioattachment_t *)( mod_base + phdr->attachmentindex ) + i;
+		le_struct_swap( mstudioattachment_swap, pattach );
+		le_array_swap((float *)pattach->vectors, 3 * 3 );
+	}
+
+	for( int i = 0; i < phdr->numtextures; i++ )
+		le_struct_swap( mstudiotexture_swap, (mstudiotexture_t *)( mod_base + phdr->textureindex ) + i );
+
+	for( int i = 0; i < phdr->numbodyparts; i++ )
+		le_struct_swap( mstudiobodyparts_swap, (mstudiobodyparts_t *)( mod_base + phdr->bodypartindex ) + i );
+
+	for( int i = 0; i < phdr->numseq; i++ )
+	{
+		mstudioseqdesc_t *pseq = (mstudioseqdesc_t *)( mod_base + phdr->seqindex ) + i;
+		le_struct_swap( mstudioseqdesc_swap, pseq );
+
+		for( int j = 0; j < pseq->numevents; j++ )
+			le_struct_swap( mstudioevent_swap, (mstudioevent_t *)( mod_base + pseq->eventindex ) + j );
+
+		if( pseq->seqgroup != 0 )
+			continue;
+
+		Mod_SwapStudioSeqGroupAnims( phdr, pseq, mod_base );
+	}
+
+	for( int i = 0; i < phdr->numbodyparts; i++ )
+	{
+		mstudiobodyparts_t *pbodypart = (mstudiobodyparts_t *)( mod_base + phdr->bodypartindex ) + i;
+
+		for( int j = 0; j < pbodypart->nummodels; j++ )
+		{
+			mstudiomodel_t *pmodel = (mstudiomodel_t *)( mod_base + pbodypart->modelindex ) + j;
+			le_struct_swap( mstudiomodel_swap, pmodel );
+
+			le_array_swap((float *)( mod_base + pmodel->vertindex ), pmodel->numverts * 3 );
+			le_array_swap((float *)( mod_base + pmodel->normindex ), pmodel->numnorms * 3 );
+
+			for( int k = 0; k < pmodel->nummesh; k++ )
+			{
+				mstudiomesh_t *pmesh = (mstudiomesh_t *)( mod_base + pmodel->meshindex ) + k;
+				le_struct_swap( mstudiomesh_swap, pmesh );
+
+				short *ptricmds = (short *)( mod_base + pmesh->triindex );
+				short n;
+				while(( n = LittleShort( *ptricmds )))
+				{
+					*ptricmds++ = n;
+					int count = abs( n ) * 4;
+					for( int l = 0; l < count; l++, ptricmds++ )
+						*ptricmds = LittleShort( *ptricmds );
+				}
+				*ptricmds = 0;
+			}
+		}
+	}
+
+	short *pskinref = (short *)( mod_base + phdr->skinindex );
+	for( int i = 0; i < phdr->numskinfamilies * phdr->numskinref; i++ )
+		pskinref[i] = LittleShort( pskinref[i] );
+#endif
+
+	return true;
+}
+
 /*
 =================
 R_StudioLoadHeader
 =================
 */
-static studiohdr_t *R_StudioLoadHeader( model_t *mod, const void *buffer )
+static studiohdr_t *R_StudioLoadHeader( model_t *mod, void *buffer, size_t buffersize )
 {
-	byte		*pin;
-	studiohdr_t	*phdr;
-	int		i;
+	studiohdr_t *phdr;
 
-	if( !buffer ) return NULL;
+	if( !buffer )
+		return NULL;
 
-	pin = (byte *)buffer;
-	phdr = (studiohdr_t *)pin;
-	i = phdr->version;
-
-	if( i != STUDIO_VERSION )
+	if( !Mod_SwapStudioModel( mod->name, buffer, buffersize ))
 	{
-		Con_Printf( S_ERROR "%s has wrong version number (%i should be %i)\n", mod->name, i, STUDIO_VERSION );
+		phdr = (studiohdr_t *)buffer;
+		Con_Printf( S_ERROR "%s has wrong version number (%i should be %i)\n", mod->name, phdr->version, STUDIO_VERSION );
 		return NULL;
 	}
 
@@ -854,7 +1123,7 @@ static studiohdr_t *Mod_MaybeTruncateStudioTextureData( model_t *mod )
 Mod_LoadStudioModel
 =================
 */
-void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
+void Mod_LoadStudioModel( model_t *mod, void *buffer, size_t buffersize, qboolean *loaded )
 {
 	char poolname[MAX_VA_STRING];
 	studiohdr_t	*phdr;
@@ -866,7 +1135,7 @@ void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
 	mod->mempool = Mem_AllocPool( poolname );
 	mod->type = mod_studio;
 
-	phdr = R_StudioLoadHeader( mod, buffer );
+	phdr = R_StudioLoadHeader( mod, buffer, buffersize );
 	if( !phdr || phdr->length < sizeof( studiohdr_t )) // garbage value in length
 		return;	// bad model
 
@@ -875,9 +1144,10 @@ void Mod_LoadStudioModel( model_t *mod, const void *buffer, qboolean *loaded )
 	{
 		studiohdr_t *thdr;
 		void *buffer2;
+		fs_offset_t size2_len;
 
-		buffer2 = FS_LoadFile( Mod_StudioTexName( mod->name ), NULL, false );
-		thdr = R_StudioLoadHeader( mod, buffer2 );
+		buffer2 = FS_LoadFile( Mod_StudioTexName( mod->name ), &size2_len, false );
+		thdr = R_StudioLoadHeader( mod, buffer2, size2_len );
 
 		if( thdr != NULL )
 		{

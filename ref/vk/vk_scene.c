@@ -23,8 +23,9 @@
 #include "vk_logs.h"
 
 #include "ref_params.h"
+#include "entity_types.h"
 #include "eiface.h"
-#include "pm_movevars.h"
+#include "pmove.h"
 #include "xash3d_mathlib.h"
 
 #include <stdlib.h> // qsort
@@ -315,11 +316,25 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	/* 	return false; // not allow to drawing */
 	int render_mode;
 
-	if( !clent || !clent->model )
-		return false; // if set to invisible, skip
-
 	if( FBitSet( clent->curstate.effects, EF_NODRAW ))
 		return false; // done
+
+	// Beams are handled separately via beam_entities list
+	if( type == ET_BEAM )
+	{
+		if( g_lists.draw_list->num_beam_entities >= ARRAYSIZE(g_lists.draw_list->beam_entities) )
+		{
+			gEngine.Con_Printf( S_ERROR "Too many beams %d!\n", g_lists.draw_list->num_beam_entities );
+			return false;
+		}
+
+		g_lists.draw_list->beam_entities[g_lists.draw_list->num_beam_entities] = clent;
+		g_lists.draw_list->num_beam_entities++;
+		return true;
+	}
+
+	if( !clent || !clent->model )
+		return false; // if set to invisible, skip
 
 	render_mode = R_FIXME_GetEntityRenderMode( clent );
 
@@ -778,28 +793,6 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 		XVK_CameraDebugPrintCenterEntity();
 
 	APROF_SCOPE_END(scene_render);
-}
-
-/*
-================
-CL_AddCustomBeam
-
-Add the beam that encoded as custom entity
-================
-*/
-void CL_AddCustomBeam( cl_entity_t *pEnvBeam )
-{
-	if( g_lists.draw_list->num_beam_entities >= ARRAYSIZE(g_lists.draw_list->beam_entities) )
-	{
-		ERR("Too many beams %d!", g_lists.draw_list->num_beam_entities );
-		return;
-	}
-
-	if( pEnvBeam )
-	{
-		g_lists.draw_list->beam_entities[g_lists.draw_list->num_beam_entities] = pEnvBeam;
-		g_lists.draw_list->num_beam_entities++;
-	}
 }
 
 void CL_DrawBeams( int fTrans, BEAM *active_beams )

@@ -89,7 +89,7 @@ static qboolean Sound_ParseID3Frame( const did3v2_frame_t *frame, const byte *bu
 		{
 			key_len = Q_strncpy( key, &buffer[1], sizeof( key ));
 			value_len = frame_length - (1 + key_len + 1);
-			if( value_len <= 0 || value_len >= sizeof( value ))
+			if( value_len <= 0 || value_len >= sizeof( value ) - 1 )
 			{
 				Con_Printf( S_ERROR "%s: invalid TXXX description, possibly broken file.\n", __func__ );
 				return false;
@@ -185,7 +185,7 @@ static qboolean Sound_ParseID3Tag( const byte *buffer, fs_offset_t filesize )
 	return true;
 }
 
-#if XASH_ENGINE_TESTS
+#if XASH_LLVM_LIBFUZZER
 int EXPORT Fuzz_Sound_ParseID3Tag( const uint8_t *Data, size_t Size );
 int EXPORT Fuzz_Sound_ParseID3Tag( const uint8_t *Data, size_t Size )
 {
@@ -193,7 +193,7 @@ int EXPORT Fuzz_Sound_ParseID3Tag( const uint8_t *Data, size_t Size )
 	Sound_ParseID3Tag( Data, Size );
 	return 0;
 }
-#endif
+#endif // XASH_LLVM_LIBFUZZER
 
 /*
 =================================================================
@@ -362,9 +362,7 @@ int Stream_ReadMPG( stream_t *stream, int needBytes, void *buffer )
 {
 	// buffer handling
 	int	bytesWritten = 0;
-	void	*mpg;
-
-	mpg = stream->ptr;
+	void	*mpg = stream->ptr;
 
 	while( 1 )
 	{
