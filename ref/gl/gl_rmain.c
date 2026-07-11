@@ -17,7 +17,6 @@ GNU General Public License for more details.
 #include "xash3d_mathlib.h"
 #include "library.h"
 #include "beamdef.h"
-#include "particledef.h"
 #include "entity_types.h"
 
 
@@ -86,23 +85,20 @@ Sorting translucent entities by rendermode then by distance
 */
 static int R_TransEntityCompare( const void *a, const void *b )
 {
-	cl_entity_t	*ent1, *ent2;
-	vec3_t		vecLen, org;
-	float		dist1, dist2;
-	int		rendermode1;
-	int		rendermode2;
+	cl_entity_t *ent1 = *(cl_entity_t **)a;
+	cl_entity_t *ent2 = *(cl_entity_t **)b;
+	int rendermode1 = R_GetEntityRenderMode( ent1 );
+	int rendermode2 = R_GetEntityRenderMode( ent2 );
 
-	ent1 = *(cl_entity_t **)a;
-	ent2 = *(cl_entity_t **)b;
-	rendermode1 = R_GetEntityRenderMode( ent1 );
-	rendermode2 = R_GetEntityRenderMode( ent2 );
+	vec3_t vecLen, org;
+	float dist1, dist2;
 
 	// sort by distance
 	if( ent1->model->type != mod_brush || rendermode1 != kRenderTransAlpha )
 	{
 		VectorAverage( ent1->model->mins, ent1->model->maxs, org );
 		VectorAdd( ent1->origin, org, org );
-		VectorSubtract( RI.vieworg, org, vecLen );
+		VectorSubtract( RI.rvp.vieworigin, org, vecLen );
 		dist1 = DotProduct( vecLen, vecLen );
 	}
 	else dist1 = 1000000000;
@@ -111,7 +107,7 @@ static int R_TransEntityCompare( const void *a, const void *b )
 	{
 		VectorAverage( ent2->model->mins, ent2->model->maxs, org );
 		VectorAdd( ent2->origin, org, org );
-		VectorSubtract( RI.vieworg, org, vecLen );
+		VectorSubtract( RI.rvp.vieworigin, org, vecLen );
 		dist2 = DotProduct( vecLen, vecLen );
 	}
 	else dist2 = 1000000000;
@@ -140,19 +136,17 @@ Returns true if we behind to screen
 */
 int R_WorldToScreen( const vec3_t point, vec3_t screen )
 {
-	matrix4x4	worldToScreen;
-	qboolean	behind;
-	float	w;
-
 	if( !point || !screen )
 		return true;
 
+	matrix4x4 worldToScreen;
 	Matrix4x4_Copy( worldToScreen, RI.worldviewProjectionMatrix );
 	screen[0] = worldToScreen[0][0] * point[0] + worldToScreen[0][1] * point[1] + worldToScreen[0][2] * point[2] + worldToScreen[0][3];
 	screen[1] = worldToScreen[1][0] * point[0] + worldToScreen[1][1] * point[1] + worldToScreen[1][2] * point[2] + worldToScreen[1][3];
-	w = worldToScreen[3][0] * point[0] + worldToScreen[3][1] * point[1] + worldToScreen[3][2] * point[2] + worldToScreen[3][3];
+	float w = worldToScreen[3][0] * point[0] + worldToScreen[3][1] * point[1] + worldToScreen[3][2] * point[2] + worldToScreen[3][3];
 	screen[2] = 0.0f; // just so we have something valid here
 
+	qboolean behind;
 	if( w < 0.001f )
 	{
 		behind = true;
@@ -177,18 +171,16 @@ Convert a given point from screen into world space
 */
 void R_ScreenToWorld( const vec3_t screen, vec3_t point )
 {
-	matrix4x4	screenToWorld;
-	float	w;
-
 	if( !point || !screen )
 		return;
 
+	matrix4x4 screenToWorld;
 	Matrix4x4_Invert_Full( screenToWorld, RI.worldviewProjectionMatrix );
 
 	point[0] = screen[0] * screenToWorld[0][0] + screen[1] * screenToWorld[0][1] + screen[2] * screenToWorld[0][2] + screenToWorld[0][3];
 	point[1] = screen[0] * screenToWorld[1][0] + screen[1] * screenToWorld[1][1] + screen[2] * screenToWorld[1][2] + screenToWorld[1][3];
 	point[2] = screen[0] * screenToWorld[2][0] + screen[1] * screenToWorld[2][1] + screen[2] * screenToWorld[2][2] + screenToWorld[2][3];
-	w = screen[0] * screenToWorld[3][0] + screen[1] * screenToWorld[3][1] + screen[2] * screenToWorld[3][2] + screenToWorld[3][3];
+	float w = screen[0] * screenToWorld[3][0] + screen[1] * screenToWorld[3][1] + screen[2] * screenToWorld[3][2] + screenToWorld[3][3];
 	if( w != 0.0f ) VectorScale( point, ( 1.0f / w ), point );
 }
 
@@ -244,9 +236,6 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	if( !r_drawentities->value )
 		return false; // not allow to drawing
 
-	if( !clent || !clent->model )
-		return false; // if set to invisible, skip
-
 	if( FBitSet( clent->curstate.effects, EF_NODRAW ))
 		return false; // done
 
@@ -261,10 +250,22 @@ qboolean R_AddEntity( struct cl_entity_s *clent, int type )
 	case ET_TEMPENTITY:
 		r_stats.c_active_tents_count++;
 		break;
-	default: break;
 	}
 
-	if( R_OpaqueEntity( clent ))
+	if( type == ET_BEAM )
+	{
+		if( tr.draw_list->num_beam_entities >= MAX_VISIBLE_PACKET )
+		{
+			gEngfuncs.Con_Printf( S_ERROR "Too many beams %d!\n", tr.draw_list->num_beam_entities );
+			return false;
+		}
+
+		tr.draw_list->beam_entities[tr.draw_list->num_beam_entities] = clent;
+		tr.draw_list->num_beam_entities++;
+
+		return true;
+	}
+	else if( R_OpaqueEntity( clent ))
 	{
 		// opaque
 		if( tr.draw_list->num_solid_entities >= MAX_VISIBLE_PACKET )
@@ -293,13 +294,11 @@ R_Clear
 */
 static void R_Clear( int bitMask )
 {
-	int	bits;
-
 	if( ENGINE_GET_PARM( PARM_DEV_OVERVIEW ))
 		pglClearColor( 0.0f, 1.0f, 0.0f, 1.0f ); // green background (Valve rules)
 	else pglClearColor( 0.5f, 0.5f, 0.5f, 1.0f );
 
-	bits = GL_DEPTH_BUFFER_BIT;
+	int bits = GL_DEPTH_BUFFER_BIT;
 
 	if( glState.stencilEnabled )
 		bits |= GL_STENCIL_BUFFER_BIT;
@@ -309,7 +308,7 @@ static void R_Clear( int bitMask )
 	pglClear( bits );
 
 	// change ordering for overview
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 	{
 		gldepthmin = 1.0f;
 		gldepthmax = 0.0f;
@@ -332,8 +331,8 @@ R_GetFarClip
 */
 static float R_GetFarClip( void )
 {
-	if( WORLDMODEL && RI.drawWorld )
-		return tr.movevars->zmax * 1.73f;
+	if( WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+		return gp_movevars->zmax * 1.73f;
 	return 2048.0f;
 }
 
@@ -344,28 +343,26 @@ R_SetupFrustum
 */
 void R_SetupFrustum( void )
 {
-	const ref_overview_t	*ov = gEngfuncs.GetOverviewParms();
-
-	if( RP_NORMALPASS() && ( ENGINE_GET_PARM( PARM_WATER_LEVEL ) >= 3 ) && ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
-	{
-		RI.fov_x = atan( tan( DEG2RAD( RI.fov_x ) / 2 ) * ( 0.97f + sin( gp_cl->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
-		RI.fov_y = atan( tan( DEG2RAD( RI.fov_y ) / 2 ) * ( 1.03f - sin( gp_cl->time * 1.5f ) * 0.03f )) * 2 / (M_PI_F / 180.0f);
-	}
-
 	// build the transformation matrix for the given view angles
-	AngleVectors( RI.viewangles, RI.vforward, RI.vright, RI.vup );
+	AngleVectors( RI.rvp.viewangles, RI.vforward, RI.vright, RI.vup );
 
 	if( !r_lockfrustum.value )
 	{
-		VectorCopy( RI.vieworg, RI.cullorigin );
+		VectorCopy( RI.rvp.vieworigin, RI.cullorigin );
 		VectorCopy( RI.vforward, RI.cull_vforward );
 		VectorCopy( RI.vright, RI.cull_vright );
 		VectorCopy( RI.vup, RI.cull_vup );
 	}
 
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
+	{
+		const ref_overview_t	*ov = gEngfuncs.GetOverviewParms();
 		GL_FrustumInitOrtho( &RI.frustum, ov->xLeft, ov->xRight, ov->yTop, ov->yBottom, ov->zNear, ov->zFar );
-	else GL_FrustumInitProj( &RI.frustum, 0.0f, R_GetFarClip(), RI.fov_x, RI.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
+	}
+	else
+	{
+		GL_FrustumInitProj( &RI.frustum, 0.0f, R_GetFarClip(), RI.rvp.fov_x, RI.rvp.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
+	}
 }
 
 /*
@@ -375,9 +372,7 @@ R_SetupProjectionMatrix
 */
 static void R_SetupProjectionMatrix( matrix4x4 m )
 {
-	GLfloat	xMin, xMax, yMin, yMax, zNear, zFar;
-
-	if( RI.drawOrtho )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_OVERVIEW ))
 	{
 		const ref_overview_t *ov = gEngfuncs.GetOverviewParms();
 		Matrix4x4_CreateOrtho( m, ov->xLeft, ov->xRight, ov->yTop, ov->yBottom, ov->zNear, ov->zFar );
@@ -386,16 +381,23 @@ static void R_SetupProjectionMatrix( matrix4x4 m )
 
 	RI.farClip = R_GetFarClip();
 
-	zNear = 4.0f;
-	zFar = Q_max( 256.0f, RI.farClip );
+	GLfloat zNear = 4.0f;
+	GLfloat zFar = Q_max( 256.0f, RI.farClip );
 
-	yMax = zNear * tan( RI.fov_y * M_PI_F / 360.0f );
-	yMin = -yMax;
+	GLfloat yMax = zNear * tan( RI.rvp.fov_y * M_PI_F / 360.0f );
+	GLfloat yMin = -yMax;
 
-	xMax = zNear * tan( RI.fov_x * M_PI_F / 360.0f );
-	xMin = -xMax;
+	GLfloat xMax = zNear * tan( RI.rvp.fov_x * M_PI_F / 360.0f );
+	GLfloat xMin = -xMax;
 
-	Matrix4x4_CreateProjection( m, xMax, xMin, yMax, yMin, zNear, zFar );
+	if( tr.rotation & 1 )
+	{
+		Matrix4x4_CreateProjection( m, yMax, yMin, xMax, xMin, zNear, zFar );
+	}
+	else
+	{
+		Matrix4x4_CreateProjection( m, xMax, xMin, yMax, yMin, zNear, zFar );
+	}
 }
 
 /*
@@ -406,10 +408,19 @@ R_SetupModelviewMatrix
 static void R_SetupModelviewMatrix( matrix4x4 m )
 {
 	Matrix4x4_CreateModelview( m );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[2], 1, 0, 0 );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[0], 0, 1, 0 );
-	Matrix4x4_ConcatRotate( m, -RI.viewangles[1], 0, 0, 1 );
-	Matrix4x4_ConcatTranslate( m, -RI.vieworg[0], -RI.vieworg[1], -RI.vieworg[2] );
+	if( tr.rotation & 1 )
+	{
+		Matrix4x4_ConcatRotate( m, anglemod( -RI.rvp.viewangles[2] + 90 ), 1, 0, 0 );
+		Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[0], 0, 1, 0 );
+		Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[1], 0, 0, 1 );
+	}
+	else
+	{
+		Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[2], 1, 0, 0 );
+		Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[0], 0, 1, 0 );
+		Matrix4x4_ConcatRotate( m, -RI.rvp.viewangles[1], 0, 0, 1 );
+	}
+	Matrix4x4_ConcatTranslate( m, -RI.rvp.vieworigin[0], -RI.rvp.vieworigin[1], -RI.rvp.vieworigin[2] );
 }
 
 /*
@@ -489,7 +500,7 @@ R_FindViewLeaf
 void R_FindViewLeaf( void )
 {
 	RI.oldviewleaf = RI.viewleaf;
-	RI.viewleaf = gEngfuncs.Mod_PointInLeaf( RI.pvsorigin, WORLDMODEL->nodes );
+	RI.viewleaf = gEngfuncs.Mod_PointInLeaf( RI.rvp.vieworigin, WORLDMODEL->nodes, WORLDMODEL );
 }
 
 /*
@@ -500,7 +511,7 @@ R_SetupFrame
 static void R_SetupFrame( void )
 {
 	// setup viewplane dist
-	RI.viewplanedist = DotProduct( RI.vieworg, RI.vforward );
+	RI.viewplanedist = DotProduct( RI.rvp.vieworigin, RI.vforward );
 
 	// NOTE: this request is the fps-killer on some NVidia drivers
 	glState.isFogEnabled = pglIsEnabled( GL_FOG );
@@ -512,11 +523,8 @@ static void R_SetupFrame( void )
 	}
 
 	// current viewleaf
-	if( RI.drawWorld )
-	{
-		RI.isSkyVisible = false; // unknown at this moment
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_FindViewLeaf();
-	}
 }
 
 /*
@@ -533,22 +541,22 @@ void R_SetupGL( qboolean set_gl_state )
 
 	if( !set_gl_state ) return;
 
-	if( RP_NORMALPASS( ))
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 	{
-		int	x, x2, y, y2;
-
 		// set up viewport (main, playersetup)
-		x = floor( RI.viewport[0] * gpGlobals->width / gpGlobals->width );
-		x2 = ceil(( RI.viewport[0] + RI.viewport[2] ) * gpGlobals->width / gpGlobals->width );
-		y = floor( gpGlobals->height - RI.viewport[1] * gpGlobals->height / gpGlobals->height );
-		y2 = ceil( gpGlobals->height - ( RI.viewport[1] + RI.viewport[3] ) * gpGlobals->height / gpGlobals->height );
+		int x = floor( RI.rvp.viewport[0] * gpGlobals->width / gpGlobals->width );
+		int x2 = ceil(( RI.rvp.viewport[0] + RI.rvp.viewport[2] ) * gpGlobals->width / gpGlobals->width );
+		int y = floor( gpGlobals->height - RI.rvp.viewport[1] * gpGlobals->height / gpGlobals->height );
+		int y2 = ceil( gpGlobals->height - ( RI.rvp.viewport[1] + RI.rvp.viewport[3] ) * gpGlobals->height / gpGlobals->height );
 
-		pglViewport( x, y2, x2 - x, y - y2 );
+		if( tr.rotation & 1 )
+			pglViewport( y2, x, y - y2, x2 - x );
+		else pglViewport( x, y2, x2 - x, y - y2 );
 	}
 	else
 	{
 		// envpass, mirrorpass
-		pglViewport( RI.viewport[0], RI.viewport[1], RI.viewport[2], RI.viewport[3] );
+		pglViewport( RI.rvp.viewport[0], RI.rvp.viewport[1], RI.rvp.viewport[2], RI.rvp.viewport[3] );
 	}
 
 	pglMatrixMode( GL_PROJECTION );
@@ -557,36 +565,11 @@ void R_SetupGL( qboolean set_gl_state )
 	pglMatrixMode( GL_MODELVIEW );
 	GL_LoadMatrix( RI.worldviewMatrix );
 
-	if( FBitSet( RI.params, RP_CLIPPLANE ))
-	{
-		GLdouble	clip[4];
-		mplane_t	*p = &RI.clipPlane;
-
-		clip[0] = p->normal[0];
-		clip[1] = p->normal[1];
-		clip[2] = p->normal[2];
-		clip[3] = -p->dist;
-
-		pglClipPlane( GL_CLIP_PLANE0, clip );
-		pglEnable( GL_CLIP_PLANE0 );
-	}
-
 	GL_Cull( GL_FRONT );
 
 	pglDisable( GL_BLEND );
 	pglDisable( GL_ALPHA_TEST );
 	pglColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
-}
-
-/*
-=============
-R_EndGL
-=============
-*/
-static void R_EndGL( void )
-{
-	if( RI.params & RP_CLIPPLANE )
-		pglDisable( GL_CLIP_PLANE0 );
 }
 
 /*
@@ -600,7 +583,6 @@ watertexture to grab fog values from it
 static gl_texture_t *R_RecursiveFindWaterTexture( const mnode_t *node, const mnode_t *ignore, qboolean down )
 {
 	gl_texture_t *tex = NULL;
-	mnode_t *children[2];
 
 	// assure the initial node is not null
 	// we could check it here, but we would rather check it
@@ -613,20 +595,16 @@ static gl_texture_t *R_RecursiveFindWaterTexture( const mnode_t *node, const mno
 
 	if( node->contents < 0 )
 	{
-		mleaf_t		*pleaf;
-		msurface_t	**mark;
-		int		i, c;
-
 		// ignore non-liquid leaves
 		if( node->contents != CONTENTS_WATER && node->contents != CONTENTS_LAVA && node->contents != CONTENTS_SLIME )
 			 return NULL;
 
 		// find texture
-		pleaf = (mleaf_t *)node;
-		mark = pleaf->firstmarksurface;
-		c = pleaf->nummarksurfaces;
+		mleaf_t *pleaf = (mleaf_t *)node;
+		msurface_t **mark = pleaf->firstmarksurface;
+		int c = pleaf->nummarksurfaces;
 
-		for( i = 0; i < c; i++, mark++ )
+		for( int i = 0; i < c; i++, mark++ )
 		{
 			if( (*mark)->flags & SURF_DRAWTURB && (*mark)->texinfo && (*mark)->texinfo->texture )
 				return R_GetTexture( (*mark)->texinfo->texture->gl_texturenum );
@@ -638,18 +616,20 @@ static gl_texture_t *R_RecursiveFindWaterTexture( const mnode_t *node, const mno
 
 	// this is a regular node
 	// traverse children
-	node_children( children, node, WORLDMODEL );
+	mnode_t *child = node_child( node, 0, WORLDMODEL );
 
-	if( children[0] && ( children[0] != ignore ))
+	if( child && ( child != ignore ))
 	{
-		tex = R_RecursiveFindWaterTexture( children[0], node, true );
+		tex = R_RecursiveFindWaterTexture( child, node, true );
 		if( tex ) return tex;
 	}
 
-	if( children[1] && ( children[1] != ignore ))
+	child = node_child( node, 1, WORLDMODEL );
+
+	if( child && ( child != ignore ))
 	{
-		tex = R_RecursiveFindWaterTexture( children[1], node, true );
-		if( tex )	return tex;
+		tex = R_RecursiveFindWaterTexture( child, node, true );
+		if( tex ) return tex;
 	}
 
 	// for down recursion, return immediately
@@ -674,14 +654,10 @@ from underwater leaf (idea: XaeroX)
 */
 static void R_CheckFog( void )
 {
-	cl_entity_t	*ent;
-	gl_texture_t	*tex;
-	int		i, cnt, count;
-
 	// quake global fog
-	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
+	if( FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ))
 	{
-		if( !tr.movevars->fog_settings )
+		if( !gp_movevars->fog_settings )
 		{
 			if( pglIsEnabled( GL_FOG ))
 				pglDisable( GL_FOG );
@@ -690,10 +666,10 @@ static void R_CheckFog( void )
 		}
 
 		// quake-style global fog
-		RI.fogColor[0] = ((tr.movevars->fog_settings & 0xFF000000) >> 24) / 255.0f;
-		RI.fogColor[1] = ((tr.movevars->fog_settings & 0xFF0000) >> 16) / 255.0f;
-		RI.fogColor[2] = ((tr.movevars->fog_settings & 0xFF00) >> 8) / 255.0f;
-		RI.fogDensity = ((tr.movevars->fog_settings & 0xFF) / 255.0f) * 0.01f;
+		RI.fogColor[0] = ((gp_movevars->fog_settings & 0xFF000000) >> 24) / 255.0f;
+		RI.fogColor[1] = ((gp_movevars->fog_settings & 0xFF0000) >> 16) / 255.0f;
+		RI.fogColor[2] = ((gp_movevars->fog_settings & 0xFF00) >> 8) / 255.0f;
+		RI.fogDensity = ((gp_movevars->fog_settings & 0xFF) / 255.0f) * 0.01f;
 		RI.fogStart = RI.fogEnd = 0.0f;
 		RI.fogColor[3] = 1.0f;
 		RI.fogCustom = false;
@@ -704,7 +680,7 @@ static void R_CheckFog( void )
 
 	RI.fogEnabled = false;
 
-	if( RI.onlyClientDraw || ENGINE_GET_PARM( PARM_WATER_LEVEL ) < 3 || !RI.drawWorld || !RI.viewleaf )
+	if( FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ) || ENGINE_GET_PARM( PARM_WATER_LEVEL ) < 3 || !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ) || !RI.viewleaf )
 	{
 		if( RI.cached_waterlevel == 3 )
 		{
@@ -720,7 +696,8 @@ static void R_CheckFog( void )
 		return;
 	}
 
-	ent = gEngfuncs.CL_GetWaterEntity( RI.vieworg );
+	cl_entity_t *ent = gEngfuncs.CL_GetWaterEntity( RI.rvp.vieworigin );
+	int cnt;
 	if( ent && ent->model && ent->model->type == mod_brush && ent->curstate.skin < 0 )
 		cnt = ent->curstate.skin;
 	else cnt = RI.viewleaf->contents;
@@ -729,16 +706,15 @@ static void R_CheckFog( void )
 
 	if( !IsLiquidContents( RI.cached_contents ) && IsLiquidContents( cnt ))
 	{
-		tex = NULL;
+		gl_texture_t *tex = NULL;
 
 		// check for water texture
 		if( ent && ent->model && ent->model->type == mod_brush )
 		{
-			msurface_t	*surf;
+			int count = ent->model->nummodelsurfaces;
 
-			count = ent->model->nummodelsurfaces;
-
-			for( i = 0, surf = &ent->model->surfaces[ent->model->firstmodelsurface]; i < count; i++, surf++ )
+			msurface_t *surf = &ent->model->surfaces[ent->model->firstmodelsurface];
+			for( int i = 0; i < count; i++, surf++ )
 			{
 				if( surf->flags & SURF_DRAWTURB && surf->texinfo && surf->texinfo->texture )
 				{
@@ -807,9 +783,7 @@ void R_DrawFog( void )
 		return;
 
 	pglEnable( GL_FOG );
-	if( ENGINE_GET_PARM( PARM_QUAKE_COMPATIBLE ))
-		pglFogi( GL_FOG_MODE, GL_EXP2 );
-	else pglFogi( GL_FOG_MODE, GL_EXP );
+	pglFogi( GL_FOG_MODE, FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE ) ? GL_EXP2 : GL_EXP );
 	pglFogf( GL_FOG_DENSITY, RI.fogDensity );
 	pglFogfv( GL_FOG_COLOR, RI.fogColor );
 	pglHint( GL_FOG_HINT, GL_NICEST );
@@ -822,16 +796,17 @@ R_DrawEntitiesOnList
 */
 static void R_DrawEntitiesOnList( void )
 {
-	int	i;
-
 	tr.blend = 1.0f;
 	GL_CheckForErrors();
 
 	// first draw solid entities
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( int i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -860,10 +835,13 @@ static void R_DrawEntitiesOnList( void )
 	GL_CheckForErrors();
 
 	// draw sprites seperately, because of alpha blending
-	for( i = 0; i < tr.draw_list->num_solid_entities && !RI.onlyClientDraw; i++ )
+	for( int i = 0; i < tr.draw_list->num_solid_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->solid_entities[i];
 		RI.currentmodel = RI.currententity->model;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -878,20 +856,20 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		gEngfuncs.CL_DrawEFX( tr.frametime, false );
 	}
 
 	GL_CheckForErrors();
 
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.pfnDrawNormalTriangles();
 
 	GL_CheckForErrors();
 
 	// then draw translucent entities
-	for( i = 0; i < tr.draw_list->num_trans_entities && !RI.onlyClientDraw; i++ )
+	for( int i = 0; i < tr.draw_list->num_trans_entities && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ); i++ )
 	{
 		RI.currententity = tr.draw_list->trans_entities[i];
 		RI.currentmodel = RI.currententity->model;
@@ -902,6 +880,9 @@ static void R_DrawEntitiesOnList( void )
 		else tr.blend = 1.0f; // draw as solid but sorted by distance
 
 		if( tr.blend <= 0.0f ) continue;
+
+		if( !RI.currentmodel && RI.currententity->player && !FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+			continue;
 
 		Assert( RI.currententity != NULL );
 		Assert( RI.currentmodel != NULL );
@@ -927,7 +908,7 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 	{
 		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 		gEngfuncs.pfnDrawTransparentTriangles ();
@@ -935,7 +916,7 @@ static void R_DrawEntitiesOnList( void )
 
 	GL_CheckForErrors();
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		R_AllowFog( false );
 		gEngfuncs.CL_DrawEFX( tr.frametime, true );
@@ -946,7 +927,7 @@ static void R_DrawEntitiesOnList( void )
 
 	pglDisable( GL_BLEND );	// Trinity Render issues
 
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_DrawViewModel();
 	gEngfuncs.CL_ExtraUpdate();
 
@@ -962,18 +943,18 @@ R_SetupRefParams must be called right before
 */
 void R_RenderScene( void )
 {
-	if( !WORLDMODEL && RI.drawWorld )
+	if( !WORLDMODEL && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		gEngfuncs.Host_Error( "%s: NULL worldmodel\n", __func__ );
 
 	// frametime is valid only for normal pass
-	if( RP_NORMALPASS( ))
+	if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		tr.frametime = gp_cl->time -   gp_cl->oldtime;
 	else tr.frametime = 0.0;
 
 	// begin a new frame
 	tr.framecount++;
 
-	R_PushDlights();
+	tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
 
 	R_SetupFrustum();
 	R_SetupFrame();
@@ -982,7 +963,7 @@ void R_RenderScene( void )
 
 	R_MarkLeaves();
 	R_DrawFog ();
-	if( RI.drawWorld )
+	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_AnimateRipples();
 
 	R_CheckGLFog();
@@ -994,8 +975,6 @@ void R_RenderScene( void )
 	R_DrawEntitiesOnList();
 
 	R_DrawWaterSurfaces();
-
-	R_EndGL();
 }
 
 void R_GammaChanged( qboolean do_reset_gamma )
@@ -1084,28 +1063,9 @@ set initial params for renderer
 */
 void R_SetupRefParams( const ref_viewpass_t *rvp )
 {
-	RI.params = RP_NONE;
-	RI.drawWorld = FBitSet( rvp->flags, RF_DRAW_WORLD );
-	RI.onlyClientDraw = FBitSet( rvp->flags, RF_ONLY_CLIENTDRAW );
+	RI.rvp = *rvp;
+
 	RI.farClip = 0;
-
-	if( !FBitSet( rvp->flags, RF_DRAW_CUBEMAP ))
-		RI.drawOrtho = FBitSet( rvp->flags, RF_DRAW_OVERVIEW );
-	else RI.drawOrtho = false;
-
-	// setup viewport
-	RI.viewport[0] = rvp->viewport[0];
-	RI.viewport[1] = rvp->viewport[1];
-	RI.viewport[2] = rvp->viewport[2];
-	RI.viewport[3] = rvp->viewport[3];
-
-	// calc FOV
-	RI.fov_x = rvp->fov_x;
-	RI.fov_y = rvp->fov_y;
-
-	VectorCopy( rvp->vieworigin, RI.vieworg );
-	VectorCopy( rvp->viewangles, RI.viewangles );
-	VectorCopy( rvp->vieworigin, RI.pvsorigin );
 }
 
 /*
@@ -1121,7 +1081,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	// setup the initial render params
 	R_SetupRefParams( rvp );
 
-	if( gl_finish.value && RI.drawWorld )
+	if( gl_finish.value && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		pglFinish();
 
 	// completely override rendering
@@ -1131,7 +1091,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 
 		if( gEngfuncs.drawFuncs->GL_RenderFrame( rvp ))
 		{
-			R_GatherPlayerLight();
+			R_GatherPlayerLight( tr.viewent );
 			tr.realframecount++;
 			tr.fResetVis = true;
 			return;
@@ -1139,7 +1099,7 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	}
 
 	tr.fCustomRendering = false;
-	if( !RI.onlyClientDraw )
+	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_RunViewmodelEvents();
 
 	tr.realframecount++; // right called after viewmodel events
@@ -1200,11 +1160,8 @@ CL_FxBlend
 */
 int CL_FxBlend( cl_entity_t *e )
 {
-	int	blend = 0;
-	float	offset, dist;
-	vec3_t	tmp;
-
-	offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
+	int blend = 0;
+	float offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
 
 	switch( e->curstate.renderfx )
 	{
@@ -1221,7 +1178,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 0 )
 				e->curstate.renderamt -= 1;
@@ -1230,7 +1187,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFadeFast:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 3 )
 				e->curstate.renderamt -= 4;
@@ -1239,7 +1196,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidSlow:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 255 )
 				e->curstate.renderamt += 1;
@@ -1248,7 +1205,7 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidFast:
-		if( RP_NORMALPASS( ))
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 252 )
 				e->curstate.renderamt += 4;
@@ -1283,9 +1240,10 @@ int CL_FxBlend( cl_entity_t *e )
 		break;
 	case kRenderFxHologram:
 	case kRenderFxDistort:
-		VectorCopy( e->origin, tmp );
-		VectorSubtract( tmp, RI.vieworg, tmp );
-		dist = DotProduct( tmp, RI.vforward );
+	{
+		vec3_t tmp = Vec3( e->origin );
+		VectorSubtract( tmp, RI.rvp.vieworigin, tmp );
+		float dist = DotProduct( tmp, RI.vforward );
 
 		// turn off distance fade
 		if( e->curstate.renderfx == kRenderFxDistort )
@@ -1303,6 +1261,7 @@ int CL_FxBlend( cl_entity_t *e )
 			blend += gEngfuncs.COM_RandomLong( -32, 31 );
 		}
 		break;
+	}
 	default:
 		blend = e->curstate.renderamt;
 		break;

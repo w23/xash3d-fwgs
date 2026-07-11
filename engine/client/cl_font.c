@@ -17,6 +17,20 @@ GNU General Public License for more details.
 #include "filesystem.h"
 #include "client.h"
 #include "qfont.h"
+#include "swaplib.h"
+
+le_struct_begin( charinfo_swap )
+	le_struct_field( charinfo, startoffset )
+	le_struct_field( charinfo, charwidth )
+le_struct_end();
+
+le_struct_begin( qfont_swap )
+	le_struct_field( qfont_t, width )
+	le_struct_field( qfont_t, height )
+	le_struct_field( qfont_t, rowcount )
+	le_struct_field( qfont_t, rowheight )
+	le_struct_array_child( qfont_t, fontinfo, charinfo_swap, NUM_GLYPHS )
+le_struct_end();
 
 qboolean CL_FixedFont( cl_font_t *font )
 {
@@ -25,17 +39,14 @@ qboolean CL_FixedFont( cl_font_t *font )
 
 static int CL_LoadFontTexture( const char *fontname, uint texFlags, int *width )
 {
-	int font_width;
-	int tex;
-
 	if( !g_fsapi.FileExists( fontname, false ))
 		return 0;
 
-	tex = ref.dllFuncs.GL_LoadTexture( fontname, NULL, 0, texFlags );
+	int tex = ref.dllFuncs.GL_LoadTexture( fontname, NULL, 0, texFlags );
 	if( !tex )
 		return 0;
 
-	font_width = REF_GET_PARM( PARM_TEX_WIDTH, tex );
+	int font_width = REF_GET_PARM( PARM_TEX_WIDTH, tex );
 	if( !font_width )
 	{
 		ref.dllFuncs.GL_FreeTexture( tex );
@@ -68,9 +79,14 @@ void CL_SetFontRendermode( cl_font_t *font )
 	ref.dllFuncs.GL_SetRenderMode( CL_FontRenderMode( font->rendermode ));
 }
 
+void CL_SetFontColor( cl_font_t *font, const rgba_t color )
+{
+	ref.dllFuncs.Color4ub( color[0], color[1], color[2], color[3] );
+}
+
 qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float scale, convar_t *rendermode, uint texFlags )
 {
-	int font_width, i;
+	int font_width;
 
 	if( !rendermode )
 		return false;
@@ -88,7 +104,7 @@ qboolean Con_LoadFixedWidthFont( const char *fontname, cl_font_t *font, float sc
 	font->rendermode = rendermode;
 	font->charHeight = Q_rint( font_width / 16 * scale );
 
-	for( i = 0; i < ARRAYSIZE( font->fontRc ); i++ )
+	for( int i = 0; i < ARRAYSIZE( font->fontRc ); i++ )
 	{
 		font->fontRc[i].left   = ( i * font_width / 16 ) % font_width;
 		font->fontRc[i].right  = font->fontRc[i].left + font_width / 16;
@@ -105,8 +121,7 @@ qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float
 {
 	fs_offset_t length;
 	qfont_t src;
-	byte *pfile;
-	int font_width, i;
+	int font_width;
 
 	if( !rendermode )
 		return false;
@@ -114,7 +129,7 @@ qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float
 	if( font->valid )
 		return true;
 
-	pfile = g_fsapi.LoadFile( fontname, &length, false );
+	byte *pfile = g_fsapi.LoadFile( fontname, &length, false );
 	if( !pfile )
 		return false;
 
@@ -125,6 +140,7 @@ qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float
 	}
 
 	memcpy( &src, pfile, sizeof( src ));
+	le_struct_swap( qfont_swap, &src );
 	Mem_Free( pfile );
 
 	font->hFontTexture = CL_LoadFontTexture( fontname, texFlags, &font_width );
@@ -137,7 +153,7 @@ qboolean Con_LoadVariableWidthFont( const char *fontname, cl_font_t *font, float
 	font->rendermode = rendermode;
 	font->charHeight = Q_rint( src.rowheight * scale );
 
-	for( i = 0; i < ARRAYSIZE( font->fontRc ); i++ )
+	for( int i = 0; i < ARRAYSIZE( font->fontRc ); i++ )
 	{
 		const charinfo *ci = &src.fontinfo[i];
 
@@ -163,7 +179,7 @@ void CL_FreeFont( cl_font_t *font )
 
 static int CL_CalcTabStop( const cl_font_t *font, int x )
 {
-	int space = font->charWidths[' '];
+	int space = font->charWidths['0'];
 	int tab   = space * 6; // 6 spaces
 	int stop  = tab - x % tab;
 
@@ -175,11 +191,6 @@ static int CL_CalcTabStop( const cl_font_t *font, int x )
 
 int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_t *font, int flags )
 {
-	wrect_t *rc;
-	float w, h;
-	float s1, t1, s2, t2, half = 0.5f;
-	int texw, texh;
-
 	if( !font || !font->valid || y < -font->charHeight )
 		return 0;
 
@@ -200,21 +211,23 @@ int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_
 	if( !number || !font->charWidths[number])
 		return 0;
 
+	int texw, texh;
 	R_GetTextureParms( &texw, &texh, font->hFontTexture );
 	if( !texw || !texh )
 		return font->charWidths[number];
 
-	rc = &font->fontRc[number];
+	wrect_t *rc = &font->fontRc[number];
+	float half = 0.5f;
 
 	if( font->scale <= 1.f || !REF_GET_PARM( PARM_TEX_FILTERING, font->hFontTexture ))
 		half = 0;
 
-	s1 = ((float)rc->left + half ) / texw;
-	t1 = ((float)rc->top + half ) / texh;
-	s2 = ((float)rc->right - half ) / texw;
-	t2 = ((float)rc->bottom - half ) / texh;
-	w = ( rc->right - rc->left ) * font->scale;
-	h = ( rc->bottom - rc->top ) * font->scale;
+	float s1 = ((float)rc->left + half ) / texw;
+	float t1 = ((float)rc->top + half ) / texh;
+	float s2 = ((float)rc->right - half ) / texw;
+	float t2 = ((float)rc->bottom - half ) / texh;
+	float w = ( rc->right - rc->left ) * font->scale;
+	float h = ( rc->bottom - rc->top ) * font->scale;
 
 	if( FBitSet( flags, FONT_DRAW_HUD ))
 		SPR_AdjustSize( &x, &y, &w, &h );
@@ -222,10 +235,9 @@ int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_
 	if( !FBitSet( flags, FONT_DRAW_NORENDERMODE ))
 		CL_SetFontRendermode( font );
 
-	// don't apply color to fixed fonts it's already colored
-	if( font->type != FONT_FIXED || REF_GET_PARM( PARM_TEX_GLFORMAT, font->hFontTexture ) == 0x8045 ) // GL_LUMINANCE8_ALPHA8
-		ref.dllFuncs.Color4ub( color[0], color[1], color[2], color[3] );
-	else ref.dllFuncs.Color4ub( 255, 255, 255, color[3] );
+	if( !FBitSet( flags, FONT_DRAW_NOCOLOR ))
+		CL_SetFontColor( font, color );
+
 	ref.dllFuncs.R_DrawStretchPic( x, y, w, h, s1, t1, s2, t2, font->hFontTexture );
 
 	return font->charWidths[number];
@@ -233,7 +245,6 @@ int CL_DrawCharacter( float x, float y, int number, const rgba_t color, cl_font_
 
 int CL_DrawString( float x, float y, const char *s, const rgba_t color, cl_font_t *font, int flags )
 {
-	rgba_t current_color;
 	int draw_len = 0;
 
 	if( !font || !font->valid )
@@ -245,7 +256,9 @@ int CL_DrawString( float x, float y, const char *s, const rgba_t color, cl_font_
 	if( !FBitSet( flags, FONT_DRAW_NORENDERMODE ))
 		CL_SetFontRendermode( font );
 
-	Vector4Copy( color, current_color );
+	CL_SetFontColor( font, color );
+
+	SetBits( flags, FONT_DRAW_NOCOLOR | FONT_DRAW_NORENDERMODE );
 
 	while( *s )
 	{
@@ -264,7 +277,7 @@ int CL_DrawString( float x, float y, const char *s, const rgba_t color, cl_font_
 			}
 
 			if( FBitSet( flags, FONT_DRAW_RESETCOLORONLF ))
-				 Vector4Copy( color, current_color );
+				 CL_SetFontColor( font, color );
 			continue;
 		}
 
@@ -272,14 +285,14 @@ int CL_DrawString( float x, float y, const char *s, const rgba_t color, cl_font_
 		{
 			// don't copy alpha
 			if( !FBitSet( flags, FONT_DRAW_FORCECOL ))
-				VectorCopy( g_color_table[ColorIndex(*( s + 1 ))], current_color );
+				CL_SetFontColor( font, g_color_table[ColorIndex(*( s + 1 ))] );
 
 			s += 2;
 			continue;
 		}
 
 		// skip setting rendermode, it was changed for this string already
-		draw_len += CL_DrawCharacter( x + draw_len, y, (byte)*s, current_color, font, flags | FONT_DRAW_NORENDERMODE );
+		draw_len += CL_DrawCharacter( x + draw_len, y, (byte)*s, NULL, font, flags );
 
 		s++;
 	}
@@ -324,7 +337,7 @@ void CL_DrawStringLen( cl_font_t *font, const char *s, int *width, int *height, 
 	if( width )
 		*width = 0;
 
-	if( !COM_CheckString( s ))
+	if( COM_StringEmptyOrNULL( s ))
 		return;
 
 	if( FBitSet( flags, FONT_DRAW_UTF8 ))

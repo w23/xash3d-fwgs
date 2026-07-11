@@ -33,6 +33,8 @@ typedef int		HIMAGE;		// handle to a graphic
 #define PIC_KEEP_SOURCE	(1<<1)		// some images keep source
 #define PIC_NOFLIP_TGA	(1<<2)		// Steam background completely ignore tga attribute 0x20
 #define PIC_EXPAND_SOURCE (1<<3)		// don't keep as 8-bit source, expand to RGBA
+#define PIC_NOMIPMAP	(1<<12)		// disable mipmaps
+#define PIC_HAS_ALPHA	(1<<16)		// image has alpha channel
 
 // flags for COM_ParseFileSafe
 #define PFILE_IGNOREBRACKET (1<<0)
@@ -218,13 +220,12 @@ typedef struct ui_extendedfuncs_s {
 	// network address funcs
 	const char *(*pfnAdrToString)( const struct netadr_s a ) PFN_RETURNS_NONNULL;
 	int (*pfnCompareAdr)( const void *a, const void *b ); // netadr_t
-
 	void *(*pfnGetNativeObject)( const char *name );
 	struct net_api_s *pNetAPI;
 
 	// new mods info
 	gameinfo2_t *(*pfnGetGameInfo)( int gi_version ); // might return NULL if gi_version is unsupported
-	gameinfo2_t *(*pfnGetModInfo)( int gi_version, int mod_index ); // continiously call it until it returns null
+	gameinfo2_t *(*pfnGetModInfo)( int gi_version, int mod_index ); // continuously call it until it returns null
 
 	// returns 1 if cvar has read-only flag
 	// or -1 if cvar not found

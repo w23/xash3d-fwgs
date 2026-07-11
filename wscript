@@ -83,25 +83,29 @@ SUBDIRS = [
 	Subproject('public'),
 	Subproject('filesystem'),
 	Subproject('stub/server'),
-	Subproject('dllemu'),
 	Subproject('3rdparty/libbacktrace'),
+	Subproject('3rdparty/library_suffix'),
+	Subproject('3rdparty/yy-thunks'),
+	Subproject('utils/run-fuzzer', lambda x: x.env.ENABLE_FUZZER),
 
 	# disable only by engine feature, makes no sense to even parse subprojects in dedicated mode
 	Subproject('3rdparty/extras',       lambda x: x.env.CLIENT and x.env.DEST_OS != 'android'),
 	Subproject('3rdparty/nanogl',       lambda x: x.env.CLIENT and x.env.NANOGL),
 	Subproject('3rdparty/gl-wes-v2',    lambda x: x.env.CLIENT and x.env.GLWES),
 	Subproject('3rdparty/gl4es',        lambda x: x.env.CLIENT and x.env.GL4ES),
+	Subproject('ref/common',            lambda x: x.env.CLIENT),
 	Subproject('ref/gl',                lambda x: x.env.CLIENT and (x.env.GL or x.env.NANOGL or x.env.GLWES or x.env.GL4ES or x.env.GLES3COMPAT)),
 	Subproject('ref/soft',              lambda x: x.env.CLIENT and x.env.SOFT),
 	Subproject('ref/vk',                lambda x: x.env.CLIENT and x.env.VK),
 	Subproject('ref/null',              lambda x: x.env.CLIENT and x.env.NULL),
 	Subproject('3rdparty/bzip2',        lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_BZ2),
+	Subproject('3rdparty/mbedtls'),
 	Subproject('3rdparty/opus',         lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_OPUS),
 	Subproject('3rdparty/libogg',       lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_OGG),
 	Subproject('3rdparty/vorbis',       lambda x: x.env.CLIENT and (not x.env.HAVE_SYSTEM_VORBIS or not x.env.HAVE_SYSTEM_VORBISFILE)),
 	Subproject('3rdparty/opusfile',     lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_OPUSFILE),
 	Subproject('3rdparty/maintui',      lambda x: x.env.CLIENT and x.env.TUI),
-	Subproject('3rdparty/mainui',       lambda x: x.env.CLIENT),
+	Subproject('3rdparty/mainui',       lambda x: x.env.CLIENT and x.env.DEST_OS != 'android'),
 	Subproject('3rdparty/vgui_support', lambda x: x.env.CLIENT),
 	Subproject('3rdparty/MultiEmulator',lambda x: x.env.CLIENT),
 #	Subproject('3rdparty/freevgui',     lambda x: x.env.CLIENT),
@@ -112,7 +116,6 @@ SUBDIRS = [
 	# enabled optionally
 	Subproject('utils/mdldec',     lambda x: x.env.ENABLE_UTILS),
 	Subproject('utils/xar',        lambda x: x.env.ENABLE_UTILS and x.env.ENABLE_XAR),
-	Subproject('utils/run-fuzzer', lambda x: x.env.ENABLE_FUZZER),
 
 	# enabled on PSVita only
 	Subproject('ref/gl/vgl_shim',   lambda x: x.env.DEST_OS == 'psvita'),
@@ -170,8 +173,10 @@ def options(opt):
 	grp.add_option('--enable-tests', action = 'store_true', dest = 'TESTS', default = False,
 		help = 'enable building standalone tests (does not enable engine tests!) [default: %(default)s]')
 
+	grp.add_option('--disable-rpath', action = 'store_false', dest = 'ENABLE_RPATH', default = True,
+		help = 'disables rpath, duh!')
+
 	# a1ba: special option for me
-	grp.add_option('--debug-all-servers', action='store_true', dest='ALL_SERVERS', default=False, help='')
 	grp.add_option('--enable-msvcdeps', action='store_true', dest='MSVCDEPS', default=False, help='')
 	grp.add_option('--enable-wafcache', action='store_true', dest='WAFCACHE', default=False, help='')
 
@@ -250,6 +255,12 @@ def configure(conf):
 		conf.options.GL4ES            = True
 		conf.options.GLES3COMPAT      = True
 		conf.options.GL               = False
+	elif conf.env.IOS:
+		conf.options.NANOGL           = True
+		conf.options.GLWES            = False # deprecated
+		conf.options.GL4ES            = False # doesn't compile on ios yet
+		conf.options.GLES3COMPAT      = True
+		conf.options.GL               = False
 	elif conf.env.MAGX:
 		conf.options.SDL12            = True
 		conf.options.GL               = False
@@ -299,19 +310,18 @@ def configure(conf):
 	# check if we need to use irix linkflags
 	elif conf.env.DEST_OS == 'irix' and conf.env.COMPILER_CC == 'gcc':
 		linkflags.remove('-Wl,--no-undefined')
-		linkflags.append('-Wl,--unresolved-symbols=ignore-all')
+		linkflags.append('-Wl,-u,gl_INTERPRET_END')
 		# check if we're in a sgug environment
 		if 'sgug' in os.environ['LD_LIBRARYN32_PATH']:
 			linkflags.append('-lc')
-	elif conf.env.SAILFISH in ['aurora', 'sailfish']:
-		# TODO: enable XASH_MOBILE_PLATFORM
+	elif conf.env.DEST_OS == 'darwin':
+		try:
+			linkflags.remove('-Wl,--no-undefined')
+		except:
+			pass
+		linkflags.append('-Wl,-undefined,error')
+	elif conf.env.SAILFISH:
 		conf.define('XASH_SAILFISH', 1)
-		if conf.env.SAILFISH == 'aurora':
-			conf.define('XASH_AURORAOS', 1)
-
-		# Do not warn us about bug in SDL_Audio headers
-		conf.env.append_unique('CFLAGS', ['-Wno-attributes'])
-		conf.env.append_unique('CXXFLAGS', ['-Wno-attributes'])
 
 	conf.check_cc(cflags=cflags, linkflags=linkflags, msg='Checking for required C flags')
 	conf.check_cxx(cxxflags=cxxflags, linkflags=linkflags, msg='Checking for required C++ flags')
@@ -320,7 +330,10 @@ def configure(conf):
 	conf.env.append_unique('CXXFLAGS', cxxflags)
 	conf.env.append_unique('LINKFLAGS', linkflags)
 
-	if conf.env.COMPILER_CC != 'msvc':
+	if conf.env.COMPILER_CC == 'msvc':
+		opt_cflags = ['/we4013'] # -Werror=implicit-function-declaration
+		conf.env.CFLAGS_werror = conf.filter_cflags(opt_cflags, cflags)
+	else:
 		opt_flags = [
 			# '-Wall', '-Wextra', '-Wpedantic',
 			'-fdiagnostics-color=always',
@@ -357,7 +370,7 @@ def configure(conf):
 			'-Wmisleading-indentation',
 			'-Wmismatched-dealloc',
 			'-Wstringop-overflow',
-			'-Wunintialized',
+			'-Wuninitialized',
 			'-Wno-error=format-nonliteral',
 
 			# disabled, flood
@@ -374,6 +387,8 @@ def configure(conf):
 			]
 
 		opt_cflags = [
+			# disabled, as we're targetting C99 at least
+			# '-Werror=declaration-after-statement',
 			'-Werror=enum-conversion',
 			'-Wno-error=enum-float-conversion', # need this for cvars
 			'-Werror=implicit-int',
@@ -406,7 +421,7 @@ def configure(conf):
 	if not conf.options.DEDICATED:
 		conf.env.SERVER = conf.options.ENABLE_DEDICATED
 		conf.env.CLIENT = True
-		conf.env.LAUNCHER = conf.env.DEST_OS not in ['android', 'nswitch', 'psvita', 'dos', 'emscripten'] and not conf.env.MAGX and not conf.env.STATIC_LINKING
+		conf.env.LAUNCHER = conf.env.DEST_OS not in ['android', 'nswitch', 'psvita', 'dos', 'emscripten'] and not conf.env.IOS and not conf.env.MAGX and not conf.env.STATIC_LINKING
 	else:
 		conf.env.SERVER = True
 		conf.env.CLIENT = False
@@ -416,18 +431,17 @@ def configure(conf):
 
 	conf.define_cond('SUPPORT_HL25_EXTENDED_STRUCTS', conf.options.SUPPORT_HL25_EXTENDED_STRUCTS)
 
-	if conf.env.SAILFISH == 'aurora':
-		conf.env.DEFAULT_RPATH = '/usr/share/su.xash.Engine/lib'
-	elif conf.env.DEST_OS == 'darwin':
-		conf.env.DEFAULT_RPATH = '@loader_path'
-	elif conf.env.DEST_OS == 'openbsd':
-		# OpenBSD requires -z origin to enable $ORIGIN expansion in RPATH
-		conf.env.RPATH_ST = '-Wl,-z,origin,-rpath,%s'
-		conf.env.DEFAULT_RPATH = '$ORIGIN'
-	elif conf.env.DEST_OS in ['nswitch', 'psvita']:
-		conf.env.DEFAULT_RPATH = None
-	else:
-		conf.env.DEFAULT_RPATH = '$ORIGIN'
+	if conf.options.ENABLE_RPATH and conf.env.DEST_OS not in ['nswitch', 'psvita']:
+		if conf.env.DEST_OS == 'openbsd':
+			# OpenBSD requires -z origin to enable $ORIGIN expansion in RPATH
+			conf.env.RPATH_ST = '-Wl,-z,origin,-rpath,%s'
+			conf.env.DEFAULT_RPATH = '$ORIGIN'
+		elif conf.env.DEST_OS == 'irix':
+			conf.env.DEFAULT_RPATH = '/usr/lib32:/usr/sgug/lib32'
+		elif conf.env.DEST_OS == 'darwin':
+			conf.env.DEFAULT_RPATH = '@loader_path'
+		else:
+			conf.env.DEFAULT_RPATH = '$ORIGIN'
 
 	setattr(conf, 'refdlls', REFDLLS)
 
@@ -436,7 +450,6 @@ def configure(conf):
 
 	conf.env.GAMEDIR = conf.options.GAMEDIR
 	conf.define('XASH_GAMEDIR', conf.options.GAMEDIR)
-	conf.define_cond('XASH_ALL_SERVERS', conf.options.ALL_SERVERS)
 
 	if conf.env.DEST_OS == 'nswitch':
 		conf.check_cfg(package='solder', args='--cflags --libs', uselib_store='SOLDER')
@@ -463,7 +476,7 @@ def configure(conf):
 		# Don't check them more than once, to save time
 		# Usually, they are always available
 		# but we need them in uselib
-		a = [ 'user32', 'shell32', 'gdi32', 'advapi32', 'dbghelp', 'psapi', 'ws2_32' ]
+		a = [ 'user32', 'shell32', 'gdi32', 'advapi32', 'dbghelp', 'psapi', 'ws2_32', 'bcrypt' ]
 		if conf.env.COMPILER_CC == 'msvc':
 			for i in a:
 				conf.start_msg('Checking for MSVC library')
@@ -494,9 +507,7 @@ def configure(conf):
 	# indicate if we are packaging for Linux/BSD
 	if conf.options.PACKAGING:
 		conf.env.PREFIX = conf.options.prefix
-		if conf.env.SAILFISH == "aurora":
-			conf.env.SHAREDIR = '${PREFIX}/share/su.xash.Engine/rodir'
-		elif conf.env.SAILFISH == "sailfish":
+		if conf.env.SAILFISH:
 			conf.env.SHAREDIR = '${PREFIX}/share/harbour-xash3d-fwgs/rodir'
 		else:
 			conf.env.SHAREDIR = '${PREFIX}/share/xash3d'
@@ -521,7 +532,13 @@ int main(int argc, char **argv) { return opus_tagcompare(argv[0], argv[1]); }'''
 
 			# search for opus 1.4 only, it has fixes for custom modes
 			# 1.5 breaks custom modes: https://github.com/xiph/opus/issues/374
-			if conf.check_cfg(package='opus', uselib_store='opus', args='opus = 1.4 --cflags --libs', mandatory=False):
+			have_opus = conf.check_cfg(package='opus', uselib_store='opus', args=['opus = 1.4', '--cflags', '--libs'], mandatory=False)
+
+			# 1.6.1 fixes them again
+			if not have_opus:
+				have_opus = conf.check_cfg(package='opus', uselib_store='opus', args=['opus >= 1.6.1', '--cflags', '--libs'], mandatory=False)
+
+			if have_opus:
 				# now try to link with export that only exists with CUSTOM_MODES defined
 				frag='''#include <opus_custom.h>
 int main(void) { return !opus_custom_encoder_init((OpusCustomEncoder *)1, (const OpusCustomMode *)1, 1); }'''
@@ -543,6 +560,10 @@ int main(void) { return (int)BZ2_bzlibVersion(); }'''
 		conf.add_subproject(i.name)
 
 def build(bld):
+	# enable progress bar mode if stdout is a terminal
+	if not bld.progress_bar and sys.stdout.isatty():
+		bld.progress_bar = 1
+
 	if bld.env.WAFCACHE:
 		bld.load('wafcache')
 
@@ -552,7 +573,7 @@ def build(bld):
 
 	# don't clean QtCreator files and reconfigure saved options
 	bld.clean_files = bld.bldnode.ant_glob('**',
-		excl='*.user configuration.py .lock* *conf_check_*/** config.log 3rdparty/libbacktrace/*.h %s/*' % Build.CACHE_DIR,
+		excl='.qtc* *.user configuration.py .lock* *conf_check_*/** config.log 3rdparty/libbacktrace/*.h %s/*' % Build.CACHE_DIR,
 		quiet=True, generator=True)
 
 	bld.load('xshlib')

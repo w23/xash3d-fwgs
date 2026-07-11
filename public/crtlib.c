@@ -13,36 +13,57 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 */
-#include "port.h"
-#include "xash3d_types.h"
-#include "const.h"
 #include <math.h>
 #include <stdarg.h>
 #include <time.h>
-#include "stdio.h"
-#include "crtlib.h"
+#include <stdio.h>
+#include "port.h"
+#include "xash3d_types.h"
 #include "xash3d_mathlib.h"
+#include "crtlib.h"
+
+char *GAME_EXPORT Q_memfgets( byte *data, int data_len, int *data_offset, char *dst, int dst_size )
+{
+	// sanity check
+	if( !data || !data_offset || !dst || *data_offset >= data_len )
+		return NULL;
+
+	const char *start = (const char *)data + *data_offset;
+	int remaining = data_len - *data_offset;
+
+	// do not assume the data is null terminated, as we have data_len anyway :)
+	const char *end = memchr( start, '\n', remaining );
+
+	if( end )
+		remaining = end - start + 1;
+
+	// include null terminator
+	Q_strncpy( dst, start, Q_min( remaining + 1, dst_size ));
+
+	*data_offset += remaining;
+
+	return dst;
+}
+
 
 void Q_strnlwr( const char *in, char *out, size_t size_out )
 {
-	size_t len, i;
+	size_t len = Q_strncpy( out, in, size_out );
 
-	len = Q_strncpy( out, in, size_out );
-
-	for( i = 0; i < len; i++ )
+	for( size_t i = 0; i < len; i++ )
 		out[i] = Q_tolower( out[i] );
 }
 
 int Q_atoi_hex( int sign, const char *str )
 {
-	int c, val = 0;
+	int val = 0;
 
 	if( str[0] == '0' && ( str[1] == 'x' || str[1] == 'X' ))
 		str += 2;
 
 	while( 1 )
 	{
-		c = *str++;
+		int c = *str++;
 		if( c >= '0' && c <= '9' ) val = (val<<4) + c - '0';
 		else if( c >= 'a' && c <= 'f' ) val = (val<<4) + c - 'a' + 10;
 		else if( c >= 'A' && c <= 'F' ) val = (val<<4) + c - 'A' + 10;
@@ -65,17 +86,15 @@ static const char *Q_atoi_strip_whitespace( const char *str )
 
 int Q_atoi( const char *str )
 {
-	int val = 0;
-	int c, sign;
-
-	if( !COM_CheckString( str ))
+	if( COM_StringEmptyOrNULL( str ))
 		return 0;
 
 	str = Q_atoi_strip_whitespace( str );
 
-	if( !COM_CheckString( str ))
+	if( COM_StringEmptyOrNULL( str ))
 		return 0;
 
+	int sign;
 	if( *str == '-' )
 	{
 		sign = -1;
@@ -92,9 +111,10 @@ int Q_atoi( const char *str )
 		return Q_atoi_character( sign, str );
 
 	// assume decimal
+	int val = 0;
 	while( 1 )
 	{
-		c = *str++;
+		int c = *str++;
 		if( c < '0' || c > '9' )
 			return val * sign;
 		val = val * 10 + c - '0';
@@ -104,17 +124,15 @@ int Q_atoi( const char *str )
 
 float Q_atof( const char *str )
 {
-	double	val = 0;
-	int	c, sign, decimal, total;
-
-	if( !COM_CheckString( str ))
+	if( COM_StringEmptyOrNULL( str ))
 		return 0;
 
 	str = Q_atoi_strip_whitespace( str );
 
-	if( !COM_CheckString( str ))
+	if( COM_StringEmptyOrNULL( str ))
 		return 0;
 
+	int sign;
 	if( *str == '-' )
 	{
 		sign = -1;
@@ -131,12 +149,13 @@ float Q_atof( const char *str )
 		return Q_atoi_character( sign, str );
 
 	// assume decimal
-	decimal = -1;
-	total = 0;
+	double val = 0;
+	int decimal = -1;
+	int total = 0;
 
 	while( 1 )
 	{
-		c = *str++;
+		int c = *str++;
 		if( c == '.' )
 		{
 			decimal = total;
@@ -163,13 +182,12 @@ float Q_atof( const char *str )
 
 void Q_atov( float *vec, const char *str, size_t siz )
 {
-	const char *pstr, *pfront;
-	int	j;
-
 	memset( vec, 0, sizeof( *vec ) * siz );
-	pstr = pfront = str;
 
-	for( j = 0; j < siz; j++ )
+	const char *pstr = str;
+	const char *pfront = str;
+
+	for( size_t j = 0; j < siz; j++ )
 	{
 		vec[j] = Q_atof( pfront );
 
@@ -185,8 +203,8 @@ void Q_atov( float *vec, const char *str, size_t siz )
 
 static qboolean Q_starcmp( const char *pattern, const char *text )
 {
-	char		c, c1;
-	const char	*p = pattern, *t = text;
+	char c;
+	const char *p = pattern, *t = text;
 
 	while(( c = *p++ ) == '?' || c == '*' )
 	{
@@ -196,7 +214,7 @@ static qboolean Q_starcmp( const char *pattern, const char *text )
 
 	if( c == '\0' ) return true;
 
-	for( c1 = (( c == '\\' ) ? *p : c ); ; )
+	for( char c1 = (( c == '\\' ) ? *p : c ); ; )
 	{
 		if( Q_tolower( *t ) == c1 && Q_stricmpext( p - 1, t ))
 			return true;
@@ -238,6 +256,21 @@ qboolean Q_stricmpext( const char *pattern, const char *text )
 	return Q_strnicmpext( pattern, text, ~((size_t)0) );
 }
 
+int Q_strcmp_constant_time( const char *s1, const char *s2 )
+{
+	if( !s1 || !s2 )
+		return ( s1 ? 1 : 0 ) - ( s2 ? 1 : 0 );
+
+	size_t l1 = strlen( s1 );
+	size_t l2 = strlen( s2 );
+	size_t diff = l1 ^ l2;
+
+	for( size_t i = 0; i < l1 && i < l2; i++ )
+		diff |= s1[i] ^ s2[i];
+
+	return diff != 0;
+}
+
 const byte *Q_memmem( const byte *haystack, size_t haystacklen, const byte *needle, size_t needlelen )
 {
 	const byte *i;
@@ -260,19 +293,17 @@ const byte *Q_memmem( const byte *haystack, size_t haystacklen, const byte *need
 
 void Q_memor( byte *XASH_RESTRICT dst, const byte *XASH_RESTRICT src, size_t len )
 {
-	size_t i;
-	for( i = 0; i < len; i++ ) // msvc likes to optimize this loop form
+	for( size_t i = 0; i < len; i++ ) // msvc likes to optimize this loop form
 		dst[i] |= src[i];
 }
 
-const char* Q_timestamp( int format )
+const char *Q_timestamp( int format )
 {
-	static string	timestamp;
-	time_t		crt_time;
-	const struct tm	*crt_tm;
+	static string timestamp;
+	time_t crt_time;
 
 	time( &crt_time );
-	crt_tm = localtime( &crt_time );
+	const struct tm *crt_tm = localtime( &crt_time );
 
 	switch( format )
 	{
@@ -298,7 +329,8 @@ const char* Q_timestamp( int format )
 		break;
 	case TIME_FILENAME:
 		// Build a timestamp that can use for filename (ex: "Nov2006-26 (19.14.28)");
-		strftime( timestamp, sizeof( timestamp ), "%b%Y-%d_%H.%M.%S", crt_tm );
+		// a1ba: reordered to make it sortable -> 2006-10-26_19.24.28
+		strftime( timestamp, sizeof( timestamp ), "%Y-%m-%d_%H.%M.%S", crt_tm );
 		break;
 	default:
 		Q_snprintf( timestamp, sizeof( timestamp ), "%s: unknown format %d", __func__, format );
@@ -311,13 +343,10 @@ const char* Q_timestamp( int format )
 #if !HAVE_STRCASESTR
 char *Q_stristr( const char *string, const char *string2 )
 {
-	int	c;
-	size_t	len;
-
 	if( !string || !string2 ) return NULL;
 
-	c = Q_tolower( *string2 );
-	len = Q_strlen( string2 );
+	int c = Q_tolower( *string2 );
+	size_t len = Q_strlen( string2 );
 
 	while( string )
 	{
@@ -337,11 +366,10 @@ char *Q_stristr( const char *string, const char *string2 )
 
 int Q_vsnprintf( char *buffer, size_t buffersize, const char *format, va_list args )
 {
-	int	result;
-
 	if( unlikely( buffersize == 0 ))
 		return -1; // report as overflow
 
+	int result;
 #ifndef _MSC_VER
 	result = vsnprintf( buffer, buffersize, format, args );
 #else
@@ -369,11 +397,10 @@ int Q_vsnprintf( char *buffer, size_t buffersize, const char *format, va_list ar
 
 int Q_snprintf( char *buffer, size_t buffersize, const char *format, ... )
 {
-	va_list	args;
-	int	result;
+	va_list args;
 
 	va_start( args, format );
-	result = Q_vsnprintf( buffer, buffersize, format, args );
+	int result = Q_vsnprintf( buffer, buffersize, format, args );
 	va_end( args );
 
 	return result;
@@ -392,18 +419,16 @@ void COM_StripColors( const char *in, char *out )
 
 char *Q_pretifymem( float value, int digitsafterdecimal )
 {
-	static char	output[8][32];
-	static int	current;
+	static char output[8][32];
+	static int current;
 	const float onekb = 1024.0f;
 	const float onemb = onekb * onekb;
-	const char *suffix;
-	char		*out = output[current];
-	char		val[32], *i, *o, *dot;
-	int		pos;
+	char *out = output[current];
 
 	current = ( current + 1 ) & ( 8 - 1 );
 
 	// first figure out which bin to use
+	const char *suffix;
 	if( value > onemb )
 	{
 		value /= onemb;
@@ -420,20 +445,21 @@ char *Q_pretifymem( float value, int digitsafterdecimal )
 	}
 
 	// if it's basically integral, don't do any decimals
+	char val[32];
 	if( fabs( value - (int)value ) < 0.00001f || digitsafterdecimal <= 0 )
 		Q_snprintf( val, sizeof( val ), "%i %s", (int)Q_rint( value ), suffix );
 	else if( digitsafterdecimal >= 1 )
 		Q_snprintf( val, sizeof( val ), "%.*f %s", digitsafterdecimal, (double)value, suffix );
 
 	// copy from in to out
-	i = val;
-	o = out;
+	char *i = val;
+	char *o = out;
 
 	// search for decimal or if it was integral, find the space after the raw number
-	dot = Q_strchr( i, '.' );
+	char *dot = Q_strchr( i, '.' );
 	if( !dot ) dot = Q_strchr( i, ' ' );
 
-	pos = dot - i;	// compute position of dot
+	int pos = dot - i;	// compute position of dot
 	pos -= 3;		// don't put a comma if it's <= 3 long
 
 	while( *i )
@@ -464,17 +490,16 @@ a1ba: adapted and simplified version from QuakeSpasm
 */
 void COM_FileBase( const char *in, char *out, size_t size )
 {
-	const char *dot, *slash, *s;
-	size_t len;
-
-	if( unlikely( !COM_CheckString( in ) || size <= 1 ))
+	if( unlikely( COM_StringEmptyOrNULL( in ) || size <= 1 ))
 	{
 		out[0] = 0;
 		return;
 	}
 
-	slash = in;
-	dot = NULL;
+	const char *slash = in;
+	const char *dot = NULL;
+	const char *s;
+
 	for( s = in; *s; s++ )
 	{
 		if( *s == '/' || *s == '\\' )
@@ -487,7 +512,7 @@ void COM_FileBase( const char *in, char *out, size_t size )
 	if( dot == NULL || dot < slash )
 		dot = s;
 
-	len = Q_min( size - 1, dot - slash );
+	size_t len = Q_min( size - 1, dot - slash );
 
 	memcpy( out, slash, len );
 	out[len] = 0;
@@ -500,9 +525,7 @@ COM_FileExtension
 */
 const char *COM_FileExtension( const char *in )
 {
-	const char *dot;
-
-	dot = Q_strrchr( in, '.' );
+	const char *dot = Q_strrchr( in, '.' );
 
 	// quickly exit if there is no dot at all
 	if( dot == NULL )
@@ -522,15 +545,13 @@ COM_FileWithoutPath
 */
 const char *COM_FileWithoutPath( const char *in )
 {
-	const char *separator, *backslash, *colon;
-
-	separator = Q_strrchr( in, '/' );
-	backslash = Q_strrchr( in, '\\' );
+	const char *separator = Q_strrchr( in, '/' );
+	const char *backslash = Q_strrchr( in, '\\' );
 
 	if( !separator || separator < backslash )
 		separator = backslash;
 
-	colon = Q_strrchr( in, ':' );
+	const char *colon = Q_strrchr( in, ':' );
 
 	if( !separator || separator < colon )
 		separator = colon;
@@ -566,21 +587,13 @@ COM_StripExtension
 */
 void COM_StripExtension( char *path )
 {
-	size_t	length;
+	const char *ext = COM_FileExtension( path );
 
-	length = Q_strlen( path );
+	if( COM_StringEmptyOrNULL( ext ))
+		return; // no extension
 
-	if( length > 0 )
-		length--;
-
-	while( length > 0 && path[length] != '.' )
-	{
-		length--;
-		if( path[length] == '/' || path[length] == '\\' || path[length] == ':' )
-			return; // no extension
-	}
-
-	if( length ) path[length] = 0;
+	// ext points one past the dot
+	path[ext - path - 1] = 0;
 }
 
 /*
@@ -590,21 +603,12 @@ COM_DefaultExtension
 */
 void COM_DefaultExtension( char *path, const char *extension, size_t size )
 {
-	const char	*src;
-	size_t		 len;
-
 	// if path doesn't have a .EXT, append extension
 	// (extension should include the .)
-	len = Q_strlen( path );
-	src = path + len - 1;
+	if( !COM_StringEmptyOrNULL( COM_FileExtension( path )))
+		return;
 
-	while( *src != '/' && src != path )
-	{
-		// it has an extension
-		if( *src == '.' ) return;
-		src--;
-	}
-
+	size_t len = Q_strlen( path );
 	Q_strncpy( &path[len], extension, size - len );
 }
 
@@ -626,9 +630,7 @@ COM_RemoveLineFeed
 */
 void COM_RemoveLineFeed( char *str, size_t bufsize )
 {
-	size_t i;
-
-	for( i = 0; i < bufsize && *str != '\0'; i++, str++ )
+	for( size_t i = 0; i < bufsize && *str != '\0'; i++, str++ )
 	{
 		if( *str == '\r' || *str == '\n' )
 			*str = '\0';
@@ -658,6 +660,50 @@ void COM_PathSlashFix( char *path )
 }
 
 /*
+====================
+COM_CheckNastyPath
+Return true if the path should be rejected due to one of the following:
+1: path elements that are non-portable
+2: path elements that would allow access to files outside the game directory,
+	or are just not a good idea for a mod to be using.
+====================
+*/
+int COM_CheckNastyPath( const char *path )
+{
+	// all: never allow an empty path, as for gamedir it would access the parent directory and a non-gamedir path it is just useless
+	if( COM_StringEmptyOrNULL( path )) return 2;
+
+	// Mac: don't allow Mac-only filenames - : is a directory separator
+	// instead of /, but we rely on / working already, so there's no reason to
+	// support a Mac-only path
+	// Amiga and Windows: : tries to go to root of drive
+	if( Q_strchr( path, ':' )) return 1; // non-portable attempt to go to root of drive
+
+#if 0
+	// Amiga: // is parent directory
+	if( Q_strstr( path, "//")) return 1; // non-portable attempt to go to parent directory
+#endif
+
+	// all: don't allow going to parent directory (../ or /../)
+	if( Q_strstr( path, "..")) return 2; // attempt to go outside the game directory
+
+	// Windows and UNIXes: don't allow absolute paths
+	if( path[0] == '/') return 2; // attempt to go outside the game directory
+
+#if 0
+	// all: forbid trailing slash on gamedir
+	if( isgamedir && path[Q_strlen(path)-1] == '/' ) return 2;
+#endif
+
+	// all: forbid leading dot on any filename for any reason
+	if( Q_strstr(path, "/.")) return 2; // attempt to go outside the game directory
+
+	// after all these checks we're pretty sure it's a / separated filename
+	// and won't do much if any harm
+	return false;
+}
+
+/*
 ==============
 COM_IsSingleChar
 
@@ -666,14 +712,23 @@ interpert this character as single
 */
 static int COM_IsSingleChar( unsigned int flags, char c )
 {
-	if( c == '{' || c == '}' || c == '\'' || c == ',' )
+	switch( c )
+	{
+	case '}':
+	case '{':
 		return true;
-
-	if( !FBitSet( flags, PFILE_IGNOREBRACKET ) && ( c == ')' || c == '(' ))
-		return true;
-
-	if( FBitSet( flags, PFILE_HANDLECOLON ) && c == ':' )
-		return true;
+	case ',':
+		return !FBitSet( flags, PFILE_NO_COMMA_AS_TOKEN );
+	case '\'':
+		return !FBitSet( flags, PFILE_NO_SINGLE_QUOTE_AS_TOKEN );
+	case '(':
+	case ')':
+		return !FBitSet( flags, PFILE_NO_BRACKETS_AS_TOKEN );
+	case ':':
+		return FBitSet( flags, PFILE_COLON_AS_TOKEN );
+	case '\n':
+		return FBitSet( flags, PFILE_NEWLINE_AS_TOKEN );
+	}
 
 	return false;
 }
@@ -707,6 +762,9 @@ char *COM_ParseFileSafe( char *data, char *token, const int size, unsigned int f
 skipwhite:
 	while(( c = ((byte)*data)) <= ' ' )
 	{
+		if( FBitSet( flags, PFILE_NEWLINE_AS_TOKEN ) && c == '\n' )
+			break;
+
 		if( c == 0 )
 		{
 			if( plen ) *plen = overflow ? -1 : len;
@@ -716,7 +774,7 @@ skipwhite:
 	}
 
 	// skip // or #, if requested, comments
-	if(( c == '/' && data[1] == '/' ) || ( c == '#' && FBitSet( flags, PFILE_IGNOREHASHCMT )))
+	if(( c == '/' && data[1] == '/' ) || ( c == '#' && FBitSet( flags, PFILE_HASH_AS_COMMENT )))
 	{
 		while( *data && *data != '\n' )
 			data++;
@@ -724,7 +782,7 @@ skipwhite:
 	}
 
 	// handle quoted strings specially
-	if( c == '\"' )
+	if( c == '\"' && !FBitSet( flags, PFILE_NO_QUOTED_TOKENS ))
 	{
 		if( quoted )
 			*quoted = true;
@@ -830,8 +888,6 @@ int matchpattern( const char *in, const char *pattern, qboolean caseinsensitive 
 //                     if false * matches 0 or more characters
 int matchpattern_with_separator( const char *in, const char *pattern, qboolean caseinsensitive, const char *separators, qboolean wildcard_least_one )
 {
-	int c1, c2;
-
 	while( *pattern )
 	{
 		switch( *pattern )
@@ -868,10 +924,10 @@ int matchpattern_with_separator( const char *in, const char *pattern, qboolean c
 			{
 				if( !caseinsensitive )
 					return 0; // no match
-				c1 = *in;
+				int c1 = *in;
 				if( c1 >= 'A' && c1 <= 'Z' )
 					c1 += 'a' - 'A';
-				c2 = *pattern;
+				int c2 = *pattern;
 				if( c2 >= 'A' && c2 <= 'Z' )
 					c2 += 'a' - 'A';
 				if( c1 != c2 )
@@ -887,3 +943,24 @@ int matchpattern_with_separator( const char *in, const char *pattern, qboolean c
 	return 1; // success
 }
 
+void COM_TrimSpace( char *dst, const char *src, size_t size )
+{
+	if( !dst || !src || !size )
+		return;
+
+	// remove spaces from the start
+	for( ; *src && isspace((byte)*src ); src++ );
+
+	int len = Q_strlen( src );
+
+	// remove spaces from the end
+	for( ; len > 0 && isspace((byte)src[len - 1] ); len-- );
+
+	if( len > 0 )
+	{
+		// + 1 to fit null terminator in strlcpy
+		Q_strncpy( dst, src, Q_min( size, len + 1 ));
+	}
+	else
+		dst[0] = 0;
+}

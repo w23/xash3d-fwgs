@@ -18,6 +18,8 @@ GNU General Public License for more details.
 #define PLATFORM_H
 
 #include <errno.h>
+#define FSCALLBACK_OVERRIDE_MALLOC_LIKE
+#include "fscallback.h"
 #include "common.h"
 #include "system.h"
 #include "defaults.h"
@@ -39,9 +41,22 @@ void Platform_MessageBox( const char *title, const char *message, qboolean paren
 void Platform_SetStatus( const char *status );
 qboolean Platform_DebuggerPresent( void );
 
+typedef enum
+{
+	ORIENTATION_UNKNOWN = 0,
+	ORIENTATION_LANDSCAPE,
+	ORIENTATION_LANDSCAPE_FLIPPED,
+	ORIENTATION_PORTRAIT,
+	ORIENTATION_PORTRAIT_FLIPPED
+} platform_orientation_t;
+
+platform_orientation_t Platform_GetDisplayOrientation( void );
+
 // legacy iOS port functions
-#if TARGET_OS_IOS
+#if XASH_IOS
+int IOS_GetArgs( char ***argv );
 const char *IOS_GetDocsDir( void );
+const char *IOS_GetExecDir( void );
 void IOS_LaunchDialog( void );
 #endif // TARGET_OS_IOS
 
@@ -58,9 +73,10 @@ char *Posix_Input( void );
 #endif
 
 #if XASH_SDL
-void SDLash_Init( const char *basedir );
+void SDLash_Init( void );
 void SDLash_Shutdown( void );
 void SDLash_NanoSleep( int nsec );
+qboolean SDLash_GyroIsAvailable( void );
 #endif
 
 #if XASH_ANDROID
@@ -111,7 +127,7 @@ void Linux_SetTimer( float time );
 int Linux_GetProcessID( void );
 #endif
 
-static inline void Platform_Init( qboolean con_showalways, const char *basedir )
+static inline void Platform_Init( qboolean con_showalways )
 {
 #if XASH_POSIX
 	// daemonize as early as possible, because we need to close our file descriptors
@@ -119,7 +135,7 @@ static inline void Platform_Init( qboolean con_showalways, const char *basedir )
 #endif
 
 #if XASH_SDL
-	SDLash_Init( basedir );
+	SDLash_Init( );
 #endif
 
 #if XASH_ANDROID
@@ -206,6 +222,18 @@ static inline void Sys_RestoreCrashHandler( void )
 {
 }
 #endif
+
+static inline qboolean Platform_LibraryExists( const char *name, qboolean gamedironly )
+{
+#if XASH_ANDROID
+	// when libs come from a separate APK (cs16client, tf15client, …) we can't see them
+	// from the VFS; trust the launcher.
+	if( !COM_StringEmptyOrNULL( getenv( "XASH3D_GAMELIBDIR" )))
+		return true;
+#endif
+	// FIXME: use FS_FindLibrary
+	return g_fsapi.FileExists( name, gamedironly );
+}
 
 
 /*
@@ -314,15 +342,17 @@ typedef enum
 	rserr_ok,
 	rserr_invalid_fullscreen,
 	rserr_invalid_mode,
+	rserr_invalid_context,
 	rserr_unknown
 } rserr_t;
 
 struct vidmode_s;
 typedef enum window_mode_e window_mode_t;
 typedef enum ref_window_type_e ref_window_type_t;
+typedef enum ref_graphic_apis_e ref_graphic_apis_t;
 
 // Window
-qboolean  R_Init_Video( const int type );
+qboolean  R_Init_Video( ref_graphic_apis_t type );
 void      R_Free_Video( void );
 qboolean  VID_SetMode( void );
 rserr_t   R_ChangeDisplaySettings( int width, int height, window_mode_t window_mode );
@@ -338,6 +368,7 @@ void SW_UnlockBuffer( void );
 qboolean SW_CreateBuffer( int width, int height, uint *stride, uint *bpp, uint *r, uint *g, uint *b );
 void Platform_Minimize_f( void );
 ref_window_type_t R_GetWindowHandle( void **handle, ref_window_type_t type );
+void VID_Info_f( void );
 
 //
 // in_evdev.c
@@ -386,14 +417,16 @@ qboolean VoiceCapture_Lock( qboolean lock );
 			pid_t raise_tid = Linux_GetProcessID(); \
 			int raise_sig = (x); \
 			__asm__ volatile (  \
+				"push {r7}\n\t" \
 				"mov r7,#268\n\t" \
 				"mov r0,%0\n\t" \
 				"mov r1,%1\n\t" \
 				"mov r2,%2\n\t" \
 				"svc 0\n\t" \
+				"pop {r7}\n\t" \
 				: \
 				: "r"(raise_pid), "r"(raise_tid), "r"(raise_sig) \
-				: "r0", "r1", "r2", "r7", "memory" \
+				: "r0", "r1", "r2", "memory" \
 			); \
 		} while( 0 )
 	#define INLINE_NANOSLEEP1() do \
@@ -401,13 +434,15 @@ qboolean VoiceCapture_Lock( qboolean lock );
 			struct timespec ns_t1 = {1, 0}; \
 			struct timespec ns_t2 = {0, 0}; \
 			__asm__ volatile ( \
+				"push {r7}\n\t" \
 				"mov r7,#162\n\t" \
 				"mov r0,%0\n\t" \
 				"mov r1,%1\n\t" \
 				"svc 0\n\t" \
+				"pop {r7}\n\t" \
 				: \
 				: "r"(&ns_t1), "r"(&ns_t2) \
-				: "r0", "r1", "r7", "memory" \
+				: "r0", "r1", "memory" \
 			); \
 		} while( 0 )
 #elif XASH_LINUX && XASH_ARM && XASH_64BIT

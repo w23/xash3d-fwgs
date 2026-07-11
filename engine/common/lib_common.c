@@ -40,22 +40,19 @@ void COM_PushLibraryError( const char *error )
 
 void *COM_FunctionFromName_SR( void *hInstance, const char *pName )
 {
-	char **funcs = NULL;
-	size_t numfuncs, i;
-	void *f = NULL;
-	const char *func = NULL;
-
 #ifdef XASH_ALLOW_SAVERESTORE_OFFSETS
 	if( !memcmp( pName, "ofs:", 4 ))
 		return (byte*)svgame.dllFuncs.pfnGameInit + Q_atoi( pName + 4 );
 #endif
 
 #if XASH_POSIX
-	funcs = COM_ConvertToLocalPlatform( MANGLE_ITANIUM, pName, &numfuncs );
+	size_t numfuncs;
+	char **funcs = COM_ConvertToLocalPlatform( MANGLE_ITANIUM, pName, &numfuncs );
 
 	if( funcs )
 	{
-		for( i = 0; i < numfuncs; i++ )
+		void *f = NULL;
+		for( size_t i = 0; i < numfuncs; i++ )
 		{
 			if( !f )
 				f = COM_FunctionFromName( hInstance, funcs[i] );
@@ -69,7 +66,7 @@ void *COM_FunctionFromName_SR( void *hInstance, const char *pName )
 	// TODO: COM_ConvertToLocalPlatform doesn't support MSVC yet
 	// also custom loader strips always MSVC mangling, so Win32
 	// platforms already use platform-neutral names
-	func = COM_GetPlatformNeutralName( pName );
+	const char *func = COM_GetPlatformNeutralName( pName );
 
 	if( func )
 		return COM_FunctionFromName( hInstance, func );
@@ -81,20 +78,17 @@ void *COM_FunctionFromName_SR( void *hInstance, const char *pName )
 const char *COM_OffsetNameForFunction( void *function )
 {
 	static string sname;
-	Q_snprintf( sname, MAX_STRING, "ofs:%zu", ((byte*)function - (byte*)svgame.dllFuncs.pfnGameInit) );
+	Q_snprintf( sname, MAX_STRING, "ofs:%zu", (size_t)((byte*)function - (byte*)svgame.dllFuncs.pfnGameInit ));
 	Con_Reportf( "%s: %s\n", __func__, sname );
 	return sname;
 }
 
 dll_user_t *FS_FindLibrary( const char *dllname, qboolean directpath )
 {
-	dll_user_t *p;
-	fs_dllinfo_t dllInfo;
-
 	// no fs loaded yet, but let engine find fs
 	if( !g_fsapi.FindLibrary )
 	{
-		p = Mem_Calloc( host.mempool, sizeof( dll_user_t ));
+		dll_user_t *p = Mem_Calloc( host.mempool, sizeof( dll_user_t ));
 		Q_strncpy( p->shortPath, dllname, sizeof( p->shortPath ));
 		Q_strncpy( p->fullPath, dllname, sizeof( p->fullPath ));
 		Q_strncpy( p->dllName, dllname, sizeof( p->dllName ));
@@ -102,13 +96,15 @@ dll_user_t *FS_FindLibrary( const char *dllname, qboolean directpath )
 		return p;
 	}
 
+	fs_dllinfo_t dllInfo;
+
 	// fs can't find library
 	if( !g_fsapi.FindLibrary( dllname, directpath, &dllInfo ))
 		return NULL;
 
 	// NOTE: for libraries we not fail even if search is NULL
 	// let the OS find library himself
-	p = Mem_Calloc( host.mempool, sizeof( dll_user_t ));
+	dll_user_t *p = Mem_Calloc( host.mempool, sizeof( dll_user_t ));
 	Q_strncpy( p->shortPath, dllInfo.shortPath, sizeof( p->shortPath ));
 	Q_strncpy( p->fullPath, dllInfo.fullPath, sizeof( p->fullPath ));
 	Q_strncpy( p->dllName, dllname, sizeof( p->dllName ));
@@ -125,18 +121,6 @@ dll_user_t *FS_FindLibrary( const char *dllname, qboolean directpath )
 
 =============================================================================
 */
-
-static void COM_GenerateCommonLibraryName( const char *name, const char *ext, char *out, size_t size )
-{
-#if ( XASH_WIN32 || ( XASH_LINUX && !XASH_ANDROID ) || XASH_APPLE ) && XASH_X86
-	Q_snprintf( out, size, "%s.%s", name, ext );
-#elif XASH_WIN32 || ( XASH_LINUX && !XASH_ANDROID ) || XASH_APPLE
-	Q_snprintf( out, size, "%s_%s.%s", name, Q_buildarch(), ext );
-#else
-	Q_snprintf( out, size, "%s_%s_%s.%s", name, Q_buildos(), Q_buildarch(), ext );
-#endif
-}
-
 /*
 ==============
 COM_GenerateClientLibraryPath
@@ -149,32 +133,12 @@ static void COM_GenerateClientLibraryPath( const char *name, char *out, size_t s
 #ifdef XASH_INTERNAL_GAMELIBS // assuming library loader knows where to get libraries
 	Q_strncpy( out, name, size );
 #else
-	string dllpath;
+	string libname;
 
-#if XASH_ANDROID
-	Q_snprintf( dllpath, sizeof( dllpath ), "%s/lib%s", GI->dll_path, name );
-#else
-	Q_snprintf( dllpath, sizeof( dllpath ), "%s/%s", GI->dll_path, name );
+	COM_GenerateCommonLibraryName( name, libname, sizeof( libname ));
+
+	Q_snprintf( out, size, "%s/%s", GI->dll_path, libname );
 #endif
-
-	COM_GenerateCommonLibraryName( dllpath, OS_LIB_EXT, out, size );
-#endif
-}
-
-/*
-==============
-COM_StripIntelSuffix
-
-Some modders use _i?86 suffix in game library name
-So strip it to follow library naming for non-Intel CPUs
-==============
-*/
-static inline void COM_StripIntelSuffix( char *out )
-{
-	char *suffix = Q_strrchr( out, '_' );
-
-	if( suffix && Q_stricmpext( "_i?86", suffix ))
-		*suffix = 0;
 }
 
 /*
@@ -202,8 +166,8 @@ static void COM_GenerateServerLibraryPath( const char *alt_dllname, char *out, s
 	COM_StripIntelSuffix( out );
 	COM_DefaultExtension( out, "." OS_LIB_EXT, size );
 #else
-	string temp, dir, dllpath, ext;
-	const char *dllname;
+	string temp, dir, libname;
+	const char *base_dllname;
 
 #if XASH_WIN32
 	Q_strncpy( temp, GI->game_dll, sizeof( temp ));
@@ -218,27 +182,19 @@ static void COM_GenerateServerLibraryPath( const char *alt_dllname, char *out, s
 
 	if( alt_dllname )
 	{
-		dllname = alt_dllname;
-		Q_strncpy( ext, OS_LIB_EXT, sizeof( ext ));
+		base_dllname = alt_dllname;
 	}
 	else
 	{
 		// cleaned up dll name
-		Q_strncpy( ext, COM_FileExtension( temp ), sizeof( ext ));
 		COM_StripExtension( temp );
 		COM_StripIntelSuffix( temp );
-		dllname = COM_FileWithoutPath( temp );
+		base_dllname = COM_FileWithoutPath( temp );
 	}
 
-	// add `lib` prefix if required by platform
-#if XASH_ANDROID
-	Q_snprintf( dllpath, sizeof( dllpath ), "%s/lib%s", dir, dllname );
-#else
-	Q_snprintf( dllpath, sizeof( dllpath ), "%s/%s", dir, dllname );
-#endif
+	COM_GenerateCommonLibraryName( base_dllname, libname, sizeof( libname ));
 
-	// and finally add platform suffix
-	COM_GenerateCommonLibraryName( dllpath, ext, out, size );
+	Q_snprintf( out, size, "%s/%s", dir, libname );
 #endif
 }
 
@@ -255,7 +211,7 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 	switch( eLibType )
 	{
 	case LIBRARY_GAMEUI:
-		if( COM_CheckStringEmpty( host.menulib ))
+		if( !COM_StringEmpty( host.menulib ))
 		{
 			if( host.menulib[0] == '@' )
 				COM_GenerateClientLibraryPath( host.menulib + 1, out, size );
@@ -264,7 +220,7 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 		else COM_GenerateClientLibraryPath( "menu", out, size );
 		break;
 	case LIBRARY_CLIENT:
-		if( COM_CheckStringEmpty( host.clientlib ))
+		if( !COM_StringEmpty( host.clientlib ))
 		{
 			if( host.clientlib[0] == '@' )
 				COM_GenerateClientLibraryPath( host.clientlib + 1, out, size );
@@ -273,7 +229,7 @@ void COM_GetCommonLibraryPath( ECommonLibraryType eLibType, char *out, size_t si
 		else COM_GenerateClientLibraryPath( "client", out, size );
 		break;
 	case LIBRARY_SERVER:
-		if( COM_CheckStringEmpty( host.gamedll ))
+		if( !COM_StringEmpty( host.gamedll ))
 		{
 			if( host.gamedll[0] == '@' )
 				COM_GenerateServerLibraryPath( host.gamedll + 1, out, size );
@@ -322,12 +278,12 @@ static EFunctionMangleType COM_DetectMangleType( const char *str )
 
 char *COM_GetMSVCName( const char *in_name )
 {
-	static string   out_name;
-	char            *pos;
+	static string out_name;
 
 	if( in_name[0] == '?' )  // is this a MSVC C++ mangled name?
 	{
-		if(( pos = Q_strstr( in_name, "@@" )) != NULL )
+		char *pos = Q_strstr( in_name, "@@" );
+		if( pos != NULL )
 		{
 			ptrdiff_t len = pos - in_name;
 
@@ -367,7 +323,7 @@ static char *COM_GetItaniumName( const char * const in_name )
 	{
 		// parse symbol length marker
 		len = 0;
-		for( ; isdigit( *f ) && remaining > 0; f++, remaining-- )
+		for( ; isdigit((byte)*f ) && remaining > 0; f++, remaining-- )
 			len = len * 10 + ( *f - '0' );
 
 		// sane value
@@ -384,7 +340,7 @@ static char *COM_GetItaniumName( const char * const in_name )
 		if( *f == 'E' )
 			break;
 
-		if( !isdigit( *f ) || remaining <= 0 )
+		if( !isdigit((byte)*f ) || remaining <= 0 )
 			goto invalid_format;
 	}
 
@@ -410,15 +366,11 @@ invalid_format:
 
 char **COM_ConvertToLocalPlatform( EFunctionMangleType to, const char *from, size_t *numfuncs )
 {
-	string symbols[MAX_NESTED_NAMESPACES], temp, temp2;
-	const char *prev;
-	const char *postfix[3];
-	int i = 0;
-	char **ret;
-
 	// TODO:
 	if( to == MANGLE_MSVC )
 		return NULL;
+
+	const char *postfix[3];
 
 	switch( to )
 	{
@@ -432,7 +384,9 @@ char **COM_ConvertToLocalPlatform( EFunctionMangleType to, const char *from, siz
 		return NULL;
 	}
 
-	prev = from;
+	string symbols[MAX_NESTED_NAMESPACES];
+	const char *prev = from;
+	int i;
 
 	for( i = 0; i < MAX_NESTED_NAMESPACES; i++ )
 	{
@@ -458,8 +412,9 @@ char **COM_ConvertToLocalPlatform( EFunctionMangleType to, const char *from, siz
 
 	// only three possible variations
 	*numfuncs = ARRAYSIZE( postfix );
-	ret = Z_Malloc( sizeof( char * ) * ARRAYSIZE( postfix ) );
+	char **ret = Z_Malloc( sizeof( char * ) * ARRAYSIZE( postfix ) );
 
+	string temp, temp2;
 	Q_strncpy( temp, "_ZN", sizeof( temp ));
 
 	for( ; i >= 0; i-- )
@@ -535,9 +490,8 @@ static void Test_GetMSVCName( void )
 		"?foo@@", "foo", // not an error?
 		"?foo@bar@baz@@gotstrippedanyway","foo@bar@baz"
 	};
-	int i;
 
-	for( i = 0; i < ARRAYSIZE( symbols ); i += 2 )
+	for( int i = 0; i < ARRAYSIZE( symbols ); i += 2 )
 	{
 		Msg( "Checking if MSVC '%s' converts to '%s'...\n", symbols[i], symbols[i+1] );
 
@@ -562,9 +516,8 @@ static void Test_GetItaniumName( void )
 		"_ZN3fooEv", "foo", // not possible?
 		"_ZN3baz3bar3fooEdontcare", "foo@bar@baz",
 	};
-	int i;
 
-	for( i = 0; i < ARRAYSIZE( symbols ); i += 2 )
+	for( int i = 0; i < ARRAYSIZE( symbols ); i += 2 )
 	{
 		Msg( "Checking if Itanium '%s' converts to '%s'...\n", symbols[i], symbols[i+1] );
 
@@ -581,17 +534,15 @@ static void Test_ConvertFromValveToLocal( void )
 		"xash3d@fwgs", "_ZN4fwgs6xash3d",
 		"foo@bar@bazz", "_ZN4bazz3bar3foo"
 	};
-	int i;
 
-	for( i = 0; i < ARRAYSIZE( symbols ); i += 2 )
+	for( int i = 0; i < ARRAYSIZE( symbols ); i += 2 )
 	{
-		char **ret;
 		size_t numfuncs;
 		size_t symlen = Q_strlen( symbols[i + 1] );
 
 		Msg( "Checking if Valve '%s' converts to Itanium '%s'...\n", symbols[i], symbols[i+1] );
 
-		ret = COM_ConvertToLocalPlatform( MANGLE_ITANIUM, symbols[i], &numfuncs );
+		char **ret = COM_ConvertToLocalPlatform( MANGLE_ITANIUM, symbols[i], &numfuncs );
 
 		TASSERT( numfuncs == 3 );
 		TASSERT( !Q_strncmp( ret[0], symbols[i+1], symlen ));

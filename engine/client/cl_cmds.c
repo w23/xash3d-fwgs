@@ -61,16 +61,14 @@ Emulate audio-cd system
 */
 void CL_PlayCDTrack_f( void )
 {
-	const char	*command;
-	const char	*pszTrack;
 	static int	track = 0;
 	static qboolean	paused = false;
 	static qboolean	looped = false;
 	static qboolean	enabled = true;
 
 	if( Cmd_Argc() < 2 ) return;
-	command = Cmd_Argv( 1 );
-	pszTrack = Cmd_Argv( 2 );
+	const char	*command = Cmd_Argv( 1 );
+	const char	*pszTrack = Cmd_Argv( 2 );
 
 	if( !enabled && Q_stricmp( command, "on" ))
 		return; // CD-player is disabled
@@ -97,7 +95,17 @@ void CL_PlayCDTrack_f( void )
 		if( Q_isdigit( pszTrack ))
 		{
 			track = bound( 1, Q_atoi( Cmd_Argv( 2 )), MAX_CDTRACKS );
-			S_StartBackgroundTrack( clgame.cdtracks[track-1], clgame.cdtracks[track-1], 0, false );
+
+			// a1ba: some maps contain cd track set in worldspawn
+			// forcibly stopping music on changelevel
+			//
+			// server notifies us about this in sv_client.c SV_PutClientInServer
+			// through "cd loop" command
+			//
+			// however, it could be set to a track that doesn't contain music data (in CD terms)
+			// so we catch it here and music will carry over changelevels
+			if( !COM_StringEmpty( clgame.cdtracks[track-1] ))
+				S_StartBackgroundTrack( clgame.cdtracks[track-1], clgame.cdtracks[track-1], 0, false );
 		}
 		else S_StartBackgroundTrack( pszTrack, pszTrack, 0, true );
 		paused = false;
@@ -136,10 +144,13 @@ void CL_PlayCDTrack_f( void )
 	}
 	else if( !Q_stricmp( command, "info" ))
 	{
-		int	i, maxTrack;
+		int	maxTrack = 0;
 
-		for( maxTrack = i = 0; i < MAX_CDTRACKS; i++ )
-			if( COM_CheckStringEmpty( clgame.cdtracks[i] ) ) maxTrack++;
+		for( int i = 0; i < MAX_CDTRACKS; i++ )
+		{
+			if( !COM_StringEmpty( clgame.cdtracks[i] ) )
+				maxTrack++;
+		}
 
 		Con_Printf( "%u tracks\n", maxTrack );
 		if( track )
@@ -225,9 +236,7 @@ static scrshot_t CL_GetScreenshotTypeFromString( const char *string )
 void CL_GenericShot_f( void )
 {
 	const char *argv0 = Cmd_Argv( 0 );
-	scrshot_t type;
-
-	type = CL_GetScreenshotTypeFromString( argv0 );
+	scrshot_t type = CL_GetScreenshotTypeFromString( argv0 );
 
 	if( type == scrshot_normal || type == scrshot_snapshot )
 	{
@@ -259,7 +268,6 @@ void CL_GenericShot_f( void )
 	case scrshot_snapshot:
 	{
 		string checkname;
-		int i;
 
 		// allow overriding screenshot by users request
 		if( Cmd_Argc() > 1 )
@@ -271,7 +279,7 @@ void CL_GenericShot_f( void )
 		if( type == scrshot_snapshot )
 			FS_AllowDirectPaths( true );
 
-		for( i = 0; i < 9999; i++ )
+		for( int i = 0; i < 9999; i++ )
 		{
 			int ret;
 
@@ -370,17 +378,14 @@ CL_WavePlayLen_f
 */
 void CL_WavePlayLen_f( void )
 {
-	const char *name;
-	uint msecs;
-
 	if( Cmd_Argc() != 2 )
 	{
 		Con_Printf( "waveplaylen <wave file name>: returns approximate number of milliseconds a wave file will take to play.\n" );
 		return;
 	}
 
-	name = Cmd_Argv( 1 );
-	msecs = Sound_GetApproxWavePlayLen( name );
+	const char *name = Cmd_Argv( 1 );
+	uint msecs = Sound_GetApproxWavePlayLen( name );
 
 	if( msecs == 0 )
 	{

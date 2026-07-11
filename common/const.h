@@ -723,8 +723,6 @@ enum
 typedef int		func_t;
 typedef int		string_t;
 
-typedef unsigned short	word;
-
 #include "xash3d_types.h"
 
 typedef struct
@@ -736,11 +734,6 @@ typedef struct
 {
 	unsigned	r, g, b, a;
 } colorVec;
-
-typedef struct link_s
-{
-	struct link_s	*prev, *next;
-} link_t;
 
 typedef struct edict_s edict_t;
 

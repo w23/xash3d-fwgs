@@ -98,16 +98,15 @@ of the list so they override previous pack files.
 static pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 {
 	dpackheader_t header;
-	file_t *packhandle;
-	int         numpackfiles;
-	pack_t      *pack;
-	fs_size_t     c;
+	int numpackfiles;
+	pack_t *pack;
+	fs_size_t c;
 
 	// TODO: use FS_Open to allow PK3 to be included into other archives
 	// Currently, it doesn't work with rodir due to FS_FindFile logic
 	// when it will use FS_Open, check that FS_CheckForQuakePak correctly
 	// detects Quake gamedirs in RoDir
-	packhandle = FS_SysOpen( packfile, "rb" );
+	file_t *packhandle = FS_SysOpen( packfile, "rb" );
 
 	if( packhandle == NULL )
 	{
@@ -118,13 +117,17 @@ static pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 
 	c = FS_Read( packhandle, (void *)&header, sizeof( header ));
 
-	if( c != sizeof( header ) || header.ident != IDPACKV1HEADER )
+	if( c != sizeof( header ) || header.ident != LittleLong( IDPACKV1HEADER ))
 	{
 		Con_Reportf( "%s is not a packfile. Ignored.\n", packfile );
 		if( error ) *error = PAK_LOAD_BAD_HEADER;
 		FS_Close( packhandle );
 		return NULL;
 	}
+
+	header.ident = LittleLong( header.ident );
+	header.dirofs = LittleLong( header.dirofs );
+	header.dirlen = LittleLong( header.dirlen );
 
 	if( header.dirlen % sizeof( dpackfile_t ))
 	{
@@ -165,6 +168,12 @@ static pack_t *FS_LoadPackPAK( const char *packfile, int *error )
 		return NULL;
 	}
 
+	for( int i = 0; i < numpackfiles; i++ )
+	{
+		pack->files[i].filepos = LittleLong( pack->files[i].filepos );
+		pack->files[i].filelen = LittleLong( pack->files[i].filelen );
+	}
+
 	// TODO: validate directory?
 
 	pack->handle = packhandle;
@@ -192,9 +201,7 @@ Open a packed file using its package file descriptor
 */
 static file_t *FS_OpenFile_PAK( searchpath_t *search, const char *filename, const char *mode, int pack_ind )
 {
-	dpackfile_t	*pfile;
-
-	pfile = &search->pack->files[pack_ind];
+	dpackfile_t *pfile = &search->pack->files[pack_ind];
 
 	return FS_OpenHandle( search, search->pack->handle->handle, pfile->filepos, pfile->filelen );
 }
@@ -207,17 +214,14 @@ FS_FindFile_PAK
 */
 static int FS_FindFile_PAK( searchpath_t *search, const char *path, char *fixedname, size_t len )
 {
-	int	left, right, middle;
-
 	// look for the file (binary search)
-	left = 0;
-	right = search->pack->numfiles - 1;
+	int left = 0;
+	int right = search->pack->numfiles - 1;
+
 	while( left <= right )
 	{
-		int	diff;
-
-		middle = (left + right) / 2;
-		diff = Q_stricmp( search->pack->files[middle].name, path );
+		int middle = (left + right) / 2;
+		int diff = Q_stricmp( search->pack->files[middle].name, path );
 
 		// Found it
 		if( !diff )
@@ -245,16 +249,18 @@ FS_Search_PAK
 static void FS_Search_PAK( searchpath_t *search, stringlist_t *list, const char *pattern, int caseinsensitive )
 {
 	string temp;
-	const char *slash, *backslash, *colon, *separator;
-	int j, i;
 
-	for( i = 0; i < search->pack->numfiles; i++ )
+	for( int i = 0; i < search->pack->numfiles; i++ )
 	{
 		Q_strncpy( temp, search->pack->files[i].name, sizeof( temp ));
 		while( temp[0] )
 		{
+			const char *slash, *backslash, *colon, *separator;
+
 			if( matchpattern( temp, pattern, true ))
 			{
+				int j;
+
 				for( j = 0; j < list->numstrings; j++ )
 				{
 					if( !Q_strcmp( list->strings[j], temp ))
@@ -337,10 +343,8 @@ plain directories.
 searchpath_t *FS_AddPak_Fullpath( const char *pakfile, int flags )
 {
 	searchpath_t *search;
-	pack_t *pak;
 	int errorcode = PAK_LOAD_COULDNT_OPEN;
-
-	pak = FS_LoadPackPAK( pakfile, &errorcode );
+	pack_t *pak = FS_LoadPackPAK( pakfile, &errorcode );
 
 	if( !pak )
 	{
@@ -378,14 +382,12 @@ and find progs.dat in it
 qboolean FS_CheckForQuakePak( const char *pakfile, const char *files[], size_t num_files )
 {
 	qboolean is_quake = false;
-	pack_t *pak;
-	int i;
+	pack_t *pak = FS_LoadPackPAK( pakfile, NULL );
 
-	pak = FS_LoadPackPAK( pakfile, NULL );
 	if( !pak )
 		return false;
 
-	for( i = 0; i < num_files; i++ )
+	for( int i = 0; i < num_files; i++ )
 	{
 		int j;
 

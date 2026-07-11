@@ -29,26 +29,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define FULLY_CLIPPED_CACHED 0x80000000
 #define FRAMECOUNT_MASK      0x7FFFFFFF
 
-unsigned int    cacheoffset;
-
-int             c_faceclip;                                             // number of faces clipped
-
-
-clipplane_t     *entity_clipplanes;
-clipplane_t     world_clipplanes[16];
-
-medge16_t       *r_pedge;
-
-qboolean        r_leftclipped, r_rightclipped;
+static unsigned int cacheoffset;
+static int c_faceclip;                                             // number of faces clipped
+static medge16_t *r_pedge;
+static qboolean r_leftclipped, r_rightclipped;
 static qboolean makeleftedge, makerightedge;
-qboolean        r_nearzionly;
+static qboolean r_nearzionly;
 
 int             sintable[1280];
-int             intsintable[1280];
 int             blanktable[1280];               // PGM
 
-mvertex_t       r_leftenter, r_leftexit;
-mvertex_t       r_rightenter, r_rightexit;
+static mvertex_t r_leftenter, r_leftexit;
+static mvertex_t r_rightenter, r_rightexit;
 
 typedef struct
 {
@@ -56,52 +48,12 @@ typedef struct
 	int   ceilv;
 } evert_t;
 
-int        r_emitted;
-float      r_nearzi;
-float      r_u1, r_v1, r_lzi1;
-int        r_ceilv1;
+static int r_emitted;
+static float r_nearzi;
+static float r_u1, r_v1, r_lzi1;
+static int r_ceilv1;
 
-qboolean   r_lastvertvalid;
-int        r_skyframe;
-
-msurface_t *r_skyfaces;
-mplane_t   r_skyplanes[6];
-mtexinfo_t r_skytexinfo[6];
-mvertex_t  *r_skyverts;
-medge16_t  *r_skyedges;
-int        *r_skysurfedges;
-
-// I just copied this data from a box map...
-int        skybox_planes[12] = {2, -128, 0, -128, 2, 128, 1, 128, 0, 128, 1, -128};
-
-int        box_surfedges[24] = { 1, 2, 3, 4, -1, 5, 6, 7, 8, 9, -6, 10, -2, -7, -9, 11,
-				 12, -3, -11, -8, -12, -10, -5, -4};
-int        box_edges[24] = { 1, 2, 2, 3, 3, 4, 4, 1, 1, 5, 5, 6, 6, 2, 7, 8, 8, 6, 5, 7, 8, 3, 7, 4};
-
-int        box_faces[6] = {0, 0, 2, 2, 2, 0};
-
-vec3_t     box_vecs[6][2] = {
-	{       {0, -1, 0}, {-1, 0, 0} },
-	{ {0, 1, 0}, {0, 0, -1} },
-	{       {0, -1, 0}, {1, 0, 0} },
-	{ {1, 0, 0}, {0, 0, -1} },
-	{ {0, -1, 0}, {0, 0, -1} },
-	{ {-1, 0, 0}, {0, 0, -1} }
-};
-
-float      box_verts[8][3] = {
-	{-1, -1, -1},
-	{-1, 1, -1},
-	{1, 1, -1},
-	{1, -1, -1},
-	{-1, -1, 1},
-	{-1, 1, 1},
-	{1, -1, 1},
-	{1, 1, 1}
-};
-
-// down, west, up, north, east, south
-// {"rt", "bk", "lf", "ft", "up", "dn"};
+static qboolean   r_lastvertvalid;
 
 /*
 ================
@@ -410,9 +362,7 @@ R_EmitCachedEdge
 */
 static void R_EmitCachedEdge( void )
 {
-	edge_t *pedge_t;
-
-	pedge_t = (edge_t *)((uintptr_t)r_edges + r_pedge->cachededgeoffset );
+	edge_t *pedge_t = (edge_t *)((uintptr_t)r_edges + r_pedge->cachededgeoffset );
 
 	if( !pedge_t->surfs[0] )
 		pedge_t->surfs[0] = surface_p - surfaces;
@@ -433,13 +383,9 @@ R_RenderFace
 */
 void R_RenderFace( msurface_t *fa, int clipflags )
 {
-	int         i, lindex;
-	unsigned    mask;
-	mplane_t    *pplane;
-	float       distinv;
-	vec3_t      p_normal;
-	medge16_t   *pedges, tedge;
-	clipplane_t *pclip;
+	int       lindex;
+	vec3_t    p_normal;
+	medge16_t *pedges, tedge;
 
 	// translucent surfaces are not drawn by the edge renderer
 	if( fa->flags & ( SURF_DRAWTURB | SURF_TRANSPARENT ))
@@ -474,9 +420,9 @@ void R_RenderFace( msurface_t *fa, int clipflags )
 	c_faceclip++;
 
 // set up clip planes
-	pclip = NULL;
+	clipplane_t *pclip = NULL;
 
-	for( i = 3, mask = 0x08; i >= 0; i--, mask >>= 1 )
+	for( int i = 3, mask = 0x08; i >= 0; i--, mask >>= 1 )
 	{
 		if( clipflags & mask )
 		{
@@ -493,7 +439,7 @@ void R_RenderFace( msurface_t *fa, int clipflags )
 	pedges = RI.currentmodel->edges16;
 	r_lastvertvalid = false;
 
-	for( i = 0; i < fa->numedges; i++ )
+	for( int i = 0; i < fa->numedges; i++ )
 	{
 		lindex = RI.currentmodel->surfedges[fa->firstedge + i];
 
@@ -623,11 +569,11 @@ void R_RenderFace( msurface_t *fa, int clipflags )
 	surface_p->key = r_currentkey++;
 	surface_p->spans = NULL;
 
-	pplane = fa->plane;
+	mplane_t *pplane = fa->plane;
 // FIXME: cache this?
 	TransformVector( pplane->normal, p_normal );
 // FIXME: cache this?
-	distinv = 1.0f / ( pplane->dist - DotProduct( tr.modelorg, pplane->normal ));
+	float distinv = 1.0f / ( pplane->dist - DotProduct( tr.modelorg, pplane->normal ));
 
 	surface_p->d_zistepu = p_normal[0] * xscaleinv * distinv;
 	surface_p->d_zistepv = -p_normal[1] * yscaleinv * distinv;
@@ -646,13 +592,8 @@ R_RenderBmodelFace
 */
 void R_RenderBmodelFace( bedge_t *pedges, msurface_t *psurf )
 {
-	int         i;
-	unsigned    mask;
-	mplane_t    *pplane;
-	float       distinv;
-	vec3_t      p_normal;
-	medge16_t   tedge;
-	clipplane_t *pclip;
+	vec3_t    p_normal;
+	medge16_t tedge;
 
 	/*if (psurf->texinfo->flags & (SURF_TRANS33|SURF_TRANS66))
 	{
@@ -681,9 +622,9 @@ void R_RenderBmodelFace( bedge_t *pedges, msurface_t *psurf )
 	r_pedge = &tedge;
 
 // set up clip planes
-	pclip = NULL;
+	clipplane_t *pclip = NULL;
 
-	for( i = 3, mask = 0x08; i >= 0; i--, mask >>= 1 )
+	for( int i = 3, mask = 0x08; i >= 0; i--, mask >>= 1 )
 	{
 		if( r_clipflags & mask )
 		{
@@ -744,11 +685,11 @@ void R_RenderBmodelFace( bedge_t *pedges, msurface_t *psurf )
 	surface_p->key = r_currentbkey;
 	surface_p->spans = NULL;
 
-	pplane = psurf->plane;
+	mplane_t *pplane = psurf->plane;
 // FIXME: cache this?
 	TransformVector( pplane->normal, p_normal );
 // FIXME: cache this?
-	distinv = 1.0f / ( pplane->dist - DotProduct( tr.modelorg, pplane->normal ));
+	float distinv = 1.0f / ( pplane->dist - DotProduct( tr.modelorg, pplane->normal ));
 
 	surface_p->d_zistepu = p_normal[0] * xscaleinv * distinv;
 	surface_p->d_zistepv = -p_normal[1] * yscaleinv * distinv;
