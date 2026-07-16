@@ -181,7 +181,7 @@ static void LM_UploadBlock( void )
 	tglob.lightmapTextures[i] = R_TextureUploadFromBuffer( lmName, &r_lightmap, TF_ATLAS_PAGE|TF_NOMIPMAP|TF_CLAMP, false );
 
 	if( ++gl_lms.current_lightmap_texture == MAX_LIGHTMAPS )
-		gEngine.Host_Error( "AllocBlock: full\n" );
+		gEngine.Host_Error( "Maximum number of lightmap atlases reached (%d)\n", MAX_LIGHTMAPS );
 }
 
 /*
@@ -267,7 +267,8 @@ void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel )
 		LM_InitBlock();
 
 		if( !LM_AllocBlock( smax, tmax, &surf->light_s, &surf->light_t ))
-			gEngine.Host_Error( "AllocBlock: full\n" );
+			gEngine.Host_Error( "Surface lightmap %dx%d for model \"%s\" does not fit into a %dx%d atlas\n",
+				smax, tmax, loadmodel->name, BLOCK_SIZE, BLOCK_SIZE );
 	}
 
 	surf->lightmaptexturenum = gl_lms.current_lightmap_texture;
