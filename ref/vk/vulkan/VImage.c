@@ -617,40 +617,48 @@ static void uploadRegionTransitionToShaderRead( vk_combuf_t *combuf, r_vk_image_
 
 static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlags2 dst_stages ) {
 	const int regions_count = g_image_upload.regions.count;
+
 	int locked_regions_count = 0;
-	r_vk_image_t *current_image = NULL;
 
 	if( regions_count == 0 )
 		return;
 
+	// Transition each image to the transfer layout once.
 	for( int i = 0; i < regions_count; ++i )
 	{
-		image_upload_region_t *const region = g_image_upload.regions.items + i;
+		r_vk_image_t *const image = g_image_upload.regions.items[i].image;
+
+		if( image && image->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL )
+			uploadRegionTransitionToTransfer( combuf, image );
+	}
+
+	// Copy all regions while their images remain in the transfer layout.
+	for( int i = 0; i < regions_count; ++i )
+	{
+		const image_upload_region_t *const region = g_image_upload.regions.items + i;
+
 		if( region->staging.buffer != VK_NULL_HANDLE )
 			locked_regions_count++;
 
 		if( !region->image )
 			continue;
 
-		if( current_image != region->image )
-		{
-			if( current_image )
-				uploadRegionTransitionToShaderRead( combuf, current_image, dst_stages );
-
-			current_image = region->image;
-			uploadRegionTransitionToTransfer( combuf, current_image );
-		}
-
 		vkCmdCopyBufferToImage( combuf->cmdbuf,
 			region->staging.buffer,
-			current_image->image,
+			region->image->image,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&region->copy );
 	}
 
-	if( current_image )
-		uploadRegionTransitionToShaderRead( combuf, current_image, dst_stages );
+	// Transition each image back to the shader-read layout once.
+	for( int i = 0; i < regions_count; ++i )
+	{
+		r_vk_image_t *const image = g_image_upload.regions.items[i].image;
+
+		if( image && image->sync.layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL )
+			uploadRegionTransitionToShaderRead( combuf, image, dst_stages );
+	}
 
 	if( locked_regions_count > 0 )
 		R_VkStagingUnlockBulk( g_image_upload.staging, locked_regions_count );
