@@ -2370,7 +2370,6 @@ static void R_StudioDrawPoints( void ) {
 		.render_type = render_type,
 		.material_mode = material_mode,
 		.material_flags = kMaterialFlag_CullBackFace_Bit, // TODO for transparent only?
-		.ignore_lightmap = 1,
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
