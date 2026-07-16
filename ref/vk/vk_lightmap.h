@@ -19,6 +19,7 @@ void VK_ClearLightmap( void );
 void VK_CreateSurfaceLightmap( msurface_t *surf, const model_t *loadmodel );
 void VK_UploadLightmap( void );
 void VK_UpdateLightmapsIfNeeded( void );
+void VK_UpdateBrushLightmap( const model_t *model, const matrix4x4 *transform );
 void VK_ForceRebuildLightmaps( void );
 
 void VK_RunLightStyles( lightstyle_t *ls );

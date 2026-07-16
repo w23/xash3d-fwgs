@@ -880,6 +880,7 @@ void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, con
 		Matrix4x4_Copy(transform, in_transform);
 	else
 		Matrix4x4_LoadIdentity(transform);
+	VK_UpdateBrushLightmap( mod, &transform );
 
 	if (bmodel->patch_rendermode >= 0)
 		render_mode = bmodel->patch_rendermode;

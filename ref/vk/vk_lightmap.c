@@ -30,7 +30,8 @@ xvk_lightmap_state_t g_lightmap;
 // TODO this doesn't really need to be this huge
 static uint		r_blocklights[BLOCK_SIZE_MAX*BLOCK_SIZE_MAX*3]; // This is just a temp HDR-ish buffer for lightmap generation
 static qboolean g_force_full_rebuild = false;
-static qboolean g_prev_dlights_active = false;
+static int g_dlight_frame = 0;
+static const matrix4x4 *g_lightmap_object_matrix = NULL;
 
 /*
 =================
@@ -41,8 +42,6 @@ R_BuildLightMap already filled r_blocklights with static/lightstyle samples;
 this function adds dlight RGB values in-place for each lightmap sample.
 
 Keep this calculation in sync with R_AddDynamicLights in ref/gl/gl_rsurf.c.
-Vulkan does not have GL's per-surface dlightbits/render-instance state, so
-only the active-light selection and light origin source differ here.
 =================
 */
 static void R_AddDynamicLightsToLightmap( const msurface_t *surf, float sample_size, int smax, int tmax )
@@ -51,6 +50,8 @@ static void R_AddDynamicLightsToLightmap( const msurface_t *surf, float sample_s
 	int sample_frac = 1;
 
 	if( !globals.dlights )
+		return;
+	if( !surf->dlightbits )
 		return;
 
 	const mtexinfo_t *const tex = surf->texinfo;
@@ -66,14 +67,19 @@ static void R_AddDynamicLightsToLightmap( const msurface_t *surf, float sample_s
 
 	for( int lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
 	{
-		vec3_t impact;
+		vec3_t impact, origin_l;
 		const dlight_t *const dl = &globals.dlights[lnum];
 
-		if( dl->die < gp_cl->time || dl->radius <= 0.0f )
-			continue;
+		if( !FBitSet( surf->dlightbits, BIT( lnum )))
+			continue; // not lit by this light
+
+		// transform light origin to local bmodel space
+		if( g_lightmap_object_matrix )
+			Matrix4x4_VectorITransform( *g_lightmap_object_matrix, dl->origin, origin_l );
+		else VectorCopy( dl->origin, origin_l );
 
 		float rad = dl->radius;
-		float dist = PlaneDiff( dl->origin, surf->plane );
+		float dist = PlaneDiff( origin_l, surf->plane );
 		rad -= fabs( dist );
 
 		float minlight = dl->minlight;
@@ -84,10 +90,10 @@ static void R_AddDynamicLightsToLightmap( const msurface_t *surf, float sample_s
 
 		if( surf->plane->type < 3 )
 		{
-			VectorCopy( dl->origin, impact );
+			VectorCopy( origin_l, impact );
 			impact[surf->plane->type] -= dist;
 		}
-		else VectorMA( dl->origin, -dist, surf->plane->normal, impact );
+		else VectorMA( origin_l, -dist, surf->plane->normal, impact );
 
 		float sl = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
 		float tl = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
@@ -335,7 +341,6 @@ void VK_ClearLightmap( void )
 		R_TextureFree(tglob.lightmapTextures[i]);
 	gl_lms.current_lightmap_texture = 0;
 	g_force_full_rebuild = false;
-	g_prev_dlights_active = false;
 
 	LM_InitBlock();
 }
@@ -382,21 +387,27 @@ static void LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qboolean 
 		.height = tmax,
 		.data = gl_lms.lightmap_buffer,
 	});
+	if( !dynamic )
+	{
+		surf->dlightframe = 0;
+		surf->dlightbits = 0;
+	}
 	LM_SetCacheState( surf );
 }
 
-static void LM_UploadSurfaceRegions( const model_t *world, int atlas_count, qboolean all_surfaces, qboolean dynamic )
+static void LM_UploadSurfaceRegions( const model_t *model, int atlas_count, qboolean all_surfaces, qboolean dynamic )
 {
-	for( int i = 0; i < world->numsurfaces; ++i )
+	for( int i = 0; i < model->nummodelsurfaces; ++i )
 	{
-		msurface_t *const surf = world->surfaces + i;
+		msurface_t *const surf = model->surfaces + model->firstmodelsurface + i;
+		const qboolean dlighted = dynamic && surf->dlightframe == g_dlight_frame;
 		if( FBitSet( surf->flags, SURF_DRAWTILED ) || !surf->samples )
 			continue;
 
-		if( !all_surfaces && !LM_IsSurfaceDirty( surf ) )
+		if( !all_surfaces && !dlighted && !surf->dlightframe && !LM_IsSurfaceDirty( surf ))
 			continue;
 
-		LM_UploadSurfaceRegion( surf, atlas_count, dynamic );
+		LM_UploadSurfaceRegion( surf, atlas_count, dlighted );
 	}
 }
 
@@ -404,6 +415,134 @@ void VK_ForceRebuildLightmaps( void )
 {
 	// Used when switching RT->raster to prepare a fresh fallback lightmap.
 	g_force_full_rebuild = true;
+}
+
+/*
+=============
+R_MarkLights
+
+Copied from ref/common/ref_light.c.
+=============
+*/
+static void R_MarkLights( const dlight_t *light, int bit, const mnode_t *node, const model_t *model, int dlightframecount )
+{
+	const float virtual_radius = light->radius * Q_max( 1.0f, r_dlight_virtual_radius->value );
+	const float maxdist = light->radius * light->radius;
+start:
+	if( !node || node->contents < 0 )
+		return;
+
+	float dist = PlaneDiff( light->origin, node->plane );
+
+	if( dist > virtual_radius )
+	{
+		node = node_child( node, 0, model );
+		goto start;
+	}
+
+	if( dist < -virtual_radius )
+	{
+		node = node_child( node, 1, model );
+		goto start;
+	}
+
+	const float dist_sq = dist * dist;
+
+	// mark the polygons
+	int firstsurface = node_firstsurface( node, model );
+	int numsurfaces = node_numsurfaces( node, model );
+
+	for( int i = 0; i < numsurfaces && dist_sq < maxdist; i++ )
+	{
+		vec3_t impact;
+		float s, t, l;
+		msurface_t *surf = &model->surfaces[firstsurface + i];
+		const mextrasurf_t *info = surf->info;
+
+		if( surf->plane->type < 3 )
+		{
+			VectorCopy( light->origin, impact );
+			impact[surf->plane->type] -= dist;
+		}
+		else VectorMA( light->origin, -dist, surf->plane->normal, impact );
+
+		// a1ba: the fix was taken from JoeQuake, which traces back to FitzQuake,
+		// which attributes it to LadyHavoc (Darkplaces author)
+		// clamp center of light to corner and check brightness
+		l = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
+		s = l + 0.5;
+		s = bound( 0, s, info->lightextents[0] );
+		s = l - s;
+
+		l = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
+		t = l + 0.5;
+		t = bound( 0, t, info->lightextents[1] );
+		t = l - t;
+
+		if( s * s + t * t + dist_sq >= maxdist )
+			continue;
+
+		if( surf->dlightframe != dlightframecount )
+		{
+			surf->dlightbits = bit;
+			surf->dlightframe = dlightframecount;
+		}
+		else surf->dlightbits |= bit;
+	}
+
+	R_MarkLights( light, bit, node_child( node, 0, model ), model, dlightframecount );
+	node = node_child( node, 1, model );
+	goto start;
+}
+
+/*
+=============
+R_PushDlights
+
+Copied from ref/common/ref_light.c.
+=============
+*/
+static int R_PushDlights( const model_t *model, int framecount )
+{
+	if( !model )
+		return framecount;
+
+	for( int i = 0; i < MAX_DLIGHTS; i++ )
+	{
+		const dlight_t *l = &globals.dlights[i];
+
+		if( l->die < gp_cl->time || !l->radius )
+			continue;
+
+		R_MarkLights( l, 1 << i, model->nodes, model, framecount );
+	}
+
+	return framecount;
+}
+
+/*
+========================
+R_PushDlightsForBmodel
+
+Copied from ref/common/ref_light.c.
+========================
+*/
+static void R_PushDlightsForBmodel( const model_t *model, int framecount, const matrix4x4 object_matrix )
+{
+	for( int i = 0; i < MAX_DLIGHTS; i++ )
+	{
+		dlight_t *l = &globals.dlights[i];
+
+		if( l->die < gp_cl->time || !l->radius )
+			continue;
+
+		vec3_t oldorigin = Vec3( l->origin );
+
+		Matrix4x4_VectorITransform( object_matrix, oldorigin, l->origin );
+		R_MarkLights( l, 1 << i, model->nodes + model->hulls[0].firstclipnode, model, framecount );
+
+		VectorCopy( oldorigin, l->origin );
+	}
 }
 
 /*
@@ -441,13 +580,32 @@ void VK_UpdateLightmapsIfNeeded( void )
 		return;
 
 	const qboolean have_active_dlights = LM_HasActiveDlights();
-	const qboolean dlight_activity_changed = have_active_dlights || g_prev_dlights_active;
-	const qboolean update_all_surfaces = g_force_full_rebuild || dlight_activity_changed;
+	const qboolean update_all_surfaces = g_force_full_rebuild;
+	g_dlight_frame++;
+	if( r_dynamic->value && have_active_dlights )
+		R_PushDlights( world, g_dlight_frame );
 
 	g_force_full_rebuild = false;
-	g_prev_dlights_active = have_active_dlights;
 
 	LM_UploadSurfaceRegions( world, atlas_count, update_all_surfaces, have_active_dlights );
+}
+
+void VK_UpdateBrushLightmap( const model_t *model, const matrix4x4 *transform )
+{
+	if( CVAR_TO_BOOL( rt_enable ) || model == WORLDMODEL || !model->lightdata )
+		return;
+
+	const int atlas_count = gl_lms.current_lightmap_texture;
+	if( atlas_count <= 0 )
+		return;
+
+	const qboolean have_active_dlights = LM_HasActiveDlights();
+	if( r_dynamic->value && have_active_dlights )
+		R_PushDlightsForBmodel( model, g_dlight_frame, *transform );
+
+	g_lightmap_object_matrix = transform;
+	LM_UploadSurfaceRegions( model, atlas_count, false, have_active_dlights );
+	g_lightmap_object_matrix = NULL;
 }
 
 void VK_RunLightStyles( lightstyle_t *styles )
