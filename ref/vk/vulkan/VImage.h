@@ -70,15 +70,14 @@ void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, cons
 void R_VkImageUploadEnd( r_vk_image_t *img );
 
 typedef struct {
-	int layer;
-	int mip;
-	int x, y;
-	int width, height;
-	int src_row_stride;
+	uint32_t x, y;
+	uint32_t width, height;
+	uint32_t src_row_stride;
 	const void *data;
 } r_vk_image_upload_region_t;
 
-// Expects *img and data contents to remain valid only for the duration of the call.
+// Uploads a region into mip 0, array layer 0 of an uncompressed 2D color image.
+// The source data is copied into staging memory during the call.
 void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region );
 
 // Upload all enqueued images using the given command buffer

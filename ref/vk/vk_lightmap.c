@@ -332,13 +332,10 @@ static void LM_UploadSurfaceRegion( msurface_t *surf, int atlas_count, qboolean 
 
 	R_BuildLightMap( surf, gl_lms.lightmap_buffer, smax * 4, dynamic );
 	R_VkImageUploadRegion( &texture->vk.image, &(r_vk_image_upload_region_t) {
-		.layer = 0,
-		.mip = 0,
 		.x = surf->light_s,
 		.y = surf->light_t,
 		.width = smax,
 		.height = tmax,
-		.src_row_stride = smax * 4,
 		.data = gl_lms.lightmap_buffer,
 	});
 	LM_SetCacheState( surf );

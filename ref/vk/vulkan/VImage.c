@@ -657,32 +657,19 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlags2 dst_s
 }
 
 void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region ) {
-	ASSERT( img );
-	ASSERT( region );
-	ASSERT( region->data );
-	ASSERT( img->image != VK_NULL_HANDLE );
-	ASSERT( img->layers == 1 );
-	ASSERT( img->mips == 1 );
-	ASSERT( region->layer == 0 );
-	ASSERT( region->mip == 0 );
-	ASSERT( region->x >= 0 && region->y >= 0 );
-	ASSERT( region->width > 0 && region->height > 0 );
-	ASSERT( region->x + region->width <= img->width );
-	ASSERT( region->y + region->height <= img->height );
+	ASSERT( img && region && region->data );
 
 	const uint32_t texel_size = R_VkImageFormatTexelBlockSize( img->format );
-	ASSERT( texel_size > 0 );
 
 	const uint32_t row_size = region->width * texel_size;
 	const uint32_t src_row_stride = region->src_row_stride ? region->src_row_stride : row_size;
-	ASSERT( src_row_stride >= row_size );
 
 	const uint32_t staging_size = row_size * region->height;
 	const r_vkstaging_region_t staging_lock = R_VkStagingLock( g_image_upload.staging, staging_size );
 	char *const dst = staging_lock.ptr;
 	const char *const src = region->data;
 
-	for( int y = 0; y < region->height; ++y )
+	for( uint32_t y = 0; y < region->height; ++y )
 		memcpy( dst + y * row_size, src + y * src_row_stride, row_size );
 
 	const image_upload_region_t upload = {
@@ -694,8 +681,8 @@ void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t 
 			.bufferImageHeight = 0,
 			.imageSubresource = (VkImageSubresourceLayers) {
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-				.mipLevel = region->mip,
-				.baseArrayLayer = region->layer,
+				.mipLevel = 0,
+				.baseArrayLayer = 0,
 				.layerCount = 1,
 			},
 			.imageOffset = (VkOffset3D) {
