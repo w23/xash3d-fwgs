@@ -285,13 +285,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 	if (images_count == 0 && regions_count == 0)
 		return;
 
-	if (images_count == 0) {
-		uploadRegionCommit(combuf, (VkPipelineStageFlags2)dst_stages);
-		arrayDynamicResizeT(&g_image_upload.regions, 0);
-		return;
-	}
-
-	DEBUG("Uploading %d images", images_count);
+	DEBUG("Uploading %d images and %d image regions", images_count, regions_count);
 
 	static int gpu_scope_id = -2;
 	if (gpu_scope_id == -2)
@@ -430,7 +424,7 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-	// Clear out image upload queue
+	// Clear out image upload queues
 	arrayDynamicResizeT(&g_image_upload.images, 0);
 	arrayDynamicResizeT(&g_image_upload.regions, 0);
 	arrayDynamicResizeT(&g_image_upload.slices, 0);
