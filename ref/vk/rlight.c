@@ -146,9 +146,10 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			dm = surf->info->deluxemap + Q_rint( dt ) * smax + Q_rint( ds );
 		}
 
+		// use vanilla lightstyles for raster lighting, see ref/common/ref_light.c
 		for( map = 0; map < MAXLIGHTMAPS && surf->styles[map] != 255; map++ )
 		{
-			uint scale = g_lightmap.lightstylevalue[surf->styles[map]];
+			uint scale = g_lightmap.raster_lightstylevalue[surf->styles[map]];
 
 			/* FIXME VK if( tr.ignore_lightgamma )
 			{
@@ -249,9 +250,10 @@ static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t
 			{
 				if( lspot ) VectorCopy( g_trace_lightspot, lspot );
 				if( lvec ) VectorNormalize2( g_trace_lightvec, lvec );
-				light.r = Q_min(( cv.r >> 7 ), 255 );
-				light.g = Q_min(( cv.g >> 7 ), 255 );
-				light.b = Q_min(( cv.b >> 7 ), 255 );
+				// copied from R_LightVecInternal in ref/common/ref_light.c
+				light.r = Q_min(( cv.r >> 8 ), 255 );
+				light.g = Q_min(( cv.g >> 8 ), 255 );
+				light.b = Q_min(( cv.b >> 8 ), 255 );
 				last_fraction = g_trace_fraction;
 
 				if(( light.r + light.g + light.b ) != 0 )

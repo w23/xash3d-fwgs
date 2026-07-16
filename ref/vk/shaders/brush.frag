@@ -18,5 +18,8 @@ void main() {
 	if (baseColor.a < alpha_test_threshold)
 		discard;
 
-	outColor = vec4(texture(sLightmap, vLightmapUV).rgb * baseColor.rgb, baseColor.a);
+	// Match GL's default VBO overbright path (ref/gl/gl_rsurf.c:R_SetLightmap):
+	// the CPU lightmap is encoded with lightscale 171, then modulated at 2x.
+	const vec3 lightmap = texture(sLightmap, vLightmapUV).rgb * 2.0;
+	outColor = vec4(lightmap * baseColor.rgb, baseColor.a);
 }

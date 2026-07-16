@@ -10,6 +10,10 @@
 
 #include <memory.h>
 
+// Keep in sync with ref/gl/gl_local.h and engine/common/mod_local.h.
+#define LM_SAMPLE_SIZE       16
+#define LM_SAMPLE_EXTRASIZE  8
+
 typedef struct
 {
 	int		allocated[BLOCK_SIZE_MAX];
@@ -35,67 +39,95 @@ R_AddDynamicLightsToLightmap
 Accumulates active dynamic light contributions for surface into r_blocklights.
 R_BuildLightMap already filled r_blocklights with static/lightstyle samples;
 this function adds dlight RGB values in-place for each lightmap sample.
+
+Keep this calculation in sync with R_AddDynamicLights in ref/gl/gl_rsurf.c.
+Vulkan does not have GL's per-surface dlightbits/render-instance state, so
+only the active-light selection and light origin source differ here.
 =================
 */
-static void R_AddDynamicLightsToLightmap( const msurface_t *surface,
-	int lightmap_width, int lightmap_height, float lightmap_sample_size )
+static void R_AddDynamicLightsToLightmap( const msurface_t *surf, float sample_size, int smax, int tmax )
 {
-	const mextrasurf_t *const info = surface->info;
+	const mextrasurf_t *const info = surf->info;
+	int sample_frac = 1;
 
 	if( !globals.dlights )
 		return;
 
-	for( int lnum = 0; lnum < MAX_DLIGHTS; ++lnum )
-	{
-		const dlight_t *const dl = globals.dlights + lnum;
-		vec3_t impact;
+	const mtexinfo_t *const tex = surf->texinfo;
 
-		if( !dl || dl->die < gp_cl->time || dl->radius <= 0.0f )
+	if( FBitSet( tex->flags, TEX_WORLD_LUXELS ))
+	{
+		if( surf->texinfo->faceinfo )
+			sample_frac = surf->texinfo->faceinfo->texture_step;
+		else if( FBitSet( surf->texinfo->flags, TEX_EXTRA_LIGHTMAP ))
+			sample_frac = LM_SAMPLE_EXTRASIZE;
+		else sample_frac = LM_SAMPLE_SIZE;
+	}
+
+	for( int lnum = 0; lnum < MAX_DLIGHTS; lnum++ )
+	{
+		vec3_t impact;
+		const dlight_t *const dl = &globals.dlights[lnum];
+
+		if( dl->die < gp_cl->time || dl->radius <= 0.0f )
 			continue;
 
 		float rad = dl->radius;
-		const float dist_plane = PlaneDiff( dl->origin, surface->plane );
-		rad -= fabsf( dist_plane );
+		float dist = PlaneDiff( dl->origin, surf->plane );
+		rad -= fabs( dist );
 
 		float minlight = dl->minlight;
 		if( rad < minlight )
 			continue;
+
 		minlight = rad - minlight;
 
-		if( surface->plane->type < 3 )
+		if( surf->plane->type < 3 )
 		{
 			VectorCopy( dl->origin, impact );
-			impact[surface->plane->type] -= dist_plane;
+			impact[surf->plane->type] -= dist;
 		}
-		else
-		{
-			VectorMA( dl->origin, -dist_plane, surface->plane->normal, impact );
-		}
+		else VectorMA( dl->origin, -dist, surf->plane->normal, impact );
 
-		const float sl = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
-		const float tl = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
+		float sl = DotProduct( impact, info->lmvecs[0] ) + info->lmvecs[0][3] - info->lightmapmins[0];
+		float tl = DotProduct( impact, info->lmvecs[1] ) + info->lmvecs[1][3] - info->lightmapmins[1];
 
-		for( int t = 0; t < lightmap_height; ++t )
+		// dist >= max( sd, td ), so a luxel can only pass the test below when both
+		// sd and td are under minlight
+		float half = ( minlight + 1.0f ) / ( sample_size * sample_frac );
+		int s0 = Q_max( 0, (int)( sl / sample_size - half ));
+		int s1 = Q_min( smax - 1, (int)( sl / sample_size + half ));
+		int t0 = Q_max( 0, (int)( tl / sample_size - half ));
+		int t1 = Q_min( tmax - 1, (int)( tl / sample_size + half ));
+
+		for( int t = t0; t <= t1; t++ )
 		{
-			int td = (int)(tl - lightmap_sample_size * t);
+			int td = (tl - sample_size * t) * sample_frac;
+
 			if( td < 0 )
 				td = -td;
 
-			for( int s = 0; s < lightmap_width; ++s )
+			for( int s = s0; s <= s1; s++ )
 			{
-				int sd = (int)(sl - lightmap_sample_size * s);
+				int sd = (sl - sample_size * s) * sample_frac;
+				float dist;
+
 				if( sd < 0 )
 					sd = -sd;
 
-				const float dist = sd > td ? (float)(sd + (td >> 1)) : (float)(td + (sd >> 1));
-				if( dist >= minlight )
-					continue;
+				if( sd > td )
+					dist = sd + (td >> 1);
+				else
+					dist = td + (sd >> 1);
 
-				uint *const bl = &r_blocklights[(s + (t * lightmap_width)) * 3];
-				const int add = (int)((rad - dist) * 256.f);
-				bl[0] += (add * dl->color.r) / 256;
-				bl[1] += (add * dl->color.g) / 256;
-				bl[2] += (add * dl->color.b) / 256;
+				if( dist < minlight )
+				{
+					uint *bl = &r_blocklights[(s + (t * smax)) * 3];
+
+					bl[0] += ((int)((rad - dist) * 256) * dl->color.r ) / 256;
+					bl[1] += ((int)((rad - dist) * 256) * dl->color.g ) / 256;
+					bl[2] += ((int)((rad - dist) * 256) * dl->color.b ) / 256;
+				}
 			}
 		}
 	}
@@ -104,7 +136,7 @@ static void R_AddDynamicLightsToLightmap( const msurface_t *surface,
 static void LM_SetCacheState( msurface_t *surf )
 {
 	for( int maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++ )
-		surf->cached_light[maps] = g_lightmap.lightstylevalue[surf->styles[maps]];
+		surf->cached_light[maps] = g_lightmap.raster_lightstylevalue[surf->styles[maps]];
 }
 
 static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
@@ -112,7 +144,7 @@ static qboolean LM_IsSurfaceDirty( const msurface_t *surf )
 	for( int maps = 0; maps < MAXLIGHTMAPS && surf->styles[maps] != 255; maps++ )
 	{
 		const int style = surf->styles[maps];
-		if( g_lightmap.lightstylevalue[style] != surf->cached_light[maps] )
+		if( g_lightmap.raster_lightstylevalue[style] != surf->cached_light[maps] )
 			return true;
 	}
 
@@ -192,14 +224,17 @@ Combine and scale multiple lightmaps into the floating
 format in r_blocklights
 =================
 */
-static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean dynamic )
+static void R_BuildLightMap( const msurface_t *surf, byte *dest, int stride, qboolean dynamic )
 {
 	int		smax, tmax;
 	uint		*bl;
 	int		i, map, size, s, t;
 	int		sample_size;
-	mextrasurf_t	*info = surf->info;
-	color24		*lm;
+	// Match the default VBO overbright path in ref/gl/gl_rsurf.c:
+	// encode with 171 here, then multiply the sampled lightmap by 2 in brush.frag.
+	const int	lightscale = 171;
+	const mextrasurf_t *const info = surf->info;
+	const color24	*lm;
 	sample_size = gEngine.Mod_SampleSizeForFace( surf );
 	smax = ( info->lightextents[0] / sample_size ) + 1;
 	tmax = ( info->lightextents[1] / sample_size ) + 1;
@@ -209,21 +244,24 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 
 	memset( r_blocklights, 0, sizeof( uint ) * size * 3 );
 
+	// Linear accumulation and final gamma conversion are copied from
+	// R_BuildLightMap in ref/gl/gl_rsurf.c. Keep these blocks in sync.
+
 	// add all the lightmaps
 	for( map = 0; map < MAXLIGHTMAPS && surf->styles[map] != 255 && lm; map++ )
 	{
-		const uint scale = g_lightmap.lightstylevalue[surf->styles[map]];
+		const uint scale = g_lightmap.raster_lightstylevalue[surf->styles[map]];
 		for( i = 0, bl = r_blocklights; i < size; i++, bl += 3, lm++ )
 		{
-			bl[0] += LightToTexGamma( lm->r ) * scale;
-			bl[1] += LightToTexGamma( lm->g ) * scale;
-			bl[2] += LightToTexGamma( lm->b ) * scale;
+			bl[0] += lm->r * scale;
+			bl[1] += lm->g * scale;
+			bl[2] += lm->b * scale;
 		}
 	}
 
 	// add all the dynamic lights
 	if( dynamic )
-		R_AddDynamicLightsToLightmap( surf, smax, tmax, (float)sample_size );
+		R_AddDynamicLightsToLightmap( surf, sample_size, smax, tmax );
 
 	// Put into texture format
 	stride -= (smax << 2);
@@ -233,9 +271,15 @@ static void R_BuildLightMap( msurface_t *surf, byte *dest, int stride, qboolean 
 	{
 		for( s = 0; s < smax; s++ )
 		{
-			dest[0] = Q_min((bl[0] >> 7), 255 );
-			dest[1] = Q_min((bl[1] >> 7), 255 );
-			dest[2] = Q_min((bl[2] >> 7), 255 );
+			for( i = 0; i < 3; i++ )
+			{
+				int light = bl[i] * lightscale >> 14;
+
+				if( light > 1023 )
+					light = 1023;
+
+				dest[i] = LightToTexGamma( light ) >> 2;
+			}
 			dest[3] = 255;
 
 			bl += 3;
@@ -429,6 +473,7 @@ void VK_RunLightStyles( lightstyle_t *styles )
 		if( !world->lightdata )
 		{
 			g_lightmap.lightstylevalue[i] = 256 * 256;
+			g_lightmap.raster_lightstylevalue[i] = 256 * 256;
 			continue;
 		}
 
@@ -442,18 +487,21 @@ void VK_RunLightStyles( lightstyle_t *styles )
 
 		if( !ls->length )
 		{
-			g_lightmap.lightstylevalue[i] = 256 * scale;
+			g_lightmap.raster_lightstylevalue[i] = 256;
+			g_lightmap.lightstylevalue[i] = g_lightmap.raster_lightstylevalue[i] * scale;
 			continue;
 		}
 		else if( ls->length == 1 )
 		{
 			// single length style so don't bother interpolating
-			g_lightmap.lightstylevalue[i] = ls->map[0] * 22 * scale;
+			g_lightmap.raster_lightstylevalue[i] = ls->map[0] * 22;
+			g_lightmap.lightstylevalue[i] = g_lightmap.raster_lightstylevalue[i] * scale;
 			continue;
 		}
 		else if( !ls->interp || !CVAR_TO_BOOL( cl_lightstyle_lerping ))
 		{
-			g_lightmap.lightstylevalue[i] = ls->map[flight%ls->length] * 22 * scale;
+			g_lightmap.raster_lightstylevalue[i] = ls->map[flight%ls->length] * 22;
+			g_lightmap.lightstylevalue[i] = g_lightmap.raster_lightstylevalue[i] * scale;
 			continue;
 		}
 
@@ -466,6 +514,7 @@ void VK_RunLightStyles( lightstyle_t *styles )
 		k = ls->map[clight % ls->length];
 		l += (float)( k * 22.0f ) * lerpfrac;
 
-		g_lightmap.lightstylevalue[i] = (int)l * scale;
+		g_lightmap.raster_lightstylevalue[i] = (int)l;
+		g_lightmap.lightstylevalue[i] = g_lightmap.raster_lightstylevalue[i] * scale;
 	}
 }

@@ -33,6 +33,13 @@
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
 
+// copied from R_EntityDynamicLight in ref/common/ref_light.c
+// 0.6 transfers the remaining 40 percent from directional to ambient
+// v_direct is limited to the vanilla range 0.75 - 1.0
+static const float STUDIO_AMBIENT_LIGHT_SCALE = 0.60f;
+static const float STUDIO_DIRECT_LIGHT_SCALE_MIN = 0.75f;
+static const float STUDIO_DIRECT_LIGHT_SCALE_MAX = 1.00f;
+
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
@@ -1098,6 +1105,8 @@ static int R_StudioCheckBBox( void )
 
 static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
+	// copied from R_EntityDynamicLight in ref/common/ref_light.c
+	// local copy is required because ref/common uses different renderer globals
 	movevars_t	*mv = MOVEVARS;
 	vec3_t		lightDir, vecSrc, vecEnd;
 	vec3_t		origin, dist, finalLight;
@@ -1109,7 +1118,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	if( !plight || !ent || !ent->model )
 		return;
 
-	if( !RI.drawWorld /* FIXME VK NOT IMPLEMENTED || r_fullbright->value */ || FBitSet( ent->curstate.effects, EF_FULLBRIGHT ))
+	if( !RI.drawWorld || r_fullbright->value || FBitSet( ent->curstate.effects, EF_FULLBRIGHT ))
 	{
 		plight->shadelight = 0;
 		plight->ambientlight = 192;
@@ -1155,9 +1164,9 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec[0], mv->skyvec[1], mv->skyvec[2] );
 
-			light.r = LightToTexGamma( bound( 0, mv->skycolor[0], 255 ));
-			light.g = LightToTexGamma( bound( 0, mv->skycolor[1], 255 ));
-			light.b = LightToTexGamma( bound( 0, mv->skycolor[2], 255 ));
+			light.r = mv->skycolor[0];
+			light.g = mv->skycolor[1];
+			light.b = mv->skycolor[2];
 		}
 	}
 
@@ -1209,6 +1218,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		}
 	}
 
+	if( ent->curstate.renderfx == kRenderFxLightMultiplier && ent->curstate.iuser4 != 10 )
+	{
+		light.r *= ent->curstate.iuser4 / 10.0f;
+		light.g *= ent->curstate.iuser4 / 10.0f;
+		light.b *= ent->curstate.iuser4 / 10.0f;
+	}
+
 	VectorSet( finalLight, light.r, light.g, light.b );
 	ent->cvFloorColor = light;
 
@@ -1222,7 +1238,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	{
 		dl = globals.dlights + lnum;
 
-		if( dl->die < g_studio.time) // VK FIXME || !r_dynamic->value )
+		if( dl->die < g_studio.time || !r_dynamic->value )
 			continue;
 
 		VectorSubtract( ent->origin, dl->origin, dist );
@@ -1246,11 +1262,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		}
 	}
 
+	float scale;
 	if( FBitSet( ent->model->flags, STUDIO_AMBIENT_LIGHT ))
-		add = 0.6f;
-	else add = 0.9f;
+		scale = STUDIO_AMBIENT_LIGHT_SCALE;
+	else
+		scale = bound( STUDIO_DIRECT_LIGHT_SCALE_MIN, v_direct->value, STUDIO_DIRECT_LIGHT_SCALE_MAX );
 
-	VectorScale( lightDir, add, lightDir );
+	VectorScale( lightDir, scale, lightDir );
 
 	plight->shadelight = VectorLength( lightDir );
 	plight->ambientlight = total - plight->shadelight;
@@ -1292,7 +1310,7 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 	g_studio.numlocallights = 0;
 
-	if( !ent ) // VK FIXME || !r_dynamic->value )
+	if( !ent || !r_dynamic->value )
 		return;
 
 	for( i = 0; i < MAX_LOCALLIGHTS; i++ )
