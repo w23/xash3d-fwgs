@@ -9,7 +9,7 @@
 #define BLOCK_SIZE BLOCK_SIZE_MAX
 
 typedef struct {
-	int lightstylevalue[MAX_LIGHTSTYLES];        // RT lighting, includes r_lighting_modulate
+	int lightstylevalue[MAX_LIGHTSTYLES];	// value 0 - 65536
 	int raster_lightstylevalue[MAX_LIGHTSTYLES]; // GL-compatible raster lightmap values
 } xvk_lightmap_state_t;
 
