@@ -844,10 +844,11 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
-	if( args.lightmap <= 0 )
+	if( args.lightmap > 0 )
 	{
-		// compensate unlightmapped models for GL-style 2x overbright in brush.frag
-		VectorScale( g_render_state.dirty_uniform_data.color, 0.5f,
+		// GL VBO scales the sampled lightmap by 2; multipass overbright blending produces 4/3.
+		const float lightmap_scale = CVAR_TO_BOOL( gl_vbo ) ? 2.0f : ( 4.0f / 3.0f );
+		VectorScale( g_render_state.dirty_uniform_data.color, lightmap_scale,
 			g_render_state.dirty_uniform_data.color );
 	}
 
