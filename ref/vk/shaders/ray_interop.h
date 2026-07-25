@@ -162,6 +162,8 @@ struct LightsMetadata {
 	STRUCT PointLight point_lights[MAX_POINT_LIGHTS];
 	STRUCT PolygonLight polygons[MAX_EMISSIVE_KUSOCHKI];
 	vec4 polygon_vertices[MAX_EMISSIVE_KUSOCHKI * 7]; // vec3 but aligned
+
+	PAD(4) // Pad the following storage-buffer offset to 64 bytes for Vulkan validation on Intel Arc
 };
 
 struct LightCluster {
