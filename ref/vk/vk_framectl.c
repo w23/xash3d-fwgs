@@ -351,7 +351,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (draw) {
-		if (vk_frame.rtx_enabled) {
+		{
 			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 				.image = &g_frame.current.framebuffer.image,
