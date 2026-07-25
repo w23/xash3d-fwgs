@@ -12,8 +12,6 @@
 
 #define LOG_MODULE img
 
-#define OVERLAP_REGIONS_UPLOAD_FIX 1
-
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
 	VK_IMAGE_USAGE_STORAGE_BIT |
@@ -557,30 +555,11 @@ static void uploadRegionBarriers( vk_combuf_t *combuf ) {
 	});
 }
 
-static qboolean uploadRegionsOverlap( const image_upload_region_t *a, const image_upload_region_t *b ) {
-	const VkBufferImageCopy *const ac = &a->copy;
-	const VkBufferImageCopy *const bc = &b->copy;
-
-	if( a->image != b->image || ac->imageSubresource.mipLevel != bc->imageSubresource.mipLevel ||
-		!( ac->imageSubresource.aspectMask & bc->imageSubresource.aspectMask ))
-		return false;
-
-	if( ac->imageSubresource.baseArrayLayer + ac->imageSubresource.layerCount <= bc->imageSubresource.baseArrayLayer ||
-		bc->imageSubresource.baseArrayLayer + bc->imageSubresource.layerCount <= ac->imageSubresource.baseArrayLayer )
-		return false;
-
-	return ac->imageOffset.x < bc->imageOffset.x + (int32_t)bc->imageExtent.width &&
-		bc->imageOffset.x < ac->imageOffset.x + (int32_t)ac->imageExtent.width &&
-		ac->imageOffset.y < bc->imageOffset.y + (int32_t)bc->imageExtent.height &&
-		bc->imageOffset.y < ac->imageOffset.y + (int32_t)ac->imageExtent.height &&
-		ac->imageOffset.z < bc->imageOffset.z + (int32_t)bc->imageExtent.depth &&
-		bc->imageOffset.z < ac->imageOffset.z + (int32_t)ac->imageExtent.depth;
-}
-
 static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst_stages ) {
 	const int regions_count = g_image_upload.regions.count;
 
 	int locked_regions_count = 0;
+	qboolean copy_recorded = false;
 
 	if( regions_count == 0 )
 		return;
@@ -640,14 +619,10 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 		if( !region->image )
 			continue;
 
-#if OVERLAP_REGIONS_UPLOAD_FIX
-		// -vkvalidate crashes when overlapping regions are committed with a single barrier.
-		for( int j = 0; j < i; ++j )
+		// Serialize all destination writes. Besides making overlapping uploads valid,
+		// this gives them deterministic queue order without overlap detection.
+		if( copy_recorded )
 		{
-			const image_upload_region_t *const previous = g_image_upload.regions.items + j;
-			if( !previous->image || !uploadRegionsOverlap( previous, region ))
-				continue;
-
 			const VkMemoryBarrier2 barrier = {
 				.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
 				.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
@@ -660,9 +635,7 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 				.memoryBarrierCount = 1,
 				.pMemoryBarriers = &barrier,
 			});
-			break;
 		}
-#endif // OVERLAP_REGIONS_UPLOAD_FIX
 
 		vkCmdCopyBufferToImage( combuf->cmdbuf,
 			region->staging.buffer,
@@ -670,6 +643,8 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&region->copy );
+
+		copy_recorded = true;
 	}
 
 	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
