@@ -178,10 +178,13 @@ static VkRenderPass createRenderPass( VkFormat depth_format, qboolean ray_tracin
 	const VkSubpassDependency depth = {
 		.srcSubpass = VK_SUBPASS_EXTERNAL,
 		.dstSubpass = 0,
-		.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-		.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+		.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+			| VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+		.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+			| VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
 		.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-		.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+		.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
 		.dependencyFlags = 0,
 	};
 	BOUNDED_ARRAY_APPEND_ITEM(dependencies, depth);
@@ -348,7 +351,7 @@ static void enqueueRendering( vk_combuf_t* combuf, qboolean draw ) {
 	}
 
 	if (draw) {
-		{
+		if (vk_frame.rtx_enabled) {
 			Barrier barrier = barrierMake(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 			barrierAddImage(&barrier, (r_vkcombuf_barrier_image_t) {
 				.image = &g_frame.current.framebuffer.image,
