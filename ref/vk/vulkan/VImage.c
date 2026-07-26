@@ -12,6 +12,20 @@
 
 #define LOG_MODULE img
 
+#define MAX_REGION_UPLOADS_WITHOUT_BARRIER 32
+
+typedef struct {
+	r_vk_image_t *image;
+	int32_t x0, y0;
+	int32_t x1, y1;
+} cached_upload_region_t;
+
+typedef struct {
+	cached_upload_region_t regions[MAX_REGION_UPLOADS_WITHOUT_BARRIER];
+	int count;
+	int intersections;
+} upload_region_accumulator_t;
+
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
 	VK_IMAGE_USAGE_STORAGE_BIT |
@@ -555,11 +569,44 @@ static void uploadRegionBarriers( vk_combuf_t *combuf ) {
 	});
 }
 
+static qboolean trackUploadRegionAndCheckBarrier( upload_region_accumulator_t *accumulator,
+	const image_upload_region_t *region )
+{
+	const cached_upload_region_t cached = {
+		.image = region->image,
+		.x0 = region->copy.imageOffset.x,
+		.y0 = region->copy.imageOffset.y,
+		.x1 = region->copy.imageOffset.x + (int32_t)region->copy.imageExtent.width,
+		.y1 = region->copy.imageOffset.y + (int32_t)region->copy.imageExtent.height,
+	};
+
+	qboolean intersection = false;
+	for( int i = 0; i < accumulator->count && !intersection; ++i )
+	{
+		const cached_upload_region_t *const previous = accumulator->regions + i;
+		intersection = previous->image == cached.image &&
+			previous->x0 < cached.x1 && cached.x0 < previous->x1 &&
+			previous->y0 < cached.y1 && cached.y0 < previous->y1;
+	}
+	accumulator->intersections += intersection;
+
+	const qboolean need_barrier = intersection ||
+		accumulator->count == MAX_REGION_UPLOADS_WITHOUT_BARRIER;
+
+	if( need_barrier )
+		accumulator->count = 0;
+
+	accumulator->regions[accumulator->count++] = cached;
+	return need_barrier;
+}
+
 static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst_stages ) {
 	const int regions_count = g_image_upload.regions.count;
+	upload_region_accumulator_t region_accumulator = {0};
 
 	int locked_regions_count = 0;
-	qboolean copy_recorded = false;
+	int updated_regions_count = 0;
+	int region_barriers_count = 0;
 
 	if( regions_count == 0 )
 		return;
@@ -619,10 +666,9 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 		if( !region->image )
 			continue;
 
-		// Serialize all destination writes. Besides making overlapping uploads valid,
-		// this gives them deterministic queue order without overlap detection.
-		if( copy_recorded )
+		if( trackUploadRegionAndCheckBarrier( &region_accumulator, region ))
 		{
+			region_barriers_count++;
 			const VkMemoryBarrier2 barrier = {
 				.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
 				.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
@@ -643,9 +689,15 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&region->copy );
-
-		copy_recorded = true;
+		updated_regions_count++;
 	}
+
+	if( updated_regions_count > 0 )
+		INFO( "Updated %d lightmap regions with %d barriers and %d intersections",
+			updated_regions_count, region_barriers_count, region_accumulator.intersections );
+
+	if( region_accumulator.intersections > 0 )
+		WARN( "Found lightmap regions intersections" );
 
 	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
 
