@@ -4,6 +4,7 @@
 #include "vk_logs.h"
 #include "VBarrier.h"
 #include "std/arrays.h"
+#include "std/bitarray.h"
 
 #include "xash3d_mathlib.h" // Q_max
 
@@ -11,20 +12,6 @@
 #include "VImageExtra.h"
 
 #define LOG_MODULE img
-
-#define MAX_REGION_UPLOADS_WITHOUT_BARRIER 32
-
-typedef struct {
-	r_vk_image_t *image;
-	int32_t x0, y0;
-	int32_t x1, y1;
-} cached_upload_region_t;
-
-typedef struct {
-	cached_upload_region_t regions[MAX_REGION_UPLOADS_WITHOUT_BARRIER];
-	int count;
-	int intersections;
-} upload_region_accumulator_t;
 
 static const VkImageUsageFlags usage_bits_implying_views =
 	VK_IMAGE_USAGE_SAMPLED_BIT |
@@ -260,6 +247,8 @@ static struct {
 	ARRAY_DYNAMIC_DECLARE(VkBufferImageCopy, slices);
 	ARRAY_DYNAMIC_DECLARE(VkImageMemoryBarrier, barriers);
 	ARRAY_DYNAMIC_DECLARE(VkImageMemoryBarrier2, region_barriers);
+
+	bit_array_t region_dirty_flags;
 } g_image_upload;
 
 static void imageStagingPush(void* userptr, struct vk_combuf_s *combuf, uint32_t allocations) {
@@ -294,6 +283,7 @@ void R_VkImageShutdown(void) {
 	arrayDynamicDestroyT(&g_image_upload.slices);
 	arrayDynamicDestroyT(&g_image_upload.barriers);
 	arrayDynamicDestroyT(&g_image_upload.region_barriers);
+	bitArrayDestroy(&g_image_upload.region_dirty_flags);
 }
 
 void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages ) {
@@ -569,47 +559,42 @@ static void uploadRegionBarriers( vk_combuf_t *combuf ) {
 	});
 }
 
-static qboolean trackUploadRegionAndCheckBarrier( upload_region_accumulator_t *accumulator,
-	const image_upload_region_t *region )
+static void uploadRegionDirtyFlagsClear( void )
 {
-	const cached_upload_region_t cached = {
-		.image = region->image,
-		.x0 = region->copy.imageOffset.x,
-		.y0 = region->copy.imageOffset.y,
-		.x1 = region->copy.imageOffset.x + (int32_t)region->copy.imageExtent.width,
-		.y1 = region->copy.imageOffset.y + (int32_t)region->copy.imageExtent.height,
-	};
+	bitArrayClear( &g_image_upload.region_dirty_flags );
+}
 
-	qboolean intersection = false;
-	for( int i = 0; i < accumulator->count && !intersection; ++i )
-	{
-		const cached_upload_region_t *const previous = accumulator->regions + i;
-		intersection = previous->image == cached.image &&
-			previous->x0 < cached.x1 && cached.x0 < previous->x1 &&
-			previous->y0 < cached.y1 && cached.y0 < previous->y1;
-	}
-	accumulator->intersections += intersection;
+static void uploadRegionDirtyFlagsPrepare( const r_vk_image_t *image )
+{
+	const uint32_t size = (image->width * image->height + 31) / 32;
+	if( g_image_upload.region_dirty_flags.size == size )
+		return;
 
-	const qboolean need_barrier = intersection ||
-		accumulator->count == MAX_REGION_UPLOADS_WITHOUT_BARRIER;
+	bitArrayDestroy( &g_image_upload.region_dirty_flags );
+	g_image_upload.region_dirty_flags = bitArrayCreate( image->width * image->height );
+}
 
-	if( need_barrier )
-		accumulator->count = 0;
+static qboolean uploadRegionWasUploaded( const image_upload_region_t *region )
+{
+	const uint32_t region_index = region->copy.imageOffset.y * region->image->width +
+		region->copy.imageOffset.x;
+	if( bitArrayCheckOrSet( &g_image_upload.region_dirty_flags, region_index ))
+		return false;
 
-	accumulator->regions[accumulator->count++] = cached;
-	return need_barrier;
+	bitArrayClear( &g_image_upload.region_dirty_flags );
+	bitArrayCheckOrSet( &g_image_upload.region_dirty_flags, region_index );
+	return true;
 }
 
 static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst_stages ) {
 	const int regions_count = g_image_upload.regions.count;
-	upload_region_accumulator_t region_accumulator = {0};
 
 	int locked_regions_count = 0;
-	int updated_regions_count = 0;
-	int region_barriers_count = 0;
 
 	if( regions_count == 0 )
 		return;
+
+	uploadRegionDirtyFlagsClear();
 
 	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
 
@@ -666,9 +651,9 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 		if( !region->image )
 			continue;
 
-		if( trackUploadRegionAndCheckBarrier( &region_accumulator, region ))
+		if( uploadRegionWasUploaded( region ))
 		{
-			region_barriers_count++;
+			WARN( "Lightmap region was uploaded repeatedly, barrier added" );
 			const VkMemoryBarrier2 barrier = {
 				.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
 				.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
@@ -689,15 +674,7 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&region->copy );
-		updated_regions_count++;
 	}
-
-	if( updated_regions_count > 0 )
-		INFO( "Updated %d lightmap regions with %d barriers and %d intersections",
-			updated_regions_count, region_barriers_count, region_accumulator.intersections );
-
-	if( region_accumulator.intersections > 0 )
-		WARN( "Found lightmap regions intersections" );
 
 	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
 
@@ -743,6 +720,8 @@ static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst
 
 void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region ) {
 	ASSERT( img && region && region->data );
+
+	uploadRegionDirtyFlagsPrepare( img );
 
 	const uint32_t texel_size = R_VkImageFormatTexelBlockSize( img->format );
 
