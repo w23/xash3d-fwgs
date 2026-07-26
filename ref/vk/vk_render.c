@@ -846,9 +846,8 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
 	if( args.lightmap > 0 )
 	{
-		// GL VBO scales the sampled lightmap by 2; multipass overbright blending produces 4/3.
-		const float lightmap_scale = CVAR_TO_BOOL( gl_vbo ) ? 2.0f : ( 4.0f / 3.0f );
-		VectorScale( g_render_state.dirty_uniform_data.color, lightmap_scale,
+		// Match the GL multipass overbright blending path.
+		VectorScale( g_render_state.dirty_uniform_data.color, 4.0f / 3.0f,
 			g_render_state.dirty_uniform_data.color );
 	}
 

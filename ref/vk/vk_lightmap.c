@@ -236,9 +236,9 @@ static void R_BuildLightMap( const msurface_t *surf, byte *dest, int stride, qbo
 	uint		*bl;
 	int		i, map, size, s, t;
 	int		sample_size;
-	// Match the selected GL overbright path in ref/gl/gl_rsurf.c. The
+	// Match the GL multipass overbright path in ref/gl/gl_rsurf.c. The
 	// corresponding post-gamma multiplier is applied in brush.frag.
-	const int	lightscale = CVAR_TO_BOOL( gl_vbo ) ? 171 : 256;
+	const int	lightscale = 256;
 	const mextrasurf_t *const info = surf->info;
 	const color24	*lm;
 	sample_size = gEngine.Mod_SampleSizeForFace( surf );
@@ -578,12 +578,6 @@ void VK_UpdateLightmapsIfNeeded( void )
 	const int atlas_count = gl_lms.current_lightmap_texture;
 	if( atlas_count <= 0 )
 		return;
-
-	if( FBitSet( gl_vbo->flags, FCVAR_CHANGED ))
-	{
-		ClearBits( gl_vbo->flags, FCVAR_CHANGED );
-		VK_ForceRebuildLightmaps();
-	}
 
 	const qboolean have_active_dlights = LM_HasActiveDlights();
 	const qboolean update_all_surfaces = g_force_full_rebuild;

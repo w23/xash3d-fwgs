@@ -21,7 +21,6 @@ void VK_LoadCvars( void )
 #define gEngfuncs gEngine // ...
 	RETRIEVE_ENGINE_SHARED_CVAR_LIST()
 
-	gl_vbo = gEngine.Cvar_Get( "gl_vbo", "0", FCVAR_GLCONFIG, "Emulate visual of lightmaps in VBO mode of GL renderer" );
 	r_dlight_virtual_radius = gEngine.Cvar_Get( "r_dlight_virtual_radius", "3", FCVAR_GLCONFIG, "increase dlight radius virtually by this amount" );
 	r_lighting_modulate = gEngine.Cvar_Get( "r_lighting_modulate", "0.6", FCVAR_ARCHIVE, "lightstyles modulate scale" );
 	cl_lightstyle_lerping = gEngine.pfnGetCvarPointer( "cl_lightstyle_lerping" );
