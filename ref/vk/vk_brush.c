@@ -1843,6 +1843,15 @@ qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {
 
 	DEBUG("%s: %s flags=%08x", __FUNCTION__, mod->name, mod->flags);
 
+	// Surfaces skipped by fillBrushSurfaces() never receive a lightmap atlas
+	// allocation. Keep an explicit sentinel so dynamic-light updates don't
+	// mistake their zero-initialized light_s/light_t for a valid region.
+	for( int i = 0; i < mod->nummodelsurfaces; ++i )
+	{
+		msurface_t *const surf = mod->surfaces + mod->firstmodelsurface + i;
+		surf->lightmaptexturenum = -1;
+	}
+
 	vk_brush_model_t *bmodel = Mem_Calloc(vk_core.pool, sizeof(*bmodel));
 	ASSERT(g_brush.models_count < COUNTOF(g_brush.models));
 	g_brush.models[g_brush.models_count++] = bmodel;
