@@ -486,6 +486,9 @@ class Resources:
 			self.producer = None
 
 		def checkSameTypeNode(self, node):
+			if node is None:
+				return
+
 			if not self.type:
 				self.type = node.getType()
 				return

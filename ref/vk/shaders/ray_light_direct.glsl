@@ -47,6 +47,7 @@ void main() {
 	const vec4 pos_t = imageLoad(position_t, pix);
 
 	vec3 diffuse = vec3(0.), specular = vec3(0.);
+	vec3 flashlight_diffuse = vec3(0.0), flashlight_specular = vec3(0.0);
 
 	if (pos_t.w > 0.) {
 		const vec4 packed_normal = imageLoad(normals_gs, pix);
@@ -58,7 +59,7 @@ void main() {
 				__LINE__, PRIVEC3(pos_t.xyz), PRIVEC3(geometry_normal), PRIVEC4(packed_normal));
 		} else
 #endif
-		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular);
+		computeLighting(pos_t.xyz + geometry_normal * .001, shading_normal, -direction, material, diffuse, specular, flashlight_diffuse, flashlight_specular);
 	}
 
 	DEBUG_VALIDATE_RANGE_VEC3("direct.diffuse", diffuse, 0., 1e6);
@@ -67,6 +68,8 @@ void main() {
 #if LIGHT_POINT
 	imageStore(out_light_point_diffuse, pix, vec4(diffuse, 0.f));
 	imageStore(out_light_point_specular, pix, vec4(specular, 0.f));
+	imageStore(out_light_point_flashlight_diffuse, pix, vec4(flashlight_diffuse, 0.f));
+	imageStore(out_light_point_flashlight_specular, pix, vec4(flashlight_specular, 0.f));
 #endif
 
 #if LIGHT_POLYGON

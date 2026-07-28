@@ -9,6 +9,14 @@
 #define ATROUS_KERNEL_HALF 2
 const float kATrousKernel[ATROUS_KERNEL_WIDTH] = { 1./16., 1./4., 3./8., 1./4., 1./16. };
 
+#ifndef ATROUS_POSITION_MIN_RADIUS
+#define ATROUS_POSITION_MIN_RADIUS 1.0
+#endif
+
+#ifndef ATROUS_POSITION_RAY_CONE_SCALE
+#define ATROUS_POSITION_RAY_CONE_SCALE 3.0
+#endif
+
 
 // Depends on:
 // - image2D normals_gs
@@ -37,8 +45,12 @@ float aTrousSampleWeigth(const ivec2 res, const ivec2 pix, vec3 pos, vec3 shadin
 	// Weight positions
 	const vec3 sample_position = imageLoad(position_t, p_scaled).xyz;
 	const vec3 p_diff = sample_position - pos;
-	//Original paper: const float p_dist2 = dot(p_diff, p_diff);
-	const float p_dist2 = max(dot(p_diff,p_diff) * inv_step_width_sq, 0.);
+	const vec3 origin = (ubo.ubo.inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	const float center_depth = max(length(pos - origin), 1.0);
+	const float position_radius = max(
+		ATROUS_POSITION_MIN_RADIUS,
+		center_depth * max(ubo.ubo.ray_cone_width, 1e-6) * float(step_width) * ATROUS_POSITION_RAY_CONE_SCALE);
+	const float p_dist2 = max(dot(p_diff, p_diff) / max(position_radius * position_radius, 1e-6), 0.);
 	const float weight_pos = min(exp(-(p_dist2)/phi_pos),1.0);
 
 	const float weight = (weight_pos * weight_sn) * x_kernel * y_kernel;

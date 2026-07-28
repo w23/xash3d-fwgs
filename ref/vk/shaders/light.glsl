@@ -16,9 +16,9 @@ const float shadow_offset_fudge = .1;
 // 1. Spherical lights
 // 2. Spotlights
 // 3. Env|dir lights
-void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular) {
 	diffuse = specular = vec3(0.);
-
+	flashlight_diffuse = flashlight_specular = vec3(0.);
 	//diffuse = vec3(1.);//float(lights.m.num_point_lights) / 64.);
 #define USE_CLUSTERS
 #ifdef USE_CLUSTERS
@@ -34,7 +34,9 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 	for (uint i = 0; i < lights.m.num_point_lights; ++i) {
 #endif
 
+		const PointLight point_light = lights.m.point_lights[i];
 		const vec3 spotlight_dir = lights.m.point_lights[i].dir_stopdot2.xyz;
+		const bool is_flashlight = (point_light.flashlight != 0u);
 		const bool is_environment = (lights.m.point_lights[i].environment != 0);
 
 		// TODO blue noise
@@ -182,6 +184,12 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 			if (shadowed(P, light_dir, light_dist + shadow_offset_fudge))
 				continue;
 		}
+		
+		if (is_flashlight) {
+			flashlight_diffuse += ldiffuse;
+			flashlight_specular += lspecular;
+			continue;
+		}
 
 		diffuse += ldiffuse;
 		specular += lspecular;
@@ -189,8 +197,9 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 }
 #endif
 
-void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular) {
+void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, out vec3 diffuse, out vec3 specular, out vec3 flashlight_diffuse, out vec3 flashlight_specular) {
 	diffuse = specular = vec3(0.);
+	flashlight_diffuse = flashlight_specular = vec3(0.);
 
 	// No direct lighting for white furnace mode. The only light sources is no-hit|SURF_SKY bounce indirect light.
 	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
@@ -232,9 +241,12 @@ void computeLighting(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material,
 
 #if LIGHT_POINT
 	vec3 ldiffuse = vec3(0.), lspecular = vec3(0.);
-	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular);
+	vec3 flashlight_ldiffuse = vec3(0.), flashlight_lspecular = vec3(0.);
+	computePointLights(P, N, cluster_index, view_dir, material, ldiffuse, lspecular, flashlight_ldiffuse, flashlight_lspecular);
 	diffuse += ldiffuse;
 	specular += lspecular;
+	flashlight_diffuse += flashlight_ldiffuse;
+	flashlight_specular += flashlight_lspecular;
 #endif
 
 #ifdef DEBUG_VALIDATE_EXTRA
