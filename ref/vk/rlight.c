@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 
 #include "vk_common.h"
+#include "vk_lightmap.h"
 #include "const.h"
 #include "xash3d_types.h"
 #include "com_model.h"
@@ -145,10 +146,10 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			dm = surf->info->deluxemap + Q_rint( dt ) * smax + Q_rint( ds );
 		}
 
+		// use vanilla lightstyles for raster lighting, see ref/common/ref_light.c
 		for( map = 0; map < MAXLIGHTMAPS && surf->styles[map] != 255; map++ )
 		{
-			// FIXME VK uint	scale = tr.lightstylevalue[surf->styles[map]];
-            uint scale = 255;
+			uint scale = g_lightmap.raster_lightstylevalue[surf->styles[map]];
 
 			/* FIXME VK if( tr.ignore_lightgamma )
 			{
@@ -158,9 +159,9 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 			}
 			else */
 			{
-				cv->r += LightToTexGamma( lm->r ) * scale;
-				cv->g += LightToTexGamma( lm->g ) * scale;
-				cv->b += LightToTexGamma( lm->b ) * scale;
+				cv->r += lm->r * scale;
+				cv->g += lm->g * scale;
+				cv->b += lm->b * scale;
 			}
 			lm += size; // skip to next lightmap
 
@@ -249,9 +250,10 @@ static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t
 			{
 				if( lspot ) VectorCopy( g_trace_lightspot, lspot );
 				if( lvec ) VectorNormalize2( g_trace_lightvec, lvec );
-				light.r = Q_min(( cv.r >> 7 ), 255 );
-				light.g = Q_min(( cv.g >> 7 ), 255 );
-				light.b = Q_min(( cv.b >> 7 ), 255 );
+				// copied from R_LightVecInternal in ref/common/ref_light.c
+				light.r = Q_min(( cv.r >> 8 ), 255 );
+				light.g = Q_min(( cv.g >> 8 ), 255 );
+				light.b = Q_min(( cv.b >> 8 ), 255 );
 				last_fraction = g_trace_fraction;
 
 				if(( light.r + light.g + light.b ) != 0 )

@@ -126,6 +126,8 @@ r_vk_image_t R_VkImageCreate(const r_vk_image_create_t *create) {
 }
 
 static void cancelUpload( r_vk_image_t *img );
+static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst_stages );
+static void cancelRegionUploads( r_vk_image_t *img );
 
 void R_VkImageDestroy(r_vk_image_t *img) {
 	// Need to make sure that there are no references to this image anywhere.
@@ -216,6 +218,12 @@ void R_VkImageBlit(struct vk_combuf_s *combuf, const r_vkimage_blit_args *args )
 
 typedef struct {
 	r_vk_image_t *image;
+	r_vkstaging_region_t staging;
+	VkBufferImageCopy copy;
+} image_upload_region_t;
+
+typedef struct {
+	r_vk_image_t *image;
 
 	struct {
 		// arena for entire layers * mips image
@@ -234,8 +242,10 @@ static struct {
 	r_vkstaging_user_handle_t staging;
 
 	ARRAY_DYNAMIC_DECLARE(image_upload_t, images);
+	ARRAY_DYNAMIC_DECLARE(image_upload_region_t, regions);
 	ARRAY_DYNAMIC_DECLARE(VkBufferImageCopy, slices);
 	ARRAY_DYNAMIC_DECLARE(VkImageMemoryBarrier, barriers);
+	ARRAY_DYNAMIC_DECLARE(VkImageMemoryBarrier2, region_barriers);
 } g_image_upload;
 
 static void imageStagingPush(void* userptr, struct vk_combuf_s *combuf, uint32_t allocations) {
@@ -247,8 +257,10 @@ static void imageStagingPush(void* userptr, struct vk_combuf_s *combuf, uint32_t
 
 qboolean R_VkImageInit(void) {
 	arrayDynamicInitT(&g_image_upload.images);
+	arrayDynamicInitT(&g_image_upload.regions);
 	arrayDynamicInitT(&g_image_upload.slices);
 	arrayDynamicInitT(&g_image_upload.barriers);
+	arrayDynamicInitT(&g_image_upload.region_barriers);
 
 	g_image_upload.staging = R_VkStagingUserCreate((r_vkstaging_user_create_t){
 		.name = "image",
@@ -261,18 +273,22 @@ qboolean R_VkImageInit(void) {
 
 void R_VkImageShutdown(void) {
 	ASSERT(g_image_upload.images.count == 0);
+	ASSERT(g_image_upload.regions.count == 0);
 	R_VkStagingUserDestroy(g_image_upload.staging);
 	arrayDynamicDestroyT(&g_image_upload.images);
+	arrayDynamicDestroyT(&g_image_upload.regions);
 	arrayDynamicDestroyT(&g_image_upload.slices);
 	arrayDynamicDestroyT(&g_image_upload.barriers);
+	arrayDynamicDestroyT(&g_image_upload.region_barriers);
 }
 
 void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages ) {
 	const int images_count = g_image_upload.images.count;
-	if (images_count == 0)
+	const int regions_count = g_image_upload.regions.count;
+	if (images_count == 0 && regions_count == 0)
 		return;
 
-	DEBUG("Uploading %d images", images_count);
+	DEBUG("Uploading %d images and %d image regions", images_count, regions_count);
 
 	static int gpu_scope_id = -2;
 	if (gpu_scope_id == -2)
@@ -407,10 +423,13 @@ void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits 
 
 	R_VkStagingUnlockBulk(g_image_upload.staging, barriers_count);
 
+	uploadRegionCommit(combuf, dst_stages);
+
 	R_VkCombufScopeEnd(combuf, gpu_scope_begin, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-	// Clear out image upload queue
+	// Clear out image upload queues
 	arrayDynamicResizeT(&g_image_upload.images, 0);
+	arrayDynamicResizeT(&g_image_upload.regions, 0);
 	arrayDynamicResizeT(&g_image_upload.slices, 0);
 	arrayDynamicResizeT(&g_image_upload.barriers, 0);
 }
@@ -505,6 +524,8 @@ void R_VkImageUploadEnd( r_vk_image_t *img ) {
 }
 
 static void cancelUpload( r_vk_image_t *img ) {
+	cancelRegionUploads( img );
+
 	// Skip already uploaded (or never uploaded) images
 	if (img->upload_slot < 0)
 		return;
@@ -521,4 +542,195 @@ static void cancelUpload( r_vk_image_t *img ) {
 	// Mark upload slot as unused, and image as not subjet to uploading
 	up->image = NULL;
 	img->upload_slot = -1;
+}
+
+static void uploadRegionBarriers( vk_combuf_t *combuf ) {
+	if( g_image_upload.region_barriers.count == 0 )
+		return;
+
+	vkCmdPipelineBarrier2( combuf->cmdbuf, &(VkDependencyInfo) {
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = g_image_upload.region_barriers.count,
+		.pImageMemoryBarriers = g_image_upload.region_barriers.items,
+	});
+}
+
+static void uploadRegionCommit( vk_combuf_t *combuf, VkPipelineStageFlagBits dst_stages ) {
+	const int regions_count = g_image_upload.regions.count;
+
+	int locked_regions_count = 0;
+
+	if( regions_count == 0 )
+		return;
+
+	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
+
+	// Transition each unique image to the transfer layout in one command.
+	for( int i = 0; i < regions_count; ++i )
+	{
+		r_vk_image_t *const image = g_image_upload.regions.items[i].image;
+		if( !image || image->sync.layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL )
+			continue;
+
+		ASSERT( image->sync.layout != VK_IMAGE_LAYOUT_UNDEFINED );
+
+		VkPipelineStageFlags2 src_stage = image->sync.write.stage | image->sync.read.stage;
+		if( src_stage == 0 )
+			src_stage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+
+		const VkImageMemoryBarrier2 barrier = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.srcStageMask = src_stage,
+			.srcAccessMask = image->sync.write.access | image->sync.read.access,
+			.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+			.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			.oldLayout = image->sync.layout,
+			.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = image->image,
+			.subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = image->mips,
+				.baseArrayLayer = 0,
+				.layerCount = image->layers,
+			},
+		};
+		arrayDynamicAppendT( &g_image_upload.region_barriers, &barrier );
+
+		// Updating tracked state here also deduplicates subsequent regions of this image.
+		image->sync.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		image->sync.write.access = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		image->sync.write.stage = VK_PIPELINE_STAGE_2_COPY_BIT;
+		image->sync.read.access = 0;
+		image->sync.read.stage = 0;
+	}
+	uploadRegionBarriers( combuf );
+
+	for( int i = 0; i < regions_count; ++i )
+	{
+		const image_upload_region_t *const region = g_image_upload.regions.items + i;
+
+		if( region->staging.buffer != VK_NULL_HANDLE )
+			locked_regions_count++;
+
+		if( !region->image )
+			continue;
+
+		vkCmdCopyBufferToImage( combuf->cmdbuf,
+			region->staging.buffer,
+			region->image->image,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1,
+			&region->copy );
+	}
+
+	arrayDynamicResizeT( &g_image_upload.region_barriers, 0 );
+
+	// Leave each unique image ready for shader reads, as required by VImage's contract.
+	for( int i = 0; i < regions_count; ++i )
+	{
+		r_vk_image_t *const image = g_image_upload.regions.items[i].image;
+		if( !image || image->sync.layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL )
+			continue;
+
+		const VkImageMemoryBarrier2 barrier = {
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
+			.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+			.dstStageMask = dst_stages,
+			.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image = image->image,
+			.subresourceRange = (VkImageSubresourceRange) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = 0,
+				.levelCount = image->mips,
+				.baseArrayLayer = 0,
+				.layerCount = image->layers,
+			},
+		};
+		arrayDynamicAppendT( &g_image_upload.region_barriers, &barrier );
+
+		image->sync.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		image->sync.write.access = 0;
+		image->sync.write.stage = 0;
+		image->sync.read.access = VK_ACCESS_2_SHADER_READ_BIT;
+		image->sync.read.stage = dst_stages;
+	}
+	uploadRegionBarriers( combuf );
+
+	if( locked_regions_count > 0 )
+		R_VkStagingUnlockBulk( g_image_upload.staging, locked_regions_count );
+}
+
+void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region ) {
+	ASSERT( img && region && region->data );
+
+	const uint32_t texel_size = R_VkImageFormatTexelBlockSize( img->format );
+
+	const uint32_t row_size = region->width * texel_size;
+	const uint32_t src_row_stride = region->src_row_stride ? region->src_row_stride : row_size;
+
+	const uint32_t staging_size = row_size * region->height;
+	const r_vkstaging_region_t staging_lock = R_VkStagingLock( g_image_upload.staging, staging_size );
+	char *const dst = staging_lock.ptr;
+	const char *const src = region->data;
+
+	for( uint32_t y = 0; y < region->height; ++y )
+		memcpy( dst + y * row_size, src + y * src_row_stride, row_size );
+
+	const image_upload_region_t upload = {
+		.image = img,
+		.staging = staging_lock,
+		.copy = (VkBufferImageCopy) {
+			.bufferOffset = staging_lock.offset,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = (VkImageSubresourceLayers) {
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.mipLevel = 0,
+				.baseArrayLayer = 0,
+				.layerCount = 1,
+			},
+			.imageOffset = (VkOffset3D) {
+				.x = region->x,
+				.y = region->y,
+				.z = 0,
+			},
+			.imageExtent = (VkExtent3D) {
+				.width = region->width,
+				.height = region->height,
+				.depth = 1,
+			},
+		},
+	};
+
+	arrayDynamicAppendT( &g_image_upload.regions, &upload );
+}
+
+static void cancelRegionUploads( r_vk_image_t *img ) {
+	int canceled_regions = 0;
+
+	for( int i = 0; i < g_image_upload.regions.count; ++i )
+	{
+		image_upload_region_t *const region = g_image_upload.regions.items + i;
+		if( region->image != img )
+			continue;
+
+		WARN("Canceling uploading image region \"%s\"", img->name);
+		region->image = NULL;
+		if( region->staging.buffer != VK_NULL_HANDLE )
+		{
+			region->staging = (r_vkstaging_region_t){0};
+			canceled_regions++;
+		}
+	}
+
+	if( canceled_regions > 0 )
+		R_VkStagingUnlockBulk( g_image_upload.staging, canceled_regions );
 }

@@ -4,6 +4,7 @@
 #include "vk_scene.h"
 #include "vk_render.h"
 #include "vk_cvar.h"
+#include "vk_lightmap.h"
 #include "vulkan/VDevmem.h"
 #include "vulkan/VSwapchain.h"
 #include "vulkan/VImage.h"
@@ -287,7 +288,10 @@ void R_BeginFrame( qboolean clearScene ) {
 	}
 
 	if (vk_core.rtx && FBitSet( rt_enable->flags, FCVAR_CHANGED )) {
+		const qboolean prev_rtx_enabled = vk_frame.rtx_enabled;
 		vk_frame.rtx_enabled = CVAR_TO_BOOL( rt_enable );
+		if( prev_rtx_enabled && !vk_frame.rtx_enabled )
+			VK_ForceRebuildLightmaps();
 	}
 	ClearBits( rt_enable->flags, FCVAR_CHANGED );
 

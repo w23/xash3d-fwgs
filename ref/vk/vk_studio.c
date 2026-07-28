@@ -33,6 +33,13 @@
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
 
+// copied from R_EntityDynamicLight in ref/common/ref_light.c
+// 0.6 transfers the remaining 40 percent from directional to ambient
+// v_direct is limited to the vanilla range 0.75 - 1.0
+static const float STUDIO_AMBIENT_LIGHT_SCALE = 0.60f;
+static const float STUDIO_DIRECT_LIGHT_SCALE_MIN = 0.75f;
+static const float STUDIO_DIRECT_LIGHT_SCALE_MAX = 1.00f;
+
 // TODO get rid of this
 #define ENGINE_GET_PARM_ (*gEngine.EngineGetParm)
 #define ENGINE_GET_PARM( parm ) ENGINE_GET_PARM_( ( parm ), 0 )
@@ -55,6 +62,11 @@ typedef struct sortedmesh_s
 	const mstudiomesh_t	*mesh;
 	int		flags;			// face flags
 } sortedmesh_t;
+
+typedef struct color_gamma_indices_s
+{
+	uint16_t	r, g, b;
+} color_gamma_indices_t;
 
 typedef struct
 {
@@ -107,7 +119,7 @@ typedef struct
 	int		numlocallights;
 	int		lightage[MAXSTUDIOBONES];
 	dlight_t		*locallight[MAX_LOCALLIGHTS];
-	color24		locallightcolor[MAX_LOCALLIGHTS];
+	color_gamma_indices_t	locallightcolor[MAX_LOCALLIGHTS];
 	vec4_t		lightpos[MAXSTUDIOVERTS][MAX_LOCALLIGHTS];
 	vec3_t		lightbonepos[MAXSTUDIOBONES][MAX_LOCALLIGHTS];
 	float		locallightR2[MAX_LOCALLIGHTS];
@@ -152,6 +164,7 @@ static struct {
 	r_studio_entity_model_t *entmodel;
 	int bodypart_index;
 } g_studio_current;
+
 
 /*
 ================
@@ -1092,6 +1105,8 @@ static int R_StudioCheckBBox( void )
 
 static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
+	// copied from R_EntityDynamicLight in ref/common/ref_light.c
+	// local copy is required because ref/common uses different renderer globals
 	movevars_t	*mv = MOVEVARS;
 	vec3_t		lightDir, vecSrc, vecEnd;
 	vec3_t		origin, dist, finalLight;
@@ -1103,7 +1118,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	if( !plight || !ent || !ent->model )
 		return;
 
-	if( !RI.drawWorld /* FIXME VK NOT IMPLEMENTED || r_fullbright->value */ || FBitSet( ent->curstate.effects, EF_FULLBRIGHT ))
+	if( !RI.drawWorld || r_fullbright->value || FBitSet( ent->curstate.effects, EF_FULLBRIGHT ))
 	{
 		plight->shadelight = 0;
 		plight->ambientlight = 192;
@@ -1149,13 +1164,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		{
 			VectorSet( lightDir, mv->skyvec[0], mv->skyvec[1], mv->skyvec[2] );
 
-			light.r = LightToTexGamma( bound( 0, mv->skycolor[0], 255 ));
-			light.g = LightToTexGamma( bound( 0, mv->skycolor[1], 255 ));
-			light.b = LightToTexGamma( bound( 0, mv->skycolor[2], 255 ));
+			light.r = mv->skycolor[0];
+			light.g = mv->skycolor[1];
+			light.b = mv->skycolor[2];
 		}
 	}
 
-	if(( light.r + light.g + light.b ) < 16 ) // TESTTEST
+	if(( light.r + light.g + light.b ) == 0 )
 	{
 		colorVec	gcolor;
 		float	grad[4];
@@ -1203,6 +1218,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		}
 	}
 
+	if( ent->curstate.renderfx == kRenderFxLightMultiplier && ent->curstate.iuser4 != 10 )
+	{
+		light.r *= ent->curstate.iuser4 / 10.0f;
+		light.g *= ent->curstate.iuser4 / 10.0f;
+		light.b *= ent->curstate.iuser4 / 10.0f;
+	}
+
 	VectorSet( finalLight, light.r, light.g, light.b );
 	ent->cvFloorColor = light;
 
@@ -1216,7 +1238,7 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 	{
 		dl = globals.dlights + lnum;
 
-		if( dl->die < g_studio.time) // VK FIXME || !r_dynamic->value )
+		if( dl->die < g_studio.time || !r_dynamic->value )
 			continue;
 
 		VectorSubtract( ent->origin, dl->origin, dist );
@@ -1234,17 +1256,19 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 
 			VectorAdd( lightDir, dist, lightDir );
 
-			finalLight[0] += LightToTexGamma( dl->color.r ) * ( add / 256.0f ) * 2.0f;
-			finalLight[1] += LightToTexGamma( dl->color.g ) * ( add / 256.0f ) * 2.0f;
-			finalLight[2] += LightToTexGamma( dl->color.b ) * ( add / 256.0f ) * 2.0f;
+			finalLight[0] += dl->color.r * ( add / 256.0f );
+			finalLight[1] += dl->color.g * ( add / 256.0f );
+			finalLight[2] += dl->color.b * ( add / 256.0f );
 		}
 	}
 
+	float scale;
 	if( FBitSet( ent->model->flags, STUDIO_AMBIENT_LIGHT ))
-		add = 0.6f;
-	else add = 0.9f;
+		scale = STUDIO_AMBIENT_LIGHT_SCALE;
+	else
+		scale = bound( STUDIO_DIRECT_LIGHT_SCALE_MIN, v_direct->value, STUDIO_DIRECT_LIGHT_SCALE_MAX );
 
-	VectorScale( lightDir, add, lightDir );
+	VectorScale( lightDir, scale, lightDir );
 
 	plight->shadelight = VectorLength( lightDir );
 	plight->ambientlight = total - plight->shadelight;
@@ -1286,7 +1310,7 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 	g_studio.numlocallights = 0;
 
-	if( !ent ) // VK FIXME || !r_dynamic->value )
+	if( !ent || !r_dynamic->value )
 		return;
 
 	for( i = 0; i < MAX_LOCALLIGHTS; i++ )
@@ -1337,9 +1361,9 @@ static void R_StudioEntityLight( alight_t *lightinfo )
 
 			if( k != -1 )
 			{
-				g_studio.locallightcolor[k].r = LightToTexGamma( el->color.r );
-				g_studio.locallightcolor[k].g = LightToTexGamma( el->color.g );
-				g_studio.locallightcolor[k].b = LightToTexGamma( el->color.b );
+				g_studio.locallightcolor[k].r = LinearGammaTable( el->color.r << 2 );
+				g_studio.locallightcolor[k].g = LinearGammaTable( el->color.g << 2 );
+				g_studio.locallightcolor[k].b = LinearGammaTable( el->color.b << 2 );
 				g_studio.locallightR2[k] = r2;
 				g_studio.locallight[k] = el;
 				lstrength[k] = minstrength;
@@ -1436,7 +1460,7 @@ static void R_StudioLighting( float *lv, int bone, int flags, vec3_t normal )
 	}
 
 	illum = Q_min( illum, 255.0f );
-	*lv = illum * (1.0f / 255.0f);
+	*lv = LightToTexGamma( illum * 4 ) / 1023.0f;
 }
 
 static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, const vec3_t color, byte *out )
@@ -1450,17 +1474,18 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 		return;
 	}
 
-	VectorCopy( color, finalLight );
+	VectorSet( finalLight, 0, 0, 0 );
 
 	for( i = 0; i < g_studio.numlocallights; i++ )
 	{
 		float	r;
 
 		r = DotProduct( normal, light[i] );
-#if 0 // VKTODO
-		if( likely( !tr.fFlipViewModel ))
+
+		// Keep lighting sign consistent for mirrored (left-handed) viewmodel rendering.
+		const qboolean flip_viewmodel = ((cl_righthand && cl_righthand->value > 0 && RI.currententity == globals.viewent) || g_iBackFaceCull);
+		if( likely( !flip_viewmodel ))
 			r = -r;
-#endif
 
 		if( r > 0.0f )
 		{
@@ -1476,21 +1501,31 @@ static void R_LightLambert( vec4_t light[MAX_LOCALLIGHTS], const vec3_t normal, 
 				else light[i][3] = 0.0001f;
 			}
 
-			temp = Q_min( r * light[i][3] / 255.0f, 1.0f );
+			temp = r * light[i][3];
 
-			localLight[0] = (float)g_studio.locallightcolor[i].r * temp;
-			localLight[1] = (float)g_studio.locallightcolor[i].g * temp;
-			localLight[2] = (float)g_studio.locallightcolor[i].b * temp;
-
+			localLight[0] = (float)g_studio.locallightcolor[i].r + temp;
+			localLight[1] = (float)g_studio.locallightcolor[i].g + temp;
+			localLight[2] = (float)g_studio.locallightcolor[i].b + temp;
 			VectorAdd( finalLight, localLight, finalLight );
 		}
 	}
 
-	VectorScale( finalLight, 255.0f, finalLight );
+	if( !VectorIsNull( finalLight ))
+	{
+		for( i = 0; i < 3; i++ )
+		{
+			float c = finalLight[i] + LinearGammaTable( color[i] * 1023.0f );
 
-	out[0] = Q_min( (int)( finalLight[0] ), 255 );
-	out[1] = Q_min( (int)( finalLight[1] ), 255 );
-	out[2] = Q_min( (int)( finalLight[2] ), 255 );
+			if( c > 1023.0f )
+				out[i] = 255;
+			else
+				out[i] = ScreenGammaTable( c ) >> 2;
+		}
+	}
+	else
+	{
+		VectorScale( color, 255.0f, out );
+	}
 }
 
 static void R_StudioSetColorArray(const short *ptricmds, const vec3_t *pstudionorms, byte *color )

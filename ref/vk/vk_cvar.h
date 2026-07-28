@@ -17,6 +17,7 @@ void VK_LoadCvarsAfterInit( void );
 
 #define DECLARE_CVAR(X) \
 	X(cl_lightstyle_lerping) \
+	X(r_dlight_virtual_radius) \
 	X(r_lighting_modulate) \
 	X(r_lightmap) \
 	X(r_infotool) \

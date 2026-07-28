@@ -22,7 +22,6 @@
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
-#include "protocol.h" // MAX_DLIGHTS
 #include "xash3d_types.h"
 
 #include <memory.h>
@@ -189,7 +188,6 @@ static qboolean createPipelines( void )
 		vk_desc_fixme.one_uniform_buffer_layout,
 		vk_desc_fixme.one_texture_layout,
 		vk_desc_fixme.one_texture_layout,
-		vk_desc_fixme.one_uniform_buffer_layout,
 	};
 
 	VkPipelineLayoutCreateInfo plci = {
@@ -204,11 +202,9 @@ static qboolean createPipelines( void )
 	{
 		struct ShaderSpec {
 			float alpha_test_threshold;
-			uint32_t max_dlights;
-		} spec_data = { .25f, MAX_DLIGHTS };
+		} spec_data = { .25f };
 		const VkSpecializationMapEntry spec_map[] = {
 			{.constantID = 0, .offset = offsetof(struct ShaderSpec, alpha_test_threshold), .size = sizeof(float) },
-			{.constantID = 1, .offset = offsetof(struct ShaderSpec, max_dlights), .size = sizeof(uint32_t) },
 		};
 
 		VkSpecializationInfo shader_spec = {
@@ -220,7 +216,6 @@ static qboolean createPipelines( void )
 
 		const VkVertexInputAttributeDescription attribs[] = {
 			{.binding = 0, .location = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, pos)},
-			{.binding = 0, .location = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(vk_vertex_t, normal)},
 			{.binding = 0, .location = 2, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, gl_tc)},
 			{.binding = 0, .location = 3, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(vk_vertex_t, lm_tc)},
 			{.binding = 0, .location = 4, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = offsetof(vk_vertex_t, color)},
@@ -354,16 +349,6 @@ static qboolean createPipelines( void )
 	return true;
 }
 
-typedef struct {
-	uint32_t num_lights;
-	uint32_t debug_r_lightmap;
-	uint32_t padding_[2];
-	struct {
-		vec4_t pos_r;
-		vec4_t color;
-	} light[MAX_DLIGHTS];
-} vk_ubo_lights_t;
-
 #define MAX_DRAW_COMMANDS 8192 // TODO estimate
 #define MAX_DEBUG_NAME_LENGTH 32
 
@@ -440,29 +425,16 @@ qboolean VK_RenderInit( void ) {
 			.offset = 0,
 			.range = sizeof(uniform_data_t),
 		};
-		VkDescriptorBufferInfo dbi_uniform_lights = {
-			.buffer = g_render.uniform_buffer.buffer,
-			.offset = 0,
-			.range = sizeof(vk_ubo_lights_t),
+		VkWriteDescriptorSet wds = {
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+			.pBufferInfo = &dbi_uniform_data,
+			.dstSet = vk_desc_fixme.ubo_sets[0], // FIXME
 		};
-		VkWriteDescriptorSet wds[] = {{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-				.pBufferInfo = &dbi_uniform_data,
-				.dstSet = vk_desc_fixme.ubo_sets[0], // FIXME
-			}, {
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-				.pBufferInfo = &dbi_uniform_lights,
-				.dstSet = vk_desc_fixme.ubo_sets[1], // FIXME
-			}};
-		vkUpdateDescriptorSets(vk_core.device, ARRAYSIZE(wds), wds, 0, NULL);
+		vkUpdateDescriptorSets(vk_core.device, 1, &wds, 0, NULL);
 	}
 
 	if (!createPipelines())
@@ -616,44 +588,6 @@ static void drawCmdPushDrawSky( const render_draw_sky_t *draw_sky )
 	draw_command->type = DrawSky;
 }
 
-// Return offset of dlights data into UBO buffer
-static uint32_t writeDlightsToUBO( void )
-{
-	vk_ubo_lights_t* ubo_lights;
-	int num_lights = 0;
-	const uint32_t ubo_lights_offset = allocUniform(sizeof(*ubo_lights), 4);
-	if (ubo_lights_offset == UINT32_MAX) {
-		gEngine.Con_Printf(S_ERROR "Cannot allocate UBO for DLights\n");
-		return UINT32_MAX;
-	}
-	ubo_lights = PTR_CAST(vk_ubo_lights_t, (byte*)(g_render.uniform_buffer.mapped) + ubo_lights_offset);
-
-	// TODO this should not be here (where? vk_scene?)
-	for (int i = 0; i < MAX_DLIGHTS && num_lights < ARRAYSIZE(ubo_lights->light); ++i) {
-		const dlight_t *l = globals.dlights + i;
-		if( !l || l->die < gp_cl->time || !l->radius )
-			continue;
-		Vector4Set(
-			ubo_lights->light[num_lights].color,
-			l->color.r / 255.f,
-			l->color.g / 255.f,
-			l->color.b / 255.f,
-			1.f);
-		Vector4Set(
-			ubo_lights->light[num_lights].pos_r,
-			l->origin[0],
-			l->origin[1],
-			l->origin[2],
-			l->radius);
-
-		num_lights++;
-	}
-
-	ubo_lights->num_lights = num_lights;
-	ubo_lights->debug_r_lightmap = r_lightmap->value != 0;
-	return ubo_lights_offset;
-}
-
 // FIXME: how to do this properly before render pass?
 // Needed to avoid VUID-vkCmdCopyBuffer-renderpass
 void VK_RenderEndPrepare_FIXME( struct vk_combuf_s* combuf, const FrameContext *ctx ) {
@@ -688,10 +622,6 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 		.lightmap = -1,
 		.ubo_offset = -1,
 	};
-
-	const uint32_t dlights_ubo_offset = writeDlightsToUBO();
-	if (dlights_ubo_offset == UINT32_MAX)
-		return;
 
 	ASSERT(!g_render_state.current_frame_is_ray_traced);
 
@@ -791,11 +721,6 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 		if (cur.pipeline != pipeline) {
 			cur.pipeline = pipeline;
 			vkCmdBindPipeline(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, cur.pipeline);
-
-			// Make sure that after pipeline change we have this bound correctly
-			// Pipeline change might be due to previous pipeline being skybox, which has
-			// incompatible layout
-			vkCmdBindDescriptorSets(cmdbuf, VK_PIPELINE_BIND_POINT_GRAPHICS, g_render.pipeline_layout, 3, 1, vk_desc_fixme.ubo_sets + 1, 1, &dlights_ubo_offset);
 		}
 
 		if (cur.ubo_offset != draw->draw.ubo_offset)
@@ -919,6 +844,12 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+	if( args.lightmap > 0 )
+	{
+		// Match the GL multipass overbright blending path.
+		VectorScale( g_render_state.dirty_uniform_data.color, 4.0f / 3.0f,
+			g_render_state.dirty_uniform_data.color );
+	}
 
 	ASSERT(args.lightmap <= MAX_LIGHTMAPS);
 	const int lightmap = args.lightmap > 0 ? tglob.lightmapTextures[args.lightmap - 1] : tglob.whiteTexture;

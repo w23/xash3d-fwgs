@@ -69,5 +69,16 @@ void R_VkImageUploadBegin( r_vk_image_t *img );
 void R_VkImageUploadSlice( r_vk_image_t *img, int layer, int mip, int size, const void *data );
 void R_VkImageUploadEnd( r_vk_image_t *img );
 
+typedef struct {
+	uint32_t x, y;
+	uint32_t width, height;
+	uint32_t src_row_stride;
+	const void *data;
+} r_vk_image_upload_region_t;
+
+// Uploads a region into mip 0, array layer 0 of an uncompressed 2D color image.
+// The source data is copied into staging memory during the call.
+void R_VkImageUploadRegion( r_vk_image_t *img, const r_vk_image_upload_region_t *region );
+
 // Upload all enqueued images using the given command buffer
 void R_VkImageUploadCommit( struct vk_combuf_s *combuf, VkPipelineStageFlagBits dst_stages );

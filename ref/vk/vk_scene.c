@@ -714,6 +714,9 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 
 	VK_RenderSetupCamera( rvp );
 
+	if( !CVAR_TO_BOOL( rt_enable ))
+		VK_UpdateLightmapsIfNeeded();
+
 	VK_RenderDebugLabelBegin( "opaque" );
 
 	// Draw view model
