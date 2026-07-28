@@ -96,6 +96,7 @@ SUBDIRS = [
 	Subproject('ref/common',            lambda x: x.env.CLIENT),
 	Subproject('ref/gl',                lambda x: x.env.CLIENT and (x.env.GL or x.env.NANOGL or x.env.GLWES or x.env.GL4ES or x.env.GLES3COMPAT)),
 	Subproject('ref/soft',              lambda x: x.env.CLIENT and x.env.SOFT),
+	Subproject('ref/vk',                lambda x: x.env.CLIENT and x.env.VK),
 	Subproject('ref/null',              lambda x: x.env.CLIENT and x.env.NULL),
 	Subproject('3rdparty/bzip2',        lambda x: x.env.CLIENT and not x.env.HAVE_SYSTEM_BZ2),
 	Subproject('3rdparty/mbedtls'),
@@ -123,6 +124,7 @@ SUBDIRS = [
 REFDLLS = [
 	RefDll('soft', True),
 	RefDll('gl', True),
+	RefDll('vk', True),
 	RefDll('gles1', False, 'NANOGL'),
 	RefDll('gles2', False, 'GLWES'),
 	RefDll('gl4es', False),
@@ -262,12 +264,14 @@ def configure(conf):
 	elif conf.env.MAGX:
 		conf.options.SDL12            = True
 		conf.options.GL               = False
+		conf.options.VK               = False
 		conf.options.LOW_MEMORY       = 1
 		enforce_pic = False
 	elif conf.env.DEST_OS == 'emscripten':
 		conf.options.BUILD_BUNDLED_DEPS = True
 		conf.options.GLES3COMPAT      = True
 		conf.options.GL               = False
+		conf.options.VK               = False
 
 	# psvita needs -fPIC set manually and static builds are incompatible with -fPIC
 	enforce_pic = conf.env.DEST_OS != 'psvita' and not conf.env.STATIC_LINKING

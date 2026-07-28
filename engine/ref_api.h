@@ -27,6 +27,8 @@ GNU General Public License for more details.
 #include "studio.h"
 #include "r_efx.h"
 #include "filesystem.h"
+#include "ref_vulkan.h"
+#include "ref_device.h"
 #include "common/protocol.h"
 #include "cvardef.h"
 #include "q_client.h"
@@ -242,6 +244,7 @@ typedef enum ref_graphic_apis_e
 	REF_SOFTWARE,	// hypothetical: just make a surface to draw on, in software
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
+	REF_VULKAN, // Vulkan
 } ref_graphic_apis_t;
 
 typedef enum
@@ -517,6 +520,10 @@ typedef struct ref_api_s
 
 	// sprites
 	struct mspriteframe_s *(*R_GetSpriteFrame)( const struct model_s *pModel, int frame, float yaw );
+
+	int (*XVK_GetInstanceExtensions)( unsigned int count, const char **pNames );
+	void *(*XVK_GetVkGetInstanceProcAddr)( void );
+	VkSurfaceKHR (*XVK_CreateSurface)( VkInstance instance );
 } ref_api_t;
 
 struct mip_s;
@@ -653,6 +660,9 @@ typedef struct ref_interface_s
 
 	// vgui drawing implementation
 	void	(*VGUI_SetupDrawing)( qboolean rect );
+
+	// only Vulkan manages devices in renderer code
+	const ref_device_t *(*pfnGetVulkanRenderDevice)( unsigned int idx );
 } ref_interface_t;
 
 typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* engfuncs, ref_globals_t *pGlobals );

@@ -18,6 +18,9 @@ GNU General Public License for more details.
 
 #include "pmove.h"
 #include "pm_defs.h"
+#include "xash3d_mathlib.h"
+
+#include <string.h> // memset
 
 typedef int (*pfnIgnore)( physent_t *pe );	// custom trace filter
 

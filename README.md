@@ -1,3 +1,44 @@
+# Vulkan plus Ray Tracing (RTX) temporary fork of Xash3D FWGS engine
+[![GitHub Actions Status](https://github.com/w23/xash3d-fwgs/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/w23/xash3d-fwgs/actions/workflows/c-cpp.yml)
+
+## TL;DR
+- ![image](https://github.com/w23/xash3d-fwgs/assets/321361/12200b56-df80-4d33-b433-71f5690fb4f5)
+- This fork adds Vulkan renderer to Xash3D-FWGS engine.
+- This is work-in-progress. It is in early stages and is not ready for unsupervised usage.
+- Vulkan renderer targets two different modes:
+  - Traditional rasterizer. It is intended to produce pixel-perfect identical frames to existing GL renderer as possible.
+  - Ray tracing. It implements real time path traced global illumination lighting with PBR materials. It will look noticeably different from original game.
+- It is intended to be merged back into upstream/master when it gets mature and stable enough.
+- Ray tracing requires 64-bit build. 32-bit drivers do not expose vulkan ray tracing extensions.
+- For more information, check out the [wiki](https://github.com/w23/xash3d-fwgs/wiki).
+- [Page on Mod DB](https://www.moddb.com/mods/half-life-rtx) (screenshots, etc).
+
+## Current status
+- See [issues](https://github.com/w23/xash3d-fwgs/issues) and [project](https://github.com/users/w23/projects/2/views/12)
+- Traditional rasterizer mostly works:
+	- Works on Windows and Linux with any Vulkan GPU (and at some point it worked on Raspberry Pi 4 even).
+	- It is slower than OpenGL renderer (1. I suck at Vulkan. 2. No visibility culling is performed).
+	- Some features are not implemented yet, like decals, dynamic lighting is different and way off, etc.
+- Ray tracer mostly works too, with dynamic GI and stuff.
+	- It also requires material remaster (i.e. newer textures for PBR parameters) and missing RAD files for most of the game maps.
+	- Works under both Windows and Linux.
+	- Works on both AMD and Nvidia GPUs.
+	- Works on Steam Deck with _interactive framerates_.
+- If you feel adventurous, you can follow [build instructions](https://github.com/w23/xash3d-fwgs/wiki/How-to-build-a-64bit). Note that they might be slightly out of date, kek.
+
+## Follow development
+This project is 99% developed live on stream. I'm not a graphics programmer, and have no idea what I'm doing. I'm essentially learning Vulkan, game engine renderer development, linear algebra, and ray tracing techniques while getting hands dirty with this. This is all for your amusement.
+
+You can watch me making a fool of myself publicly here:
+- [Archive playlist on YouTube/floba23](https://www.youtube.com/playlist?list=PLP0z1CQXyu5CrDa522FklxbOC0SM_Manl)
+- [Twitch/provod](https://twitch.tv/provod)
+
+---
+
+Regular upstream Xash3D README.md follows.
+
+---
+
 > [!CAUTION]
 > **Only download Xash3D FWGS from official sources.** Third-party builds, "modded launchers", "optimized" repacks and random mirrors are frequently bundled with malware, miners, spyware and credential stealers. We cannot vouch for anything we did not build. Get official binaries only from the [releases page](https://github.com/FWGS/xash3d-fwgs/releases/tag/continuous).
 

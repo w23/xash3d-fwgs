@@ -2721,7 +2721,7 @@ void CL_AddEntityEffects( cl_entity_t *ent )
 		{
 			if( Host_IsQuakeCompatible( ))
 				R_EntityDimlight( ent, ent->index );
-			else
+			else if ( !REF_GET_PARM( PARM_MODERNFLASHLIGHT, 1))
 				CL_UpdateFlashlight( ent );
 		}
 	}

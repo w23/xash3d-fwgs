@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "cvardef.h"
 #include "gameinfo.h"
 #include "wrect.h"
+#include "ref_device.h"
 #include "net_api.h"
 
 // a macro for mainui_cpp, indicating that mainui should be compiled for
@@ -229,6 +230,8 @@ typedef struct ui_extendedfuncs_s {
 	// returns 1 if cvar has read-only flag
 	// or -1 if cvar not found
 	int (*pfnIsCvarReadOnly)( const char *name );
+
+	const ref_device_t *(*pfnGetRenderDevice)( unsigned int idx );
 } ui_extendedfuncs_t;
 
 // deprecated export from old engine

@@ -1,0 +1,20 @@
+// TODO: better ligthing
+{ 
+"_xvk_ent_id" "6 7 8 12" // remove hack spotlights
+//"_xvk_radius" "5"
+//"_light" "180 180 210
+//"_light" "180 180 210 100"
+//"_cone" "16"
+//"_cone2" "100"
+}
+
+
+
+{
+"_xvk_ent_id" "246" // DANGER sign
+"origin" "1 0 0"
+}
+{
+"_xvk_smoothing_threshold" "54" // FIXME
+"_xvk_remove_all_sky_surfaces" "1"
+}

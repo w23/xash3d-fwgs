@@ -1,0 +1,75 @@
+{
+	"primary_ray": {
+		/*
+		"rgen": "ray_primary",
+		"miss": [
+			"ray_primary"
+		],
+		"hit": [
+			{"closest": "ray_primary"},
+			{"closest": "ray_primary", "any": "ray_common_alphatest"}
+		]
+		*/
+		"comp": "ray_primary"
+	},
+//	"light_direct": {
+//		"template": true,
+//		"miss": [
+//			"ray_shadow"
+//		],
+//		"hit": [
+//			{"closest": "ray_shadow", "any": "ray_common_alphatest"}
+//		]
+//	},
+//	"light_direct_poly": {
+//		"inherit": "light_direct",
+//		"rgen": "ray_light_poly_direct"
+//	},
+//	"light_direct_point": {
+//		"inherit": "light_direct",
+//		"rgen": "ray_light_direct_point"
+//	},
+	"light_direct_poly": {
+		"comp": "ray_light_direct_poly"
+	},
+	"light_direct_point": {
+		"comp": "ray_light_direct_point"
+	},
+	"bounce": {
+		"comp": "bounce"
+	},
+	"indiff_at1": {
+		"comp": "indirect_diffuse_atrous1"
+	},
+	"indiff_sh_init": {
+		"comp": "diffuse_gi_sh_denoise_init"
+	},
+	"indiff_sh_pass1": {
+		"comp": "diffuse_gi_sh_denoise_pass_1"
+	},
+	"indiff_sh_pass2": {
+		"comp": "diffuse_gi_sh_denoise_pass_2"
+	},
+	"indiff_sh_pass3": {
+		"comp": "diffuse_gi_sh_denoise_pass_3"
+	},
+	"indiff_sh_pass4": {
+		"comp": "diffuse_gi_sh_denoise_pass_4"
+	},
+	"indiff_sh_pass5": {
+		"comp": "diffuse_gi_sh_denoise_pass_5"
+	},
+	"indiff_sh_save": {
+		"comp": "diffuse_gi_sh_denoise_save"
+	},
+	"spatial_reconstruction_pass1": {
+		"comp": "spatial_reconstruction_pass1"
+	},
+	"spatial_reconstruction_pass2": {
+		"comp": "spatial_reconstruction_pass2"
+	},
+	"denoiser": {
+		"comp": "denoiser"
+	},
+	//"RESOURCES": { "position_t_prev": { "previous_frame": "position_t" }, },
+}

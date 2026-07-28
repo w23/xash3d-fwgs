@@ -1,0 +1,67 @@
+#version 460
+
+#include "noise.glsl"
+#include "utils.glsl"
+#include "brdf.h"
+#include "denoiser_config.glsl"
+#include "denoiser_utils.glsl"
+#include "spherical_harmonics.glsl"
+#include "color_spaces.glsl"
+
+#define GI_LIMIT_LUMINANCE 1.0 // aggressive and dumb removing fireflyes
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D out_sh1_ping;
+layout(set = 0, binding = 1, rgba16f) uniform image2D out_sh2_ping;
+
+layout(set = 0, binding = 2, rgba8) uniform readonly image2D base_color_a;
+layout(set = 0, binding = 3, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D indirect_diffuse;
+layout(set = 0, binding = 5, rgba32f) uniform readonly image2D first_bounce_direction;
+
+void main() {
+	ivec2 res = ivec2(imageSize(base_color_a));
+	ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	if (any(lessThan(pix, res / GI_DOWNSAMPLE))) {
+		vec3 global_illumination = FIX_NAN(imageLoad(indirect_diffuse, pix)).rgb;
+
+		// limit irradiance for fireflyes reducion
+		float gi_lum = luminance(global_illumination);
+		if (gi_lum > 0.) {
+			float limit = smoothstep(0., GI_LIMIT_LUMINANCE, gi_lum);
+			global_illumination = mix(global_illumination, global_illumination / gi_lum, limit);
+		}
+
+		vec4 gi_sh1 = vec4(0.);
+		vec2 gi_sh2 = vec2(0.);
+
+		// store indirectional light in spherical harmonics
+		if (any(greaterThan(global_illumination.rgb, vec3(0.)))) {
+			const vec3 indirect_color = global_illumination.rgb * STORAGE_SCALE_LF;
+			const vec3 direction = FIX_NAN(imageLoad(first_bounce_direction, pix)).xyz;
+
+			if (length(direction) > 0.) {
+				SH low_freq = irradiance_to_SH(indirect_color, normalize(direction));
+				gi_sh1 = low_freq.shY;
+				gi_sh2 = low_freq.CoCg;
+			}
+		}
+
+		for(int x = 0; x < GI_DOWNSAMPLE; x++) {
+			for(int y = 0; y < GI_DOWNSAMPLE; y++) {
+				const ivec2 pix_upscaled = pix * GI_DOWNSAMPLE + ivec2(x,y);
+				if (any(greaterThanEqual(pix_upscaled, res)))
+					continue;
+
+				imageStore(out_sh1_ping, pix_upscaled, gi_sh1);
+				imageStore(out_sh2_ping, pix_upscaled, vec4(gi_sh2, 0., 0.));
+			}
+		}
+	}
+}

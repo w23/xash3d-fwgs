@@ -1,0 +1,8 @@
+~SPOTYELLOW        225 145 55   25000
+//+0~TNNL_LGT4       170 90  40   20000
++0~TNNL_LGT4       170 90  40   30000 // TODO: test and fix
++0~FIFTIES_LGT2    170 185 255  5500
+
+
+FILL1              120 220 150  10000 // TODO: correct after add light from invisible brush support
+FILL2              255 175 55   2000 // TODO: correct after add light from invisible brush support

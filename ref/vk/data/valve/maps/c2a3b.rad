@@ -1,0 +1,13 @@
+//~SPOTYELLOW      255 155 25   25000
+~SPOTYELLOW      225 145 55   30000
+~SPOTRED         255 0   0    20000
+//+0~TNNL_LGT4     170 90  40   20000
++0~TNNL_LGT4     170 90  40   25000
++0~GYMLIGHT      255 195 65   5000
+
+~LIGHT3E         70  160 120  8000
+
+
+FILL1            120 220 150  10000 // TODO: correct after add light from invisible brush support
+FILL2            255 175 55   2000 // TODO: correct after add light from invisible brush support
+//+0~GENERIC86       180 240 255  100

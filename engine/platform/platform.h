@@ -25,6 +25,7 @@ GNU General Public License for more details.
 #include "defaults.h"
 #include "cursor_type.h"
 #include "key_modifiers.h"
+#include "ref_vulkan.h"
 
 /*
 ==============================================================================

@@ -1,0 +1,4 @@
++A~TNNL_LGT3     150 150 210  0
+~LIGHT3C         220 210 150  4000
+~LIGHT3B         160 160 255  8000
+~TRN_LT1         255 250 160  6000 // TODO: better color

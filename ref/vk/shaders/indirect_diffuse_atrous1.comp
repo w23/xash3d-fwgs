@@ -1,0 +1,74 @@
+#version 460
+//#include "debug.glsl"
+//#include "utils.glsl"
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+
+layout(set = 0, binding = 1, rgba16f) uniform image2D out_indirect_diffuse_atrous1;
+
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D normals_gs;
+
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D indirect_diffuse;
+
+#include "atrous.glsl"
+
+const int INDIRECT_SCALE = 2;
+
+void main() {
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID);
+
+	// skip this pass if we used other denoising pipeline
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) != 0) {
+		imageStore(out_indirect_diffuse_atrous1, pix, vec4(0.));
+		return;
+	}
+
+	const ivec2 res_scaled = res / INDIRECT_SCALE;
+	if (any(greaterThanEqual(pix, res_scaled))) {
+		return;
+	}
+
+	const vec3 pos = imageLoad(position_t, pix * INDIRECT_SCALE).xyz;
+	const vec3 shading_normal = normalDecode(imageLoad(normals_gs, pix * INDIRECT_SCALE).zw);
+
+	vec3 indiff = vec3(0.);
+	float weight_total_indirect_diffuse = 0.;
+	for (int x = 0; x <= ATROUS_KERNEL_WIDTH; ++x) {
+		for (int y = 0; y <= ATROUS_KERNEL_WIDTH; ++y) {
+			const ivec2 offset = ivec2(x, y);
+
+			// 3. Indirect diffuse
+			{
+				const float sn_phi = .5;
+				const float p_phi = 3.;
+				const int step_width = 1;
+				ivec2 p;
+				const float weight = aTrousSampleWeigth(
+					res, pix, pos, shading_normal, offset, step_width, INDIRECT_SCALE, sn_phi, p_phi, p);
+
+				if (weight > 0.) {
+					const bool do_indirect = all(lessThan(p, res_scaled));
+					if (do_indirect) {
+						weight_total_indirect_diffuse += weight;
+						indiff += imageLoad(indirect_diffuse, p).rgb * weight;
+					}
+				}
+			}
+		} // for y
+	} // for x
+
+	const float one_over_weight_indirect_diffuse = weight_total_indirect_diffuse == 0. ? 0 : 1. / weight_total_indirect_diffuse;
+	indiff *= one_over_weight_indirect_diffuse;
+
+	//indiff = imageLoad(indirect_diffuse, pix).rgb;
+
+	imageStore(out_indirect_diffuse_atrous1, pix, vec4(indiff, 0./*unused*/));
+}

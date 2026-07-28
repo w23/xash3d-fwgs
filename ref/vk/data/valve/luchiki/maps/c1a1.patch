@@ -1,0 +1,145 @@
+// section 1
+{
+"_xvk_ent_id" "117 116 115 113 142" // remove hack lights entity
+}
+{
+"_xvk_surface_id" "2681 2700 2703" // +0~GENERIC86B    60  220 170  10000
+"_light" "60 220 170 20000"
+}
+
+{
+"_xvk_surface_id" "2997 2994 2999 2993 2998" // +0~LIGHT6A       150 5   5    25000
+"_light" "150 5 5 125000"
+}
+
+// section 2
+{
+"_xvk_ent_id" "131 43 44 45 9 10" // remove hack lights entity
+}
+
+// section 3
+{
+"_xvk_ent_id" "85 77" // remove hack lights entity
+}
+
+// section 4 // lift/elevator
+{
+"_xvk_ent_id" "5 4 6" // remove hack lights entity
+}
+{ // TODO: animate texture
+"_xvk_ent_id" "354 355" // remove hack lights entity
+}
+{ // TODO: animate texture
+"_xvk_surface_id" "1183" // +0~DRKMTLS1      205 0   0    6000
+"_light" "205 0 0 10000"
+//"_xvk_material" "RED1_ANIMATE"
+}
+{
+"_xvk_ent_id" "55 54 53 52 51" // remove hack lights entity
+}
+{ // disable light for broken elevator
+"_xvk_surface_id" "3484" // ++0~LIGHT5A       80  150 200  10000
+"_light" "80 150 200 0"
+}
+
+// section 5
+{
+"_xvk_ent_id" "2 3 7" // remove hack lights entity
+}
+{
+"_xvk_ent_id" "109" // remove hack lights entity
+}
+
+// smoothing
+{
+"_xvk_smoothing_excluded" "2162 2215" //wall // TODO: bad autosmooth
+}
+{
+"_xvk_smoothing_excluded" "2078 2077 2231 2233 2232" //wall // TODO: bad autosmooth
+}
+
+// broken mini pipe
+// 2794 2792 2790 2791 2799 2802 2755 2787 2788 2800 2801
+{
+"_xvk_smoothing_group" "2802 2803 2786 2768 2764 2796"
+}
+{
+"_xvk_smoothing_group" "2803 2801 2800"
+}
+{
+"_xvk_smoothing_group" "2786 2801"
+}
+{
+"_xvk_smoothing_group" "2786 2789 2787 2792"
+}
+{
+"_xvk_smoothing_group" "2768 2793 2792"
+}
+//{
+//"_xvk_smoothing_group" "2788 2800"
+//}
+//{
+//"_xvk_smoothing_group" "2787 2788"
+//}
+//{
+//"_xvk_smoothing_group" "2794 2792"
+//}
+//{
+//"_xvk_smoothing_group" "2794 2790"
+//}
+//{
+//"_xvk_smoothing_group" "2790 2791"
+//}
+//{
+//"_xvk_smoothing_group" "2791 2792"
+//}
+//{
+//"_xvk_smoothing_group" "2792 2796 2799"
+//}
+// mini pipe
+{
+"_xvk_smoothing_group" "2824 2827 2828 2823 2826 2825"
+}
+// mini pipe
+{
+"_xvk_smoothing_group" "2878 2884 2890 2888 2887 2882"
+}
+{
+"_xvk_smoothing_group" "2880 2881 2892 2891 2885 2883"
+}
+
+// pipe
+{
+"_xvk_smoothing_group" "2975 2974 2972 2970 2965 2967 2971 2973"
+}
+
+// pipe
+{
+"_xvk_smoothing_group" "3944 3946 3947 3945 3943 3941 3940 3942"
+}
+
+// pipe
+{
+"_xvk_smoothing_group" "2613 2609 2606 2586 2587 2581 2602 2601"
+}
+// continue pipe
+{
+"_xvk_smoothing_group" "2619 2617 2593 2589 2591 2596 2604 2616 2618 2608" // 2600 2612 2611 2610
+}
+// pipe
+{
+"_xvk_smoothing_group" "2628 2632 2634 2636 2635 2599 2624"
+}
+{
+"_xvk_smoothing_group" "2636 2642 2643 2664 2640 2639"
+}
+// continue pipe
+{
+"_xvk_smoothing_group" "2627 2631 2633 2641 2645 2638 2621 2623"
+}
+
+//wall ceil
+{
+"_xvk_smoothing_excluded" "2926"
+}
+

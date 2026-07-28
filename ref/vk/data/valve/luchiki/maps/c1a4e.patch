@@ -1,0 +1,32 @@
+// remove hack spot lights
+{
+"_xvk_ent_id" "16 14 15 12 13"
+"_cone" "16"
+"_cone2" "80"
+}
+{
+"_xvk_ent_id" "22 20 21"
+"_cone" "16"
+"_cone2" "80"
+
+}
+{
+"_xvk_ent_id" "19"
+"origin" "1864 336 -916"
+"_cone" "16"
+"_cone2" "80"
+}
+
+// correct spotlight position
+{
+"_xvk_ent_id" "17"
+"origin" "1588 -14 -1756"
+"_cone" "16"
+"_cone2" "80"
+}
+{
+"_xvk_ent_id" "18"
+"origin" "1420 -10 -1756"
+"_cone" "16"
+"_cone2" "80"
+}

@@ -60,5 +60,6 @@ extern convar_t gl_clear;
 
 qboolean R_Init( void );
 void R_Shutdown( void );
+const ref_device_t *R_GetRenderDevice( unsigned int idx );
 
 #endif // REF_COMMON_H
