@@ -56,9 +56,9 @@ typedef struct {
 	dlight_t *dlights;
 	dlight_t *elights;
 	byte *texgammatable;
-	uint *lightgammatable;
-	uint *lineargammatable;
-	uint *screengammatable;
+	uint16_t *lightgammatable;
+	uint16_t *lineargammatable;
+	uint16_t *screengammatable;
 } r_globals_t;
 
 extern r_globals_t globals;
