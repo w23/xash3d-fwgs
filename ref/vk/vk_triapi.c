@@ -245,6 +245,16 @@ void TriVertex3fv( const float *v ) {
 }
 
 void TriVertex3f( float x, float y, float z ) {
+	// TODO 2D mode: the REF_API_VERSION 19 contract says R_Set2DOffset must translate
+	// everything drawn in 2D mode, including TriAPI. This is not implemented here yet:
+	// 2D TriAPI currently goes through TriEndEx -> R_RenderDrawOnce with an identity
+	// model matrix into the regular 3D pipeline, i.e. screen-pixel coordinates get
+	// multiplied by the perspective projection. Note we have never actually observed a
+	// game using TriAPI in 2D mode, so this stays unimplemented until such a use case
+	// shows up. When it does, the cleanest fix is to route 2D-mode TriAPI vertices into
+	// the g2d overlay pipeline (vk_overlay.c): convert vk_vertex_t -> vertex_2d_t at
+	// TriEnd time, batching by texture/blend mode like 2D pics, and add
+	// vk_renderstate.offset_2d to x/y there (like the soft renderer does in r_triapi.c).
 	if (g_triapi.num_vertices == MAX_TRIAPI_VERTICES - 1) {
 		ERROR_THROTTLED(1, "vk TriApi: trying to emit more than %d vertices in one batch\n", MAX_TRIAPI_VERTICES);
 		return;

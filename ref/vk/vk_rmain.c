@@ -582,6 +582,7 @@ static const ref_interface_t gReffuncs =
 
 	// 2D
 	.R_Set2DMode = R_Set2DMode,
+	.R_Set2DOffset = R_Set2DOffset,
 	.R_DrawStretchPic = R_DrawStretchPic,
 	.FillRGBA = CL_FillRGBA,
 	.WorldToScreen = R_WorldToScreen,

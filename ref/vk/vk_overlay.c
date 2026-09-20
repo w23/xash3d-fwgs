@@ -99,10 +99,12 @@ void R_DrawStretchPic( float x, float y, float w, float h, float s1, float t1, f
 		// TODO do this in shader bro
 		const float vw = vk_frame.width;
 		const float vh = vk_frame.height;
-		const float x1 = (x / vw)*2.f - 1.f;
-		const float y1 = (y / vh)*2.f - 1.f;
-		const float x2 = ((x + w) / vw)*2.f - 1.f;
-		const float y2 = ((y + h) / vh)*2.f - 1.f;
+		const float ox = vk_renderstate.offset_2d[0];
+		const float oy = vk_renderstate.offset_2d[1];
+		const float x1 = ((x + ox) / vw)*2.f - 1.f;
+		const float y1 = ((y + oy) / vh)*2.f - 1.f;
+		const float x2 = ((x + w + ox) / vw)*2.f - 1.f;
+		const float y2 = ((y + h + oy) / vh)*2.f - 1.f;
 		const color_rgba8_t color = vk_renderstate.tri_color;
 
 		p[0] = (vertex_2d_t){x1, y1, s1, t1, color};
