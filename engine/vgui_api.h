@@ -2,20 +2,35 @@
 vgui_api.h - vgui_support library interface
 Copyright (C) 2015 Mittorn
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+This is free and unencumbered software released into the public domain.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
 */
 #ifndef VGUI_API_H
 #define VGUI_API_H
 
-#include "xash3d_types.h"
+#include <stddef.h>
 #include "key_modifiers.h"
 #include "cursor_type.h"
 
@@ -23,8 +38,8 @@ GNU General Public License for more details.
 
 typedef struct
 {
-	vec2_t	point;
-	vec2_t	coord;
+	float	point[2];
+	float	coord[2];
 } vpoint_t;
 
 // C-Style VGUI enums
@@ -161,7 +176,7 @@ enum VGUI_MouseAction
 
 typedef struct  vguiapi_s
 {
-	qboolean initialized;
+	int	initialized;
 	// called from vgui_support
 	void	(*DrawInit)( void );
 	void	(*DrawShutdown)( void );
@@ -169,18 +184,18 @@ typedef struct  vguiapi_s
 	void	(*SetupDrawingRect)( int *pColor );
 	void	(*SetupDrawingImage)( int *pColor );
 	void	(*BindTexture)( int id );
-	void	(*EnableTexture)( qboolean enable );
+	void	(*EnableTexture)( int enable );
 	void	(*Reserved0)( int id, int width, int height );
 	void	(*UploadTexture)( int id, const char *buffer, int width, int height );
-	void	(*Reserved1)( int id, int drawX, int drawY, const byte *rgba, int blockWidth, int blockHeight );
+	void	(*Reserved1)( int id, int drawX, int drawY, const unsigned char *rgba, int blockWidth, int blockHeight );
 	void	(*DrawQuad)( const vpoint_t *ul, const vpoint_t *lr );
 	void	(*GetTextureSizes)( int *width, int *height );
 	int		(*GenerateTexture)( void );
 	void	*(*EngineMalloc)( size_t size );
 	void	(*CursorSelect)( VGUI_DefaultCursor cursor );
-	byte		(*GetColor)( int i, int j );
-	qboolean	(*IsInGame)( void );
-	void	(*EnableTextInput)( qboolean enable, qboolean force );
+	unsigned char	(*GetColor)( int i, int j );
+	int		(*IsInGame)( void );
+	void	(*EnableTextInput)( int enable, int force );
 	void	(*GetCursorPos)( int *x, int *y );
 	int		(*ProcessUtfChar)( int ch );
 	int		(*GetClipboardText)( char *buffer, size_t bufferSize );
@@ -195,5 +210,8 @@ typedef struct  vguiapi_s
 	void	(*Key)( enum VGUI_KeyAction action, enum VGUI_KeyCode code );
 	void	(*MouseMove)( int x, int y );
 	void	(*TextInput)( const char *text );
+
+	// called from vgui_support, appended later so older support libraries keep working
+	void	(*SetPaintOffset)( int x, int y );	// translates 2D drawing for the everything that's not VGUI, used to simulate GoldSrc behavior which installs matrix in push/popMakeCurrent
 } vguiapi_t;
 #endif // VGUI_API_H

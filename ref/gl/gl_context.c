@@ -118,8 +118,11 @@ static void Mod_UnloadTextures( model_t *mod )
 		break;
 	case mod_sprite:
 		break;
+	case mod_bad:
+		// model was never loaded, the engine frees it right after the loader has rejected it
+		break;
 	default:
-		Assert( 0 );
+		gEngfuncs.Con_Printf( S_ERROR "%s: unsupported type %d\n", __func__, mod->type );
 		break;
 	}
 }
@@ -507,6 +510,7 @@ const ref_interface_t gReffuncs =
 	R_SetupSky,
 
 	R_Set2DMode,
+	R_Set2DOffset,
 	R_DrawStretchPic,
 	CL_FillRGBA,
 	R_WorldToScreen,

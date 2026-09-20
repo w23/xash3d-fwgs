@@ -47,7 +47,8 @@ extern int SV_UPDATE_BACKUP;
 #define MAP_HAS_LANDMARK    BIT( 2 )
 #define MAP_INVALID_VERSION BIT( 3 )
 
-#define SV_SPAWN_TIME	0.1
+#define SV_SPAWN_TIME    0.1
+#define SV_SPAWN_TIME_MP 0.8
 
 // group flags
 #define GROUP_OP_AND	0
@@ -74,6 +75,10 @@ extern int SV_UPDATE_BACKUP;
 #define FCL_SEND_RESOURCES	BIT( 9 )
 #define FCL_FORCE_UNMODIFIED	BIT( 10 )
 #define FCL_EXPECT_RESOURCELIST	BIT( 11 )	// engine sent svc_resourcerequest, expect one clc_resourcelist in response
+#define FCL_HOLD_FIRST_DATAGRAM	BIT( 12 )	// don't send the first datagram until the reliable stream is idle
+
+// engine handled spawnflags
+#define SF_NOT_DEATHMATCH	BIT( 11 )	// special bit to remove entity in deathmatch, Quake leftover
 
 typedef enum
 {
@@ -361,7 +366,7 @@ typedef struct
 	entity_state_t	*baselines;		// [GI->max_edicts]
 	entity_state_t	*static_entities;		// [MAX_STATIC_ENTITIES];
 
-	uint32_t  challenge_salt[16]; // pregenerated random numbers for generating challenged based on IP's MD5 address
+	uint32_t  challenge_salt[4]; // 128-bit SipHash key for address challenges and rate-limit buckets
 
 	sizebuf_t testpacket;         // pregenerataed testpacket, only needs CRC32 patching
 	byte      *testpacket_buf;    // check for NULL if testpacket is available
@@ -451,6 +456,7 @@ extern convar_t		sv_allow_autoaim;
 extern convar_t		sv_aim;
 extern convar_t		sv_allow_testpacket;
 extern convar_t		sv_expose_player_list;
+extern convar_t		sv_query_rate_limit;
 
 //===========================================================
 //
@@ -467,6 +473,7 @@ int SV_GenericIndex( const char *name );
 void SV_InitOperatorCommands( void );
 void SV_KillOperatorCommands( void );
 void SV_RemoteCommand( netadr_t from, sizebuf_t *msg );
+qboolean SV_QueryRateLimited( netadr_t from );
 void SV_SendResource( resource_t *pResource, sizebuf_t *msg );
 void SV_AddToMaster( netadr_t from, sizebuf_t *msg );
 qboolean SV_ProcessUserAgent( netadr_t from, const char *useragent );
@@ -542,6 +549,8 @@ void SV_UpdateServerInfo( void );
 void SV_EndRedirect( host_redirect_t *rd );
 void SV_RejectConnection( netadr_t from, const char *fmt, ... ) FORMAT_CHECK( 2 );
 void SV_GetPlayerCount( int *clients, int *bots );
+int SV_CreateChallenge( netadr_t from, qboolean *error );
+qboolean SV_ValidateChallenge( netadr_t from, int challenge );
 
 static inline qboolean SV_HavePassword( void )
 {
@@ -701,6 +710,25 @@ int SV_LightForEntity( edict_t *pEdict );
 //
 // sv_query.c
 //
-void SV_SourceQuery_HandleConnnectionlessPacket( const char *c, netadr_t from );
+void SV_SourceQuery_HandleConnnectionlessPacket( const char *c, netadr_t from, sizebuf_t *msg );
+
+static inline qboolean SV_CheckGroupOp( int op, int groupinfo, int mask )
+{
+	if( op == GROUP_OP_AND && !FBitSet( groupinfo, mask ))
+		return false;
+
+	if( op == GROUP_OP_NAND && FBitSet( groupinfo, mask ))
+		return false;
+
+	return true;
+}
+
+static inline qboolean SV_CheckGroupTrace( const edict_t *e1, const edict_t *e2 )
+{
+	if( e1->v.groupinfo && e2->v.groupinfo )
+		return SV_CheckGroupOp( svs.groupop, e1->v.groupinfo, e2->v.groupinfo );
+
+	return true;
+}
 
 #endif//SERVER_H

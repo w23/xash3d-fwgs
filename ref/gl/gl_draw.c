@@ -160,6 +160,7 @@ void R_Set2DMode( qboolean enable )
 		pglMatrixMode( GL_MODELVIEW );
 		matrix4x4 worldview_matrix;
 		Matrix4x4_LoadIdentity( worldview_matrix );
+		Matrix4x4_ConcatTranslate( worldview_matrix, glState.offset2D[0], glState.offset2D[1], 0.0f );
 		GL_LoadMatrix( worldview_matrix );
 
 		GL_Cull( GL_NONE );
@@ -167,6 +168,8 @@ void R_Set2DMode( qboolean enable )
 		pglDepthMask( GL_FALSE );
 		pglDisable( GL_DEPTH_TEST );
 		pglEnable( GL_ALPHA_TEST );
+		// HUD and console must not be affected by fog
+		pglDisable( GL_FOG );
 		pglColor4f( 1.0f, 1.0f, 1.0f, 1.0f );
 
 		if( glConfig.max_multisamples > 1 && gl_msaa.value )
@@ -180,6 +183,9 @@ void R_Set2DMode( qboolean enable )
 	{
 		pglDepthMask( GL_TRUE );
 		pglEnable( GL_DEPTH_TEST );
+		// restore the scene fog that was disabled in 2D mode
+		if( gl_fog.value && ( RI.fogEnabled || RI.fogCustom ))
+			pglEnable( GL_FOG );
 		glState.in2DMode = false;
 
 		pglMatrixMode( GL_PROJECTION );
@@ -197,4 +203,25 @@ void R_Set2DMode( qboolean enable )
 
 		GL_Cull( GL_FRONT );
 	}
+}
+
+/*
+===============
+R_Set2DOffset
+
+===============
+*/
+void R_Set2DOffset( float x, float y )
+{
+	Vector2Set( glState.offset2D, x, y );
+
+	if( !glState.in2DMode )
+		return;
+
+	matrix4x4 worldview_matrix;
+	Matrix4x4_LoadIdentity( worldview_matrix );
+	Matrix4x4_ConcatTranslate( worldview_matrix, x, y, 0.0f );
+
+	pglMatrixMode( GL_MODELVIEW );
+	GL_LoadMatrix( worldview_matrix );
 }

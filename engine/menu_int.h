@@ -232,6 +232,11 @@ typedef struct ui_extendedfuncs_s {
 	int (*pfnIsCvarReadOnly)( const char *name );
 
 	const ref_device_t *(*pfnGetRenderDevice)( unsigned int idx );
+
+	// tells the engine where the menu edits the text, in screen coordinates
+	// engine tries to keep this rect visible, when the on-screen keyboard covers the screen
+	// must be called before pfnEnableTextInput( true ), empty rect means the whole screen
+	void (*pfnSetTextInputRect)( int x, int y, int w, int h );
 } ui_extendedfuncs_t;
 
 // deprecated export from old engine

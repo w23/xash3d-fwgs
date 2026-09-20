@@ -66,10 +66,26 @@ void IOS_LaunchDialog( void );
 #undef XASH_PLATFORM_HAVE_STATUS
 #endif
 
+// walks the direct dependency list of a game library image loaded from disk
+#if XASH_LIB == LIB_STATIC || XASH_ANDROID || XASH_IOS || XASH_PSVITA || XASH_NSWITCH
+static inline qboolean Platform_CheckLibraryDirectDependency( const byte *data, size_t size, const char *depname )
+{
+	return false;
+}
+#else
+qboolean Platform_CheckLibraryDirectDependency( const byte *data, size_t size, const char *depname );
+#endif
+
 #if XASH_POSIX
 void Posix_Daemonize( void );
 void Posix_SetupSigtermHandling( void );
 char *Posix_Input( void );
+// returns the number of stable network device MAC addresses, each packed into low 48 bits
+int Posix_GetNetDeviceAddresses( uint64_t *addresses, int max );
+#endif
+
+#if XASH_OSX
+qboolean Apple_GetSerialNumber( char *out, size_t size );
 #endif
 
 #if XASH_SDL
@@ -294,10 +310,21 @@ static inline void Platform_MouseMove( float *x, float *y )
 }
 #endif
 
+// rect is the area where the text is edited, in render coordinates, so the platform
+// might keep it visible when it shows the on-screen keyboard over the game
 #if XASH_SDL >= 2 || XASH_PSVITA || XASH_DOS || XASH_USE_EVDEV
-void Platform_EnableTextInput( qboolean enable );
+void Platform_EnableTextInput( qboolean enable, int x, int y, int w, int h );
 #else
-static inline void Platform_EnableTextInput( qboolean enable ) { }
+static inline void Platform_EnableTextInput( qboolean enable, int x, int y, int w, int h ) { }
+#endif
+
+// engine keynums are scancodes in SDL terminology
+// This asks the platform what character the user's keyboard layout puts on that physical key and returns it as an engine keynum,
+// or returns keynum unchanged when the layout produces nothing the engine has a keynum for
+#if XASH_SDL >= 2
+int Platform_TranslateKeyLayout( int keynum );
+#else
+static inline int Platform_TranslateKeyLayout( int keynum ) { return keynum; }
 #endif
 
 #if XASH_SDL >= 2
