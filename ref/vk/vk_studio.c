@@ -3476,7 +3476,7 @@ static player_info_t *pfnPlayerInfo( int index )
 
 static entity_state_t *R_StudioGetPlayerState( int index )
 {
-	if( !RI.drawWorld )
+	if( !RI.drawWorld && RI.currententity )
 		return &RI.currententity->curstate;
 
 	return gEngine.pfnGetPlayerState( index );
