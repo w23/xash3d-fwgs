@@ -483,26 +483,22 @@ int CL_EstimateNeededResources( void )
 
 	for( resource_t *p = cl.resourcesneeded.pNext; p != &cl.resourcesneeded; p = p->pNext )
 	{
+		char filepath[MAX_QPATH];
+
 		switch( p->type )
 		{
 		case t_sound:
-			if( p->szFileName[0] != '*' && !FS_FileExists( va( DEFAULT_SOUNDPATH "%s", p->szFileName ), false ) )
-			{
-				SetBits( p->ucFlags, RES_WASMISSING );
-				nTotalSize += p->nDownloadSize;
-			}
-			break;
 		case t_model:
-			if( p->szFileName[0] != '*' && !FS_FileExists( p->szFileName, false ) )
-			{
-				SetBits( p->ucFlags, RES_WASMISSING );
-				nTotalSize += p->nDownloadSize;
-			}
-			break;
 		case t_skin:
 		case t_generic:
 		case t_eventscript:
-			if( !FS_FileExists( p->szFileName, false ) )
+			// inline models and sentences aren't real files
+			if( p->szFileName[0] == '*' )
+				break;
+
+			CL_ResourcePath( filepath, sizeof( filepath ), p );
+
+			if( !CL_HasResourceFile( p, filepath ))
 			{
 				SetBits( p->ucFlags, RES_WASMISSING );
 				nTotalSize += p->nDownloadSize;
@@ -705,6 +701,10 @@ void CL_SendResourceList( const resource_t *list, int count )
 
 	Netchan_CreateFragments( &cls.netchan, &sbuf );
 	Netchan_FragSend( &cls.netchan );
+
+	cl.num_sent_resources = count;
+	if( count > 0 )
+		memcpy( cl.sent_resources_hash, list[0].rgucMD5_hash, sizeof( cl.sent_resources_hash ));
 }
 
 static void CL_ParseResourceRequest( sizebuf_t *msg )
@@ -822,7 +822,12 @@ static void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 
 		Q_strncpy( gamefolder, MSG_ReadString( msg ), sizeof( gamefolder ));
 		Con_Printf( "Remote host: %s\n", MSG_ReadString( msg ));
-		Q_strncpy( clgame.mapname, COM_FileWithoutPath( MSG_ReadString( msg )), sizeof( clgame.mapname ));
+		// map name is sent as maps/<name>.bsp, only strip the maps/ prefix to keep subdirectories intact
+		s = MSG_ReadString( msg );
+		if( !Q_strnicmp( s, "maps/", 5 ))
+			s += 5;
+		else s = COM_FileWithoutPath( s );
+		Q_strncpy( clgame.mapname, s, sizeof( clgame.mapname ));
 		COM_StripExtension( clgame.mapname );
 
 		s = MSG_ReadString( msg );
@@ -957,6 +962,7 @@ static void CL_ParseServerData( sizebuf_t *msg, connprotocol_t proto )
 	for( i = 0; i < MAX_CLIENTS; i++ )
 		COM_ClearCustomizationList( &cl.players[i].customdata, true );
 	CL_CreateCustomizationList();
+	cl.num_sent_resources = 0;
 
 	// request resources from server
 	if( proto == PROTO_GOLDSRC )

@@ -111,8 +111,11 @@ static void Mod_UnloadTextures( model_t *mod )
 	case mod_sprite:
 		// Sprite textures are managed by the engine (Mod_SpriteUnloadTextures)
 		break;
+	case mod_bad:
+		// model was never loaded, the engine frees it right after the loader has rejected it
+		break;
 	default:
-		ASSERT( 0 );
+		gEngine.Con_Printf( S_ERROR "%s: unsupported type %d\n", __func__, mod->type );
 		break;
 	}
 }
@@ -457,9 +460,9 @@ static qboolean R_Init(void) {
 	globals.palette = (color24 *)ENGINE_GET_PARM( PARM_GET_PALETTE_PTR );
 	globals.viewent = (cl_entity_t *)ENGINE_GET_PARM( PARM_GET_VIEWENT_PTR );
 	globals.texgammatable = (byte *)ENGINE_GET_PARM( PARM_GET_TEXGAMMATABLE_PTR );
-	globals.lightgammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
-	globals.screengammatable = (uint *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
-	globals.lineargammatable = (uint *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
+	globals.lightgammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_LIGHTGAMMATABLE_PTR );
+	globals.screengammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_SCREENGAMMATABLE_PTR );
+	globals.lineargammatable = (uint16_t *)ENGINE_GET_PARM( PARM_GET_LINEARGAMMATABLE_PTR );
 	globals.dlights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_DLIGHTS_PTR );
 	globals.elights = (dlight_t *)ENGINE_GET_PARM( PARM_GET_ELIGHTS_PTR );
 
@@ -582,6 +585,7 @@ static const ref_interface_t gReffuncs =
 
 	// 2D
 	.R_Set2DMode = R_Set2DMode,
+	.R_Set2DOffset = R_Set2DOffset,
 	.R_DrawStretchPic = R_DrawStretchPic,
 	.FillRGBA = CL_FillRGBA,
 	.WorldToScreen = R_WorldToScreen,

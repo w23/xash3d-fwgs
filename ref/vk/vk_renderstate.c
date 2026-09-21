@@ -46,3 +46,9 @@ void R_Set2DMode( qboolean enable )
 	vk_renderstate.mode_2d = enable;
 }
 
+void R_Set2DOffset( float x, float y )
+{
+	vk_renderstate.offset_2d[0] = x;
+	vk_renderstate.offset_2d[1] = y;
+}
+

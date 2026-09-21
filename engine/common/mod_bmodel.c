@@ -137,6 +137,7 @@ typedef struct
 	int       version;          // model version
 	qboolean  isworld;
 	qboolean  isbsp30ext;
+	qboolean  hulls32bit;       // convert 16-bit clipnodes to 32-bit, if needed
 
 } dbspmodel_t;
 
@@ -1831,7 +1832,7 @@ static int RemapClipNodes_r( dbspmodel_t *bmod, dclipnode32_t *srcnodes, hull_t 
 		return nodenum;
 
 	// emit a clipnode
-	if( bmod->version == QBSP2_VERSION )
+	if( bmod->hulls32bit )
 	{
 		if( hull->lastclipnode == MAX_MAP_CLIPNODES_BSP2 )
 			Host_Error( "%s: MAX_MAP_CLIPNODES_BSP2 limit exceeded\n", __func__ );
@@ -1847,7 +1848,7 @@ static int RemapClipNodes_r( dbspmodel_t *bmod, dclipnode32_t *srcnodes, hull_t 
 	int c = hull->lastclipnode;
 	hull->lastclipnode++;
 
-	if( bmod->version == QBSP2_VERSION )
+	if( bmod->hulls32bit )
 	{
 		mclipnode32_t *out = &hull->clipnodes32[c];
 		out->planenum = src->planenum;
@@ -1880,7 +1881,7 @@ static void Mod_MakeHull0( model_t *mod, const dbspmodel_t *bmod )
 	hull->lastclipnode = mod->numnodes - 1;
 	hull->planes = mod->planes;
 
-	if( bmod->version == QBSP2_VERSION )
+	if( bmod->hulls32bit )
 	{
 		mclipnode32_t *out;
 		mnode_t *in = mod->nodes;
@@ -1981,7 +1982,7 @@ static void Mod_SetupHull( dbspmodel_t *bmod, model_t *mod, int headnode, int hu
 		// only allocate clipnodes array for the base model, only for first hull
 		if( mod == world && hullnum == 1 )
 		{
-			if( bmod->version == QBSP2_VERSION )
+			if( bmod->hulls32bit )
 			{
 				hull->clipnodes32 = Mem_Malloc( world->mempool, sizeof( *hull->clipnodes32 ) * mod->numclipnodes );
 
@@ -2006,7 +2007,7 @@ static void Mod_SetupHull( dbspmodel_t *bmod, model_t *mod, int headnode, int hu
 		}
 		else
 		{
-			if( bmod->version == QBSP2_VERSION )
+			if( bmod->hulls32bit )
 				hull->clipnodes32 = world->hulls[1].clipnodes32;
 			else
 				hull->clipnodes16 = world->hulls[1].clipnodes16;
@@ -2019,7 +2020,7 @@ static void Mod_SetupHull( dbspmodel_t *bmod, model_t *mod, int headnode, int hu
 		return; // hull missed
 
 	// fit array to real count
-	if( bmod->version == QBSP2_VERSION )
+	if( bmod->hulls32bit )
 	{
 		CountDClipNodes_r( bmod->clipnodes_out, hull, headnode, MAX_MAP_CLIPNODES_BSP2 );
 		hull->clipnodes32 = Mem_Malloc( world->mempool, sizeof( *hull->clipnodes32 ) * hull->lastclipnode );
@@ -2038,10 +2039,12 @@ static void Mod_SetupHull( dbspmodel_t *bmod, model_t *mod, int headnode, int hu
 
 static qboolean Mod_LoadLitfile( model_t *mod, const char *ext, size_t expected_size, color24 **out, size_t *outsize )
 {
-	char        modelname[64], path[64];
+	char        basename[sizeof( mod->name )], path[sizeof( mod->name ) + 8];
 
-	COM_FileBase( mod->name, modelname, sizeof( modelname ));
-	Q_snprintf( path, sizeof( path ), "maps/%s.%s", modelname, ext );
+	// keep the directory part, so maps in subdirectories look up their lit files next to the bsp
+	Q_strncpy( basename, mod->name, sizeof( basename ));
+	COM_StripExtension( basename );
+	Q_snprintf( path, sizeof( path ), "%s.%s", basename, ext );
 
 	int iCompare;
 	if( !pfnCompareFileTime( path, mod->name, &iCompare ))
@@ -2125,7 +2128,7 @@ static void Mod_SetupSubmodels( model_t *mod, dbspmodel_t *bmod )
 		mod->hulls[0].lastclipnode = bm->headnode[0]; // need to be real count
 
 		// counting a real number of clipnodes per each submodel
-		if( bmod->version == QBSP2_VERSION )
+		if( bmod->hulls32bit )
 			CountClipNodes32_r( mod->hulls[0].clipnodes32, &mod->hulls[0], bm->headnode[0] );
 		else
 			CountClipNodes16_r( mod->hulls[0].clipnodes16, &mod->hulls[0], bm->headnode[0] );
@@ -2262,6 +2265,7 @@ static void Mod_LoadSubmodels( model_t *mod, dbspmodel_t *bmod )
 static int Mod_LoadEntities_splitstr_handler( char *prev, char *next, void *userdata )
 {
 	world_static_t *w = userdata;
+	string normalizedWadName;
 
 	*next = '\0';
 
@@ -2269,20 +2273,23 @@ static int Mod_LoadEntities_splitstr_handler( char *prev, char *next, void *user
 		return 0;
 
 	COM_FixSlashes( prev );
-	const char *wad = COM_FileWithoutPath( prev );
+	const char *rawWadName = COM_FileWithoutPath( prev );
 
-	if( Q_stricmp( COM_FileExtension( wad ), "wad" ))
+	Q_strncpy( normalizedWadName, rawWadName, sizeof( normalizedWadName ));
+	COM_DefaultExtension( normalizedWadName, ".wad", sizeof( normalizedWadName ));
+
+	if( Q_stricmp( COM_FileExtension( normalizedWadName ), "wad" ))
 		return 0;
 
 	// make sure that wad does really exists
-	if( FS_FileExists( wad, false ))
+	if( FS_FileExists( normalizedWadName, false ))
 	{
 		int num = w->wadcount++;
 
 		// FIXME: that's right, it goes into host.mempool!
 		w->wadlist = Mem_Realloc( host.mempool, w->wadlist, w->wadcount * sizeof( *w->wadlist ));
 
-		Q_strncpy( w->wadlist[num].name, wad, sizeof( w->wadlist[num].name ));
+		Q_strncpy( w->wadlist[num].name, normalizedWadName, sizeof( w->wadlist[num].name ));
 		w->wadlist[num].usage = 0;
 	}
 
@@ -2620,7 +2627,7 @@ static qboolean Mod_SearchForTextureReplacement( char *out, size_t size, const c
 	return false;
 }
 
-static void Mod_InitSkyClouds( model_t *mod, const mip_t *mt, texture_t *tx, qboolean custom_palette )
+static void Mod_InitSkyClouds( model_t *mod, const mip_t *mt, const byte *mtdata, texture_t *tx, qboolean custom_palette )
 {
 #if !XASH_DEDICATED
 	rgbdata_t	r_temp, *r_sky;
@@ -2679,7 +2686,7 @@ static void Mod_InitSkyClouds( model_t *mod, const mip_t *mt, texture_t *tx, qbo
 			size += sizeof( short ) + 768;
 
 		Image_SetForceFlags( IL_HOST_ENDIAN );
-		r_sky = FS_LoadImage( texname, (byte *)mt, size );
+		r_sky = FS_LoadImage( texname, mtdata, size );
 	}
 	else
 	{
@@ -2795,7 +2802,7 @@ static void Mod_LoadTextureData( model_t *mod, dbspmodel_t *bmod, int textureInd
 	// check for multi-layered sky texture (quake1 specific)
 	if( bmod->isworld && Q_strncmp( mipTex.name, "sky", 3 ) == 0 && ( mipTex.width / mipTex.height ) == 2 )
 	{
-		Mod_InitSkyClouds( mod, &mipTex, texture, usesCustomPalette ); // load quake sky
+		Mod_InitSkyClouds( mod, &mipTex, mipRaw, texture, usesCustomPalette ); // load quake sky
 		return;
 	}
 
@@ -4193,6 +4200,7 @@ static qboolean Mod_LoadBmodelLumps( model_t *mod, byte *mod_base, size_t buffer
 	}
 	bmod->isworld = isworld;
 	bmod->isbsp30ext = FBitSet( flags, LUMP_BSP30EXT );
+	bmod->hulls32bit = bmod->version == QBSP2_VERSION || ( !isworld && world.version == QBSP2_VERSION );
 	fs_offset_t bspx_header_offset = Mod_FindBSPX( mod_base, bufferlen );
 
 	// loading base lumps

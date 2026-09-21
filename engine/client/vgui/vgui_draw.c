@@ -36,6 +36,7 @@ typedef struct vgui_static_s
 	qboolean initialized;
 	VGUI_DefaultCursor cursor;
 	vguiapi_t dllFuncs;
+	qboolean from_client; // vgui_support API is provided by the client library
 
 	vgui_reusable_texture_t *textures;
 	int texture_id;
@@ -43,6 +44,7 @@ typedef struct vgui_static_s
 	int bound_texture;
 	byte color[4];
 	qboolean enable_texture;
+	int paint_offset[2]; // in vgui coordinates, the renderer applies it to everything, including our own quads
 
 	HINSTANCE hInstance;
 
@@ -55,6 +57,7 @@ static vgui_static_t vgui = {
 	false, -1
 };
 static CVAR_DEFINE_AUTO( vgui_utf8, "0", FCVAR_ARCHIVE, "enable utf-8 support for vgui text" );
+static CVAR_DEFINE_AUTO( vgui_key_layout, "1", FCVAR_ARCHIVE, "translate keys sent to vgui through the keyboard layout, like GoldSrc does, so text entries type what's on the keycap" );
 
 static void GAME_EXPORT VGUI_DrawInit( void )
 {
@@ -114,11 +117,6 @@ static int GAME_EXPORT VGUI_GenerateTexture( void )
 
 static void GAME_EXPORT VGUI_UploadTexture( int id, const char *buffer, int width, int height )
 {
-	rgbdata_t r_image = { 0 };
-	char texName[32];
-	MD5Context_t ctx;
-	byte hash[16];
-
 	if( id <= 0 || id >= vgui.max_textures || width <= 0 || height <= 0 )
 	{
 		Con_DPrintf( S_ERROR "%s: bad texture %i. Ignored\n", __func__, id );
@@ -127,6 +125,9 @@ static void GAME_EXPORT VGUI_UploadTexture( int id, const char *buffer, int widt
 
 	// need to do this as some mods tend to upload same texture over and over
 	// exhausing engine-wide limit on textures and leaking vram
+	MD5Context_t ctx;
+	byte hash[16];
+
 	MD5Init( &ctx );
 	MD5Update( &ctx, buffer, width * height * 4 );
 	MD5Final( hash, &ctx );
@@ -145,14 +146,17 @@ static void GAME_EXPORT VGUI_UploadTexture( int id, const char *buffer, int widt
 		}
 	}
 
+	char texName[32];
 	Q_snprintf( texName, sizeof( texName ), "*vgui%i", id );
 
-	r_image.width = width;
-	r_image.height = height;
-	r_image.type = PF_RGBA_32;
-	r_image.size = width * height * 4;
-	r_image.flags = IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA;
-	r_image.buffer = (byte*)buffer;
+	rgbdata_t r_image = {
+		.width = width,
+		.height = height,
+		.type = PF_RGBA_32,
+		.size = width * height * 4,
+		.flags = IMAGE_HAS_COLOR|IMAGE_HAS_ALPHA,
+		.buffer = (byte*)buffer,
+	};
 
 	vgui.textures[id].gl_texturenum = GL_LoadTextureInternal( texName, &r_image, TF_IMAGE );
 	memcpy( vgui.textures[id].hash, hash, sizeof( hash ));
@@ -209,10 +213,10 @@ static void GAME_EXPORT VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
 	if( !ul || !lr )
 		return;
 
-	float x = ul->point[0];
-	float y = ul->point[1];
-	float w = lr->point[0] - x;
-	float h = lr->point[1] - y;
+	float x = ul->point[0] - vgui.paint_offset[0];
+	float y = ul->point[1] - vgui.paint_offset[1];
+	float w = lr->point[0] - ul->point[0];
+	float h = lr->point[1] - ul->point[1];
 
 	SPR_AdjustSize( &x, &y, &w, &h );
 
@@ -235,6 +239,16 @@ static void GAME_EXPORT VGUI_DrawQuad( const vpoint_t *ul, const vpoint_t *lr )
 static void GAME_EXPORT VGUI_EnableTexture( qboolean enable )
 {
 	vgui.enable_texture = enable;
+}
+
+static void GAME_EXPORT VGUI_SetPaintOffset( int x, int y )
+{
+	float fx = x, fy = y, fw = 0.0f, fh = 0.0f;
+
+	Vector2Set( vgui.paint_offset, x, y );
+
+	SPR_AdjustSize( &fx, &fy, &fw, &fh );
+	ref.dllFuncs.R_Set2DOffset( fx, fy );
 }
 
 static void GAME_EXPORT *VGUI_EngineMalloc( size_t size )
@@ -281,9 +295,15 @@ qboolean VGui_IsActive( void )
 	return vgui.initialized;
 }
 
+qboolean VGui_IsProvidedByClientDll( void )
+{
+	return vgui.from_client;
+}
+
 void VGui_RegisterCvars( void )
 {
 	Cvar_RegisterVariable( &vgui_utf8 );
+	Cvar_RegisterVariable( &vgui_key_layout );
 }
 
 static const vguiapi_t gEngfuncs =
@@ -312,11 +332,19 @@ static const vguiapi_t gEngfuncs =
 	Platform_GetClipboardText,
 	Platform_SetClipboardText,
 	Platform_GetKeyModifiers,
+	NULL, // Startup
+	NULL, // Shutdown
+	NULL, // GetPanel
+	NULL, // Paint
+	NULL, // Mouse
+	NULL, // Key
+	NULL, // MouseMove
+	NULL, // TextInput
+	VGUI_SetPaintOffset,
 };
 
 qboolean VGui_LoadProgs( HINSTANCE hInstance )
 {
-	void (*F)( vguiapi_t* );
 	qboolean client = hInstance != NULL;
 
 	vgui.dllFuncs = gEngfuncs;
@@ -335,7 +363,7 @@ qboolean VGui_LoadProgs( HINSTANCE hInstance )
 
 		if( !Sys_GetParmFromCmdLine( "-vguiloader", vguiloader ))
 		{
-			Q_strncpy( vguiloader, OS_LIB_PREFIX "vgui_support." OS_LIB_EXT, sizeof( vguiloader ));
+			Q_strncpy( vguiloader, "vgui." OS_LIB_EXT, sizeof( vguiloader ));
 		}
 
 		hInstance = vgui.hInstance = COM_LoadLibrary( vguiloader, false, false );
@@ -348,13 +376,14 @@ qboolean VGui_LoadProgs( HINSTANCE hInstance )
 	}
 
 	// try legacy API first
-	F = COM_GetProcAddress( hInstance, client ? "InitVGUISupportAPI" : "InitAPI" );
+	void (*F)( vguiapi_t* ) = COM_GetProcAddress( hInstance, client ? "InitVGUISupportAPI" : "InitAPI" );
 
 	if( F )
 	{
 		F( &vgui.dllFuncs );
 
 		vgui.initialized = vgui.dllFuncs.initialized = true;
+		vgui.from_client = client;
 		Con_Reportf( "%s: initialized legacy API in %s module\n", __func__, client ? "client" : "support" );
 
 		return true;
@@ -409,6 +438,7 @@ void VGui_Shutdown( void )
 	// drop pointers to now unloaded vgui_support
 	vgui.dllFuncs = gEngfuncs;
 	vgui.hInstance = NULL;
+	vgui.from_client = false;
 }
 
 
@@ -576,6 +606,12 @@ void VGui_KeyEvent( int key, int down )
 	if( !vgui.dllFuncs.Key )
 		return;
 
+	// VGUI wants the character printed on the keycap, not the physical key position, so text entries work on non-QWERTY layouts
+	// in the future we might want to partially (at least we can control TextEntry and friends implementation now in freevgui)
+	// to handle this through SDL's text mode.
+	if( vgui_key_layout.value )
+		key = Platform_TranslateKeyLayout( key );
+
 	if(( code = VGUI_MapKey( key )) < 0 )
 		return;
 
@@ -601,6 +637,9 @@ void VGui_Paint( void )
 {
 	if( vgui.dllFuncs.Paint )
 		vgui.dllFuncs.Paint();
+
+	// don't trust the support library to leave it clean, everything drawn afterwards is in screen space
+	VGUI_SetPaintOffset( 0, 0 );
 }
 
 void VGui_UpdateInternalCursorState( VGUI_DefaultCursor cursorType )
