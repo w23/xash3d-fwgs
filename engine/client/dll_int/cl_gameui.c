@@ -20,6 +20,7 @@ GNU General Public License for more details.
 #include "input.h"
 #include "server.h" // !!svgame.hInstance
 #include "vid_common.h"
+#include "ref_common.h"
 
 static void 	UI_UpdateUserinfo( void );
 
@@ -1237,6 +1238,11 @@ static void pfnEnableTextInput( int enable )
 	Key_EnableTextInput( enable, false );
 }
 
+static void pfnSetTextInputRect( int x, int y, int w, int h )
+{
+	Key_SetTextInputRect( x, y, w, h );
+}
+
 static int pfnGetRenderers( unsigned int num, char *short_name, size_t size1, char *long_name, size_t size2 )
 {
 	if( num >= ref.num_renderers )
@@ -1304,6 +1310,8 @@ static ui_extendedfuncs_t gExtendedfuncs =
 	pfnGetGameInfo,
 	pfnGetModInfo,
 	pfnIsCvarReadOnly,
+	R_GetRenderDevice,
+	pfnSetTextInputRect,
 };
 
 void UI_UnloadProgs( void )

@@ -1,0 +1,39 @@
+{
+"_xvk_ent_id" "198" // remove hack lights entity
+}
+
+// FIXME: remove temp hacks (wait support light from invisible brush)
+{
+"classname" "light"
+"origin" "-30 500 -897"
+"_light" "0 255 0 100"
+"_xvk_radius" "3"
+}
+{
+"classname" "light"
+"origin" "-30 500 -905"
+"_light" "0 255 0 100"
+"_xvk_radius" "5"
+}
+{
+"classname" "light"
+"origin" "-30 505 -925"
+"_light" "0 255 0 100"
+}
+{
+"classname" "light"
+"origin" "50 500 -890"
+"_light" "0 255 0 100"
+"_xvk_radius" "10"
+}
+{
+"classname" "light"
+"origin" "120 500 -890"
+"_light" "0 255 0 50"
+"_xvk_radius" "10"
+}
+
+
+{
+"_xvk_ent_id" "169 173 166 167 172 168" // remove hack lights entity
+}

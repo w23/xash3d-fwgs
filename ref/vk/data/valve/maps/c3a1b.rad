@@ -1,0 +1,8 @@
+GLASSGREEN       0   255 0    300
+//~LIGHT3E         220 210 150  2500
+//~LIGHT3E         90  190 140  14000
+~LIGHT3E         70  160 120  8000
+~TRN_LT1         255 250 160  6000 // TODO: better color
++A~TNNL_LGT3     150 150 210  0
+~LIGHT3C         220 210 150  4000
+~LIGHT3B         190 180 255  5000

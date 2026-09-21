@@ -144,6 +144,7 @@ void IN_MouseSavePos( void )
 		return;
 
 	Platform_GetMousePos( &in_lastvalidpos.x, &in_lastvalidpos.y );
+
 	in_mouse_savedpos = true;
 }
 
@@ -337,6 +338,8 @@ IN_MouseMove
 */
 static void IN_MouseMove( void )
 {
+	static int oldx, oldy;
+
 	if( !in_mouseinitialized )
 		return;
 
@@ -350,6 +353,13 @@ static void IN_MouseMove( void )
 	// find mouse movement
 	int x, y;
 	Platform_GetMousePos( &x, &y );
+
+	// touchscreen moves the cursor on its own, don't drag it back to where the mouse is left
+	if( x == oldx && y == oldy )
+		return;
+
+	oldx = x;
+	oldy = y;
 
 	VGui_MouseMove( x, y );
 
@@ -391,6 +401,22 @@ void IN_MouseEvent( int key, int down )
 	{
 		// perform button actions
 		Key_Event( K_MOUSE1 + key, down );
+	}
+}
+
+/*
+===========
+IN_ClearMouseState
+
+mouse button releases are handled here to ensure that only actual mouse button clicks are released
+===========
+*/
+void IN_ClearMouseState( void )
+{
+	for( int i = 0; i <= K_MOUSE5 - K_MOUSE1; i++ )
+	{
+		if( FBitSet( in_mstate, BIT( i ))) // is this an actual mouse button click?
+			IN_MouseEvent( i, false );
 	}
 }
 

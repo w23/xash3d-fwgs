@@ -1,0 +1,10 @@
+{
+"_xvk_ent_id" "349" // correct spotlight
+"_xvk_radius" "10"
+//"_light" "100 0 0 500"
+"_light" "100 0 0 500"
+}
+
+{
+"_xvk_smoothing_excluded "275 276 277"
+}

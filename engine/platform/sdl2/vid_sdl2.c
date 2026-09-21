@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 #include <SDL.h>
 #include <SDL_config.h>
+#include <SDL_vulkan.h>
 #include "common.h"
 #include "client.h"
 #include "vid_common.h"
@@ -355,6 +356,9 @@ GL_UpdateSwapInterval
 */
 void GL_UpdateSwapInterval( void )
 {
+	if (glw_state.context_type != REF_GL)
+		return;
+
 	if( FBitSet( gl_vsync.flags, FCVAR_CHANGED ))
 	{
 		ClearBits( gl_vsync.flags, FCVAR_CHANGED );
@@ -669,8 +673,15 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	SetBits( flags, SDL_WINDOW_ALLOW_HIGHDPI );
 #endif // !XASH_WIN32
 
-	if( !glw_state.software )
-		SetBits( flags, SDL_WINDOW_OPENGL );
+	switch (glw_state.context_type)
+	{
+		case REF_GL:
+			SetBits( flags, SDL_WINDOW_OPENGL );
+			break;
+		case REF_VULKAN:
+			SetBits( flags, SDL_WINDOW_VULKAN );
+			break;
+	}
 
 	if( vid_maximized.value )
 		SetBits( flags, SDL_WINDOW_MAXIMIZED );
@@ -698,7 +709,7 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	SDL_ShowWindow( host.hWnd );
 	SDL_RaiseWindow( host.hWnd );
 
-	if( glw_state.software )
+	if( glw_state.context_type == REF_SOFTWARE )
 	{
 		char cmd[64];
 
@@ -720,7 +731,7 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 			Con_Printf( "SDL_Renderer %s initialized\n", info.name );
 		}
 	}
-	else
+	else if( glw_state.context_type == REF_GL )
 	{
 		glw_state.context = SDL_GL_CreateContext( host.hWnd );
 
@@ -888,6 +899,35 @@ int GL_GetAttribute( int attr, int *val )
 #define EGL_LIB NULL
 #endif
 
+int XVK_GetInstanceExtensions( unsigned int count, const char **pNames )
+{
+	if (!SDL_Vulkan_GetInstanceExtensions(host.hWnd, &count, pNames))
+	{
+		Con_Reportf( S_ERROR  "Couldn't get Vulkan extensions: %s\n", SDL_GetError());
+		return -1;
+	}
+
+	return (int)count;
+}
+
+void *XVK_GetVkGetInstanceProcAddr( void )
+{
+	return SDL_Vulkan_GetVkGetInstanceProcAddr();
+}
+
+VkSurfaceKHR XVK_CreateSurface( VkInstance instance )
+{
+	VkSurfaceKHR surface;
+
+	if (!SDL_Vulkan_CreateSurface(host.hWnd, instance, &surface))
+	{
+		Con_Reportf( S_ERROR  "Couldn't create Vulkan surface: %s\n", SDL_GetError());
+		return 0;
+	}
+
+	return surface;
+}
+
 /*
 ==================
 R_Init_Video
@@ -917,6 +957,7 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 	SDL_SetHint( SDL_HINT_VIDEO_X11_XRANDR, "1" );
 	SDL_SetHint( SDL_HINT_VIDEO_X11_XVIDMODE, "1" );
 
+	glw_state.context_type = type;
 	switch( type )
 	{
 	case REF_SOFTWARE:
@@ -934,6 +975,8 @@ qboolean R_Init_Video( ref_graphic_apis_t type )
 			Con_Reportf( S_ERROR  "Couldn't initialize OpenGL: %s\n", SDL_GetError());
 			return false;
 		}
+		break;
+	case REF_VULKAN:
 		break;
 	default:
 		Host_Error( "Can't initialize unknown context type %d!\n", type );

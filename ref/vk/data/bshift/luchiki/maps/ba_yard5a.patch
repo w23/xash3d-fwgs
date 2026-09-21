@@ -1,0 +1,9 @@
+{
+"_xvk_ent_id" "219" // remove hack spotlight
+}
+{
+"classname" "light"
+"origin" "3152 640 170"
+"_xvk_radius" "2"
+"_light" "247 249 157 64" // add light hack
+}

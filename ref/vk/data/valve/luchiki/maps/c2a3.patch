@@ -1,0 +1,77 @@
+{ // barrels: fix normal smooth
+"_xvk_ent_id" "185 184 183 74 22 25 21"
+"_xvk_smooth_entire_model" "1"
+}
+
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-1259 -388 730"
+//"origin" "-1227 -424 900"
+"_light" "120 220 150 20"
+"_xvk_radius" "50"
+}
+
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-1133 159 920"
+//"origin" "-1227 -424 900"
+"_light" "120 220 150 10"
+"_xvk_radius" "50"
+}
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-1623 -470 1004"
+"_light" "255 175 55 20"
+"_xvk_radius" "20"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-1622 -470 899"
+"_light" "120 220 150 125"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-2076 -338 682"
+"_light" "120 220 150 125"
+}
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-871 -388 968"
+"_light" "120 220 150 225"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-502 -461 768"
+"_light" "120 220 150 150"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-357 -101 608"
+"_light" "120 220 150 20"
+"_xvk_radius" "10"
+}
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-587 -924 1375"
+"_light" "120 220 150 20"
+"_xvk_radius" "10"
+}
+
+
+
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-349 205 959"
+"_light" "120 220 150 20"
+"_xvk_radius" "10"
+}
+
+
+
+
+

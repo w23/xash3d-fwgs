@@ -227,9 +227,9 @@ typedef struct
 	cl_entity_t *viewent;
 	dlight_t *elights;
 	byte *texgammatable;
-	uint *lightgammatable;
-	uint *lineargammatable;
-	uint *screengammatable;
+	uint16_t *lightgammatable;
+	uint16_t *lineargammatable;
+	uint16_t *screengammatable;
 
 	uint max_entities;
 
@@ -285,6 +285,7 @@ void GL_SetRenderMode( int mode );
 void GL_EnableTextureUnit( int tmu, qboolean enable );
 void GL_TextureTarget( uint target );
 void GL_Cull( GLenum cull );
+void GL_DrawRangeElements( GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices );
 void GL_PushPolygonOffset( float factor, float units );
 void GL_PopPolygonOffset( void );
 void SCR_TimeRefresh_f( void );
@@ -315,6 +316,7 @@ void R_ClearDecals( void );
 // gl_draw.c
 //
 void R_Set2DMode( qboolean enable );
+void R_Set2DOffset( float x, float y );
 void GL_UpdateTexture( int texnum, int cols, int rows, int width, int height, const byte *buffer, pixformat_t fmt );
 
 //
@@ -617,6 +619,7 @@ typedef struct
 
 	qboolean		stencilEnabled;
 	qboolean		in2DMode;
+	vec2_t		offset2D;
 
 	polyoffset_state_t polyoffset_state[2];
 	int num_polyoffsets;
@@ -736,6 +739,7 @@ extern convar_t	r_vbo_detail;
 extern convar_t	r_vbo_overbrightmode;
 extern convar_t r_studio_sort_textures;
 extern convar_t r_studio_drawelements;
+extern convar_t r_studio_builtin_renderer;
 extern convar_t r_shadows;
 extern convar_t r_ripple;
 extern convar_t r_ripple_updatetime;

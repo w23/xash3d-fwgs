@@ -1,0 +1,11 @@
+//{ // FIXME: remove this hack after better solution
+//"_xvk_surface_id" "3884 3885 3886" // rocket bottom
+//"_light" "255 255 255 100500"
+//}
+//{ // remove hack lights
+//"_xvk_ent_id" "164 165" // rocket bottom
+//}
+//{ // test
+//"_xvk_surface_id" "2825 2826"
+//"_light" "255 255 255 100500"
+//}

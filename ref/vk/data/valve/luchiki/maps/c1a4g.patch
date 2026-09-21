@@ -1,0 +1,6 @@
+{ // FIXME: temp hack (wait support light from invisible brush)
+"_xvk_ent_id" "180"
+"_xvk_radius" "10"
+"_cone" "16"
+"_cone2" "80"
+}

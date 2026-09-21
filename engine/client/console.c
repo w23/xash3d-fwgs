@@ -1930,7 +1930,12 @@ static void Con_DrawSolidConsole( int lines )
 	fraction = lines / (float)refState.height;
 	color[3] = Q_min( fraction * 2.0f, 1.0f ) * 255; // fadeout version number
 
+#if XASH_MOBILE_PLATFORM
+	// the top of the screen might be hidden by the on-screen keyboard panning
+	Con_DrawString( start, lines - charH, curbuild, color );
+#else
 	Con_DrawString( start, 0, curbuild, color );
+#endif
 
 	// draw the text
 	if( CON_LINES_COUNT > 0 )
@@ -2089,6 +2094,72 @@ void Con_DrawVersion( void )
 
 /*
 ==================
+Con_DestHeight
+
+==================
+*/
+static int Con_DestHeight( void )
+{
+	if( !host.allow_console || cls.key_dest != key_console )
+		return 0; // none visible
+
+	if( cls.state < ca_active || cl.first_frame )
+		return refState.height;	// full screen
+
+	return refState.height >> 1;	// half screen
+}
+
+/*
+==================
+Con_GetInputRect
+
+Where the currently edited line is drawn, in render coordinates
+==================
+*/
+qboolean Con_GetInputRect( int *x, int *y, int *w, int *h )
+{
+	if( !con.curFont )
+		return false;
+
+	if( cls.key_dest == key_console )
+	{
+		int lines = Con_DestHeight();
+
+		if( lines <= 0 )
+			return false;
+
+		*x = con.curFont->charWidths[' '];
+		*y = lines - con.curFont->charHeight * 2;
+		*w = refState.width - *x;
+		*h = con.curFont->charHeight;
+		return true;
+	}
+
+	if( cls.key_dest == key_message )
+	{
+		*x = con.curFont->charWidths[' '];
+		*y = 0;
+
+		if( clgame.dllFuncs.pfnChatInputPosition )
+		{
+			clgame.dllFuncs.pfnChatInputPosition( x, y );
+			*h = con.curFont->charHeight;
+		}
+		else
+		{
+			// chat line is pushed down by the notify lines drawn above it
+			*h = con.curFont->charHeight * ( con.num_times + 1 );
+		}
+
+		*w = refState.width - *x;
+		return true;
+	}
+
+	return false;
+}
+
+/*
+==================
 Con_RunConsole
 
 Scroll it up or down
@@ -2098,18 +2169,7 @@ void Con_RunConsole( void )
 {
 	Con_SetColor( );
 
-	// decide on the destination height of the console
-	if( host.allow_console && cls.key_dest == key_console )
-	{
-#if XASH_MOBILE_PLATFORM
-		con.showlines = refState.height; // always full screen on mobile devices
-#else
-		if( cls.state < ca_active || cl.first_frame )
-			con.showlines = refState.height;	// full screen
-		else con.showlines = (refState.height >> 1);	// half screen
-#endif
-	}
-	else con.showlines = 0; // none visible
+	con.showlines = Con_DestHeight();
 
 	float lines_per_frame = fabs( scr_conspeed.value ) * host.realframetime;
 
@@ -2175,6 +2235,13 @@ void Con_CharEvent( int key )
 	// distribute the key down event to the apropriate handler
 	if( cls.key_dest == key_console )
 	{
+		// no tilda or backtick in console is supported
+		if( key == '`' || key == '~' )
+		{
+			Con_ToggleConsole_f();
+			return;
+		}
+
 		Field_CharEvent( &con.input, key );
 		Con_InputCompletion();
 	}
@@ -2252,28 +2319,19 @@ void Con_VidInit( void )
 
 	if( !con.background ) // last chance - quake conback image
 	{
-		qboolean		draw_to_console = false;
-		fs_offset_t		length = 0;
+		fs_offset_t length = 0;
 		const byte *buf;
 
-		// NOTE: only these games want to draw build number into console background
-		if( !Q_stricmp( FS_Gamedir(), "id1" ))
-			draw_to_console = true;
-
-		if( !Q_stricmp( FS_Gamedir(), "hipnotic" ))
-			draw_to_console = true;
-
-		if( !Q_stricmp( FS_Gamedir(), "rogue" ))
-			draw_to_console = true;
-
-		if( draw_to_console && con.curFont &&
-			( buf = ref.dllFuncs.R_GetTextureOriginalBuffer( con.curFont->hFontTexture )) != NULL )
+		// quake games always use fixed width fonts, hl games only use variable width
+		// and we want to store buildnumber only in quake
+		if( con.curFont && con.curFont->type == FONT_FIXED && ( buf = ref.dllFuncs.R_GetTextureOriginalBuffer( con.curFont->hFontTexture )) != NULL )
 		{
 			lmp_t	*cb = (lmp_t *)FS_LoadFile( "gfx/conback.lmp", &length, false );
-			char	ver[64];
 
+			// another sanity test, quake background is always 320x200
 			if( cb && cb->width == 320 && cb->height == 200 )
 			{
+				char ver[64];
 				int len = Q_snprintf( ver, 64, "%i", Q_buildnum( )); // can store only buildnum
 				byte *dest = (byte *)(cb + 1) + 320 * 186 + 320 - 11 - 8 * len;
 				int y = len;

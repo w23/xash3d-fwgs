@@ -1,0 +1,13 @@
+{
+"_xvk_ent_id" "14 15" // correct spotlights
+"_xvk_radius" "6"
+"_light" "245 248 146 75"
+//"_light" "245 248 146 30"
+}
+//{
+//"_xvk_ent_id" "259" // correct spotlights
+//"origin" "-1380 -1560 7"
+//"_xvk_radius" "4"
+//"_light" "0 255 255 50"
+////"_light" "0 255 255 20"
+//}

@@ -1,0 +1,8 @@
+{ // remove hack light
+"_xvk_ent_id" "441"
+}
+{ // correct light
+"_xvk_surface_id" "4327" // +0~LIGHT2A       150 150 230  10000
+"_light" "255 255 255 20000" // FIXME: correct after fix bug
+}
+

@@ -435,14 +435,8 @@ static int SV_Multicast( int dest, const vec3_t origin, const edict_t *ent, qboo
 		if( filter && cl == sv.current_client && FBitSet( sv.current_client->flags, FCL_PREDICT_MOVEMENT ))
 			continue;
 
-		if( SV_IsValidEdict( ent ) && ent->v.groupinfo && cl->edict->v.groupinfo )
-		{
-			if( svs.groupop == GROUP_OP_AND && !FBitSet( cl->edict->v.groupinfo, ent->v.groupinfo ))
-				continue;
-
-			if( svs.groupop == GROUP_OP_NAND && FBitSet( cl->edict->v.groupinfo, ent->v.groupinfo ))
-				continue;
-		}
+		if( SV_IsValidEdict( ent ) && !SV_CheckGroupTrace( ent, cl->edict ))
+			continue;
 
 		if( !SV_CheckClientVisiblity( cl, mask ))
 			continue;
@@ -3280,11 +3274,11 @@ void SV_PrintStr64Stats_f( void )
 	Con_Printf( "====================\n" );
 	Con_Printf( "64 bit string pool statistics\n" );
 	Con_Printf( "====================\n" );
-	Con_Printf( "string array size: %lu\n", str64.maxstringarray );
-	Con_Printf( "total alloc %lu\n", str64.totalalloc );
-	Con_Printf( "maximum array usage: %lu\n", str64.maxalloc );
-	Con_Printf( "overflow counter: %lu\n", str64.numoverflows );
-	Con_Printf( "dup string counter: %lu\n", str64.numdups );
+	Con_Printf( "string array size: %zu\n", str64.maxstringarray );
+	Con_Printf( "total alloc %zu\n", str64.totalalloc );
+	Con_Printf( "maximum array usage: %zu\n", str64.maxalloc );
+	Con_Printf( "overflow counter: %zu\n", str64.numoverflows );
+	Con_Printf( "dup string counter: %zu\n", str64.numdups );
 #else // !XASH_64BIT
 	Con_Printf( "Not implemented\n" );
 #endif // !XASH_64BIT
@@ -4123,14 +4117,8 @@ void GAME_EXPORT SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word 
 		if( cl->state != cs_spawned || !cl->edict || FBitSet( cl->flags, FCL_FAKECLIENT ))
 			continue;
 
-		if( SV_IsValidEdict( pInvoker ) && pInvoker->v.groupinfo && cl->edict->v.groupinfo )
-		{
-			if( svs.groupop == GROUP_OP_AND && !FBitSet( cl->edict->v.groupinfo, pInvoker->v.groupinfo ))
-				continue;
-
-			if( svs.groupop == GROUP_OP_NAND && FBitSet( cl->edict->v.groupinfo, pInvoker->v.groupinfo ))
-				continue;
-		}
+		if( SV_IsValidEdict( pInvoker ) && !SV_CheckGroupTrace( pInvoker, cl->edict ))
+			continue;
 
 		if( SV_IsValidEdict( pInvoker ))
 		{
@@ -5093,6 +5081,13 @@ static void SV_LoadFromFile( const char *mapname, char *entities )
 
 			if( !SV_ParseEdict( &entities, ent ))
 				continue;
+
+			if( deathmatch.value && FBitSet( host.bugcomp, BUGCOMP_SPAWNFLAG_NOT_DEATHMATCH ) && FBitSet( ent->v.spawnflags, SF_NOT_DEATHMATCH ))
+			{
+				SV_FreeEdict( ent );
+				inhibited++;
+				continue;
+			}
 
 			if( svgame.dllFuncs.pfnSpawn( ent ) == -1 )
 			{

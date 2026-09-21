@@ -1,0 +1,18 @@
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "-193 469 496"
+"_light" "0 60 255 10"
+"_xvk_radius" "70"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "193 469 496"
+"_light" "0 60 255 10"
+"_xvk_radius" "70"
+}
+{
+"classname" "light" // TODO: remove after add light from invisible brush support
+"origin" "18 469 496"
+"_light" "220 240 200 15"
+"_xvk_radius" "70"
+}

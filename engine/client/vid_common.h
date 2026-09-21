@@ -29,6 +29,7 @@ typedef struct
 	void     *context; // handle to GL rendering context
 	ref_safegl_context_t safe;
 	qboolean software;
+	int      context_type; // REF_SOFTWARE / REF_GL / REF_VULKAN
 } glwstate_t;
 
 extern glwstate_t glw_state;

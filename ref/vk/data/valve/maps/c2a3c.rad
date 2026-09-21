@@ -1,0 +1,10 @@
++0~GYMLIGHT      255 195 65   5000
+~LIGHT3C         220 210 150  3000
+~GENERIC87       180 240 255  50000
++0~LIGHT2A       150 150 230  3000
+~SPOTBLUE        40  70  255  30000
+~SPOTYELLOW      225 145 55   30000
+~SPOTGREEN       60  255 125  30000
+
+
+FILL2            255 175 55   2000 // TODO: correct after add light from invisible brush support

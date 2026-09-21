@@ -1,0 +1,9 @@
+// TODO: better ligthing
+{ 
+"_xvk_ent_id" "40 41 42 46" // remove hack spotlights
+//"_xvk_radius" "5"
+//"_light" "180 180 210
+//"_light" "180 180 210 100"
+//"_cone" "16"
+//"_cone2" "100"
+}

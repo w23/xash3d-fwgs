@@ -1,0 +1,9 @@
+{ // Fix origin for entity-lamp (func_wall)
+"_xvk_ent_id" "127"
+"origin" "0 0 -5"
+}
+
+{ // barrels: fix normal smooth
+"_xvk_ent_id" "426 425 428 427"
+"_xvk_smooth_entire_model" "1"
+}
