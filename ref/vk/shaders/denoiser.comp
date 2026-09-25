@@ -53,7 +53,19 @@ layout(set = 0, binding = 22, rgba16f) uniform readonly image2D legacy_blend;
 
 //layout(set = 0, binding = 23) uniform sampler2D textures[MAX_TEXTURES];
 
+layout(set = 0, binding = 24, rgba32f) uniform image2D out_temporal_exposure;
+layout(set = 0, binding = 25, rgba32f) uniform readonly image2D prev_temporal_exposure;
+
+vec4 loadExposureTemporalData(ivec2 pix) {
+	return imageLoad(prev_temporal_exposure, pix);
+}
+
+void storeExposureTemporalData(ivec2 pix, vec4 value) {
+	imageStore(out_temporal_exposure, pix, value);
+}
+
 #include "atrous.glsl"
+#include "auto_exposure.glsl"
 
 const int INDIRECT_SCALE = 2;
 
@@ -622,6 +634,10 @@ void main() {
 	colour += imageLoad(emissive, pix).rgb;
 	// Revealage. TODO: which colorspace?
 	colour *= legacy_blend.a;
+
+	const float exposure = readAutoExposure(res);
+	updateAutoExposureTemporalData(res, pix, colour);
+	colour *= exposure;
 
 	colour = LINEARtoSRGB(colour);
 
