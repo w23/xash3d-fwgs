@@ -29,14 +29,14 @@
 //		"inherit": "light_direct",
 //		"rgen": "ray_light_direct_point"
 //	},
+	"bounce": {
+		"comp": "bounce"
+	},
 	"light_direct_poly": {
 		"comp": "ray_light_direct_poly"
 	},
 	"light_direct_point": {
 		"comp": "ray_light_direct_point"
-	},
-	"bounce": {
-		"comp": "bounce"
 	},
 	"indiff_at1": {
 		"comp": "indirect_diffuse_atrous1"
@@ -65,11 +65,18 @@
 	"spatial_reconstruction_pass1": {
 		"comp": "spatial_reconstruction_pass1"
 	},
-	"spatial_reconstruction_pass2": {
-		"comp": "spatial_reconstruction_pass2"
+	"final_precombine": {
+		"comp": "final_precombine"
+	},
+	"final_atrous": {
+		"comp": "final_atrous"
+	},
+	"asvgf": {
+		"comp": "asvgf"
 	},
 	"denoiser": {
 		"comp": "denoiser"
 	},
 	//"RESOURCES": { "position_t_prev": { "previous_frame": "position_t" }, },
 }
+

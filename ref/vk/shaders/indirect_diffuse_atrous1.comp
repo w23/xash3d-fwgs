@@ -35,6 +35,7 @@ void main() {
 	if (any(greaterThanEqual(pix, res_scaled))) {
 		return;
 	}
+	const bool legacy_bounce = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) == 0;
 
 	const vec3 pos = imageLoad(position_t, pix * INDIRECT_SCALE).xyz;
 	const vec3 shading_normal = normalDecode(imageLoad(normals_gs, pix * INDIRECT_SCALE).zw);
@@ -70,5 +71,17 @@ void main() {
 
 	//indiff = imageLoad(indirect_diffuse, pix).rgb;
 
-	imageStore(out_indirect_diffuse_atrous1, pix, vec4(indiff, 0./*unused*/));
+	if (legacy_bounce) {
+		ivec2 base = pix * INDIRECT_SCALE;
+		for (int y = 0; y < INDIRECT_SCALE; ++y) {
+			for (int x = 0; x < INDIRECT_SCALE; ++x) {
+				ivec2 p = base + ivec2(x, y);
+				if (all(lessThan(p, res))) {
+					imageStore(out_indirect_diffuse_atrous1, p, vec4(indiff, 0./*unused*/));
+				}
+			}
+		}
+	} else {
+		imageStore(out_indirect_diffuse_atrous1, pix, vec4(indiff, 0./*unused*/));
+	}
 }

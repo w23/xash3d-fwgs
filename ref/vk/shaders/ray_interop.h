@@ -138,7 +138,8 @@ struct PointLight {
 
 	// TODO move to either dedicated array, or section of array (by-index type delimiter)
 	uint environment; // Is directional-only environment light
-	PAD(3)
+	uint flashlight; // Is flashlight spotlight
+	PAD(2)
 };
 
 struct PolygonLight {
@@ -200,6 +201,121 @@ struct LightCluster {
 #define RENDERER_FLAG_DENOISE_GI_BY_SH (1<<2)
 #define RENDERER_FLAG_DISABLE_GI (1<<3)
 #define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
+#define RENDERER_FLAG_DISABLE_REPROJECTION (1<<6)
+
+#define ASVGF_COMPATIBILITY_STATS 0u
+#define ASVGF_COMPATIBILITY_LUMA_DELTA 1u
+
+#define ASVGF_HISTORY_FILTER_NONE 0u
+#define ASVGF_HISTORY_FILTER_LUMA_OUTLIER_CLAMP 1u
+
+#define ASVGF_DEPENDENCY_NONE 0u
+#define ASVGF_DEPENDENCY_COMBINE_MIN 1u
+#define ASVGF_DEPENDENCY_RELIGHT_CARRY 2u
+#define ASVGF_DEPENDENCY_VARIANCE_CARRY 3u
+
+struct AsvgfReprojectionParams {
+	float history_samples_max;
+	float history_current_weight_min;
+	float reprojection_depth_threshold_scale;
+	float parallax_depth_threshold_scale;
+
+	float variance_compatibility_luma_scale;
+	float variance_compatibility_delta_floor;
+	float variance_compatibility_signal_floor;
+	float variance_compatibility_smooth_min;
+	float variance_compatibility_smooth_max;
+	float variance_compatibility_floor;
+
+	float variance_gate_min;
+	float variance_gate_max;
+	float variance_gate_floor;
+	float variance_soften_threshold;
+	float variance_soften_mix;
+	float variance_stage_mix;
+
+	float reset_min_scale;
+	float reset_hard_variance_gate;
+	float reset_hard_compatibility;
+	float reset_hard_factor;
+	float variance_reset_boost_smooth_min;
+	float variance_reset_boost_smooth_max;
+
+	float analytical_variance_signal_floor;
+	float analytical_variance_floor_base;
+	float analytical_variance_floor_signal_scale;
+	float analytical_variance_ratio_min;
+	float analytical_variance_ratio_max;
+	float analytical_variance_mean_min;
+	float analytical_variance_mean_max;
+
+	float luma_delta_gate_signal_floor;
+	float luma_delta_gate_denominator_offset;
+	float luma_delta_gate_smooth_min;
+	float luma_delta_gate_smooth_max;
+	float luma_delta_gate_mix;
+
+	float external_gate_floor;
+	float external_gate_mix;
+	float external_gate_hard_threshold;
+
+	float dependency_gate_floor;
+	float dependency_gate_soft_min;
+	float dependency_gate_soft_max;
+	float dependency_gate_mix;
+
+	float dependency_luma_signal_floor;
+	float dependency_luma_denominator_offset;
+	float dependency_luma_smooth_min;
+	float dependency_luma_smooth_max;
+	float dependency_luma_mix;
+
+	float dependency_off_history_min;
+	float dependency_off_current_max;
+	float dependency_off_ratio_min;
+
+	float history_luma_clamp;
+	float history_outlier_noise_mean_floor;
+	float history_outlier_noise_gate_min;
+	float history_outlier_noise_gate_max;
+	float history_outlier_envelope_sigma_min;
+	float history_outlier_envelope_sigma_max;
+	float history_outlier_envelope_mean_min;
+	float history_outlier_envelope_mean_max;
+	float history_outlier_envelope_min;
+	float history_outlier_threshold_low_min;
+	float history_outlier_threshold_low_max;
+	float history_outlier_threshold_high_min;
+	float history_outlier_threshold_high_max;
+	float history_outlier_luma_cap_min;
+	float history_outlier_luma_cap_scale_min;
+	float history_outlier_luma_cap_scale_max;
+	float history_outlier_external_gate_attenuation_min;
+	float history_outlier_external_gate_attenuation_max;
+	float history_outlier_accumulated_luma_scale_min;
+	float history_outlier_accumulated_luma_scale_max;
+
+	float deflicker_threshold_min;
+	float deflicker_threshold_max;
+
+	float parallax_roughness_threshold;
+	float parallax_shading_normal_threshold;
+
+	uint variance_compatibility_strategy;
+	uint history_filter_strategy;
+	uint dependency_strategy;
+	uint use_dependency_reset_as_gate;
+
+	uint deflicker_enabled;
+	PAD(2)
+};
+
+struct AsvgfParams {
+	STRUCT AsvgfReprojectionParams direct_diffuse;
+	STRUCT AsvgfReprojectionParams direct_specular;
+	STRUCT AsvgfReprojectionParams indirect_diffuse;
+	STRUCT AsvgfReprojectionParams indirect_specular;
+};
 
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
@@ -214,6 +330,9 @@ struct UniformBuffer {
 	uint debug_flags;
 
 	uint renderer_flags;
+	PAD(3)
+
+	STRUCT AsvgfParams asvgf;
 };
 
 #undef PAD

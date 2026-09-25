@@ -74,6 +74,7 @@ typedef struct {
 
 enum {
 	LightFlag_Environment = 0x1,
+	LightFlag_Flashlight = 0x2,
 };
 
 typedef struct {
@@ -794,7 +795,7 @@ static int addPointLight( const vec3_t origin, const vec3_t color, float radius,
 	return index;
 }
 
-static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_angle, int lightstyle, float hack_attenuation, qboolean all_clusters ) {
+static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_angle, int lightstyle, float hack_attenuation, qboolean all_clusters, qboolean is_flashlight ) {
 	const int index = g_lights_.num_point_lights;
 	vk_point_light_t *const plight = g_lights_.point_lights + index;
 
@@ -837,6 +838,10 @@ static int addSpotLight( const vk_light_entity_t *le, float radius, float solid_
 		plight->stopdot2_or_costheta = cos_theta_max;
 	} else {
 		plight->stopdot2_or_costheta = le->stopdot2;
+
+		if (is_flashlight) {
+			plight->flags |= LightFlag_Flashlight;
+		}
 	}
 
 	VectorScale(le->color, hack_attenuation, plight->base_color);
@@ -943,7 +948,7 @@ void RT_LightAddFlashlight(const struct cl_entity_s *ent, qboolean local_player 
 	*/
 
 	const float solid_angle_unused = 0.;
-	addSpotLight(&le, radius, 0, solid_angle_unused, hack_attenuation, false);
+	addSpotLight(&le, radius, 0, solid_angle_unused, hack_attenuation, false, true);
 }
 
 static float sphereSolidAngleFromDistDiv2Pi(float r, float d) {
@@ -1003,7 +1008,7 @@ static void processStaticPointLights( void ) {
 
 			case LightTypeEnvironment:
 			case LightTypeSpot:
-				index = addSpotLight(le, radius, solid_angle, le->style, hack_attenuation, i == g_map_entities.single_environment_index);
+				index = addSpotLight(le, radius, solid_angle, le->style, hack_attenuation, i == g_map_entities.single_environment_index, false);
 				break;
 
 			default:
@@ -1373,6 +1378,7 @@ static void uploadPointLights( struct LightsMetadata *metadata ) {
 		dst->dir_stopdot2[3] = src->stopdot2_or_costheta;
 
 		dst->environment = !!(src->flags & LightFlag_Environment);
+		dst->flashlight = !!(src->flags & LightFlag_Flashlight);
 	}
 }
 
