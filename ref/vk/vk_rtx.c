@@ -263,9 +263,6 @@ static void makeDefaultAsvgfLobeParams(asvgf_lobe_id_t lobe, struct AsvgfReproje
 		params->dependency_luma_smooth_min = 0.20f;
 		params->dependency_luma_smooth_max = 0.80f;
 		params->dependency_luma_mix = 0.65f;
-		params->deflicker_enabled = 1u;
-		params->deflicker_threshold_min = 0.10f;
-		params->deflicker_threshold_max = 0.35f;
 		params->use_dependency_reset_as_gate = 1u;
 		break;
 
@@ -612,6 +609,7 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 					  SET_RENDERER_FLAG(RENDERER_FLAG_SEPARATED_REFLECTION) |
 					  (disable_sh_gi_denoising ? 0 : RENDERER_FLAG_DENOISE_GI_BY_SH) |
 					  (disable_reconstruction ? 0 : RENDERER_FLAG_SPATIAL_RECONSTRUCTION) |
+					  (CVAR_TO_BOOL(rt_disable_firefly_rejection) ? RENDERER_FLAG_DISABLE_FIREFLY_REJECTION : 0) |
 					  (CVAR_TO_BOOL(rt_disable_gi) ? RENDERER_FLAG_DISABLE_GI : 0) |
 					  (CVAR_TO_BOOL(rt_disable_reprojection) ? RENDERER_FLAG_DISABLE_REPROJECTION : 0);
 #undef SET_RENDERER_FLAG

@@ -37,8 +37,12 @@ void main() {
 	const vec3 direct_diffuse = imageLoad(light_poly_diffuse, pix).rgb + imageLoad(light_point_diffuse, pix).rgb;
 	const vec3 direct_specular = imageLoad(light_poly_specular, pix).rgb + imageLoad(light_point_specular, pix).rgb;
 
-	const ivec2 pix_indirect = pix / INDIRECT_SCALE;
-	const vec4 indirect_specular = imageLoad(indirect_specular_reconstructed, pix_indirect);
+	const ivec2 indirect_res = res / INDIRECT_SCALE;
+	vec4 indirect_specular = vec4(0.0);
+	if (all(greaterThan(indirect_res, ivec2(0)))) {
+		const ivec2 pix_indirect = min(pix / INDIRECT_SCALE, indirect_res - 1);
+		indirect_specular = imageLoad(indirect_specular_reconstructed, pix_indirect);
+	}
 	const vec3 indirect_diffuse = imageLoad(indirect_diffuse_atrous1, pix).rgb + imageLoad(indirect_diffuse_denoised_by_sh, pix).rgb;
 
 	imageStore(out_precombined_direct_diffuse, pix, vec4(direct_diffuse, 1.0));

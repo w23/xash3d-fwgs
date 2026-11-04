@@ -1,0 +1,5 @@
+#version 460
+
+#define FIREFLY_INPUT indirect_diffuse
+#define FIREFLY_OUTPUT out_firefly_filtered_diffuse
+#include "firefly_rejection.glsl"

@@ -1,13 +1,184 @@
-#version 460 core
-#extension GL_GOOGLE_include_directive : require
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_EXT_shader_16bit_storage : require
-#extension GL_EXT_ray_query: require
+#version 460
 
-#define SPATIAL_RECONSTRUCTION_RADIUS 7.
-#define SPECULAR_INPUT_IMAGE indirect_specular
-#define SPECULAR_OUTPUT_IMAGE out_indirect_specular_reconstructed
-#define SPATIAL_RECONSTRUCTION_INPUT_RAY_LENGTH(pix) length(imageLoad(reflection_direction_pdf, pix).xyz)
-#define SPATIAL_RECONSTRUCTION_FINAL_PASS 1
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#include "utils.glsl"
+#include "noise.glsl"
+#include "color_spaces.glsl"
+#include "reconstruction_poisson.glsl"
 
-#include "spatial_reconstruction.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_indirect_specular_reconstructed;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 3, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D firefly_filtered_specular;
+layout(set = 0, binding = 5, rgba32f) uniform readonly image2D reflection_direction_pdf;
+layout(set = 0, binding = 6) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 7, rgba16f) uniform writeonly image2D out_indirect_specular_ray_length;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D prev_indirect_specular_ray_length;
+layout(set = 0, binding = 9, rgba8) uniform readonly image2D base_color_a;
+
+const int INDIRECT_SCALE = 2;
+
+float viewDepth(vec3 position) {
+	return abs(dot(position - ubo.ubo.inv_view[3].xyz, ubo.ubo.inv_view[2].xyz));
+}
+
+float hitLength(vec4 ray) {
+	const float distance = length(ray.xyz);
+	return ray.w > 0.0 && !isinf(distance) && distance > 0.0 ? distance : 0.0;
+}
+
+vec3 spotResponse(vec3 N, vec3 V, vec3 L, vec3 F0, float alpha, float angular_radius) {
+	const vec3 half_vector = V + L;
+	const float VoH = dot(V, half_vector) / max(length(half_vector), 1e-6);
+	const vec3 fresnel = mix(F0, vec3(1.0), pow(1.0 - clamp(VoH, 0.0, 1.0), 5.0));
+	const float width = 2.0 * alpha;
+	const float exponent = min(2.0 / max(width * width + angular_radius * angular_radius, 1e-5), 2048.0);
+	const float alignment = max(dot(reflect(-V, N), L), 0.0);
+	return fresnel * ((exponent + 1.0) * pow(alignment, exponent));
+}
+
+float rayLengthConfidence(float previous, float nearest, float farthest) {
+	if (!(previous > 0.0))
+		return 1.0;
+
+	const float lower_range = max(nearest / 3.0, 1e-3);
+	const float upper_range = max(farthest / 3.0, 1e-3);
+	return min(smoothstep(max(nearest - lower_range, 0.0), nearest, previous),
+		1.0 - smoothstep(farthest, farthest + upper_range, previous));
+}
+
+void main() {
+	const ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+	const ivec2 res = ubo.ubo.res / INDIRECT_SCALE;
+	if (any(greaterThanEqual(pix, res)))
+		return;
+
+	const ivec2 primary_pix = pix * INDIRECT_SCALE;
+	const vec4 surface = imageLoad(position_t, primary_pix);
+	const vec2 material = imageLoad(material_rmxx, primary_pix).rg;
+	const vec4 ray = imageLoad(reflection_direction_pdf, pix);
+	const float center_length = hitLength(ray);
+	vec3 radiance = imageLoad(firefly_filtered_specular, pix).rgb;
+	float ray_length = center_length;
+	float confidence = 1.0;
+
+	if (surface.w > 0.0 && material.x >= 0.004 && center_length > 0.0 &&
+		(ubo.ubo.renderer_flags & RENDERER_FLAG_SPATIAL_RECONSTRUCTION) != 0) {
+		const vec3 eye = ubo.ubo.inv_view[3].xyz;
+		const vec3 V = normalize(eye - surface.xyz);
+		const vec4 normals = imageLoad(normals_gs, primary_pix);
+		const vec3 G = normalDecode(normals.xy);
+		const vec3 N = normalDecode(normals.zw);
+		const bool separated = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0;
+		const vec3 F0 = separated ? vec3(1.0) :
+			mix(vec3(0.04), SRGBtoLINEAR(imageLoad(base_color_a, primary_pix).rgb), material.y);
+		const float depth = max(viewDepth(surface.xyz), 1e-5);
+		const float alpha = material.x * material.x;
+		// The gather runs on the half-resolution signal grid.
+		const float pixels_per_world = float(res.y) / (2.0 * depth * abs(ubo.ubo.inv_proj[1][1]));
+		const float min_radius = smoothstep(0.004, 0.15, material.x);
+		const float radius = clamp(2.0 * alpha * center_length * pixels_per_world, min_radius, 8.0);
+		const float angle = 6.2831853 * uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x706f6973u)));
+		const mat2 rotation = mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
+
+		vec3 sum = radiance;
+		float length_sum = center_length;
+		float weight_sum = 1.0;
+		float nearest = center_length;
+		float farthest = center_length;
+		vec3 hit_min = surface.xyz + ray.xyz;
+		vec3 hit_max = hit_min;
+		int hit_count = 1;
+		for (int i = 1; i < 4 && radius >= 1.0; ++i) {
+			const ivec2 tile_pix = pix ^ ivec2(i & 1, i >> 1);
+			if (any(greaterThanEqual(tile_pix, res)))
+				continue;
+
+			const vec4 tile_ray = imageLoad(reflection_direction_pdf, tile_pix);
+			if (hitLength(tile_ray) <= 0.0)
+				continue;
+
+			const vec3 tile_hit = imageLoad(position_t, tile_pix * INDIRECT_SCALE).xyz + tile_ray.xyz;
+			hit_min = min(hit_min, tile_hit);
+			hit_max = max(hit_max, tile_hit);
+			++hit_count;
+		}
+
+		ivec2 visited[reconstruction_poisson.length()];
+		for (int i = 0; i < reconstruction_poisson.length() && radius >= 1.0; ++i) {
+			const ivec2 sample_pix = pix + ivec2(round(rotation * reconstruction_poisson[i] * radius));
+			visited[i] = sample_pix;
+			if (all(equal(sample_pix, pix)) || any(lessThan(sample_pix, ivec2(0))) || any(greaterThanEqual(sample_pix, res)))
+				continue;
+
+			bool duplicate = false;
+			for (int j = 0; j < i; ++j)
+				duplicate = duplicate || all(equal(sample_pix, visited[j]));
+			if (duplicate)
+				continue;
+
+			const vec4 sample_ray = imageLoad(reflection_direction_pdf, sample_pix);
+			const float sample_length = hitLength(sample_ray);
+			const ivec2 sample_primary = sample_pix * INDIRECT_SCALE;
+			const vec4 neighbor = imageLoad(position_t, sample_primary);
+			if (sample_length <= 0.0 || neighbor.w <= 0.0)
+				continue;
+
+			const vec2 sample_material = imageLoad(material_rmxx, sample_primary).rg;
+			const vec4 sample_normals = imageLoad(normals_gs, sample_primary);
+			const vec3 sample_N = normalDecode(sample_normals.zw);
+			const float sample_alpha = max(sample_material.x * sample_material.x, sqrt(1e-5));
+			const float relative_depth = abs(viewDepth(neighbor.xyz) / depth - 1.0);
+			const float normal_width = mix(0.005, 0.25, alpha);
+			const vec3 delta = neighbor.xyz - surface.xyz;
+			const vec3 D = delta / max(length(delta), 1e-6);
+			float weight = 1.0 - smoothstep(0.2, 0.5, relative_depth);
+			weight *= smoothstep(1.0 - normal_width, 1.0, dot(N, sample_N));
+			weight *= 1.0 - smoothstep(0.1, 0.7, abs(sample_material.x * sample_material.x - alpha) / max(alpha, 0.02));
+			weight *= smoothstep(-0.15, -0.02, dot(G, D));
+			weight *= smoothstep(-0.15, -0.02, dot(normalDecode(sample_normals.xy), -D));
+			if (hit_count >= 3) {
+				const vec3 sample_hit = neighbor.xyz + sample_ray.xyz;
+				const float outside = length(sample_hit - clamp(sample_hit, hit_min, hit_max));
+				const float margin = max(0.02 * center_length, 0.5 * length(hit_max - hit_min));
+				weight *= 1.0 - smoothstep(margin, 2.0 * margin, outside);
+			}
+			if (!(weight > 0.0))
+				continue;
+
+			const vec3 to_hit = delta + sample_ray.xyz;
+			const float distance = length(to_hit);
+			const vec3 L = to_hit / max(distance, 1e-6);
+			if (dot(G, L) <= 0.0 || dot(N, L) <= 0.0)
+				continue;
+
+			const vec3 sample_F0 = separated ? vec3(1.0) :
+				mix(vec3(0.04), SRGBtoLINEAR(imageLoad(base_color_a, sample_primary).rgb), sample_material.y);
+			const float spot_radius = 2.0 * sample_alpha * sample_length;
+			const vec3 source_response = spotResponse(sample_N, normalize(eye - neighbor.xyz),
+				sample_ray.xyz / sample_length, sample_F0, sample_alpha, atan(spot_radius / sample_length));
+			const vec3 center_response = spotResponse(N, V, L, F0, alpha, atan(spot_radius / distance));
+			const vec3 gain = 2.0 * center_response / max(center_response + source_response, vec3(1e-6));
+			const vec3 contribution = imageLoad(firefly_filtered_specular, sample_pix).rgb * gain;
+			if (any(isnan(contribution)) || any(isinf(contribution)))
+				continue;
+
+			sum += contribution * weight;
+			length_sum += sample_length * weight;
+			weight_sum += weight;
+			nearest = min(nearest, sample_length);
+			farthest = max(farthest, sample_length);
+		}
+
+		radiance = sum / weight_sum;
+		ray_length = length_sum / weight_sum;
+		confidence = rayLengthConfidence(imageLoad(prev_indirect_specular_ray_length, pix).r, nearest, farthest);
+	}
+
+	imageStore(out_indirect_specular_reconstructed, pix, vec4(clamp(radiance, vec3(0.0), vec3(65504.0)), confidence));
+	imageStore(out_indirect_specular_ray_length, pix, vec4(ray_length, 0.0, 0.0, 0.0));
+}

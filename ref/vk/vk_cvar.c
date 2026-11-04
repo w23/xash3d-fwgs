@@ -44,6 +44,7 @@ void VK_LoadCvarsAfterInit( void )
 		rt_legacy_bounce = gEngine.Cvar_Get("rt_legacy_bounce", "0", FCVAR_GLCONFIG, "Enable legacy bounce mode: random diffuse/specular per texel and permanently applied base color");
 		rt_disable_gi = gEngine.Cvar_Get("rt_disable_gi", "0", FCVAR_GLCONFIG, "Disable global illumination calculation");
 		rt_disable_reconstruction = gEngine.Cvar_Get("rt_disable_reconstruction", "0", FCVAR_GLCONFIG, "Disable spatial reconstruction pass for indirect specular");
+		rt_disable_firefly_rejection = gEngine.Cvar_Get("rt_disable_firefly_rejection", "0", FCVAR_GLCONFIG, "Disable firefly rejection for indirect diffuse and specular");
 		rt_disable_sh_gi_denoising = gEngine.Cvar_Get("rt_disable_sh_gi_denoising", "0", FCVAR_GLCONFIG, "Disable SH-based denoising for indirect diffuse GI");
 		rt_disable_reprojection = gEngine.Cvar_Get("rt_disable_reprojection", "0", FCVAR_GLCONFIG, "Disable temporal reprojection in denoiser");
 		rt_denoiser_console_setup_enable = gEngine.Cvar_Get("rt_denoiser_console_setup_enable", "0", FCVAR_GLCONFIG, "Allow to setup denoiser in console. ALERT: if enabled, settings from new versions of application will not be applied without a manual reset!");

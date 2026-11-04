@@ -32,6 +32,12 @@
 	"bounce": {
 		"comp": "bounce"
 	},
+	"reflection_firefly": {
+		"comp": "reflection_firefly"
+	},
+	"bounce_firefly": {
+		"comp": "bounce_firefly"
+	},
 	"light_direct_poly": {
 		"comp": "ray_light_direct_poly"
 	},
@@ -44,20 +50,14 @@
 	"indiff_sh_init": {
 		"comp": "diffuse_gi_sh_denoise_init"
 	},
-	"indiff_sh_pass1": {
-		"comp": "diffuse_gi_sh_denoise_pass_1"
+	"indiff_sh_temporal": {
+		"comp": "diffuse_gi_sh_temporal"
 	},
-	"indiff_sh_pass2": {
-		"comp": "diffuse_gi_sh_denoise_pass_2"
+	"indiff_sh_blur_pass1": {
+		"comp": "diffuse_gi_sh_blur_pass1"
 	},
-	"indiff_sh_pass3": {
-		"comp": "diffuse_gi_sh_denoise_pass_3"
-	},
-	"indiff_sh_pass4": {
-		"comp": "diffuse_gi_sh_denoise_pass_4"
-	},
-	"indiff_sh_pass5": {
-		"comp": "diffuse_gi_sh_denoise_pass_5"
+	"indiff_sh_blur_pass2": {
+		"comp": "diffuse_gi_sh_blur_pass2"
 	},
 	"indiff_sh_save": {
 		"comp": "diffuse_gi_sh_denoise_save"
