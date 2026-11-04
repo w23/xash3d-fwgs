@@ -21,8 +21,6 @@
 //	51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //
 
-#define STORAGE_SCALE_LF 1024.0
-
 struct SH
 {
     vec4 shY;

@@ -41,7 +41,8 @@ void main() {
 		return;
 	}
 
-	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0) {
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 ||
+		(ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_GI) != 0) {
 		imageStore(out_indirect_diffuse_denoised_by_sh, pix, vec4(0.));
 		return;
 	}
@@ -58,7 +59,7 @@ void main() {
 	low_freq.shY = FIX_NAN(imageLoad(sh1_pong, pix));
 	low_freq.CoCg = FIX_NAN(imageLoad(sh2_pong, pix)).xy;
 
-	const vec3 diffuse_gi = project_SH_irradiance(low_freq, shading_normal) / STORAGE_SCALE_LF;
+	const vec3 diffuse_gi = project_SH_irradiance(low_freq, shading_normal);
 
 	imageStore(out_indirect_diffuse_denoised_by_sh, pix, vec4(diffuse_gi, 0.));
 	imageStore(out_indirect_diffuse, pix, vec4(0.));

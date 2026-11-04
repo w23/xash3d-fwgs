@@ -1,0 +1,105 @@
+#version 460
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#include "utils.glsl"
+#include "spherical_harmonics.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D sh1_ping;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D sh2_ping;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D prev_temporal_gi_sh1;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D prev_temporal_gi_sh2;
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D out_temporal_gi_sh1;
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image2D out_temporal_gi_sh2;
+layout(set = 0, binding = 7, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 8, rgba32f) uniform readonly image2D geometry_prev_position;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image2D prev_temporal_asvgf_reproj_depth;
+
+#define LOAD_REFLECTION_RAY_LENGTH(pix) 0.0
+#define REPROJECTION_LOAD_PREV_DEPTH_META(pix) imageLoad(prev_temporal_asvgf_reproj_depth, (pix))
+#include "temporal_reprojection.glsl"
+
+const float GI_SH_MAX_HISTORY = 8.0;
+
+bool validSH(SH value) {
+	return !any(isnan(value.shY)) && !any(isinf(value.shY)) &&
+		!any(isnan(value.CoCg)) && !any(isinf(value.CoCg));
+}
+
+void main() {
+	const ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+	const ivec2 res = ubo.ubo.res;
+	if (any(greaterThanEqual(pix, res)))
+		return;
+
+	const uint flags = ubo.ubo.renderer_flags;
+	if ((flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 ||
+		(flags & RENDERER_FLAG_DISABLE_GI) != 0 || imageLoad(position_t, pix).w <= 0.0) {
+		imageStore(out_temporal_gi_sh1, pix, vec4(0.0));
+		imageStore(out_temporal_gi_sh2, pix, vec4(0.0));
+		return;
+	}
+
+	SH current = SH(imageLoad(sh1_ping, pix), imageLoad(sh2_ping, pix).xy);
+	const bool current_valid = validSH(current);
+	if (!current_valid)
+		current = SH(vec4(0.0), vec2(0.0));
+
+	float history_length = 0.0;
+	// Changing the firefly filter invalidates the stored coefficients.
+	const float history_mode = (flags & RENDERER_FLAG_DISABLE_FIREFLY_REJECTION) == 0 ? 1.0 : -1.0;
+	if ((flags & RENDERER_FLAG_DISABLE_REPROJECTION) == 0) {
+		history_length = current_valid ? 1.0 : 0.0;
+		const vec3 prev_position = imageLoad(geometry_prev_position, pix).xyz;
+		const vec4 normals = imageLoad(normals_gs, pix);
+		const vec3 geometry_normal = normalDecode(normals.xy);
+		const vec3 shading_normal = normalDecode(normals.zw);
+		ivec2 taps[4];
+		float weights[4];
+		int tap_count;
+		vec2 projected_center;
+		float depth_threshold;
+		if (buildValidatedReprojectionHistoryTapsForParams(ubo.ubo.asvgf.indirect_diffuse,
+			prev_position, geometry_normal, pix, res, taps, weights, tap_count,
+			projected_center, depth_threshold)) {
+			SH history = SH(vec4(0.0), vec2(0.0));
+			float age_sum = 0.0;
+			float weight_sum = 0.0;
+			for (int i = 0; i < tap_count; ++i) {
+				const vec4 previous_sh2 = imageLoad(prev_temporal_gi_sh2, taps[i]);
+				const float age = previous_sh2.z * history_mode;
+				const vec3 prev_normal = normalDecode(imageLoad(prev_temporal_asvgf_reproj_depth, taps[i]).zw);
+				if (!(age >= 1.0 && age <= GI_SH_MAX_HISTORY) || dot(shading_normal, prev_normal) < 0.9)
+					continue;
+
+				const SH previous = SH(imageLoad(prev_temporal_gi_sh1, taps[i]), previous_sh2.xy);
+				if (!validSH(previous))
+					continue;
+
+				accumulate_SH(history, previous, weights[i]);
+				age_sum += age * weights[i];
+				weight_sum += weights[i];
+			}
+
+			if (weight_sum > 0.0) {
+				history.shY /= weight_sum;
+				history.CoCg /= weight_sum;
+				const float effective_age = min(age_sum, GI_SH_MAX_HISTORY - 1.0);
+				if (current_valid) {
+					history_length += effective_age;
+					current = mix_SH(current, history, effective_age / history_length);
+				} else {
+					current = history;
+					history_length = max(effective_age, 1.0);
+				}
+			}
+		}
+	}
+
+	imageStore(out_temporal_gi_sh1, pix, current.shY);
+	imageStore(out_temporal_gi_sh2, pix, vec4(current.CoCg, history_mode * history_length, 0.0));
+}

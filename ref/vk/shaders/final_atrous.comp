@@ -1,0 +1,201 @@
+#version 460
+
+#include "utils.glsl"
+#include "noise.glsl"
+#include "brdf.glsl"
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D precombined_direct_diffuse;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D precombined_direct_specular;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D precombined_indirect_specular;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D precombined_flashlight_diffuse;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D precombined_flashlight_specular;
+
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D indirect_diffuse;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_diffuse_atrous1;
+
+layout(set = 0, binding = 10, rgba16f) uniform writeonly image2D out_final_atrous_direct_diffuse;
+layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D out_final_atrous_direct_specular;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_final_atrous_indirect_specular;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_diffuse;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_final_atrous_flashlight_specular;
+layout(set = 0, binding = 15, rgba32f) uniform writeonly image2D out_final_atrous_direct_stats;
+layout(set = 0, binding = 16, rgba32f) uniform writeonly image2D out_final_atrous_indirect_specular_stats;
+layout(set = 0, binding = 17, rgba16f) uniform readonly image2D precombined_indirect_diffuse;
+layout(set = 0, binding = 18, rgba32f) uniform writeonly image2D out_final_atrous_indirect_diffuse_stats;
+
+#define ATROUS_KERNEL_WIDTH 5
+#define ATROUS_KERNEL_HALF 2
+
+const float EDGE_NORMAL_MIN_DOT = 0.98;
+const float EDGE_POSITION_MIN_RADIUS = 1.0;
+const float EDGE_POSITION_RAY_CONE_SCALE = 3.0;
+
+float linearKernelOffsetWeight(ivec2 offset) {
+	ivec2 d = offset - ivec2(ATROUS_KERNEL_HALF);
+	float dist2 = float(dot(d, d));
+	float radius_plus_one = float(ATROUS_KERNEL_HALF + 1);
+	float norm2 = radius_plus_one * radius_plus_one;
+	return max(0.0, 1.0 - (dist2 / norm2));
+}
+
+float computeLinearEdgeWeight(ivec2 p, vec3 center_pos, vec3 center_shading_normal) {
+	vec3 sample_shading_normal = normalDecode(imageLoad(normals_gs, p).zw);
+	if (dot(sample_shading_normal, center_shading_normal) < EDGE_NORMAL_MIN_DOT) {
+		return 0.0;
+	}
+
+	vec3 sample_position = imageLoad(position_t, p).xyz;
+	vec3 p_diff = sample_position - center_pos;
+	vec3 origin = (ubo.ubo.inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float center_depth = max(length(center_pos - origin), 1.0);
+	float position_radius = max(
+		EDGE_POSITION_MIN_RADIUS,
+		center_depth * max(ubo.ubo.ray_cone_width, 1e-6) * EDGE_POSITION_RAY_CONE_SCALE);
+	float p_dist2 = dot(p_diff, p_diff) / max(position_radius * position_radius, 1e-6);
+	return 1.0 - clamp(p_dist2, 0.0, 1.0);
+}
+
+void main() {
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID);
+	if (any(greaterThanEqual(pix, res))) {
+		return;
+	}
+
+	const vec3 center_pos = imageLoad(position_t, pix).xyz;
+	const vec3 center_shading_normal = normalDecode(imageLoad(normals_gs, pix).zw);
+
+	const vec4 center_direct_diffuse = imageLoad(precombined_direct_diffuse, pix);
+	const vec4 center_direct_specular = imageLoad(precombined_direct_specular, pix);
+	const vec4 center_indirect_specular = imageLoad(precombined_indirect_specular, pix);
+
+	vec4 accum_direct_diffuse = vec4(0.0);
+	vec4 accum_direct_specular = vec4(0.0);
+	vec4 accum_indirect_specular = vec4(0.0);
+	vec3 accum_flashlight_diffuse = vec3(0.0);
+	vec3 accum_flashlight_specular = vec3(0.0);
+
+	float weight_total = 0.0;
+
+	float stats_weight = 0.0;
+	float diffuse_mean_accum = 0.0;
+	float diffuse_mean_sq_accum = 0.0;
+	float direct_spec_mean_accum = 0.0;
+	float direct_spec_mean_sq_accum = 0.0;
+	float indirect_diff_mean_accum = 0.0;
+	float indirect_diff_mean_sq_accum = 0.0;
+	float indirect_spec_mean_accum = 0.0;
+	float indirect_spec_mean_sq_accum = 0.0;
+
+	for (int x = 0; x < ATROUS_KERNEL_WIDTH; ++x) {
+		for (int y = 0; y < ATROUS_KERNEL_WIDTH; ++y) {
+			const ivec2 offset = ivec2(x, y);
+			const ivec2 p = pix + (offset - ivec2(ATROUS_KERNEL_HALF));
+			if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, res))) {
+				continue;
+			}
+
+			const float kernel_weight = linearKernelOffsetWeight(offset);
+			if (kernel_weight <= 0.0) {
+				continue;
+			}
+
+			const float edge_weight = computeLinearEdgeWeight(p, center_pos, center_shading_normal);
+			const float sample_weight = kernel_weight * edge_weight;
+			if (sample_weight <= 0.0) {
+				continue;
+			}
+
+			const vec4 s_direct_diffuse = imageLoad(precombined_direct_diffuse, p);
+			const vec4 s_direct_specular = imageLoad(precombined_direct_specular, p);
+			const vec4 s_indirect_specular = imageLoad(precombined_indirect_specular, p);
+
+			accum_direct_diffuse += s_direct_diffuse * sample_weight;
+			accum_direct_specular += s_direct_specular * sample_weight;
+			accum_indirect_specular += s_indirect_specular * sample_weight;
+			accum_flashlight_diffuse += imageLoad(precombined_flashlight_diffuse, p).rgb * sample_weight;
+			accum_flashlight_specular += imageLoad(precombined_flashlight_specular, p).rgb * sample_weight;
+			weight_total += sample_weight;
+
+			const ivec2 d = abs(offset - ivec2(ATROUS_KERNEL_HALF));
+			const bool in_stats_9tap = all(lessThanEqual(d, ivec2(1)));
+			if (in_stats_9tap) {
+				const float l_diff = luminance(s_direct_diffuse.rgb);
+				const float l_direct_spec = luminance(s_direct_specular.rgb);
+				const float l_indirect_diff = luminance(imageLoad(precombined_indirect_diffuse, p).rgb);
+				const float l_indirect_spec = luminance(s_indirect_specular.rgb);
+				diffuse_mean_accum += l_diff;
+				diffuse_mean_sq_accum += l_diff * l_diff;
+				direct_spec_mean_accum += l_direct_spec;
+				direct_spec_mean_sq_accum += l_direct_spec * l_direct_spec;
+				indirect_diff_mean_accum += l_indirect_diff;
+				indirect_diff_mean_sq_accum += l_indirect_diff * l_indirect_diff;
+				indirect_spec_mean_accum += l_indirect_spec;
+				indirect_spec_mean_sq_accum += l_indirect_spec * l_indirect_spec;
+				stats_weight += 1.0;
+			}
+		}
+	}
+
+	vec4 out_direct_diffuse;
+	vec4 out_direct_specular;
+	vec4 out_indirect_specular;
+	vec3 out_flashlight_diffuse;
+	vec3 out_flashlight_specular;
+
+	if (weight_total > 0.0) {
+		const float inv_weight = 1.0 / weight_total;
+		out_direct_diffuse = vec4(accum_direct_diffuse.rgb * inv_weight, clamp(accum_direct_diffuse.a * inv_weight, 0.0, 1.0));
+		out_direct_specular = vec4(accum_direct_specular.rgb * inv_weight, clamp(accum_direct_specular.a * inv_weight, 0.0, 1.0));
+		out_indirect_specular = vec4(accum_indirect_specular.rgb * inv_weight, clamp(accum_indirect_specular.a * inv_weight, 0.0, 1.0));
+		out_flashlight_diffuse = accum_flashlight_diffuse * inv_weight;
+		out_flashlight_specular = accum_flashlight_specular * inv_weight;
+	} else {
+		out_direct_diffuse = vec4(vec3(0.0), clamp(center_direct_diffuse.a, 0.0, 1.0));
+		out_direct_specular = vec4(vec3(0.0), clamp(center_direct_specular.a, 0.0, 1.0));
+		out_indirect_specular = vec4(vec3(0.0), clamp(center_indirect_specular.a, 0.0, 1.0));
+		out_flashlight_diffuse = vec3(0.0);
+		out_flashlight_specular = vec3(0.0);
+	}
+
+	float diffuse_mean = 0.0;
+	float diffuse_var = 0.0;
+	float direct_spec_mean = 0.0;
+	float direct_spec_var = 0.0;
+	float indirect_diff_mean = 0.0;
+	float indirect_diff_var = 0.0;
+	float indirect_spec_mean = 0.0;
+	float indirect_spec_var = 0.0;
+
+	if (stats_weight > 0.0) {
+		const float inv_stats_w = 1.0 / stats_weight;
+		diffuse_mean = diffuse_mean_accum * inv_stats_w;
+		direct_spec_mean = direct_spec_mean_accum * inv_stats_w;
+		indirect_diff_mean = indirect_diff_mean_accum * inv_stats_w;
+		indirect_spec_mean = indirect_spec_mean_accum * inv_stats_w;
+		diffuse_var = max(diffuse_mean_sq_accum * inv_stats_w - diffuse_mean * diffuse_mean, 0.0);
+		direct_spec_var = max(direct_spec_mean_sq_accum * inv_stats_w - direct_spec_mean * direct_spec_mean, 0.0);
+		indirect_diff_var = max(indirect_diff_mean_sq_accum * inv_stats_w - indirect_diff_mean * indirect_diff_mean, 0.0);
+		indirect_spec_var = max(indirect_spec_mean_sq_accum * inv_stats_w - indirect_spec_mean * indirect_spec_mean, 0.0);
+	}
+
+	imageStore(out_final_atrous_direct_diffuse, pix, out_direct_diffuse);
+	imageStore(out_final_atrous_direct_specular, pix, out_direct_specular);
+	imageStore(out_final_atrous_indirect_specular, pix, out_indirect_specular);
+	imageStore(out_final_atrous_flashlight_diffuse, pix, vec4(out_flashlight_diffuse, 0.0));
+	imageStore(out_final_atrous_flashlight_specular, pix, vec4(out_flashlight_specular, 0.0));
+	imageStore(out_final_atrous_direct_stats, pix, vec4(diffuse_mean, diffuse_var, direct_spec_mean, direct_spec_var));
+	imageStore(out_final_atrous_indirect_specular_stats, pix, vec4(indirect_spec_mean, indirect_spec_var, 0.0, 0.0));
+	imageStore(out_final_atrous_indirect_diffuse_stats, pix, vec4(indirect_diff_mean, indirect_diff_var, 0.0, 0.0));
+}

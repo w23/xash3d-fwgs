@@ -1,0 +1,9 @@
+#version 460
+
+#define SH_BLUR_INPUT_1 temporal_gi_sh1
+#define SH_BLUR_INPUT_2 temporal_gi_sh2
+#define SH_BLUR_OUTPUT_1 out_sh1_blur_intermediate
+#define SH_BLUR_OUTPUT_2 out_sh2_blur_intermediate
+#define SH_BLUR_RADIUS 8.0
+#define SH_BLUR_ROTATION mat2(1.0)
+#include "rotated_bilateral_blur.glsl"
