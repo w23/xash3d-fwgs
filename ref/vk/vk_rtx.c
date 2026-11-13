@@ -211,6 +211,9 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 	ret.res[1] = frame_height;
 	ret.ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ret.skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
+	// Keep clamp bounds positive and ordered, including for invalid cvar input.
+	ret.auto_exposure_min = bound(1.f / 16777216.f, rt_auto_exposure_min->value, 16777216.f);
+	ret.auto_exposure_max = bound(ret.auto_exposure_min, rt_auto_exposure_max->value, 16777216.f);
 
 	if (g_rtx.uniform.current.res[0] != frame_width || g_rtx.uniform.current.res[1] != frame_height)
 		g_rtx.discontinuity = true;

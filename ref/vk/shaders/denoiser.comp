@@ -20,6 +20,18 @@ layout(set = 0, binding = 8, rgba16f) uniform readonly image2D direct_specular;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image2D indirect_diffuse_denoised_by_sh;
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D temporal_indirect_specular;
 layout(set = 0, binding = 11, rgba16f) uniform readonly image2D heitz_noise_blurred;
+layout(set = 0, binding = 12, rgba32f) uniform image2D out_temporal_exposure;
+layout(set = 0, binding = 13, rgba32f) uniform readonly image2D prev_temporal_exposure;
+
+vec4 loadExposureTemporalData(ivec2 pix) {
+	return imageLoad(prev_temporal_exposure, pix);
+}
+
+void storeExposureTemporalData(ivec2 pix, vec4 value) {
+	imageStore(out_temporal_exposure, pix, value);
+}
+
+#include "auto_exposure.glsl"
 
 struct Components {
     vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
@@ -38,6 +50,7 @@ void main() {
 	const ivec2 pix = ivec2(gl_GlobalInvocationID);
 
 	if (any(greaterThanEqual(pix, res))) {
+		// Auto-exposure barriers run only in full 8x8 workgroups.
 		return;
 	}
 
@@ -137,6 +150,10 @@ void main() {
 	colour += imageLoad(emissive, pix).rgb;
 	// Revealage. TODO: which colorspace?
 	colour *= legacy_blend.a;
+
+	const float exposure = readAutoExposure(res);
+	updateAutoExposureTemporalData(res, pix, colour);
+	colour *= exposure;
 
 	colour = LINEARtoSRGB(colour);
 

@@ -234,6 +234,10 @@ struct UniformBuffer {
 	uint blue_noise_2d_texture;
 	uint bounce_count;
 	uint lightcache_init_frame;
+
+	float auto_exposure_min;
+	float auto_exposure_max;
+	PAD(2)
 };
 
 #undef PAD
