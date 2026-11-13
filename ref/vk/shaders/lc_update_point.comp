@@ -1,0 +1,81 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_shader_16bit_storage : require
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+#define RAY_QUERY
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_lc_point;
+
+#include "lc_update_common.glsl"
+
+vec3 pointRadiance(PointLight l, vec3 P, vec3 N)
+{
+    vec3 axis;
+    float omega;
+    float distance = 10000.0;
+
+    if (l.environment != 0u) {
+        axis = normalize(l.dir_stopdot2.xyz);
+        omega = 2.0 * kPi * max(1.0 - l.dir_stopdot2.w, 0.0);
+    } else {
+        vec3 d = l.origin_r2.xyz - P;
+        float d2 = dot(d, d);
+        if (d2 <= l.origin_r2.w || d2 < 1e-8)
+            return vec3(0);
+
+        distance = sqrt(d2);
+        axis = d / distance;
+
+        // Stable 1-sqrt(1-x), including small distant lights.
+        float x = clamp(l.origin_r2.w / d2, 0.0, 1.0);
+        omega = 2.0 * kPi * x / (1.0 + sqrt(1.0 - x));
+    }
+
+    // Deterministic center direction; retain the source's solid-angle intensity.
+    vec3 L = axis;
+    float spot = 1.0;
+    if (l.environment == 0u && l.color_stopdot.w > l.dir_stopdot2.w)
+        spot =
+            clamp((dot(-L, l.dir_stopdot2.xyz) - l.dir_stopdot2.w) / (l.color_stopdot.w - l.dir_stopdot2.w), 0.0, 1.0);
+
+    vec3 c = lcDiffuse(l.color_stopdot.rgb * omega * spot, N, L);
+    if (lcWeight(c) == 0.0)
+        return vec3(0);
+
+    bool blocked = l.environment != 0u ? shadowedSky(P, L) : shadowed(P, L, distance);
+
+    return blocked ? vec3(0) : c;
+}
+
+void updatePixel(ivec2 pix)
+{
+    ivec2 res = ivec2(LIGHTCACHE_SIDE);
+    vec3 value = vec3(0);
+    uint index = lightcacheIndex(pix);
+
+    if (lightcacheInCapacity(index, res) && !lightcacheUpdateDisabled()) {
+        vec3 P, N;
+        lightcacheSurface(index, P, N);
+
+        uint cluster;
+        if (lcLoadCluster(P, cluster)) {
+            uint count = min(uint(light_grid.clusters_[cluster].num_point_lights), MAX_VISIBLE_POINT_LIGHTS);
+
+            for (uint j = 0u; j < count; ++j) {
+                uint id = uint(light_grid.clusters_[cluster].point_lights[j]);
+                if (id >= lights.m.num_point_lights)
+                    continue;
+
+                value += pointRadiance(lights.m.point_lights[id], P, N);
+            }
+        }
+    }
+
+    imageStore(out_lc_point, pix, vec4(clamp(value, vec3(0), vec3(65504)), 0));
+}

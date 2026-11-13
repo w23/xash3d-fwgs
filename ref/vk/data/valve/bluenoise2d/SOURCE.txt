@@ -1,0 +1,23 @@
+joint_uv_128.png: generated from scratch for this repository.
+No source images or external texture values were used.
+
+Reproduce: python scripts/generate-shadow-noise.py
+Offline dependencies: numpy, scipy, pillow, numba. Seed: 20261110.
+R/G: new 128x128 stratified UV set with independent quantized jitter;
+whole pairs rearranged by 12000000 annealed swaps. Objective: Gaussian
+spatial covariance of 64 binary UV/barycentric visibility functions.
+B: new uniform 8-bit selector (64 instances of each value), independently
+optimized by 6000000 swaps against 64 scalar threshold functions.
+A: constant 255. Output: static 128x128 linear RGBA8.
+
+Algorithmic inspiration (not copied texture content or a verbatim port):
+Georgiev and Fajardo, Blue-noise Dithered Sampling, SIGGRAPH 2016.
+https://iliyan.com/publications/DitheredSampling/
+
+Validation: a separate 256-function suite with seed 991237.
+Gamma barycentric spatial RMSE at sigma 1/2/4:
+0.07080042 / 0.02993503 / 0.01455548.
+Relative to this generator's initial unoptimized stratified arrangement:
+0.56677829 / 0.47955047 / 0.46442793.
+These synthetic tests measure spatial error about the empirical mean,
+not game-scene quality or integration bias. No universal quality guarantee.

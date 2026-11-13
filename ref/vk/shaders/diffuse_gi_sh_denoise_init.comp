@@ -1,67 +1,92 @@
 #version 460
 
-#include "noise.glsl"
 #include "utils.glsl"
-#include "brdf.h"
 #include "denoiser_config.glsl"
-#include "denoiser_utils.glsl"
 #include "spherical_harmonics.glsl"
-#include "color_spaces.glsl"
+#include "reconstruction_poisson.glsl"
 
-#define GI_LIMIT_LUMINANCE 1.0 // aggressive and dumb removing fireflyes
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rgba16f) uniform image2D out_sh1_ping;
-layout(set = 0, binding = 1, rgba16f) uniform image2D out_sh2_ping;
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_sh1_ping;
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D out_sh2_ping;
 
-layout(set = 0, binding = 2, rgba8) uniform readonly image2D base_color_a;
-layout(set = 0, binding = 3, rgba32f) uniform readonly image2D position_t;
-layout(set = 0, binding = 4, rgba16f) uniform readonly image2D indirect_diffuse;
+layout(set = 0, binding = 2) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D firefly_filtered_diffuse;
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D first_bounce_direction;
+layout(set = 0, binding = 6, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D normals_gs;
+
+const float GI_RECONSTRUCTION_RADIUS = 16.0;
+const float GI_RECONSTRUCTION_MIN_NORMAL_DOT = 0.9;
+const float GI_RECONSTRUCTION_DEPTH_FRACTION = 0.01;
+
+bool onSameSurface(ivec2 sample_pix, vec4 center, vec3 normal) {
+	const ivec2 primary_pix = sample_pix * GI_DOWNSAMPLE;
+	const vec4 sample_position = imageLoad(position_t, primary_pix);
+	// Measure depth relative to the center's tangent plane so sloped surfaces can gather.
+	const float plane_distance = abs(dot(sample_position.xyz - center.xyz, normal));
+	if (sample_position.w <= 0.0 || plane_distance > center.w * GI_RECONSTRUCTION_DEPTH_FRACTION)
+		return false;
+
+	const vec3 sample_normal = normalDecode(imageLoad(normals_gs, primary_pix).xy);
+	return dot(normal, sample_normal) >= GI_RECONSTRUCTION_MIN_NORMAL_DOT;
+}
+
+SH readBounceSH(ivec2 sample_pix) {
+	const vec3 radiance = imageLoad(firefly_filtered_diffuse, sample_pix).rgb;
+	const vec3 direction = imageLoad(first_bounce_direction, sample_pix).xyz;
+	const float direction_length = length(direction);
+	if (!(direction_length > 0.0) || isinf(direction_length) ||
+		any(isnan(radiance)) || any(isinf(radiance)))
+		return SH(vec4(0.0), vec2(0.0));
+
+	return irradiance_to_SH(radiance, direction / direction_length);
+}
 
 void main() {
-	ivec2 res = ivec2(imageSize(base_color_a));
-	ivec2 pix = ivec2(gl_GlobalInvocationID);
+	const ivec2 res = ubo.ubo.res;
+	const ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
 
-	if (any(greaterThanEqual(pix, res))) {
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_DENOISE_GI_BY_SH) == 0 ||
+		any(greaterThanEqual(pix, res))) {
 		return;
 	}
 
-	if (any(lessThan(pix, res / GI_DOWNSAMPLE))) {
-		vec3 global_illumination = FIX_NAN(imageLoad(indirect_diffuse, pix)).rgb;
-
-		// limit irradiance for fireflyes reducion
-		float gi_lum = luminance(global_illumination);
-		if (gi_lum > 0.) {
-			float limit = smoothstep(0., GI_LIMIT_LUMINANCE, gi_lum);
-			global_illumination = mix(global_illumination, global_illumination / gi_lum, limit);
-		}
-
-		vec4 gi_sh1 = vec4(0.);
-		vec2 gi_sh2 = vec2(0.);
-
-		// store indirectional light in spherical harmonics
-		if (any(greaterThan(global_illumination.rgb, vec3(0.)))) {
-			const vec3 indirect_color = global_illumination.rgb * STORAGE_SCALE_LF;
-			const vec3 direction = FIX_NAN(imageLoad(first_bounce_direction, pix)).xyz;
-
-			if (length(direction) > 0.) {
-				SH low_freq = irradiance_to_SH(indirect_color, normalize(direction));
-				gi_sh1 = low_freq.shY;
-				gi_sh2 = low_freq.CoCg;
-			}
-		}
-
-		for(int x = 0; x < GI_DOWNSAMPLE; x++) {
-			for(int y = 0; y < GI_DOWNSAMPLE; y++) {
-				const ivec2 pix_upscaled = pix * GI_DOWNSAMPLE + ivec2(x,y);
-				if (any(greaterThanEqual(pix_upscaled, res)))
+	const ivec2 bounce_res = res / GI_DOWNSAMPLE;
+	SH sum = SH(vec4(0.0), vec2(0.0));
+	int count = 0;
+	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_GI_POISSON) == 0u) {
+		const ivec2 center_sample = pix / GI_DOWNSAMPLE;
+		if (all(lessThan(center_sample, bounce_res)))
+			sum = readBounceSH(center_sample);
+	} else if (all(greaterThan(bounce_res, ivec2(0)))) {
+		const vec4 center = imageLoad(position_t, pix);
+		if (center.w > 0.0) {
+			const vec3 normal = normalDecode(imageLoad(normals_gs, pix).xy);
+			for (int i = 0; i < reconstruction_poisson.length(); ++i) {
+				const vec2 screen_sample = vec2(pix) + GI_RECONSTRUCTION_RADIUS * reconstruction_poisson[i].xy;
+				const ivec2 sample_pix = ivec2(round(screen_sample / float(GI_DOWNSAMPLE)));
+				if (any(lessThan(sample_pix, ivec2(0))) || any(greaterThanEqual(sample_pix, bounce_res)) ||
+					!onSameSurface(sample_pix, center, normal))
 					continue;
 
-				imageStore(out_sh1_ping, pix_upscaled, gi_sh1);
-				imageStore(out_sh2_ping, pix_upscaled, vec4(gi_sh2, 0., 0.));
+				accumulate_SH(sum, readBounceSH(sample_pix), 1.0);
+				++count;
+			}
+
+			if (count == 0) {
+				const ivec2 center_sample = min(pix / GI_DOWNSAMPLE, bounce_res - 1);
+				if (onSameSurface(center_sample, center, normal))
+					sum = readBounceSH(center_sample);
 			}
 		}
 	}
+
+	const float inv_count = 1.0 / float(max(count, 1));
+	imageStore(out_sh1_ping, pix, sum.shY * inv_count);
+	imageStore(out_sh2_ping, pix, vec4(sum.CoCg * inv_count, 0.0, 0.0));
 }

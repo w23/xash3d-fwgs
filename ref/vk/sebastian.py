@@ -426,7 +426,8 @@ class Resources:
 
 		if index >= 0:
 			res = self.__storage.getByIndex(index)
-			res.checkSameTypeNode(node)
+			if node is not None:
+				res.checkSameTypeNode(node)
 			return index
 
 		return self.__storage.put(name, self.Resource(name, node, dependency))

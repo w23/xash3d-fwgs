@@ -1,0 +1,20 @@
+#version 460
+#include "utils.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D out_direct_diffuse;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D out_direct_specular;
+#include "heitz_shadow_vertical.glsl"
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (!heitzInside(p, ubo.ubo.res)) return;
+    vec3 diffuse, specular;
+    heitzDirect(ubo.ubo.res, p, diffuse, specular);
+    imageStore(out_direct_diffuse, p, vec4(diffuse, 0));
+    imageStore(out_direct_specular, p, vec4(specular, 0));
+}

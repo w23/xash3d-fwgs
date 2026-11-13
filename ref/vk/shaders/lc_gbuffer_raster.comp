@@ -1,0 +1,150 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_shader_16bit_storage : require
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 2) uniform UBO
+{
+    UniformBuffer ubo;
+} ubo;
+layout(set = 0, binding = 34, rgba32f) uniform readonly image2D lc_brush_surfaces;
+
+struct LightcacheSurface
+{
+    uint vertex_offset;
+    uint index_offset;
+    uint index_count;
+    uint brush;
+};
+
+layout(set = 0, binding = 32, std430) readonly buffer Indices
+{
+    uint16_t a[];
+} indices;
+layout(set = 0, binding = 33, std430) readonly buffer Vertices
+{
+    Vertex a[];
+} vertices;
+
+layout(set = 0, binding = 20, rgba32f) uniform writeonly image2D out_lc_local_position;
+layout(set = 0, binding = 21, rgba32f) uniform writeonly image2D out_lc_local_normal;
+
+float cross2(vec2 a, vec2 b)
+{
+    return a.x * b.y - a.y * b.x;
+}
+
+vec3 closestBarycentric(vec2 p, vec2 a, vec2 b, vec2 c)
+{
+    float area = cross2(b - a, c - a);
+    vec3 bary = vec3(cross2(b - p, c - p), cross2(c - p, a - p), cross2(a - p, b - p)) / area;
+    if (all(greaterThanEqual(bary, vec3(0))))
+        return bary;
+
+    vec2 v[3] = vec2[3](a, b, c);
+    vec3 best = vec3(1, 0, 0);
+    float distance2 = 1e30;
+
+    for (int i = 0; i < 3; ++i) {
+        int j = (i + 1) % 3;
+        vec2 edge = v[j] - v[i];
+
+        float t = clamp(dot(p - v[i], edge) / max(dot(edge, edge), 1e-20), 0.0, 1.0);
+        vec2 d = mix(v[i], v[j], t) - p;
+
+        if (dot(d, d) < distance2) {
+            distance2 = dot(d, d);
+            best = vec3(0);
+            best[i] = 1.0 - t;
+            best[j] = t;
+        }
+    }
+
+    return best;
+}
+
+void rasterizeTexel(LightcacheSurface k, uint id, ivec2 pix)
+{
+    vec4 position = vec4(0), normal = vec4(0);
+    vec2 sample_position = vec2(pix) + 0.5;
+    float best = 1e30;
+
+    for (uint i = 0u; i + 2u < k.index_count; i += 3u) {
+        Vertex a = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i])];
+        Vertex b = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i + 1u])];
+        Vertex c = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i + 2u])];
+
+        vec2 u = a.lm_tc * 512.0, v = b.lm_tc * 512.0, w = c.lm_tc * 512.0;
+        if (abs(cross2(v - u, w - u)) < 1e-10)
+            continue;
+
+        vec3 bary = closestBarycentric(sample_position, u, v, w);
+        vec2 delta = u * bary.x + v * bary.y + w * bary.z - sample_position;
+        vec3 n = cross(b.pos - a.pos, c.pos - a.pos);
+        if (dot(delta, delta) >= best || dot(n, n) < 1e-12)
+            continue;
+
+        best = dot(delta, delta);
+
+        // Match the surface orientation, even when UV winding is mirrored.
+        if (dot(n, a.normal + b.normal + c.normal) < 0.0)
+            n = -n;
+
+        position = vec4(a.pos * bary.x + b.pos * bary.y + c.pos * bary.z, float(id + 1u));
+        normal = vec4(normalize(n), float(k.brush));
+    }
+
+    imageStore(out_lc_local_position, pix, position);
+    imageStore(out_lc_local_normal, pix, normal);
+}
+
+void main()
+{
+    if (ubo.ubo.lightcache_init_frame != ubo.ubo.frame_counter)
+        return;
+
+    uint stride = gl_NumWorkGroups.x * 8u * gl_NumWorkGroups.y * 8u;
+    uint invocation = gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * 8u) + gl_GlobalInvocationID.x;
+
+    uint count = uint(imageLoad(lc_brush_surfaces, ivec2(0)).x);
+    int width = imageSize(lc_brush_surfaces).x;
+
+    for (uint id = invocation; id < count; id += stride) {
+        vec4 data = imageLoad(lc_brush_surfaces, ivec2((id + 1u) % uint(width), (id + 1u) / uint(width)));
+        LightcacheSurface k = LightcacheSurface(uint(data.x), uint(data.y), uint(data.z), uint(data.w));
+
+        vec2 lo = vec2(1e30), hi = vec2(-1e30);
+        bool valid = false;
+
+        for (uint i = 0u; i + 2u < k.index_count; i += 3u) {
+            vec2 a = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i])].lm_tc * 512.0;
+            vec2 b = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i + 1u])].lm_tc * 512.0;
+            vec2 c = vertices.a[k.vertex_offset + uint(indices.a[k.index_offset + i + 2u])].lm_tc * 512.0;
+
+            float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            if (abs(area) < 1e-10)
+                continue;
+
+            lo = min(lo, min(a, min(b, c)));
+            hi = max(hi, max(a, max(b, c)));
+            valid = true;
+        }
+
+        if (!valid)
+            continue;
+
+        // Own only texel centers inside this surface's LM rectangle. Adjacent
+        // islands must not expand their writes into the same half-size texel.
+        // A single invocation handles the whole surface, including shared edges.
+        ivec2 first = max(ivec2(ceil(lo - 0.5)), ivec2(0));
+        ivec2 last = min(ivec2(floor(hi - 0.5)), ivec2(511));
+
+        for (int y = first.y; y <= last.y; ++y)
+            for (int x = first.x; x <= last.x; ++x)
+                rasterizeTexel(k, id, ivec2(x, y));
+    }
+}

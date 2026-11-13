@@ -9,6 +9,7 @@
 #include "vk_core.h"
 #include "vk_cvar.h"
 #include "vk_light.h"
+#include "vk_brush.h"
 #include "vk_math.h"
 #include "vulkan/VMeatpipe.h"
 #include "vk_ray_internal.h"
@@ -48,10 +49,13 @@ static struct {
 	struct vk_meatpipe_s *meatpipe;
 	rt_resource_t *meatpipe_out;
 
+	matrix4x4 prev_proj, prev_view;
 	matrix4x4 prev_inv_proj, prev_inv_view;
 
 	qboolean reload_pipeline;
 	qboolean discontinuity;
+	qboolean lightcache_needs_init;
+	uint32_t lightcache_init_frame;
 
 	int max_frame_width, max_frame_height;
 
@@ -69,6 +73,7 @@ static struct {
 void VK_RayNewMapBegin( void ) {
 	// TODO it seems like these are unnecessary leftovers. Moreover, they are actively harmful,
 	// as they recreate things that are in fact pretty much static. Untangle this.
+	g_rtx.lightcache_needs_init = true;
 	RT_VkAccelNewMap();
 	RT_RayModel_Clear();
 }
@@ -105,6 +110,10 @@ static void parseDebugDisplayValue( void ) {
 	X(MATERIAL, "red = roughness, green = metalness") \
 	X(DIFFUSE, "direct + indirect diffuse, spatially denoised") \
 	X(SPECULAR, "direct + indirect specular, spatially denoised") \
+	X(SHADOW_DIFF, "Heitz filtered diffuse visibility") \
+	X(SHADOW_SPEC, "Heitz filtered specular visibility") \
+	X(SHADOW_SIGMA_DIFF, "Heitz diffuse filter sigma, white = maximum") \
+	X(SHADOW_SIGMA_SPEC, "Heitz specular filter sigma, white = maximum") \
 
 #define X(suffix, info) \
 	if (0 == Q_stricmp(cvalue, #suffix)) { \
@@ -168,12 +177,17 @@ static void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, c
 	const size_t ubo_slot_offset = (ctx->frame_sequence % MAX_FRAMES_IN_FLIGHT) * g_rtx.uniform.unit_size;
 	struct UniformBuffer *const ubo = PTR_CAST(struct UniformBuffer, (char*)g_rtx.uniform.buffer.mapped + ubo_slot_offset);
 	g_rtx.uniform.resource->offset = ubo_slot_offset;
-	ubo->frame_counter = ctx->frame_sequence;
 	memcpy(ubo, &g_rtx.uniform.current, sizeof(struct UniformBuffer));
+	ubo->frame_counter = ctx->frame_sequence;
 }
 
 static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args_t *args, float fov_angle_y, int frame_width, int frame_height ) {
-	struct UniformBuffer ret;
+	struct UniformBuffer ret = {0};
+	ret.blue_noise_2d_texture = (uint32_t)tglob.blueNoise2DTexture;
+	ret.bounce_count = (uint32_t)bound(0, (int)rt_bounces->value, 64);
+	ret.lightcache_init_frame = g_rtx.lightcache_init_frame;
+	Matrix4x4_ToArrayFloatGL(*args->view, (float*)ret.view);
+	Matrix4x4_ToArrayFloatGL(*args->projection, (float*)ret.proj);
 	matrix4x4 proj_inv, view_inv;
 	Matrix4x4_Invert_Full(proj_inv, *args->projection);
 	Matrix4x4_ToArrayFloatGL(proj_inv, (float*)ret.inv_proj);
@@ -184,8 +198,12 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 	Matrix4x4_ToArrayFloatGL(view_inv, (float*)ret.inv_view);
 
 	// previous frame matrices
+	Matrix4x4_ToArrayFloatGL(g_rtx.prev_proj, (float*)ret.prev_proj);
+	Matrix4x4_ToArrayFloatGL(g_rtx.prev_view, (float*)ret.prev_view);
 	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_proj, (float*)ret.prev_inv_proj);
 	Matrix4x4_ToArrayFloatGL(g_rtx.prev_inv_view, (float*)ret.prev_inv_view);
+	Matrix4x4_Copy(g_rtx.prev_proj, *args->projection);
+	Matrix4x4_Copy(g_rtx.prev_view, *args->view);
 	Matrix4x4_Copy(g_rtx.prev_inv_view, view_inv);
 	Matrix4x4_Copy(g_rtx.prev_inv_proj, proj_inv);
 
@@ -193,6 +211,20 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 	ret.res[1] = frame_height;
 	ret.ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ret.skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
+
+	if (g_rtx.uniform.current.res[0] != frame_width || g_rtx.uniform.current.res[1] != frame_height)
+		g_rtx.discontinuity = true;
+
+	// A change of signal representation must not blend in the previous mode.
+	cvar_t *const temporal_settings[] = {vk_gi_sh_blur, rt_gi_sh_temporal,
+		rt_gi_poisson, rt_denoise_gi_by_sh, rt_separated_reflection, rt_disable_reprojection,
+		rt_disable_gi, rt_spatial_reconstruction, rt_bounces};
+	for (size_t i = 0; i < sizeof(temporal_settings) / sizeof(temporal_settings[0]); ++i) {
+		if (temporal_settings[i]->flags & FCVAR_CHANGED) {
+			temporal_settings[i]->flags &= ~FCVAR_CHANGED;
+			g_rtx.discontinuity = true;
+		}
+	}
 
 	parseDebugDisplayValue();
 	if (g_rtx.debug.rt_debug_display_only_value) {
@@ -211,7 +243,12 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 						  SET_RENDERER_FLAG(rt_separated_reflection, RENDERER_FLAG_SEPARATED_REFLECTION) |
 						  SET_RENDERER_FLAG(rt_denoise_gi_by_sh, RENDERER_FLAG_DENOISE_GI_BY_SH) |
 						  SET_RENDERER_FLAG(rt_disable_gi, RENDERER_FLAG_DISABLE_GI) |
-						  SET_RENDERER_FLAG(rt_spatial_reconstruction, RENDERER_FLAG_SPATIAL_RECONSTRUCTION);
+						  SET_RENDERER_FLAG(rt_spatial_reconstruction, RENDERER_FLAG_REFLECTION_RECONSTRUCTION) |
+						  SET_RENDERER_FLAG(rt_gi_poisson, RENDERER_FLAG_GI_POISSON) |
+						  SET_RENDERER_FLAG(vk_gi_sh_blur, RENDERER_FLAG_GI_SH_BLUR) |
+						  SET_RENDERER_FLAG(rt_gi_sh_temporal, RENDERER_FLAG_GI_SH_TEMPORAL) |
+						  SET_RENDERER_FLAG(rt_disable_reprojection, RENDERER_FLAG_DISABLE_REPROJECTION) |
+						  RENDERER_FLAG_FIREFLY_REJECTION;
 #undef SET_RENDERER_FLAG
 
 	return ret;
@@ -229,6 +266,10 @@ static r_vk_image_t* performTracing( vk_combuf_t *combuf, const perform_tracing_
 	APROF_SCOPE_DECLARE_BEGIN(perform, __FUNCTION__);
 	const VkCommandBuffer cmdbuf = combuf->cmdbuf;
 	DEBUG_BEGIN(cmdbuf, "yay tracing");
+
+	if (R_BrushPrepareLightcache(combuf, g_rtx.lightcache_needs_init))
+		g_rtx.lightcache_init_frame = args->frame_counter;
+	g_rtx.lightcache_needs_init = false;
 
 	g_rtx.uniform.current = prepareUniformBuffer(args->render_args, args->fov_angle_y, args->frame_width, args->frame_height);
 
@@ -269,6 +310,7 @@ static qboolean reloadMeatpipe(void) {
 	destroyMeatpipe();
 
 	g_rtx.meatpipe = newpipe;
+	g_rtx.lightcache_needs_init = true;
 	g_rtx.meatpipe_out = R_VkResourceFindByName("dest");
 	ASSERT(g_rtx.meatpipe_out);
 
@@ -308,6 +350,7 @@ static void reloadOrResizeIfNeeded(const vk_ray_frame_render_args_t* args) {
 		if (!R_VkMeatpipeAcquireResources(g_rtx.meatpipe, g_rtx.max_frame_width, g_rtx.max_frame_height)) {
 			ERR("Unable to reacquire resources and resize RT framebuffer. Bad things will happen.");
 		}
+		g_rtx.lightcache_needs_init = true;
 		need_resize = false;
 	}
 
@@ -414,6 +457,7 @@ qboolean VK_RayInit( void )
 		return false;
 	}
 
+	R_BrushPrepareLightcache(NULL, true);
 	reloadMeatpipe();
 	if (!g_rtx.meatpipe)
 		return false;
@@ -440,6 +484,7 @@ void VK_RayShutdown( void ) {
 	ASSERT(vk_core.rtx);
 
 	destroyMeatpipe();
+	R_BrushLightcacheShutdown();
 
 	RT_KusochkiShutdown();
 	VK_BufferDestroy(&g_rtx.uniform.buffer);

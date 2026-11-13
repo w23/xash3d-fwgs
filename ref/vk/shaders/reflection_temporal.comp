@@ -1,0 +1,7 @@
+#version 460
+#define INDIRECT_TEMPORAL_INPUT reflection_reused_specular
+#define INDIRECT_TEMPORAL_HISTORY prev_temporal_indirect_specular
+#define INDIRECT_TEMPORAL_STATS prev_temporal_indirect_specular_stats
+#define INDIRECT_TEMPORAL_OUTPUT out_temporal_indirect_specular
+#define INDIRECT_TEMPORAL_OUTPUT_STATS out_temporal_indirect_specular_stats
+#include "indirect_temporal.glsl"

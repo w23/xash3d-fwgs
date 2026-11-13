@@ -13,6 +13,8 @@
 #include "vk_logs.h"
 #include "std/profiler.h"
 #include "std/arrays.h"
+#include "vulkan/VResource.h"
+#include "vulkan/VBarrier.h"
 
 #include <math.h>
 #include <memory.h>
@@ -1833,6 +1835,179 @@ static qboolean createRenderModel( const model_t *mod, vk_brush_model_t *bmodel,
 	}
 
 	return true;
+}
+
+// All CPU light-cache preparation lives here. Positions and normals are
+// rasterized separately on the GPU by lc_gbuffer_raster.comp.
+enum {
+	LIGHTCACHE_ENTITY_STATIC = -2,
+	LIGHTCACHE_ENTITY_UNBOUND = -1,
+	LIGHTCACHE_SURFACE_TABLE_WIDTH = 512,
+	// Reserve the first texel for the surface count.
+	LIGHTCACHE_SURFACE_TABLE_HEIGHT = (MAX_MAP_FACES + 1 + LIGHTCACHE_SURFACE_TABLE_WIDTH - 1) / LIGHTCACHE_SURFACE_TABLE_WIDTH,
+};
+
+typedef struct {
+	int entity_index;
+	const xvk_mapent_func_any_t *patch;
+} lightcache_brush_binding_t;
+
+static struct {
+	rt_resource_dummy_t surface_resource;
+	r_vk_image_t surfaces;
+	vec4_t *surface_data;
+	vk_buffer_t transforms;
+	vk_resource_buffer_t *transform_resource;
+	lightcache_brush_binding_t bindings[MAX_MODELS];
+	int brush_count;
+} lc_brush;
+
+qboolean R_BrushPrepareLightcache(vk_combuf_t *combuf, qboolean reinitialize)
+{
+	const uint32_t surface_data_size = LIGHTCACHE_SURFACE_TABLE_WIDTH * LIGHTCACHE_SURFACE_TABLE_HEIGHT * sizeof(vec4_t);
+
+	// Register persistent inputs before loading the render graph. Their lifetime
+	// spans graph reloads; R_BrushLightcacheShutdown releases them at shutdown.
+	if (!lc_brush.surfaces.image) {
+		lc_brush.surfaces = R_VkImageCreate(&(r_vk_image_create_t){
+			.debug_name = "lc_brush_surfaces",
+			.width = LIGHTCACHE_SURFACE_TABLE_WIDTH,
+			.height = LIGHTCACHE_SURFACE_TABLE_HEIGHT,
+			.depth = 1, .mips = 1, .layers = 1,
+			.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		});
+		lc_brush.surface_data = Mem_Calloc(vk_core.pool, surface_data_size);
+		R_VkResourceDummyInit(&lc_brush.surface_resource, "lc_brush_surfaces", VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			(vk_descriptor_value_t){.image = {
+				.imageView = lc_brush.surfaces.view,
+				.imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+			}});
+		lc_brush.surface_resource.header.refcount = 1;
+		ASSERT(R_VkResourceRegister(&lc_brush.surface_resource.header));
+
+		if (!VK_BufferCreate("lc_brush_transforms", &lc_brush.transforms, MAX_MODELS * sizeof(matrix3x4),
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+			gEngine.Host_Error("Cannot allocate light cache brush transforms\n");
+		}
+		lc_brush.transform_resource = R_VkBufferRegisterAsResource((r_vkbuffer_register_as_resource_t){
+			.name = "lc_brush_transforms", .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.buffer = &lc_brush.transforms, .size = lc_brush.transforms.size,
+			.producer = lc_brush.surface_resource.header.producer,
+		});
+		reinitialize = true;
+	}
+	if (!combuf) return reinitialize;
+
+	// Level data: stable brush IDs, entity bindings and surface geometry ranges.
+	// Re-upload only when the G-buffer must be initialized.
+	const int brush_count = g_brush.models_count;
+	const qboolean rebuild_surfaces = reinitialize || lc_brush.brush_count != brush_count;
+	if (rebuild_surfaces) {
+		uint32_t surface_count = 0;
+		for (int brush_id = 0; brush_id < brush_count; ++brush_id) {
+			const vk_brush_model_t *brush = g_brush.models[brush_id];
+			const model_t *model = brush->engine_model;
+			lightcache_brush_binding_t *binding = lc_brush.bindings + brush_id;
+			binding->patch = getModelFuncAnyPatch(model);
+			const qboolean has_fixed_transform = model == WORLDMODEL ||
+				(binding->patch && binding->patch->origin_patched);
+			binding->entity_index = has_fixed_transform ? LIGHTCACHE_ENTITY_STATIC : LIGHTCACHE_ENTITY_UNBOUND;
+			if (!model->lightdata) continue;
+
+			for (int geometry_index = 0; geometry_index < brush->render_model.num_geometries; ++geometry_index) {
+				const vk_render_geometry_t *geometry = brush->render_model.geometries + geometry_index;
+				const msurface_t *surface = geometry->surf_deprecate;
+				if (!surface || surface->lightmaptexturenum != 0 || FBitSet(surface->flags, SURF_DRAWTILED) ||
+					geometry->element_count < 3) continue;
+				if (surface_count >= MAX_MAP_FACES) {
+					gEngine.Host_Error("Too many light cache surfaces\n");
+				}
+				// RGBA32F stores numeric offsets, so each integer must be exact in float32.
+				ASSERT(geometry->vertex_offset >= 0 && geometry->vertex_offset < (1 << 24));
+				ASSERT(geometry->index_offset >= 0 && geometry->index_offset < (1 << 24));
+				ASSERT(geometry->element_count < (1u << 24));
+				vec4_t *record = lc_brush.surface_data + 1 + surface_count;
+				Vector4Set(*record, geometry->vertex_offset, geometry->index_offset, geometry->element_count, brush_id);
+				++surface_count;
+			}
+		}
+		Vector4Set(lc_brush.surface_data[0], surface_count, 0, 0, 0);
+		lc_brush.brush_count = brush_count;
+
+		Barrier before_upload = barrierMake(VK_PIPELINE_STAGE_2_TRANSFER_BIT);
+		barrierAddImage(&before_upload, (r_vkcombuf_barrier_image_t){
+			.image = &lc_brush.surfaces, .layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			.access = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+		});
+		barrierCommit(&before_upload, combuf);
+		R_VkImageUploadBegin(&lc_brush.surfaces);
+		R_VkImageUploadSlice(&lc_brush.surfaces, 0, 0, surface_data_size, lc_brush.surface_data);
+		R_VkImageUploadEnd(&lc_brush.surfaces);
+		R_VkImageUploadCommit(combuf, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+		Barrier after_upload = barrierMake(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		barrierAddImage(&after_upload, (r_vkcombuf_barrier_image_t){
+			.image = &lc_brush.surfaces, .layout = VK_IMAGE_LAYOUT_GENERAL,
+			.access = VK_ACCESS_2_SHADER_READ_BIT,
+		});
+		barrierCommit(&after_upload, combuf);
+	}
+
+	// Frame data: write one affine transform per brush directly into staging,
+	// including brushes absent from the current draw/TLAS list.
+	if (!brush_count) return rebuild_surfaces;
+	const uint32_t transform_size = brush_count * sizeof(matrix3x4);
+	const vk_buffer_locked_t transform_lock = R_VkBufferLock(&lc_brush.transforms,
+		(vk_buffer_lock_t){.offset = 0, .size = transform_size});
+	ASSERT(transform_lock.ptr);
+	matrix3x4 *const transforms = transform_lock.ptr;
+	for (int brush_id = 0; brush_id < brush_count; ++brush_id) {
+		const model_t *model = g_brush.models[brush_id]->engine_model;
+		lightcache_brush_binding_t *binding = lc_brush.bindings + brush_id;
+
+		// Reuse the level binding. Retry only an unresolved or replaced entity.
+		if (binding->entity_index != LIGHTCACHE_ENTITY_STATIC && globals.entities) {
+			const int entity_index = binding->entity_index;
+			const qboolean entity_is_bound = entity_index >= 0 && (uint32_t)entity_index < globals.max_entities &&
+				globals.entities[entity_index].model == model;
+			if (!entity_is_bound) {
+				binding->entity_index = LIGHTCACHE_ENTITY_UNBOUND;
+				for (uint32_t entity_id = 1; entity_id < globals.max_entities; ++entity_id) {
+					if (globals.entities[entity_id].model == model) {
+						binding->entity_index = (int)entity_id;
+						break;
+					}
+				}
+			}
+		}
+
+		matrix4x4 transform;
+		Matrix4x4_LoadIdentity(transform);
+		if (binding->patch && binding->patch->origin_patched) {
+			for (int axis = 0; axis < 3; ++axis) transform[axis][3] = binding->patch->origin[axis];
+		} else if (globals.entities && binding->entity_index >= 0) {
+			const cl_entity_t *entity = globals.entities + binding->entity_index;
+			Matrix4x4_CreateFromEntity(transform, entity->angles, entity->origin, 1.0f);
+		}
+		memcpy(transforms[brush_id], transform, sizeof(matrix3x4));
+	}
+	R_VkBufferUnlock(transform_lock);
+	R_VkBufferStagingCommit(&lc_brush.transforms, combuf);
+	return rebuild_surfaces;
+}
+
+void R_BrushLightcacheShutdown(void)
+{
+	lc_brush.surface_resource.header.refcount = 0;
+	if (lc_brush.transform_resource) lc_brush.transform_resource->header.refcount = 0;
+	R_VkResourcesCleanup();
+	if (lc_brush.surfaces.image) R_VkImageDestroy(&lc_brush.surfaces);
+	VK_BufferDestroy(&lc_brush.transforms);
+	if (lc_brush.surface_data) Mem_Free(lc_brush.surface_data);
+	if (lc_brush.transform_resource) Mem_Free(lc_brush.transform_resource);
+	memset(&lc_brush, 0, sizeof(lc_brush));
 }
 
 qboolean R_BrushModelLoad( model_t *mod, qboolean is_worldmodel ) {

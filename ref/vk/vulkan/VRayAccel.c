@@ -22,6 +22,11 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
+// ModelHeader reuses the existing 12 padding bytes; keep the storage-buffer ABI.
+typedef char model_header_stride_must_stay_96[(sizeof(struct ModelHeader) == 96) ? 1 : -1];
+typedef char model_header_cache_uv_offset[(offsetof(struct ModelHeader, lightmap_uv) == 88) ? 1 : -1];
+typedef char vertex_lm_offset[(offsetof(vk_vertex_t, lm_tc) == 72) ? 1 : -1];
+
 #define MAX_SCRATCH_BUFFER (128*1024*1024)
 // FIXME compute this by lazily allocating #define MAX_ACCELS_BUFFER (128*1024*1024)
 #define MAX_ACCELS_BUFFER (512*1024*1024)
@@ -397,6 +402,8 @@ static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress ge
 
 		struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
 		header->mode = instance->material_mode;
+		header->lightmap_uv_valid = instance->lightmap_uv_valid;
+		Vector2Copy(instance->lightmap_uv, header->lightmap_uv);
 		Vector4Copy(instance->color, header->color);
 		Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
 	}

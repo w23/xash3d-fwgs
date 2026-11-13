@@ -1,0 +1,23 @@
+#version 460
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#include "utils.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 3, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D out_temporal_asvgf_reproj_depth;
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(p, ubo.ubo.res))) return;
+    vec4 position = imageLoad(position_t, p);
+    vec4 metadata = vec4(0);
+    if (position.w > 0.0) {
+        float depth = length(ubo.ubo.inv_view[3].xyz - position.xyz);
+        // Source branch depth encoding: metric distance / 64 fits RGBA16F.
+        metadata = vec4(depth / 64.0, imageLoad(material_rmxx, p).r, imageLoad(normals_gs, p).zw);
+    }
+    imageStore(out_temporal_asvgf_reproj_depth, p, metadata);
+}
