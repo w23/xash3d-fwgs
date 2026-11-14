@@ -13,6 +13,7 @@ typedef struct vk_textures_global_s
 	int defaultTexture;   	// use for bad textures
 	int particleTexture;
 	int whiteTexture;
+	int blueNoise2DTexture; // static joint UV sampling mask, ordinary textures[] slot
 	int grayTexture;
 	int blackTexture;
 	int solidskyTexture;	// quake1 solid-sky layer

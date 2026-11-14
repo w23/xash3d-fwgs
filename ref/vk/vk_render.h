@@ -143,6 +143,7 @@ typedef struct {
 	// These are "consumed": copied into internal storage and can be pointers to stack vars
 	const vec4_t *color;
 	const matrix4x4 *transform, *prev_transform;
+	const vec2_t *lightmap_uv;
 
 	struct {
 		const r_vk_material_t* material;

@@ -1,0 +1,30 @@
+#version 460
+#include "utils.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+#include "heitz_shadow_common.glsl"
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D heitz_noise;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D out_heitz_noise_blurred;
+
+void main() {
+	const ivec2 p = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
+	if (!heitzInside(p, res)) return;
+	vec2 noise = vec2(0.0);
+	float count = 0.0;
+	for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x) {
+		const ivec2 tap = p + ivec2(x,y);
+		if (!heitzInside(tap, res)) continue;
+		// RMS spreads the footprint without averaging sparse edge noise away.
+		const vec2 tap_noise = imageLoad(heitz_noise, tap).rg;
+		noise += tap_noise * tap_noise;
+		count += 1.0;
+	}
+    noise = sqrt(noise / count);
+
+    imageStore(out_heitz_noise_blurred, p, vec4(noise, heitzSigma(noise) / HEITZ_MAX_SIGMA));
+}

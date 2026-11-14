@@ -1,0 +1,384 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+#define RAY_QUERY
+#define RAY_BOUNCE
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#include "lc_scene.glsl"
+layout(set = 0, binding = 7) uniform samplerCube skybox;
+layout(set = 0, binding = 10, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 12, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_indirect_specular;
+layout(set = 0, binding = 23, rgba32f) uniform writeonly image2D out_reflection_direction_pdf;
+
+// Reuse the existing primary-plane reprojection and local path ownership passes.
+layout(set = 0, binding = 17, rgba32f) uniform readonly image2D geometry_prev_position;
+layout(set = 0, binding = 40, rgba32f) uniform readonly image2D prev_temporal_reflection_path_random;
+layout(set = 0, binding = 41, rgba32f) uniform readonly image2D prev_temporal_reflection_path_reservoir;
+layout(set = 0, binding = 42, rgba32f) uniform readonly image2D prev_reflection_hit_pos;
+layout(set = 0, binding = 43, rgba32f) uniform writeonly image2D out_temporal_reflection_path_random;
+layout(set = 0, binding = 44, rgba32f) uniform writeonly image2D out_temporal_reflection_path_reservoir;
+layout(set = 0, binding = 45, rgba16f) uniform writeonly image2D out_temporal_reflection_path_normals;
+layout(set = 0, binding = 46, rgba32f) uniform writeonly image2D out_reflection_hit_pos;
+layout(set = 0, binding = 47, rgba32f) uniform readonly image2D prev_temporal_lc_reflection_hit_identity;
+layout(set = 0, binding = 48, rgba32f) uniform writeonly image2D out_temporal_lc_reflection_hit_identity;
+layout(set = 0, binding = 49, rgba16f) uniform readonly image2D prev_temporal_reflection_path_normals;
+layout(set = 0, binding = 57, rgba32f) uniform readonly image2D prev_position_t;
+layout(set = 0, binding = 58, rgba16f) uniform readonly image2D prev_normals_gs;
+layout(set = 0, binding = 59, rgba32f) uniform writeonly image2D out_reflection_reuse_radiance;
+
+#include "bounce_path_config.glsl"
+#include "reflection_path_config.glsl"
+#include "ray_primary_common.glsl"
+#include "ray_primary_hit.glsl"
+#include "ray_lightmap.glsl"
+#include "brdf.glsl"
+#include "lc_sampling.glsl"
+#include "lc_independent.glsl"
+#include "temporal_reservoir_rotation.glsl"
+#include "lc_path_common.glsl"
+
+#include "lc_reprojection.glsl"
+
+vec3 cachedHit(vec3 origin, vec3 direction, out vec4 hit, out vec4 identity, out vec3 previous_hit, bool lighting)
+{
+    hit = vec4(0);
+    identity = vec4(0);
+    previous_hit = vec3(0);
+
+    rayQueryEXT rq;
+    lcTraceRay(rq, origin, direction);
+    if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
+        return lighting ? sampleSkybox(direction) : vec3(0);
+
+    int ko =
+        rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) + rayQueryGetIntersectionGeometryIndexEXT(rq, true);
+    if (getKusok(uint(ko)).material.tex_base_color == TEX_BASE_SKYBOX)
+        return lighting ? sampleSkybox(direction) : vec3(0);
+
+    hit = vec4(origin + direction * rayQueryGetIntersectionTEXT(rq, true), rayQueryGetIntersectionTEXT(rq, true));
+    identity = vec4(float(rayQueryGetIntersectionInstanceIdEXT(rq, true) + 1),
+        float(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) +
+              rayQueryGetIntersectionGeometryIndexEXT(rq, true) + 1),
+        float(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true) + 1), 1);
+
+    Geometry geometry = readHitGeometry(rq, 0.0, rayQueryGetIntersectionBarycentricsEXT(rq, true));
+    previous_hit = geometry.prev_pos;
+
+    if (!lighting)
+        return vec3(0);
+
+    RayPayloadPrimary payload;
+    primaryRayHit(rq, payload);
+    hit = payload.hit_t;
+
+    vec4 uv = rayLightmapUV(rq);
+
+    return lcCachedIrradiance(uv) * payload.base_color_a.rgb;
+}
+
+vec3 reflectionDirection(uint seed, vec3 N, vec3 V, float roughness, out float pdf)
+{
+    vec3 r = rand3_f01(uvec3(seed, 0u, 0x1cb0u));
+    float z = 2.0 * r.x - 1.0, phi = 2.0 * kPi * r.y;
+    float radius = sqrt(max(0.0, 1.0 - z * z));
+    vec3 D = vec3(radius * cos(phi), radius * sin(phi), z);
+
+    if (dot(D, N) < 0.0)
+        D = -D;
+    float u = clamp(dot(D, N), 0.0, 1.0);
+
+    // World-space projection of D; no tangent basis or local-space rotation.
+    vec3 lateral = D - N * u;
+    float a2 = lcReflectionProposalAlpha2(roughness);
+    float c = sqrt(u / max(a2 * (1.0 - u) + u, 1e-8));
+    vec3 H = dot(lateral, lateral) > 1e-12 ? N * c + normalize(lateral) * sqrt(max(0.0, 1.0 - c * c)) : N;
+
+    vec3 L = normalize(roughness < 0.004 ? reflect(-V, N) : reflect(-V, H));
+
+    pdf = roughness < 0.004
+              ? 1.0
+              : (dot(V, H) > 0.0 ? ggxD(a2, max(dot(N, H), 0.0)) * max(dot(N, H), 0.0) / (4.0 * dot(V, H)) : 0.0);
+
+    return L;
+}
+
+vec3 traceReflection(uint r, vec3 P, vec3 G, vec3 N, vec3 V, MaterialProperties material, out vec3 L, out float pdf,
+    out vec4 hit, out vec4 identity, out vec3 previous_hit, out vec3 incident)
+{
+    incident = vec3(0);
+
+    vec2 rm = vec2(material.roughness, material.metalness);
+
+    L = reflectionDirection(r, N, V, rm.x, pdf);
+
+    vec3 value = vec3(0);
+    hit = vec4(0);
+    identity = vec4(0);
+    previous_hit = vec3(0);
+
+    if (dot(L, G) > 0.0 && pdf > 0.0) {
+        vec3 throughput;
+        if (rm.x < 0.004) {
+            float f = pow(1.0 - max(dot(N, V), 0.0), 5.0);
+            throughput = mix(mix(vec3(0.04), material.base_color, material.metalness), vec3(1), f);
+        } else {
+            vec3 unused;
+            evalSplitBRDF(N, L, V, material, unused, throughput);
+            throughput /= pdf;
+        }
+
+        incident = cachedHit(P + G * 0.01, L, hit, identity, previous_hit, true);
+        value = incident * throughput;
+    }
+
+    return value;
+}
+
+bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float roughness, vec4 hit, vec4 identity,
+    vec3 previous_hit, out ivec2 source)
+{
+    source = plane_source;
+
+    // At a fixed origin, keep exactly the ordinary projected texel address.
+    // A second 2x2 parallax search can otherwise pick a different reservoir.
+    if (length(ubo.ubo.inv_view[3].xyz - ubo.ubo.prev_inv_view[3].xyz) <= REFLECTION_PATH_PARALLAX_TRANSLATION_EPSILON)
+        return false;
+
+    if (!lcMirrorPath(roughness, dot(G, N)) || hit.w <= 0.0 || identity.w <= 0.0)
+        return false;
+
+    vec4 plane_normals = imageLoad(prev_temporal_reflection_path_normals, plane_source);
+    vec3 old_G = normalDecode(plane_normals.xy);
+
+    // Rotating/curved mirror planes require a surface transform, so use the
+    // validated primary-plane source there instead of guessing a parallax warp.
+    if (dot(G, old_G) < 0.999)
+        return false;
+
+    vec3 previous_P = imageLoad(geometry_prev_position, pix).xyz;
+    vec3 virtual_hit = previous_hit - 2.0 * old_G * dot(old_G, previous_hit - previous_P);
+    vec2 uv;
+    float clip_w;
+    if (!projectWorldToPrevFrameUvCenter(virtual_hit, ubo.ubo.res, uv, clip_w))
+        return false;
+
+    ivec2 taps[4];
+    float weights[4];
+    buildReprojectionFootprint2x2(uv, taps, weights);
+
+    float best = 1e30;
+    bool found = false;
+
+    for (int i = 0; i < 4; ++i) {
+        ivec2 tap = taps[i];
+        if (!isReprojectionTexelInside(tap, ubo.ubo.res))
+            continue;
+
+        vec4 meta = imageLoad(prev_temporal_reflection_path_random, tap);
+        vec4 reservoir = imageLoad(prev_temporal_reflection_path_reservoir, tap);
+        vec4 old_normals = imageLoad(prev_temporal_reflection_path_normals, tap);
+        vec3 old_geometry = normalDecode(old_normals.xy), old_shading = normalDecode(old_normals.zw);
+
+        if (!lcMirrorPath(meta.z, dot(old_geometry, old_shading)) || dot(old_geometry, old_G) < 0.999 ||
+            meta.w != float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) || any(isnan(meta)) || any(isinf(meta)) ||
+            meta.y != 2.0 || meta.x < 0.0 || meta.x > 8388607.0 || !lcPathHistoryValid(reservoir))
+            continue;
+
+        vec4 old_identity = imageLoad(prev_temporal_lc_reflection_hit_identity, tap);
+        vec4 old_hit = imageLoad(prev_reflection_hit_pos, tap);
+        if (old_hit.w <= 0.0 || any(notEqual(identity, old_identity)))
+            continue;
+
+        float error = length(old_hit.xyz - previous_hit);
+        float tolerance = max(0.05, length(previous_hit - previous_P) * 0.002);
+        if (error > tolerance)
+            continue;
+
+        float score = error / tolerance + length(vec2(tap) - uv);
+        if (score < best) {
+            best = score;
+            source = tap;
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+// Gate only the permuted donor; failure keeps ordinary/parallax reprojection.
+bool reflectionPermutationAllowed(ivec2 donor, vec3 N, vec3 V, float roughness)
+{
+    if (roughness <= 0.0)
+        return false;
+
+    if (roughness > 0.5)
+        return true;
+
+    vec4 old_position = imageLoad(prev_position_t, donor);
+    vec3 old_view = ubo.ubo.prev_inv_view[3].xyz - old_position.xyz;
+    if (old_position.w <= 0.0 || dot(old_view, old_view) <= 1e-12)
+        return false;
+
+    vec3 old_normal = normalDecode(imageLoad(prev_normals_gs, donor).zw);
+    vec3 current_mirror = reflect(-V, N);
+    vec3 old_mirror = reflect(-normalize(old_view), old_normal);
+
+    float threshold = mix(1.0, REFLECTION_PATH_PERMUTATION_HALF_ROUGHNESS_DOT, roughness / 0.5);
+
+    return dot(current_mirror, old_mirror) >= threshold;
+}
+
+void main()
+{
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
+    if (any(greaterThanEqual(pix, res)))
+        return;
+
+    imageStore(out_indirect_specular, pix, vec4(0));
+    imageStore(out_reflection_reuse_radiance, pix, vec4(0));
+    imageStore(out_reflection_direction_pdf, pix, vec4(0));
+
+    imageStore(out_temporal_reflection_path_random, pix, vec4(0));
+    imageStore(out_temporal_reflection_path_reservoir, pix, vec4(0));
+    imageStore(out_temporal_reflection_path_normals, pix, vec4(0));
+    imageStore(out_reflection_hit_pos, pix, vec4(0));
+    imageStore(out_temporal_lc_reflection_hit_identity, pix, vec4(0));
+
+    vec4 position = imageLoad(position_t, pix);
+    if (position.w <= 0.0 || (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_REFLECTION) != 0u)
+        return;
+
+    vec4 normals = imageLoad(normals_gs, pix);
+    vec3 G = normalDecode(normals.xy), N = normalDecode(normals.zw);
+    vec3 V = normalize(ubo.ubo.inv_view[3].xyz - position.xyz);
+
+    vec2 rm = imageLoad(material_rmxx, pix).rg;
+    bool separated = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0u;
+    MaterialProperties material = MaterialProperties(
+        separated ? vec3(1) : SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb), separated ? 1.0 : rm.y, rm.x);
+
+    uint selected_seed = xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x72667265u)) & 8388607u;
+    vec3 direction, previous_hit, incident;
+    float pdf;
+    vec4 hit, identity;
+    vec3 selected = traceReflection(
+        selected_seed, position.xyz, G, N, V, material, direction, pdf, hit, identity, previous_hit, incident);
+
+    float history_cap = REFLECTION_PATH_MAX_EFFECTIVE_SAMPLES;
+    float replay_ratio = 1.0;
+    LCReservoir reservoir = LCReservoir(0, 0, 0);
+    lcOffer(reservoir, lcPathTarget(selected), 1.0, 0.0);
+
+    ivec2 source;
+    bool projected = lcHistoryPixel(pix, 1, source);
+
+    if (projected) {
+        ivec2 parallax_source;
+        if (parallaxPathSource(pix, source, G, N, rm.x, hit, identity, previous_hit, parallax_source))
+            source = parallax_source;
+#if LC_PATH_PERMUTATION_SAMPLING
+        uint permutation = xxhash32(uvec4(ubo.ubo.random_seed, ubo.ubo.frame_counter, 0x72706572u, 0u));
+        ivec2 permuted_source = temporalPathPermutedPixel(source, res, permutation);
+        if (reflectionPermutationAllowed(permuted_source, N, V, rm.x))
+            source = permuted_source;
+#endif
+
+#if LC_PATH_MAG_DEDUPLICATION
+        projected = lcDeduplicateHistory(pix, 1, uvec3(0x726d6b6cu, 0x726d6167u, 0x726e6233u), source);
+#endif
+    }
+
+    float restart = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x726c6966u)));
+    if (projected && restart >= BOUNCE_PATH_RESTART_PROBABILITY) {
+        vec4 donor = imageLoad(prev_position_t, source);
+        vec3 donor_normal = normalDecode(imageLoad(prev_normals_gs, source).xy);
+        float error = abs(dot(imageLoad(geometry_prev_position, pix).xyz - donor.xyz, donor_normal));
+        projected =
+            donor.w > 0.0 && !isnan(error) && !isinf(error) && error <= BOUNCE_PATH_REPROJECTION_PLANE_TOLERANCE;
+    } else
+        projected = false;
+
+    if (projected) {
+        vec4 metadata = imageLoad(prev_temporal_reflection_path_random, source);
+        vec4 previous = imageLoad(prev_temporal_reflection_path_reservoir, source);
+
+        // Y tags the seed format; old random-pair histories are incompatible.
+        if (metadata.y == 2.0 && metadata.w == float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) &&
+            metadata.x >= 0.0 && metadata.x <= 8388607.0 && lcPathHistoryValid(previous)) {
+            vec3 hd, hp, history_incident;
+            float hpdf;
+            vec4 hh, hi;
+            vec3 history = traceReflection(
+                uint(metadata.x), position.xyz, G, N, V, material, hd, hpdf, hh, hi, hp, history_incident);
+
+            float target = lcPathTarget(history);
+            replay_ratio = target / max(previous.x, 1e-6);
+            float relaxation =
+                smoothstep(REFLECTION_PATH_RELAX_ROUGHNESS_START, REFLECTION_PATH_RELAX_ROUGHNESS_END, rm.x);
+            float limit = mix(BOUNCE_PATH_RADIANCE_RATIO, REFLECTION_PATH_ROUGH_RADIANCE_RATIO, relaxation);
+            float confidence = lcRatioConfidence(replay_ratio, limit);
+
+            float old_length = imageLoad(prev_reflection_hit_pos, source).w;
+            float length_confidence = 0.0;
+            if (old_length > 0.0 && hh.w > 0.0) {
+                float ratio = hh.w / old_length;
+                float length_limit = mix(REFLECTION_PATH_LENGTH_RATIO, REFLECTION_PATH_ROUGH_LENGTH_RATIO, relaxation);
+                length_confidence = lcRatioConfidence(ratio, length_limit);
+            } else if (old_length == 0.0 && hh.w == 0.0)
+                length_confidence = 1.0;
+
+            confidence *= length_confidence;
+
+            if (uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x72636f6eu))) < confidence) {
+                reservoir = lcReplayReservoir(previous, target);
+
+                float choose = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x7273656cu)));
+                if (!lcOffer(reservoir, lcPathTarget(selected), 1.0, choose)) {
+                    selected = history;
+                    selected_seed = uint(metadata.x);
+                    incident = history_incident;
+                    direction = hd;
+                    pdf = hpdf;
+                    hit = hh;
+                    identity = hi;
+                }
+            }
+        }
+    }
+
+    float W = lcNormalization(reservoir);
+
+    // Store the selected incident sample with its source proposal and RIS normalization.
+    if (hit.w > 0.0 && pdf > 0.0 && rm.x >= 0.004 && W > 0.0)
+        imageStore(out_reflection_reuse_radiance, pix, vec4(incident * (W / pdf), 1.0));
+
+    vec3 color = selected * W;
+
+    // Preserve raw estimator luminance: target/final clamps hide fireflies.
+    color *= min(1.0, REFLECTION_PATH_FINAL_LUMINANCE_MAX / max(lcWeight(color), 1e-6));
+
+    imageStore(out_indirect_specular, pix, vec4(clamp(color, vec3(0), vec3(65504)), 0));
+    imageStore(out_reflection_direction_pdf, pix, vec4(direction * hit.w, pdf));
+    imageStore(out_reflection_hit_pos, pix, hit);
+    imageStore(out_temporal_lc_reflection_hit_identity, pix, identity);
+
+    imageStore(out_temporal_reflection_path_random, pix,
+        vec4(float(selected_seed), 2.0, rm.x, float((ubo.ubo.frame_counter & 65535u) + 1u)));
+    imageStore(out_temporal_reflection_path_reservoir, pix, lcEncodePath(reservoir, history_cap));
+
+    // The chosen pair has now been evaluated in this frame: next frame uses
+    // this normal/view as its saved validation frame, never an indefinitely old one.
+    imageStore(out_temporal_reflection_path_normals, pix, normals);
+}

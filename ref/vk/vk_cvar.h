@@ -27,11 +27,21 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_force_disable) \
 	X(rt_enable) \
 	X(rt_bounces) \
+	X(rt_bloom) \
+	X(rt_water_wave_scale) \
+	X(rt_water_wave_strength) \
+	X(rt_water_fog_density) \
+	X(rt_auto_exposure_min) \
+	X(rt_auto_exposure_max) \
 	X(rt_only_diffuse_gi) \
 	X(rt_separated_reflection) \
 	X(rt_denoise_gi_by_sh) \
 	X(rt_disable_gi) \
 	X(rt_spatial_reconstruction) \
+	X(vk_gi_sh_blur) \
+	X(rt_gi_sh_temporal) \
+	X(rt_gi_poisson) \
+	X(rt_disable_reprojection) \
 
 #define EXTERN_CVAR(cvar) extern cvar_t *cvar;
 DECLARE_CVAR(EXTERN_CVAR)

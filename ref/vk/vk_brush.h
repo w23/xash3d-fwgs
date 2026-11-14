@@ -8,6 +8,9 @@ struct draw_list_s;
 struct model_s;
 struct cl_entity_s;
 
+qboolean R_BrushPrepareLightcache(struct vk_combuf_s *combuf, qboolean reinitialize);
+void R_BrushLightcacheShutdown(void);
+
 qboolean R_BrushInit( void );
 void R_BrushShutdown( void );
 

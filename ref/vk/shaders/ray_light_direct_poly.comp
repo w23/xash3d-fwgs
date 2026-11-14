@@ -32,6 +32,12 @@ layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } ku
 layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
 layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
+#define HEITZ_SHADOWS
+layout(set = 0, binding = 22, rgba16f) uniform writeonly image2D out_heitz_poly_analytic_diffuse;
+layout(set = 0, binding = 23, rgba16f) uniform writeonly image2D out_heitz_poly_analytic_specular;
+layout(set = 0, binding = 24, rgba16f) uniform writeonly image2D out_heitz_poly_unshadowed_diffuse;
+layout(set = 0, binding = 25, rgba16f) uniform writeonly image2D out_heitz_poly_unshadowed_specular;
+
 #define RAY_QUERY
 #define LIGHT_POLYGON 1
 #include "ray_light_direct.glsl"

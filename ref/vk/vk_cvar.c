@@ -42,11 +42,21 @@ void VK_LoadCvarsAfterInit( void )
 	if (vk_core.rtx) {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
 		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
+		rt_bloom = gEngine.Cvar_Get("rt_bloom", "1", FCVAR_GLCONFIG, "Enable HDR bloom");
+        rt_water_wave_scale = gEngine.Cvar_Get("rt_water_wave_scale", "1", FCVAR_GLCONFIG, "Procedural liquid wavelength scale (0.01 to 100); larger values make larger waves");
+        rt_water_wave_strength = gEngine.Cvar_Get("rt_water_wave_strength", "1", FCVAR_GLCONFIG, "Procedural liquid normal strength (0 to 10); 0 disables procedural waves");
+        rt_water_fog_density = gEngine.Cvar_Get("rt_water_fog_density", "1", FCVAR_GLCONFIG, "Liquid fog density multiplier (0 to 100); 0 disables fog, 1 gives 50% visibility at 2 metres");
+		rt_auto_exposure_min = gEngine.Cvar_Get("rt_auto_exposure_min", "0.25", FCVAR_GLCONFIG, "Minimum auto-exposure multiplier (1/16777216 to 16777216)");
+		rt_auto_exposure_max = gEngine.Cvar_Get("rt_auto_exposure_max", "4.0", FCVAR_GLCONFIG, "Maximum auto-exposure multiplier (at least rt_auto_exposure_min, up to 16777216)");
 		rt_only_diffuse_gi = gEngine.Cvar_Get("rt_only_diffuse_gi", "", FCVAR_GLCONFIG, "Make global illumination only diffuse");
 		rt_separated_reflection = gEngine.Cvar_Get("rt_separated_reflection", "", FCVAR_GLCONFIG, "Add separated high quality reflection pass");
-		rt_denoise_gi_by_sh = gEngine.Cvar_Get("rt_denoise_gi_by_sh", "", FCVAR_GLCONFIG, "Denoise global illumination by spherical harmonics");
+		rt_denoise_gi_by_sh = gEngine.Cvar_Get("rt_denoise_gi_by_sh", "1", FCVAR_GLCONFIG, "Denoise global illumination by spherical harmonics");
 		rt_disable_gi = gEngine.Cvar_Get("rt_disable_gi", "", FCVAR_GLCONFIG, "Disable global illumination calculation");
-		rt_spatial_reconstruction = gEngine.Cvar_Get("rt_spatial_reconstruction", "", FCVAR_GLCONFIG, "Apply spatial reconstruction to specular");
+		rt_spatial_reconstruction = gEngine.Cvar_Get("rt_spatial_reconstruction", "1", FCVAR_GLCONFIG, "Reconstruct light-cache reflections with spatial reuse");
+		vk_gi_sh_blur = gEngine.Cvar_Get("vk_gi_sh_blur", "1", FCVAR_GLCONFIG, "Enable rotated bilateral blur of indirect diffuse SH coefficients");
+		rt_gi_sh_temporal = gEngine.Cvar_Get("rt_gi_sh_temporal", "1", FCVAR_GLCONFIG, "Accumulate indirect diffuse SH history before spatial blur");
+		rt_gi_poisson = gEngine.Cvar_Get("rt_gi_poisson", "1", FCVAR_GLCONFIG, "Enable Poisson reconstruction of indirect diffuse SH");
+		rt_disable_reprojection = gEngine.Cvar_Get("rt_disable_reprojection", "0", FCVAR_GLCONFIG, "Disable SH and reflection temporal filtering; preserve path reservoir reuse");
 	} else {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "0", FCVAR_READ_ONLY, "DISABLED: Ray tracing is not supported by your hardware/drivers" );
 	}

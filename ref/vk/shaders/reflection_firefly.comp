@@ -1,0 +1,8 @@
+#version 460
+#include "reflection_firefly_config.glsl"
+
+#define FIREFLY_SPLIT_REFLECTION 1
+#define FIREFLY_INPUT indirect_specular
+#define FIREFLY_OUTPUT out_firefly_filtered_specular
+#define FIREFLY_PIXEL_SCALE 1
+#include "firefly_rejection.glsl"

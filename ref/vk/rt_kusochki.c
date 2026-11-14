@@ -96,6 +96,10 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		.roughness = mat->roughness,
 		.metalness = mat->metalness,
 		.normal_scale = mat->normal_scale,
+		// Derive liquid from the engine surface, never from uninitialized geometry metadata.
+        .flags = geom->surf_deprecate &&
+            (geom->surf_deprecate->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS))
+            ? MATERIAL_FLAG_LIQUID : 0,
 	};
 
 	// TODO emissive is potentially "dynamic", not tied to the material directly, as it is specified per-surface in rad files

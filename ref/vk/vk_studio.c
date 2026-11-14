@@ -27,6 +27,9 @@
 #include <memory.h>
 #include <stdlib.h>
 
+static vec2_t studio_lightmap_uv;
+static qboolean studio_lightmap_uv_valid;
+
 #define MODULE_NAME "studio"
 #define LOG_MODULE studio
 
@@ -1105,6 +1108,7 @@ static int R_StudioCheckBBox( void )
 
 static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 {
+	studio_lightmap_uv_valid = false;
 	// copied from R_EntityDynamicLight in ref/common/ref_light.c
 	// local copy is required because ref/common uses different renderer globals
 	movevars_t	*mv = MOVEVARS;
@@ -1178,7 +1182,13 @@ static void R_StudioDynamicLight( cl_entity_t *ent, alight_t *plight )
 		VectorScale( lightDir, 2048.0f, vecEnd );
 		VectorAdd( vecEnd, vecSrc, vecEnd );
 
-		light = R_LightVec( vecSrc, vecEnd, g_studio.lightspot, g_studio.lightvec );
+		const msurface_t *light_surface = NULL;
+		vec3_t light_hit;
+		light = R_LightVecSurface(vecSrc, vecEnd, g_studio.lightspot, g_studio.lightvec, &light_surface, light_hit);
+		if (light_surface && light_surface->samples && light_surface->lightmaptexturenum == 0) {
+			R_LightmapCoord(light_hit, light_surface, gEngine.Mod_SampleSizeForFace(light_surface), studio_lightmap_uv);
+			studio_lightmap_uv_valid = true;
+		}
 
 		if( VectorIsNull( g_studio.lightvec ))
 		{
@@ -2391,6 +2401,7 @@ static void R_StudioDrawPoints( void ) {
 		.color = &color,
 		.transform = &g_studio_current.entmodel->transform,
 		.prev_transform = &g_studio_current.entmodel->prev_transform,
+		.lightmap_uv = studio_lightmap_uv_valid ? &studio_lightmap_uv : NULL,
 		.override = {
 			.material = NULL,
 			.old_texture = -1,

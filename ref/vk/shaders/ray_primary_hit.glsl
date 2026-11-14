@@ -9,11 +9,12 @@
 #include "rt_geometry.glsl"
 #include "color_spaces.glsl"
 #include "skybox.glsl"
+#include "water_normal.glsl"
 
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
-#ifndef RAY_BOUNCE
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION)
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);
 #else
 	return textureLod(textures[nonuniformEXT(tex_index)], uv, 2.);
@@ -40,7 +41,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
 		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;
 
-#ifndef RAY_BOUNCE
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION)
 		const uint tex_normal = material.tex_normalmap;
 		vec3 T = geom.tangent;
 		if (tex_normal > 0 && dot(T,T) > .5) {
@@ -97,6 +98,11 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 #endif
 	}
 
+	if ((material.flags & MATERIAL_FLAG_LIQUID) != 0u)
+		geom.normal_shading = waterNormal(geom.pos, geom.normal_geometry, geom.normal_shading,
+			ubo.ubo.time, ubo.ubo.ray_cone_width * hitT,
+			vec2(ubo.ubo.water_wave_scale, ubo.ubo.water_wave_strength));
+
 	payload.normals_gs.xy = normalEncode(geom.normal_geometry);
 	payload.normals_gs.zw = normalEncode(geom.normal_shading);
 
@@ -135,6 +141,12 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	// Non-translucent materials should be fully opaque
 	if (model.mode != MATERIAL_MODE_TRANSLUCENT)
 		payload.base_color_a.a = 1.;
+	else {
+		// B: transparent interface kind (glass=1, liquid=2); A: normal map.
+		payload.material_rmxx = vec4(0., 0.,
+			(material.flags & MATERIAL_FLAG_LIQUID) != 0u ? 2. / 255. : 1. / 255.,
+			material.tex_normalmap > 0 ? 1. : 0.);
+	}
 
 	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
 		// White furnace mode: everything is diffuse and white

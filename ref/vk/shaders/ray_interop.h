@@ -18,6 +18,7 @@
 #define MAX_EMISSIVE_KUSOCHKI 256
 #define uint uint32_t
 #define vec2 vec2_t
+#define vec2 vec2_t
 #define vec3 vec3_t
 #define vec4 vec4_t
 #define mat4 matrix4x4
@@ -54,7 +55,7 @@ struct Vertex {
 	vec3 normal;
 	vec3 tangent;
 	vec2 gl_tc;
-	vec2 _unused_lm_tc;
+	vec2 lm_tc;
 	uint color;
 };
 
@@ -84,6 +85,8 @@ struct Vertex {
 #define MATERIAL_MODE_DECAL 6
 #define MATERIAL_MODE_COUNT 7
 
+#define MATERIAL_FLAG_LIQUID 1u
+
 #define TEX_BASE_SKYBOX 0x0f000000u
 
 struct Material {
@@ -101,7 +104,7 @@ struct Material {
 	float roughness;
 	float metalness;
 	float normal_scale;
-	PAD(1)
+	uint flags;
 
 	vec4 base_color;
 };
@@ -110,7 +113,8 @@ struct ModelHeader {
 	mat4 prev_transform;
 	vec4 color;
 	uint mode;
-	PAD(3)
+	uint lightmap_uv_valid;
+	vec2 lightmap_uv;
 };
 
 struct Kusok {
@@ -191,6 +195,12 @@ struct LightCluster {
 #define DEBUG_DISPLAY_MATERIAL 15
 #define DEBUG_DISPLAY_DIFFUSE 16
 #define DEBUG_DISPLAY_SPECULAR 17
+#define DEBUG_DISPLAY_SHADOW_DIFF 18
+#define DEBUG_DISPLAY_SHADOW_SPEC 19
+#define DEBUG_DISPLAY_SHADOW_SIGMA_DIFF 20
+#define DEBUG_DISPLAY_SHADOW_SIGMA_SPEC 21
+#define DEBUG_DISPLAY_BLOOM_SOURCE 22
+#define DEBUG_DISPLAY_BLOOM 23
 // add more when needed
 
 #define DEBUG_FLAG_WHITE_FURNACE (1<<0)
@@ -201,9 +211,20 @@ struct LightCluster {
 #define RENDERER_FLAG_DISABLE_GI (1<<3)
 #define RENDERER_FLAG_SPATIAL_RECONSTRUCTION (1<<4)
 
+#define RENDERER_FLAG_DISABLE_REFLECTION (1<<5)
+#define RENDERER_FLAG_DISABLE_LIGHTCACHE_UPDATE (1<<6)
+#define RENDERER_FLAG_GI_POISSON (1<<7)
+#define RENDERER_FLAG_GI_SH_BLUR (1<<8)
+#define RENDERER_FLAG_FIREFLY_REJECTION (1<<9)
+#define RENDERER_FLAG_REFLECTION_RECONSTRUCTION (1<<10)
+
+#define RENDERER_FLAG_GI_SH_TEMPORAL (1<<11)
+#define RENDERER_FLAG_DISABLE_REPROJECTION (1<<12)
+
 struct UniformBuffer {
 	mat4 inv_proj, inv_view;
 	mat4 prev_inv_proj, prev_inv_view;
+	mat4 view, proj, prev_view, prev_proj;
 	ivec2 res;
 	float ray_cone_width;
 	uint random_seed;
@@ -214,6 +235,19 @@ struct UniformBuffer {
 	uint debug_flags;
 
 	uint renderer_flags;
+	uint blue_noise_2d_texture;
+	uint bounce_count;
+	uint lightcache_init_frame;
+
+	float auto_exposure_min;
+	float auto_exposure_max;
+	uint bloom_enabled;
+	float time;
+
+    float water_wave_scale;
+    float water_wave_strength;
+    float water_fog_density;
+    PAD(1)
 };
 
 #undef PAD
@@ -221,6 +255,7 @@ struct UniformBuffer {
 
 #ifndef GLSL
 #undef uint
+#undef vec2
 #undef vec3
 #undef vec4
 #undef TOKENPASTE

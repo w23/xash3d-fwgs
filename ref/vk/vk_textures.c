@@ -51,6 +51,8 @@ static struct {
 	// TODO is this used as vk_texture_t object anywhere after loading?
 	vk_texture_t blue_noise;
 	sampled_image_resource_t blue_noise_resource;
+	vk_texture_t ltc_lut;
+	sampled_image_resource_t ltc_lut_resource;
 } g_vktextures;
 
 static VkSampler pickSamplerForFlags( texFlags_t flags );
@@ -92,7 +94,18 @@ static void generateFallbackNoiseTextures( const rgbdata_t *pic ) {
 	}
 }
 
+static void produceBlueNoiseTexture(struct Producer* producer, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	// Uploaded during initialization; descriptor acquisition handles image barriers.
+	(void)producer;
+	(void)combuf;
+	(void)ctx;
+}
+
 static void loadBlueNoiseTextures(void) {
+	static Producer producer = {
+		.name = "blue_noise_texture",
+		.produce = produceBlueNoiseTexture,
+	};
 	const size_t blue_noise_count = BLUE_NOISE_SIZE * BLUE_NOISE_SIZE * BLUE_NOISE_SIZE;
 	const size_t blue_noise_size = blue_noise_count * sizeof(uint32_t);
 	uint32_t *const scratch = Mem_Malloc(vk_core.pool /* TODO textures pool */, blue_noise_size);
@@ -163,12 +176,73 @@ static void loadBlueNoiseTextures(void) {
 				.name = "blue_noise_texture",
 				.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 				.acquire_descriptor = acquireSampledImageDescriptor,
+				.producer = &producer,
 				.refcount = 1,
 			},
 			.image = &g_vktextures.blue_noise.vk.image,
 		};
 		ASSERT(R_VkResourceRegister(&g_vktextures.blue_noise_resource.header));
 	}
+}
+
+static void produceLtcLookupTexture(struct Producer* producer, struct vk_combuf_s *combuf, const FrameContext *ctx) {
+	(void)producer;
+	(void)combuf;
+	(void)ctx;
+}
+
+static qboolean loadLtcLookupTexture(void) {
+	static Producer producer = {
+		.name = "ltc_lut",
+		.produce = produceLtcLookupTexture,
+	};
+	const char *const path = "ltc_lut.ktx2";
+	rgbdata_t *const pic = gEngine.FS_LoadImage(path, NULL, 0);
+	if (!pic) {
+		ERR("Couldn't load LTC lookup texture '%s'", path);
+		return false;
+	}
+
+	qboolean uploaded = false;
+	if (pic->type == PF_KTX2_RAW && pic->size >= KTX2_MINIMAL_HEADER_SIZE) {
+		ktx2_header_t header;
+		ktx2_level_t level;
+		memcpy(&header, pic->buffer + KTX2_IDENTIFIER_SIZE, sizeof(header));
+		memcpy(&level, pic->buffer + KTX2_LEVELS_OFFSET, sizeof(level));
+		const size_t expected_size = 64u * 128u * 4u * sizeof(uint16_t);
+		if (header.vkFormat == VK_FORMAT_R16G16B16A16_SFLOAT &&
+			header.pixelWidth == 64 && header.pixelHeight == 128 &&
+			header.pixelDepth == 0 && header.layerCount == 0 &&
+			header.faceCount == 1 && header.levelCount == 1 &&
+			header.supercompressionScheme == 0 &&
+			level.byteLength == expected_size && level.byteOffset >= KTX2_MINIMAL_HEADER_SIZE &&
+			level.byteOffset <= pic->size && level.byteLength <= pic->size - level.byteOffset) {
+			vk_texture_t *const tex = &g_vktextures.ltc_lut;
+			Q_strncpy(tex->hdr_.key, path, sizeof(tex->hdr_.key));
+			uploaded = uploadTexture(-1, tex, pic, kColorspaceLinear);
+		}
+	}
+	gEngine.FS_FreeImage(pic);
+	if (!uploaded) {
+		ERR("Invalid LTC lookup texture '%s'", path);
+		return false;
+	}
+
+	g_vktextures.ltc_lut_resource = (sampled_image_resource_t) {
+		.header = {
+			.name = "ltc_lut",
+			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.acquire_descriptor = acquireSampledImageDescriptor,
+			.producer = &producer,
+			.refcount = 1,
+		},
+		.image = &g_vktextures.ltc_lut.vk.image,
+	};
+	if (!R_VkResourceRegister(&g_vktextures.ltc_lut_resource.header)) {
+		R_VkTextureDestroy(-1, &g_vktextures.ltc_lut);
+		return false;
+	}
+	return true;
 }
 
 static void produceSkybox(struct Producer* p, struct vk_combuf_s *combuf, const FrameContext *ctx) {
@@ -247,8 +321,11 @@ qboolean R_VkTexturesInit( void ) {
 		ASSERT(R_VkResourceRegister(&g_vktextures.skybox_resource.header));
 	}
 
-	if (vk_core.rtx)
+	if (vk_core.rtx) {
+		if (!loadLtcLookupTexture())
+			return false;
 		loadBlueNoiseTextures();
+	}
 
 	return true;
 }
@@ -260,8 +337,10 @@ void R_VkTexturesShutdown( void ) {
 		R_VkTextureDestroy(-1, g_vktextures.skybox + i);
 	}
 
-	if (vk_core.rtx)
+	if (vk_core.rtx) {
 		R_VkTextureDestroy(-1, &g_vktextures.blue_noise);
+		R_VkTextureDestroy(-1, &g_vktextures.ltc_lut);
+	}
 
 	for (int i = 0; i < COUNTOF(g_vktextures.samplers); ++i) {
 		if (g_vktextures.samplers[i].sampler != VK_NULL_HANDLE)
@@ -497,9 +576,9 @@ static qboolean uploadRawKtx2( int tex_index, vk_texture_t *tex, const rgbdata_t
 		R_VkImageUploadEnd(&tex->vk.image);
 	}
 
-	{
-		// KTX2 textures are inaccessible from trad renderer (for now)
-		tex->vk.descriptor_unorm = VK_NULL_HANDLE;
+	// KTX2 textures are inaccessible from trad renderer (for now)
+	tex->vk.descriptor_unorm = VK_NULL_HANDLE;
+	if (tex_index >= 0) {
 
 		const VkDescriptorImageInfo dii = {
 			.imageView = tex->vk.image.view,
