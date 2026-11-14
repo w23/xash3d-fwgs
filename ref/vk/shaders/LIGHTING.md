@@ -42,7 +42,8 @@ not compiled into this graph.
   lobe retains the source-branch ASVGF accumulation/variance code. Its defaults
   live in `indirect_temporal_config.glsl`, keeping the CPU UBO small.
 - `denoiser.comp` reads the finished lobes and handles material composition,
-  emissive/translucent blending, output color conversion and debug views only.
+  emissive/translucent composition, exposure and debug views. Normal output remains
+  linear HDR until `bloom_composite.comp` applies bloom and the output curve.
 
 `rt_bounces` controls diffuse path depth. `rt_denoise_gi_by_sh` and
 `rt_spatial_reconstruction` default to 1; existing saved values are respected.
@@ -64,3 +65,31 @@ a-trous, alternative NRD/AMD paths and source-branch refraction experiments are
 not part of this pipeline.
 
 Build from the repository root with `python waf build`.
+
+## HDR bloom
+
+`rt_bloom` defaults to 1; 0 preserves the original display conversion and bypasses
+bloom contribution. `rt_debug_display_only BLOOM_SOURCE` shows the thresholded
+source, and `BLOOM` shows the halo alone. Existing debug views bypass bloom.
+
+All tuning lives in `bloom_config.glsl`: threshold, soft knee, intensity, tent
+radius, active level count (1..5), normalized level weights, and separate emission,
+lighting and sky weights. Defaults are 1.0 for emission and 0.5 for lighting/sky.
+The soft bright pass operates separately on exposed emission and material-shaded
+lighting, after revealage. Sky is identified by nonpositive primary hit distance.
+Legacy additive sprites remain composited in sRGB and do not feed bloom.
+
+The built-in resource manager creates two full-resolution RGBA16F bloom images.
+The compositor initially writes the full-resolution source to `bloom_a`.
+Five 13-tap downsample passes pack floor-sized levels (1/2 through 1/32) vertically
+into the two ping-pong images. Four tent upsample passes reconstruct level zero.
+Each pass copies earlier levels needed by later passes to the opposite image;
+there is no in-dispatch read/write aliasing. Sampling clamps to each rectangle,
+including at odd resolutions. Tiny render targets automatically reduce the level
+count. Inactive levels are skipped, with earlier rectangles copied through so
+the final result always resides in `bloom_b`. Dispatch sizes and allocation remain
+under the existing resource manager; invocations outside useful rectangles exit.
+
+The final pass adds bloom to exposed linear HDR, converts to sRGB, then performs
+legacy additive blending. Auto-exposure continues metering the unexposed scene,
+without bloom feedback. There is no new tone mapper or temporal bloom history.

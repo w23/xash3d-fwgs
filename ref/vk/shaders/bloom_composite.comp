@@ -1,0 +1,38 @@
+#version 460
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#include "color_spaces.glsl"
+#include "bloom_config.glsl"
+#include "bloom_layout.glsl"
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, rgba16f) uniform readonly image2D hdr_composed;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D bloom_b;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D out_dest;
+layout(set = 0, binding = 4) uniform UBO { UniformBuffer ubo; } ubo;
+vec3 readBloom(ivec2 pix) {
+    ivec2 size = bloomLevelSize(ubo.ubo.res, 0);
+    vec2 p = (vec2(pix) + 0.5) / vec2(ubo.ubo.res) * vec2(size) - 0.5;
+    ivec2 lo = ivec2(floor(p));
+    vec2 f = fract(p);
+    vec3 a = imageLoad(bloom_b, clamp(lo, ivec2(0), size - 1)).rgb;
+    vec3 b = imageLoad(bloom_b, clamp(lo + ivec2(1,0), ivec2(0), size - 1)).rgb;
+    vec3 c = imageLoad(bloom_b, clamp(lo + ivec2(0,1), ivec2(0), size - 1)).rgb;
+    vec3 d = imageLoad(bloom_b, clamp(lo + ivec2(1,1), ivec2(0), size - 1)).rgb;
+    return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pix, ubo.ubo.res))) return;
+    vec4 colour = imageLoad(hdr_composed, pix);
+    uint mode = ubo.ubo.debug_display_only;
+    if ((mode == DEBUG_DISPLAY_DISABLED && ubo.ubo.bloom_enabled != 0u) || mode == DEBUG_DISPLAY_BLOOM) {
+        vec3 bloom = ubo.ubo.bloom_enabled != 0u ? readBloom(pix) * BLOOM_INTENSITY : vec3(0.0);
+        colour.rgb = LINEARtoSRGB(mode == DEBUG_DISPLAY_BLOOM ? bloom : colour.rgb + bloom);
+        // Preserve the game's legacy additive blending in display space.
+        // See https://github.com/w23/xash3d-fwgs/issues/668 (additive alpha).
+        if (mode == DEBUG_DISPLAY_DISABLED) colour.rgb += imageLoad(legacy_blend, pix).rgb;
+    }
+    imageStore(out_dest, pix, colour);
+}

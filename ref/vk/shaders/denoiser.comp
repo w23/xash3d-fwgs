@@ -8,7 +8,7 @@
 
 // Composition only: each lighting lobe is denoised by its own producer.
 layout(local_size_x = 8, local_size_y = 8) in;
-layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_dest;
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D out_hdr_composed;
 layout(set = 0, binding = 1) uniform UBO { UniformBuffer ubo; } ubo;
 layout(set = 0, binding = 2, rgba8) uniform readonly image2D base_color_a;
 layout(set = 0, binding = 3, rgba8) uniform readonly image2D material_rmxx;
@@ -32,6 +32,10 @@ void storeExposureTemporalData(ivec2 pix, vec4 value) {
 }
 
 #include "auto_exposure.glsl"
+#include "bloom_config.glsl"
+
+layout(set = 0, binding = 14, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_bloom_a;
 
 struct Components {
     vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
@@ -54,6 +58,7 @@ void main() {
 		return;
 	}
 
+	imageStore(out_bloom_a, pix, vec4(0.0));
 
 	const vec3 base_color = SRGBtoLINEAR(imageLoad(base_color_a, pix).rgb);
 	const float metalness = imageLoad(material_rmxx, pix).g;
@@ -61,25 +66,25 @@ void main() {
 	vec3 geometry_normal, shading_normal;
 	readNormals(pix, geometry_normal, shading_normal);
 
-	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+	if (bloomDisplay(ubo.ubo.debug_display_only)) {
 		// no-op, just continue
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_BASECOLOR) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(imageLoad(base_color_a, pix).rgb), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(imageLoad(base_color_a, pix).rgb), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_BASEALPHA) {
-		imageStore(out_dest, pix, imageLoad(base_color_a, pix).aaaa); return;
+		imageStore(out_hdr_composed, pix, imageLoad(base_color_a, pix).aaaa); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_EMISSIVE) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(imageLoad(emissive, pix).rgb), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(imageLoad(emissive, pix).rgb), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_MATERIAL) {
-		imageStore(out_dest, pix, vec4(imageLoad(material_rmxx, pix).rg, 0., 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(imageLoad(material_rmxx, pix).rg, 0., 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NSHADE) {
-		imageStore(out_dest, pix, vec4(.5 + shading_normal * .5, 0.));
+		imageStore(out_hdr_composed, pix, vec4(.5 + shading_normal * .5, 0.));
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_NGEOM) {
-		imageStore(out_dest, pix, vec4(.5 + geometry_normal * .5, 0.));
+		imageStore(out_hdr_composed, pix, vec4(.5 + geometry_normal * .5, 0.));
 		return;
 	}
 
@@ -92,37 +97,37 @@ void main() {
 	if ((ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0u)
 		c.indirect_specular = restoreSpecular(c.indirect_specular, base_color, metalness);
 
-	if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED) {
+	if (bloomDisplay(ubo.ubo.debug_display_only)) {
 		// Skip
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.direct_diffuse + c.direct_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_DIFF) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_diffuse), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.direct_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIRECT_SPEC) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.direct_specular), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.direct_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.indirect_specular), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.indirect_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT_SPEC) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_specular), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.indirect_specular), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_INDIRECT_DIFF) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.indirect_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DIFFUSE) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.direct_diffuse), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.indirect_diffuse + c.direct_diffuse), 0.)); return;
 		return;
 	} else if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SPECULAR) {
-		imageStore(out_dest, pix, vec4(LINEARtoSRGB(c.indirect_specular + c.direct_specular), 0.)); return;
+		imageStore(out_hdr_composed, pix, vec4(LINEARtoSRGB(c.indirect_specular + c.direct_specular), 0.)); return;
 		return;
 	}
 
     if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_DIFF ||
         ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_SPEC) {
-        imageStore(out_dest, pix, vec4(ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_DIFF ?
+        imageStore(out_hdr_composed, pix, vec4(ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_DIFF ?
             c.direct_diffuse : c.direct_specular, 0));
         return;
     }
@@ -130,7 +135,7 @@ void main() {
         ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_SIGMA_SPEC) {
         vec2 sigma = imageLoad(heitz_noise_blurred, pix).zw;
         // Noise-to-sigma mapping stays in the shadow pass.
-        imageStore(out_dest, pix, vec4(vec3(ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_SIGMA_DIFF ? sigma.x : sigma.y), 0));
+        imageStore(out_hdr_composed, pix, vec4(vec3(ubo.ubo.debug_display_only == DEBUG_DISPLAY_SHADOW_SIGMA_DIFF ? sigma.x : sigma.y), 0));
         return;
     }
 
@@ -147,23 +152,32 @@ void main() {
 
 	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
 
-	colour += imageLoad(emissive, pix).rgb;
-	// Revealage. TODO: which colorspace?
-	colour *= legacy_blend.a;
+	const vec3 emission = imageLoad(emissive, pix).rgb;
+    const vec3 lighting = colour;
+    colour = (lighting + emission) * legacy_blend.a;
 
-	const float exposure = readAutoExposure(res);
-	updateAutoExposureTemporalData(res, pix, colour);
-	colour *= exposure;
+    const float exposure = readAutoExposure(res);
+    updateAutoExposureTemporalData(res, pix, colour);
+    colour *= exposure;
 
-	colour = LINEARtoSRGB(colour);
+    // Sky shares the emissive image, but does not get the material emission boost.
+    const float emission_weight = imageLoad(position_t, pix).w > 0.0
+        ? BLOOM_EMISSION_WEIGHT : BLOOM_SKY_WEIGHT;
+    vec3 source = vec3(0.0);
+    if (ubo.ubo.bloom_enabled != 0u && bloomDisplay(ubo.ubo.debug_display_only)) {
+        source = bloomBrightPass(emission * legacy_blend.a * exposure) * emission_weight
+            + bloomBrightPass(lighting * legacy_blend.a * exposure) * BLOOM_LIGHTING_WEIGHT;
+    }
+    imageStore(out_bloom_a, pix, vec4(min(source, vec3(65504.0)), 0.0));
 
-// See issue https://github.com/w23/xash3d-fwgs/issues/668, map test_blendmode_additive_alpha.
-// Adding emissive_blend to the final color in the *incorrect* sRGB-γ space. It makes
-// it look much more like the original. Adding emissive in the *correct* linear space differs
-// from the original a lot, and looks perceptively worse.
-	colour += legacy_blend.rgb;
+    // Existing debug outputs already contain display-encoded colour.
+    if (ubo.ubo.debug_display_only == DEBUG_DISPLAY_BLOOM_SOURCE)
+        colour = LINEARtoSRGB(source);
+    else if (!bloomDisplay(ubo.ubo.debug_display_only) ||
+        (ubo.ubo.debug_display_only == DEBUG_DISPLAY_DISABLED && ubo.ubo.bloom_enabled == 0u))
+        colour = LINEARtoSRGB(colour) + legacy_blend.rgb;
 
 	DEBUG_VALIDATE_RANGE_VEC3("denoiser.colour", colour, 0., 1e6);
 
-	imageStore(out_dest, pix, vec4(colour, 0./*unused*/));
+	imageStore(out_hdr_composed, pix, vec4(colour, 0./*unused*/));
 }

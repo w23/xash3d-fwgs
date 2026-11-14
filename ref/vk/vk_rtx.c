@@ -93,6 +93,8 @@ static void parseDebugDisplayValue( void ) {
 
 	const char *cvalue = g_rtx.debug.rt_debug_display_only->string;
 #define LIST_DISPLAYS(X) \
+	X(BLOOM_SOURCE, "thresholded HDR bloom source") \
+	X(BLOOM, "HDR bloom halo only") \
 	X(BASECOLOR, "material base_color value") \
 	X(BASEALPHA, "material alpha value") \
 	X(EMISSIVE, "emissive color") \
@@ -211,6 +213,7 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 	ret.res[1] = frame_height;
 	ret.ray_cone_width = atanf((2.0f*tanf(DEG2RAD(fov_angle_y) * 0.5f)) / (float)frame_height);
 	ret.skybox_exposure = R_TexturesGetSkyboxInfo().exposure;
+	ret.bloom_enabled = CVAR_TO_BOOL(rt_bloom);
 	// Keep clamp bounds positive and ordered, including for invalid cvar input.
 	ret.auto_exposure_min = bound(1.f / 16777216.f, rt_auto_exposure_min->value, 16777216.f);
 	ret.auto_exposure_max = bound(ret.auto_exposure_min, rt_auto_exposure_max->value, 16777216.f);

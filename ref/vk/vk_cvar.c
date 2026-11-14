@@ -42,6 +42,7 @@ void VK_LoadCvarsAfterInit( void )
 	if (vk_core.rtx) {
 		rt_enable = gEngine.Cvar_Get( "rt_enable", "1", FCVAR_GLCONFIG, "Enable or disable Ray Tracing mode" );
 		rt_bounces = gEngine.Cvar_Get( "rt_bounces", "3", FCVAR_GLCONFIG, "Path tracing ray bounces" );
+		rt_bloom = gEngine.Cvar_Get("rt_bloom", "1", FCVAR_GLCONFIG, "Enable HDR bloom");
 		rt_auto_exposure_min = gEngine.Cvar_Get("rt_auto_exposure_min", "0.25", FCVAR_GLCONFIG, "Minimum auto-exposure multiplier (1/16777216 to 16777216)");
 		rt_auto_exposure_max = gEngine.Cvar_Get("rt_auto_exposure_max", "4.0", FCVAR_GLCONFIG, "Maximum auto-exposure multiplier (at least rt_auto_exposure_min, up to 16777216)");
 		rt_only_diffuse_gi = gEngine.Cvar_Get("rt_only_diffuse_gi", "", FCVAR_GLCONFIG, "Make global illumination only diffuse");

@@ -1,0 +1,6 @@
+#version 460
+#define BLOOM_INPUT bloom_b
+#define BLOOM_OUTPUT out_bloom_a
+#define BLOOM_PASS_LEVEL 3
+#define BLOOM_DOWNSAMPLE
+#include "bloom_pyramid.glsl"

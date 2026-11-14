@@ -197,6 +197,8 @@ struct LightCluster {
 #define DEBUG_DISPLAY_SHADOW_SPEC 19
 #define DEBUG_DISPLAY_SHADOW_SIGMA_DIFF 20
 #define DEBUG_DISPLAY_SHADOW_SIGMA_SPEC 21
+#define DEBUG_DISPLAY_BLOOM_SOURCE 22
+#define DEBUG_DISPLAY_BLOOM 23
 // add more when needed
 
 #define DEBUG_FLAG_WHITE_FURNACE (1<<0)
@@ -237,7 +239,8 @@ struct UniformBuffer {
 
 	float auto_exposure_min;
 	float auto_exposure_max;
-	PAD(2)
+	uint bloom_enabled;
+	PAD(1)
 };
 
 #undef PAD

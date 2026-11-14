@@ -73,5 +73,35 @@
 	},
 	"denoiser": {
 		"comp": "denoiser"
+	},
+	"bloom_down0": {
+		"comp": "bloom_down0"
+	},
+	"bloom_down1": {
+		"comp": "bloom_down1"
+	},
+	"bloom_down2": {
+		"comp": "bloom_down2"
+	},
+	"bloom_down3": {
+		"comp": "bloom_down3"
+	},
+	"bloom_down4": {
+		"comp": "bloom_down4"
+	},
+	"bloom_up3": {
+		"comp": "bloom_up3"
+	},
+	"bloom_up2": {
+		"comp": "bloom_up2"
+	},
+	"bloom_up1": {
+		"comp": "bloom_up1"
+	},
+	"bloom_up0": {
+		"comp": "bloom_up0"
+	},
+	"bloom_composite": {
+		"comp": "bloom_composite"
 	}
 }
