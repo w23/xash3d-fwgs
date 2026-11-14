@@ -65,6 +65,10 @@ not compiled into this graph.
   material and entity alpha, for both glass and liquid. After Fresnel reflection,
   alpha mixes cached diffuse surface lighting/emission with transmission:
   `F * reflected + (1-F) * (alpha * surface + (1-alpha) * transmitted)`.
+  For glass, transmitted radiance is additionally tinted by
+  `mix(1, clamp(base_color * cached_irradiance, 0, 1), alpha)` in linear space,
+  before exposure. Thus the tint follows local lighting, cannot amplify the
+  background, and vanishes at zero opacity. Liquid transmission is unchanged.
   The primary pass stores lightmap UV for cached shading of the first interface,
   without tracing the camera ray again. There is no fixed liquid opacity or tint.
   Tuning lives in `refraction_config.glsl`.

@@ -123,6 +123,14 @@ void main() {
             vec3 surface_weight = weight * (1.0-fresnel) * opacity;
             vec3 reflection_weight = weight * fresnel;
             vec3 transmission_weight = weight * (1.0-fresnel) * (1.0-opacity);
+            if (!liquid) {
+                // Glass tint must use the lit surface, not unlit albedo. This is
+                // linear cache irradiance * base color, before exposure. Treat
+                // it as absorption only so bright cache values cannot amplify
+                // transmitted radiance. Zero opacity remains untinted.
+                vec3 lit_tint = clamp(cached,vec3(0),vec3(1));
+                transmission_weight *= mix(vec3(1),lit_tint,opacity);
+            }
             bool reflect_path = max(max(reflection_weight.r,reflection_weight.g),reflection_weight.b) >= REFRACTION_MIN_WEIGHT;
             bool transmit_path = max(max(transmission_weight.r,transmission_weight.g),transmission_weight.b) >= REFRACTION_MIN_WEIGHT;
             if (reflect_path && branches >= REFRACTION_MAX_BRANCHES) {
