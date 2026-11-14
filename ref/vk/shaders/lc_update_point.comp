@@ -42,7 +42,8 @@ vec3 pointRadiance(PointLight l, vec3 P, vec3 N)
     float spot = 1.0;
     if (l.environment == 0u && l.color_stopdot.w > l.dir_stopdot2.w)
         spot =
-            clamp((dot(-L, l.dir_stopdot2.xyz) - l.dir_stopdot2.w) / (l.color_stopdot.w - l.dir_stopdot2.w), 0.0, 1.0);
+            // uploadPointLights already negates the source's emission direction.
+            clamp((dot(L, l.dir_stopdot2.xyz) - l.dir_stopdot2.w) / (l.color_stopdot.w - l.dir_stopdot2.w), 0.0, 1.0);
 
     vec3 c = lcDiffuse(l.color_stopdot.rgb * omega * spot, N, L);
     if (lcWeight(c) == 0.0)

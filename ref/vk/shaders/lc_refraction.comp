@@ -116,29 +116,36 @@ void main() {
                     - refract(direction,g,1.0 / REFRACTION_WATER_IOR);
             }
             if (dot(transmitted,transmitted) < 1e-8 || dot(transmitted,g) >= 0.0) fresnel = 1.0;
-            // Preserve opacity from texture alpha * material alpha * entity alpha.
-            // Fresnel allocates reflection first; alpha mixes diffuse surface and
-            // transmission within the remaining energy, identically for glass/liquid.
-            float opacity = clamp(base.a,0.0,1.0);
-            vec3 surface_weight = weight * (1.0-fresnel) * opacity;
+            // Liquid coverage only belongs to the outward-facing surface;
+            // legacy alpha = 1 must not block an underwater exit.
+            float opacity = entering ? clamp(base.a,0.0,1.0) : 0.0;
+            vec3 surface = cached + emission;
+            vec3 surface_weight = liquid ? weight * (1.0-fresnel) * opacity : vec3(0);
             vec3 reflection_weight = weight * fresnel;
-            vec3 transmission_weight = weight * (1.0-fresnel) * (1.0-opacity);
-            if (!liquid) {
-                // Glass tint must use the lit surface, not unlit albedo. This is
-                // linear cache irradiance * base color, before exposure. Treat
-                // it as absorption only so bright cache values cannot amplify
-                // transmitted radiance. Zero opacity remains untinted.
-                vec3 lit_tint = clamp(cached,vec3(0),vec3(1));
-                transmission_weight *= mix(vec3(1),lit_tint,opacity);
+            vec3 transmission_weight = weight * (1.0-fresnel);
+            if (liquid) {
+                transmission_weight *= 1.0-opacity;
+            } else {
+                // Glass RGB is a transmission filter, never added radiance.
+                // White is identity at every alpha; alpha = 0 is fully clear.
+                // Apply texture * material * entity tint once, on entry.
+                transmission_weight *= mix(vec3(1),clamp(base.rgb,vec3(0),vec3(1)),opacity);
+                if (entering)
+                    radiance += weight * emission;
             }
             bool reflect_path = max(max(reflection_weight.r,reflection_weight.g),reflection_weight.b) >= REFRACTION_MIN_WEIGHT;
             bool transmit_path = max(max(transmission_weight.r,transmission_weight.g),transmission_weight.b) >= REFRACTION_MIN_WEIGHT;
+            // Limit reflected branches without turning the remaining transmitted
+            // path into an opaque surface when it crosses more glass faces.
+            if (reflect_path && transmit_path && branches >= REFRACTION_MAX_BRANCHES)
+                reflect_path = false;
             if (reflect_path && branches >= REFRACTION_MAX_BRANCHES) {
-                // Final branch: opaque diffuse cache shading at this interface.
-                radiance += weight * (cached + emission);
+                // Reflection-only exhaustion (including total internal reflection).
+                if (liquid)
+                    radiance += weight * surface;
                 weight = vec3(0);
             } else {
-                radiance += surface_weight * (cached + emission);
+                radiance += surface_weight * surface;
                 vec3 reflected = reflect(direction,n);
                 if (dot(reflected,g) <= 0.0) reflected = reflect(direction,g);
                 bool reflected_in_liquid = liquid ? pointsIntoLiquid(reflected,outward_normal) : in_liquid;
@@ -178,23 +185,33 @@ void main() {
         rayQueryEXT q;
         traceInterface(q, origin, direction);
         bool hit = rayQueryGetIntersectionTypeEXT(q,true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+        bool environment = !hit;
+        if (hit) {
+            uint kusok_index = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q,true) +
+                rayQueryGetIntersectionGeometryIndexEXT(q,true));
+            environment = getKusok(kusok_index).material.tex_base_color == TEX_BASE_SKYBOX;
+        }
+        if (environment) {
+            // Neither the ray limit nor a sky brush bounds a water volume.
+            // The camera-to-interface water segment was already integrated.
+            // Resolve the environment without inventing another water segment
+            // or reading the surface fields left undefined by a sky hit.
+            rm = vec4(0); cached = vec3(0); emission = sampleSkybox(direction);
+            continue;
+        }
         if (in_liquid) {
             // Attenuate before shading the next hit, including glass or a liquid
             // exit. The near offsets are numerical bias, not additional air gaps.
-            float distance = hit ? rayQueryGetIntersectionTEXT(q,true) : 10000.0;
+            float distance = rayQueryGetIntersectionTEXT(q,true);
             integrateLiquidFog(distance, fog_color, radiance, weight);
         }
-        if (hit) {
-            RayPayloadPrimary payload;
-            payload.material_rmxx = vec4(0); payload.emissive = vec4(0);
-            primaryRayHit(q,payload);
-            origin = payload.hit_t.xyz;
-            normals = payload.normals_gs; base = payload.base_color_a;
-            rm = payload.material_rmxx; emission = payload.emissive.rgb;
-            cached = payload.hit_t.w > 0.0 ? lcCachedIrradiance(rayLightmapUV(q)) * base.rgb : vec3(0);
-        } else {
-            rm = vec4(0); cached = vec3(0); emission = sampleSkybox(direction);
-        }
+        RayPayloadPrimary payload;
+        payload.material_rmxx = vec4(0); payload.emissive = vec4(0);
+        primaryRayHit(q,payload);
+        origin = payload.hit_t.xyz;
+        normals = payload.normals_gs; base = payload.base_color_a;
+        rm = payload.material_rmxx; emission = payload.emissive.rgb;
+        cached = lcCachedIrradiance(rayLightmapUV(q)) * base.rgb;
     }
     imageStore(out_refraction, pix, vec4(min(max(radiance,vec3(0)),vec3(65504)),1));
 }

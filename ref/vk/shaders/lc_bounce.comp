@@ -79,8 +79,11 @@ vec3 tracePath(uint seed, vec3 P, vec3 G, out vec3 first_direction, out float fi
 
         RayPayloadPrimary payload;
         vec4 uv;
-        if (!traceBounce(P + G * 0.01, direction, payload, uv))
+        if (!traceBounce(P + G * 0.01, direction, payload, uv)) {
+            // A miss or a sky brush terminates the path at the environment.
+            color += throughput * sampleSkybox(direction);
             break;
+        }
 
         if (bounce == 0u)
             first_distance = payload.hit_t.w;

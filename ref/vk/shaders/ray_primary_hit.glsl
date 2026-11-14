@@ -14,7 +14,7 @@
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
-#ifndef RAY_BOUNCE
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION)
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);
 #else
 	return textureLod(textures[nonuniformEXT(tex_index)], uv, 2.);

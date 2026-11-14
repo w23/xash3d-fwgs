@@ -11,7 +11,9 @@ void lcTraceRay(rayQueryEXT query, vec3 origin, vec3 direction)
         AlphaCandidateGeometry geometry = readCandidateAlphaGeometry(query);
         uint texture_id = getKusok(geometry.kusok_index).material.tex_base_color;
 
-        if (textureLod(textures[nonuniformEXT(texture_id)], geometry.uv, 2.0).a >= 0.1)
+        // Sky uses a sentinel material ID, not an index into textures.
+        if (texture_id == TEX_BASE_SKYBOX ||
+            textureLod(textures[nonuniformEXT(texture_id)], geometry.uv, 2.0).a >= 0.1)
             rayQueryConfirmIntersectionEXT(query);
     }
 }

@@ -60,12 +60,12 @@ vec3 cachedHit(vec3 origin, vec3 direction, out vec4 hit, out vec4 identity, out
     rayQueryEXT rq;
     lcTraceRay(rq, origin, direction);
     if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
-        return vec3(0);
+        return lighting ? sampleSkybox(direction) : vec3(0);
 
     int ko =
         rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) + rayQueryGetIntersectionGeometryIndexEXT(rq, true);
     if (getKusok(uint(ko)).material.tex_base_color == TEX_BASE_SKYBOX)
-        return vec3(0);
+        return lighting ? sampleSkybox(direction) : vec3(0);
 
     hit = vec4(origin + direction * rayQueryGetIntersectionTEXT(rq, true), rayQueryGetIntersectionTEXT(rq, true));
     identity = vec4(float(rayQueryGetIntersectionInstanceIdEXT(rq, true) + 1),

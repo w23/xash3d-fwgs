@@ -22,11 +22,16 @@ not compiled into this graph.
   frame. GPU clear/raster passes prepare the lightmap geometry, then point and
   polygon passes refresh its RGB lighting. This retains the source experiment's
   512x512 cache for lightmap page zero and its studio-model lightmap lookup.
+  Spotlights use the uploaded surface-to-light direction, matching direct lighting.
+  Environment lights (sun) use sky visibility; on a miss, alpha-tested occluders
+  are checked across the full ray interval.
 - Diffuse GI: half-resolution `lc_bounce` → firefly rejection → Poisson
   reconstruction and SH formation → temporal reprojection of SH coefficients →
   two switchable bilateral SH blur passes → SH projection onto the shading normal
   from the normal map. The compositor reads that resolved irradiance directly.
   There is no temporal accumulation of resolved diffuse RGB.
+  Paths ending at a sky brush or missing geometry sample the skybox, weighted
+  by the accumulated path throughput, so the sky also supplies diffuse GI.
   SH history uses a bilinear previous-frame footprint validated against geometric
   normals and previous surface positions, with explicit age and frame stamps.
   Normal maps do not gate or modify the coefficient history. The 8-frame
@@ -41,10 +46,13 @@ not compiled into this graph.
   reuse → reflection radiance history with parallax validation. This separate
   lobe retains the source-branch ASVGF accumulation/variance code. Its defaults
   live in `indirect_temporal_config.glsl`, keeping the CPU UBO small.
+  Sky brushes and misses return skybox radiance with the same exposure as the
+  primary sky. They retain zero hit distance/identity for environment history.
 - Refraction: full-resolution `lc_refraction` traces deterministic smooth optical
   paths through translucent brush glass and engine liquid/turbulent surfaces.
-  Hit lighting comes exclusively from the light cache (plus material emission
-  and sky). There is no radiance history or denoising. Water uses IOR 1.333 and
+  Opaque hit lighting comes from the light cache (plus material emission
+  and sky). Glass RGB filters transmitted light and never adds surface radiance.
+  There is no radiance history or denoising. Water uses IOR 1.333 and
   animated world-space directional wave normals written into the G-buffer.
   The wave shape and analytic slope follow GPU Gems chapter 1, equations 8a/8b
   (sharpened sine waves); short waves fade with the pixel footprint. Wave phases
@@ -59,16 +67,23 @@ not compiled into this graph.
   without multiplying it by surface alpha or applying Fresnel a second time.
   Liquid composition is unchanged.
   There is no intersection/depth limit. A four-branch budget includes reflected
-  continuations at total internal reflection; on exhaustion the current interface
-  resolves as diffuse base color times cached lighting, without more transparency.
-  Negligible path weights are discarded. Opacity is texture alpha multiplied by
-  material and entity alpha, for both glass and liquid. After Fresnel reflection,
-  alpha mixes cached diffuse surface lighting/emission with transmission:
-  `F * reflected + (1-F) * (alpha * surface + (1-alpha) * transmitted)`.
-  For glass, transmitted radiance is additionally tinted by
-  `mix(1, clamp(base_color * cached_irradiance, 0, 1), alpha)` in linear space,
-  before exposure. Thus the tint follows local lighting, cannot amplify the
-  background, and vanishes at zero opacity. Liquid transmission is unchanged.
+  continuations at total internal reflection. On exhaustion, further reflected
+  branches are omitted while transmission continues. Reflection-only exhaustion
+  resolves the liquid surface or discards the exhausted glass reflection branch.
+  Negligible path weights are discarded. Alpha is texture alpha multiplied by
+  material and entity alpha. Glass tint and liquid coverage apply only on the
+  entering face. The exit retains Fresnel/refraction but does not apply another
+  texture layer. In particular, legacy water texture alpha = 1 must not block
+  sky transmission from below; the incident underwater segment still receives fog.
+  Liquid uses `F * reflected + (1-F) * (alpha * surface + (1-alpha) * transmitted)`,
+  with cached diffuse surface lighting. Glass instead uses
+  `F * reflected + (1-F) * mix(1, tint, alpha) * transmitted`.
+  Tint is the sampled linear texture RGB times material/entity RGB, clamped to
+  [0,1]. White is the identity multiplier for every alpha; alpha = 0 is fully
+  clear before Fresnel. There is no additive glass texture or cache-dependent
+  absorption. Only explicitly emissive materials add glass emission.
+  Refraction texture samples use the
+  traced ray footprint rather than a fixed mip level, preserving texture detail.
   The primary pass stores lightmap UV for cached shading of the first interface,
   without tracing the camera ray again. There is no fixed liquid opacity or tint.
   Tuning lives in `refraction_config.glsl`.
@@ -81,6 +96,11 @@ not compiled into this graph.
   from the camera to that exit. Medium detection relies on visible boundaries;
   camera-underwater pixels with no liquid boundary on their primary path and
   missing liquid side faces are not classified by a volume query.
+  Sky brushes and misses terminate at the environment before fog integration:
+  neither the sky distance nor the ray's maximum range defines a water segment.
+  Fog is applied to the camera-to-liquid-exit segment and finite geometry hits
+  while inside liquid. Open water volumes therefore do not receive an invented
+  infinite fog segment on environment rays.
 - `denoiser.comp` reads the finished lobes and handles material composition,
   emissive/translucent composition, exposure and debug views. Normal output remains
   linear HDR until `bloom_composite.comp` applies bloom and the output curve.
