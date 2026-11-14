@@ -20,6 +20,9 @@
 	"light_direct_point": {
 		"comp": "ray_light_direct_point"
 	},
+	"heitz_shadow_prepare": {
+		"comp": "heitz_shadow_prepare"
+	},
 	"heitz_shadow_noise": {
 		"comp": "heitz_shadow_noise"
 	},

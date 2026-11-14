@@ -3,8 +3,19 @@
 `rt.json` contains a single lighting pipeline; experimental alternative paths are
 not compiled into this graph.
 
-- Direct: LTC lookup + static joint-UV blue noise, followed by Heitz noise,
-  noise smoothing, horizontal and vertical shadow filters. The filters process
+- Direct: LTC lookup + static joint-UV blue noise, followed by shadow preparation,
+  Heitz noise, noise smoothing, horizontal and vertical shadow filters. Preparation
+  encodes the correlated estimates once per pixel, outside the filter tap loops.
+  The noise estimator reads separate diffuse/specular lighting signals with
+  analytic illumination, diffuse material color, revealage, the compositor's
+  previous-frame exposure and sRGB output curve applied. Values are clamped to
+  the visible [0,1] range for noise estimation only. Thus shadow noise revealed
+  by increased exposure increases the filter footprint. Other lighting/emissive
+  contributions are omitted from this visibility approximation; shading changes
+  can also increase the estimated noise, but analytic shading is never blurred.
+  A 3x3 RMS noise smoothing step and square-root noise-to-sigma response keep
+  sparse visible edge texels from collapsing to an ineffective subpixel blur.
+  The filters process
   correlated shadowed/unshadowed estimates. Analytic lighting stays at the center
   pixel. There is no direct-light history or final lighting blur.
 - Cache: CPU uploads surface ranges on initialization and brush transforms each
@@ -41,7 +52,8 @@ configuration.
   accumulation. Path reservoir reuse remains separate.
 
 Temporal histories reset when the resolution or signal settings change.
-Direct lighting and the final compositor never read temporal history. Final
+Direct lighting and the final compositor share previous-frame auto exposure,
+but direct lighting does not accumulate a shadow or lighting history. Final
 a-trous, alternative NRD/AMD paths and source-branch refraction experiments are
 not part of this pipeline.
 

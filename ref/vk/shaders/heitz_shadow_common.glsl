@@ -4,13 +4,18 @@
 const int HEITZ_MAX_RADIUS = 24;
 const float HEITZ_NOISE_TO_SIGMA = 16.0;
 const float HEITZ_MAX_SIGMA = 8.0;
-const float HEITZ_EPSILON = 1e-7;
+
+float heitzRatioChannel(float shadowed, float unshadowed) {
+	// Any positive stored energy can become visible under auto exposure.
+	// Clamp before division so tiny denominators cannot overflow the ratio.
+	return unshadowed > 0.0 ? clamp(shadowed, 0.0, unshadowed) / unshadowed : 1.0;
+}
 
 vec3 heitzRatio(vec3 shadowed, vec3 unshadowed) {
 	// No sampled energy is no evidence of occlusion (paper, section 4.2).
-	return vec3(unshadowed.r > HEITZ_EPSILON ? clamp(shadowed.r / unshadowed.r, 0.0, 1.0) : 1.0,
-				unshadowed.g > HEITZ_EPSILON ? clamp(shadowed.g / unshadowed.g, 0.0, 1.0) : 1.0,
-				unshadowed.b > HEITZ_EPSILON ? clamp(shadowed.b / unshadowed.b, 0.0, 1.0) : 1.0);
+	return vec3(heitzRatioChannel(shadowed.r, unshadowed.r),
+				heitzRatioChannel(shadowed.g, unshadowed.g),
+				heitzRatioChannel(shadowed.b, unshadowed.b));
 }
 
 bool heitzInside(ivec2 p, ivec2 res) {
@@ -31,10 +36,12 @@ float heitzGeometryWeight(vec4 center, vec3 normal, ivec2 p) {
 }
 
 vec2 heitzSigma(vec2 noise) {
-	// Paper section 4.1: sigma is proportional to E. Do not subtract a noise
-	// threshold: sparse penumbra samples must not be classified as noise-free.
+	// Second differences are averaged over line samples. A linear mapping makes
+	// sparse but visible texels request a subpixel sigma and remain untouched.
+	// A square-root response gives these low-amplitude signals a useful footprint
+	// without a discontinuous minimum radius or a noise rejection threshold.
 	// The scale/cap are experimental spatial-only settings, not author defaults.
-	return clamp(noise * HEITZ_NOISE_TO_SIGMA, vec2(0.0), vec2(HEITZ_MAX_SIGMA));
+	return min(sqrt(max(noise, vec2(0.0))) * HEITZ_NOISE_TO_SIGMA, vec2(HEITZ_MAX_SIGMA));
 }
 
 vec3 heitzFilterEncode(vec3 value) {

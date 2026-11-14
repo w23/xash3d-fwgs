@@ -19,10 +19,12 @@ void main() {
 	for (int y = -1; y <= 1; ++y) for (int x = -1; x <= 1; ++x) {
 		const ivec2 tap = p + ivec2(x,y);
 		if (!heitzInside(tap, res)) continue;
-		noise += imageLoad(heitz_noise, tap).rg;
+		// RMS spreads the footprint without averaging sparse edge noise away.
+		const vec2 tap_noise = imageLoad(heitz_noise, tap).rg;
+		noise += tap_noise * tap_noise;
 		count += 1.0;
 	}
-    noise /= count;
+    noise = sqrt(noise / count);
 
     imageStore(out_heitz_noise_blurred, p, vec4(noise, heitzSigma(noise) / HEITZ_MAX_SIGMA));
 }

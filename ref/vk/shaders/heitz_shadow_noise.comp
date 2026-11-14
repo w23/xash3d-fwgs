@@ -9,7 +9,8 @@ layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
 #include "heitz_shadow_common.glsl"
 layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D out_heitz_noise;
-#include "heitz_shadow_raw.glsl"
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D heitz_perceptual_diffuse;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D heitz_perceptual_specular;
 
 void main() {
 	const ivec2 p = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
@@ -33,9 +34,8 @@ void main() {
 					valid_previous = valid_gradient = false;
 					continue;
 				}
-				vec3 sd, ud, ss, us;
-				heitzRaw(tap, sd, ud, ss, us);
-				const vec3 wd = heitzRatio(sd, ud), ws = heitzRatio(ss, us);
+				const vec3 wd = imageLoad(heitz_perceptual_diffuse, tap).rgb;
+				const vec3 ws = imageLoad(heitz_perceptual_specular, tap).rgb;
 				const vec3 gd = wd - prev_d, gs = ws - prev_s;
 				if (valid_gradient) {
 					noise += vec2(length(gd - gradient_d), length(gs - gradient_s)) / 1.732050808;

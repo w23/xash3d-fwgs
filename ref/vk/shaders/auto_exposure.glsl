@@ -1,6 +1,8 @@
 #ifndef AUTO_EXPOSURE_GLSL_INCLUDED
 #define AUTO_EXPOSURE_GLSL_INCLUDED
 
+#include "exposure_read.glsl"
+
 /*
 Auto exposure tuning notes:
 
@@ -104,10 +106,6 @@ int aeGlobalLevel(ivec2 res) {
 	return AE_MAX_LEVELS - 1;
 }
 
-ivec2 aeExposureCoord(ivec2 res) {
-	return max(res - ivec2(1), ivec2(0));
-}
-
 bool aeCoordInside(ivec2 res, ivec2 coord) {
 	return all(greaterThanEqual(coord, ivec2(0))) && all(lessThan(coord, res));
 }
@@ -134,14 +132,6 @@ void aeStoreHistogramTexel(ivec2 res, int level, ivec2 cell, int hist_texel, vec
 float aeReadHistogramBin(ivec2 res, int level, ivec2 cell, int bin) {
 	const vec4 texel = aeLoadHistogramTexel(res, level, cell, bin / AE_BINS_PER_TEXEL);
 	return texel[bin % AE_BINS_PER_TEXEL];
-}
-
-float readAutoExposure(ivec2 res) {
-	float exposure = loadExposureTemporalData(aeExposureCoord(res)).r;
-	if (IS_INVALID(exposure) || exposure <= 0.) {
-		exposure = 1.;
-	}
-	return clamp(exposure, ubo.ubo.auto_exposure_min, ubo.ubo.auto_exposure_max);
 }
 
 // Stage 1: build the current frame L0 histogram inside one 8x8 workgroup.
