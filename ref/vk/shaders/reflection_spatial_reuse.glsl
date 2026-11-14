@@ -4,6 +4,7 @@
 #include "noise.glsl"
 #include "color_spaces.glsl"
 #include "brdf.glsl"
+#include "reflection_temporal_config.glsl"
 
 layout(local_size_x=8,local_size_y=8) in;
 layout(set=0,binding=0) uniform UBO { UniformBuffer ubo; } ubo;
@@ -54,10 +55,11 @@ bool inFrame(ivec2 p) {
     return all(greaterThanEqual(p,ivec2(0))) && all(lessThan(p,ubo.ubo.res));
 }
 
-vec3 reconstruct(ivec2 p, vec3 center) {
+vec3 reconstruct(ivec2 p, vec3 center, out float meanRayLength) {
     vec4 surface = imageLoad(position_t,p);
     vec2 rm = imageLoad(material_rmxx,p).rg;
     vec4 centerHit = imageLoad(reflection_hit_pos,p);
+    meanRayLength = surface.w > 0.0 && reflectionLengthValid(centerHit.w) ? centerHit.w : 0.0;
     if (surface.w <= 0.0 || rm.x < 0.004 || centerHit.w <= 0.0 ||
         (ubo.ubo.renderer_flags & RENDERER_FLAG_REFLECTION_RECONSTRUCTION) == 0u)
         return center;
@@ -147,6 +149,8 @@ vec3 reconstruct(ivec2 p, vec3 center) {
         mat2 gatherRotation = excess ? mat2(rc,rs,-rs,rc) : rotation;
         vec3 sum = excess ? vec3(0.0) : center;
         float weightSum = excess ? 0.0 : 1.0;
+        float lengthSum = meanRayLength;
+        float lengthWeightSum = meanRayLength > 0.0 ? 1.0 : 0.0;
 #if RECON_USE_CENTER_BRDF && RECON_USE_HIT_DEDUP
         vec3 acceptedHits[8];
         int acceptedCount = 0;
@@ -248,15 +252,29 @@ vec3 reconstruct(ivec2 p, vec3 center) {
 #endif
             sum += contribution*weight;
             weightSum += weight;
+            // Use the accepted base gather and distances from the center, just
+            // like radiance reconstruction. Residual fireflies do not steer it.
+            if (!excess && reflectionLengthValid(distanceToHit)) {
+                lengthSum += distanceToHit * weight;
+                lengthWeightSum += weight;
+            }
 #else
             if (imageLoad(position_t,q).w <= 0.0) continue;
             vec3 color = imageLoad(firefly_filtered_specular,q).rgb;
             if (any(isnan(color)) || any(isinf(color))) continue;
             sum += color;
             weightSum += 1.0;
+            vec4 hit = imageLoad(reflection_hit_pos,q);
+            float distanceToHit = length(hit.xyz-surface.xyz);
+            if (!excess && hit.w > 0.0 && reflectionLengthValid(distanceToHit)) {
+                lengthSum += distanceToHit;
+                lengthWeightSum += 1.0;
+            }
 #endif
         }
         if (weightSum > 0.0) result += sum/weightSum;
+        if (!excess && lengthWeightSum > 0.0)
+            meanRayLength = mix(meanRayLength, lengthSum/lengthWeightSum, contactBlend);
     }
     return mix(center,result,contactBlend);
 }
@@ -265,6 +283,8 @@ void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (!inFrame(p)) return;
     vec4 signal = imageLoad(firefly_filtered_specular,p);
-    signal.rgb = clamp(reconstruct(p,signal.rgb),vec3(0.0),vec3(65504.0));
+    float meanRayLength;
+    signal.rgb = clamp(reconstruct(p,signal.rgb,meanRayLength),vec3(0.0),vec3(65504.0));
+    signal.a = encodeReflectionLength(meanRayLength);
     imageStore(out_reflection_reused_specular,p,signal);
 }
