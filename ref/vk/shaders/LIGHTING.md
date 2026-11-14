@@ -31,6 +31,12 @@ not compiled into this graph.
   normals and previous surface positions, with explicit age and frame stamps.
   Normal maps do not gate or modify the coefficient history. The 8-frame
   accumulation is stored before spatial blur, so blur never feeds back into it.
+  A separate unaccumulated direct-diffuse luminance history follows the same
+  validated SH footprint. Strong absolute and relative changes shorten SH
+  history, reaching an immediate reset for large flashes/on-off transitions.
+  This perceptual anti-lag gate is symmetric for brightening and darkening;
+  small changes near black are suppressed by an absolute threshold. Thresholds
+  are defined in `diffuse_gi_sh_temporal.comp` in linear, unexposed lighting units.
 - Reflections: full-resolution `lc_reflection` → firefly rejection → spatial
   reuse → reflection radiance history with parallax validation. This separate
   lobe retains the source-branch ASVGF accumulation/variance code. Its defaults
