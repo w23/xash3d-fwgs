@@ -185,6 +185,10 @@ static void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, c
 
 static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args_t *args, float fov_angle_y, int frame_width, int frame_height ) {
 	struct UniformBuffer ret = {0};
+	ret.time = gp_cl->time;
+    ret.water_wave_scale = bound(0.01f, rt_water_wave_scale->value, 100.f);
+    ret.water_wave_strength = bound(0.f, rt_water_wave_strength->value, 10.f);
+    ret.water_fog_density = bound(0.f, rt_water_fog_density->value, 100.f);
 	ret.blue_noise_2d_texture = (uint32_t)tglob.blueNoise2DTexture;
 	ret.bounce_count = (uint32_t)bound(0, (int)rt_bounces->value, 64);
 	ret.lightcache_init_frame = g_rtx.lightcache_init_frame;
@@ -224,7 +228,7 @@ static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args
 	// A change of signal representation must not blend in the previous mode.
 	cvar_t *const temporal_settings[] = {vk_gi_sh_blur, rt_gi_sh_temporal,
 		rt_gi_poisson, rt_denoise_gi_by_sh, rt_separated_reflection, rt_disable_reprojection,
-		rt_disable_gi, rt_spatial_reconstruction, rt_bounces};
+		rt_disable_gi, rt_spatial_reconstruction, rt_bounces, rt_water_wave_scale, rt_water_wave_strength};
 	for (size_t i = 0; i < sizeof(temporal_settings) / sizeof(temporal_settings[0]); ++i) {
 		if (temporal_settings[i]->flags & FCVAR_CHANGED) {
 			temporal_settings[i]->flags &= ~FCVAR_CHANGED;

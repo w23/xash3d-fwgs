@@ -37,6 +37,8 @@ void storeExposureTemporalData(ivec2 pix, vec4 value) {
 layout(set = 0, binding = 14, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_bloom_a;
 
+layout(set = 0, binding = 16, rgba16f) uniform readonly image2D refraction;
+
 struct Components {
     vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
 };
@@ -152,7 +154,10 @@ void main() {
 
 	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
 
-	const vec3 emission = imageLoad(emissive, pix).rgb;
+	const vec4 transmission = imageLoad(refraction, pix);
+	const vec3 emission = transmission.a > 0.0 ? vec3(0) : imageLoad(emissive, pix).rgb;
+	if (transmission.a > 0.0)
+		colour = transmission.rgb;
     const vec3 lighting = colour;
     colour = (lighting + emission) * legacy_blend.a;
 

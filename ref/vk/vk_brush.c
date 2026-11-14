@@ -762,7 +762,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		return;
 	}
 
-	const material_mode_e material_mode = brushMaterialModeForRenderType(render_type);
+	const material_mode_e material_mode = kMaterialMode_Translucent;
 	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,

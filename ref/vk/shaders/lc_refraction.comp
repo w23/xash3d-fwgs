@@ -1,0 +1,192 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#define RAY_QUERY
+#define RAY_BOUNCE
+#define RAY_REFRACTION
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "lc_scene.glsl"
+layout(set = 0, binding = 7) uniform samplerCube skybox;
+layout(set = 0, binding = 10, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 12, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
+layout(set = 0, binding = 15, rgba16f) uniform readonly image2D emissive;
+layout(set = 0, binding = 16, rgba32f) uniform readonly image2D primary_lightmap_uv;
+layout(set = 0, binding = 17, rgba16f) uniform readonly image2D direct_specular;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_refraction;
+#include "ray_primary_hit.glsl"
+#include "ray_lightmap.glsl"
+#include "lc_sampling.glsl"
+#include "refraction_config.glsl"
+
+void traceInterface(rayQueryEXT q, vec3 p, vec3 d) {
+    // Two-sided: exits from liquids/glass must be visited as well as entrances.
+    rayQueryInitializeEXT(q, tlas, 0u,
+        GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST | GEOMETRY_BIT_REFRACTIVE,
+        p, 0.001, d, 10000.0);
+    while (rayQueryProceedEXT(q)) {
+        MiniGeometry g = readCandidateMiniGeometry(q);
+        uint tex = getKusok(g.kusok_index).material.tex_base_color;
+        if (tex == TEX_BASE_SKYBOX || textureLod(textures[nonuniformEXT(tex)], g.uv, 0.0).a >= 0.1)
+            rayQueryConfirmIntersectionEXT(q);
+    }
+}
+
+struct Path {
+    vec3 origin;
+    vec3 direction;
+    vec3 weight;
+    bool in_liquid;
+    vec3 fog_color;
+};
+
+bool pointsIntoLiquid(vec3 direction, vec3 outward_normal) {
+    // The positive dot requested for the liquid-facing direction; use the
+    // unflipped geometric normal, never the animated/normal-mapped one.
+    return dot(-outward_normal, direction) > REFRACTION_LIQUID_SIDE_EPSILON;
+}
+
+void integrateLiquidFog(float distance, vec3 fog_color, inout vec3 radiance, inout vec3 weight) {
+    float transmission = exp2(-max(distance,0.0) * ubo.ubo.water_fog_density / REFRACTION_FOG_HALF_DISTANCE);
+    radiance += weight * fog_color * (1.0-transmission);
+    weight *= transmission;
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pix, ubo.ubo.res))) return;
+    imageStore(out_refraction, pix, vec4(0));
+    vec4 first = imageLoad(position_t, pix);
+    vec4 rm = imageLoad(material_rmxx, pix);
+    if (first.w <= 0.0 || rm.b == 0.0) return;
+
+    // Deterministic depth-first splitting; no random choices, history or denoising.
+    Path stack[REFRACTION_MAX_BRANCHES];
+    int count = 0;
+    int branches = 1;
+    // Glass has an opaque specular interface even when its diffuse layer is
+    // transparent. Reuse primary direct lighting; it already includes Fresnel
+    // and shadow visibility, so do not multiply it by alpha or Fresnel again.
+    bool primary_glass = rm.b < 1.5 / 255.0;
+    vec3 radiance = primary_glass ? imageLoad(direct_specular,pix).rgb : vec3(0);
+    vec3 origin = first.xyz;
+    vec3 direction = normalize(first.xyz - ubo.ubo.inv_view[3].xyz);
+    vec3 weight = vec3(1);
+    vec4 normals = imageLoad(normals_gs, pix);
+    vec4 base = imageLoad(base_color_a, pix);
+    base.rgb = SRGBtoLINEAR(base.rgb);
+    vec3 emission = imageLoad(emissive, pix).rgb;
+    vec3 cached = lcCachedIrradiance(imageLoad(primary_lightmap_uv,pix)) * base.rgb;
+    bool in_liquid = false;
+    vec3 fog_color = vec3(0);
+    // If the first interface faces away from the camera, the camera-to-surface
+    // segment is already inside liquid. Infer this from the visible boundary.
+    if (rm.b > 1.5 / 255.0 &&
+        dot(direction,normalDecode(normals.xy)) > REFRACTION_LIQUID_SIDE_EPSILON) {
+        in_liquid = true;
+        fog_color = emission;
+        integrateLiquidFog(length(first.xyz-ubo.ubo.inv_view[3].xyz), fog_color, radiance, weight);
+    }
+
+    while (true) {
+        if (rm.b > 0.0) {
+            vec3 outward_normal = normalDecode(normals.xy);
+            vec3 g = outward_normal, n = normalDecode(normals.zw);
+            bool entering = dot(direction, g) < 0.0;
+            if (!entering) { g = -g; n = -n; }
+            if (dot(direction, n) >= -0.001) n = g;
+            bool liquid = rm.b > 1.5 / 255.0;
+            float eta = entering ? 1.0 / REFRACTION_WATER_IOR : REFRACTION_WATER_IOR;
+            float cosine = clamp(-dot(direction,n), 0.0, 1.0);
+            float reflection_ior = liquid ? REFRACTION_WATER_IOR : REFRACTION_GLASS_IOR;
+            float f0 = pow((reflection_ior - 1.0) / (reflection_ior + 1.0), 2.0);
+            float fresnel = mix(f0 + (1.0-f0)*pow(1.0-cosine,5.0), 1.0,
+                1.0 - smoothstep(REFRACTION_MIRROR_END_COS, REFRACTION_MIRROR_BEGIN_COS, cosine));
+            vec3 transmitted = direction;
+            if (liquid) transmitted = refract(direction,n,eta);
+            else if (rm.a > 0.0) {
+                // Thin glass: cancel the flat boundary's bend, retain the normal-map perturbation.
+                transmitted = direction + refract(direction,n,1.0 / REFRACTION_WATER_IOR)
+                    - refract(direction,g,1.0 / REFRACTION_WATER_IOR);
+            }
+            if (dot(transmitted,transmitted) < 1e-8 || dot(transmitted,g) >= 0.0) fresnel = 1.0;
+            // Preserve opacity from texture alpha * material alpha * entity alpha.
+            // Fresnel allocates reflection first; alpha mixes diffuse surface and
+            // transmission within the remaining energy, identically for glass/liquid.
+            float opacity = clamp(base.a,0.0,1.0);
+            vec3 surface_weight = weight * (1.0-fresnel) * opacity;
+            vec3 reflection_weight = weight * fresnel;
+            vec3 transmission_weight = weight * (1.0-fresnel) * (1.0-opacity);
+            bool reflect_path = max(max(reflection_weight.r,reflection_weight.g),reflection_weight.b) >= REFRACTION_MIN_WEIGHT;
+            bool transmit_path = max(max(transmission_weight.r,transmission_weight.g),transmission_weight.b) >= REFRACTION_MIN_WEIGHT;
+            if (reflect_path && branches >= REFRACTION_MAX_BRANCHES) {
+                // Final branch: opaque diffuse cache shading at this interface.
+                radiance += weight * (cached + emission);
+                weight = vec3(0);
+            } else {
+                radiance += surface_weight * (cached + emission);
+                vec3 reflected = reflect(direction,n);
+                if (dot(reflected,g) <= 0.0) reflected = reflect(direction,g);
+                bool reflected_in_liquid = liquid ? pointsIntoLiquid(reflected,outward_normal) : in_liquid;
+                vec3 reflected_fog_color = liquid && reflected_in_liquid ? emission : fog_color;
+                if (reflect_path && transmit_path) {
+                    stack[count++] = Path(origin + g*0.01, reflected, reflection_weight,
+                        reflected_in_liquid, reflected_fog_color);
+                }
+                // A continued pure reflection also starts a new branch (e.g. TIR).
+                if (reflect_path) ++branches;
+                if (transmit_path) {
+                    weight = transmission_weight;
+                    direction = normalize(transmitted);
+                    if (liquid) {
+                        in_liquid = pointsIntoLiquid(direction,outward_normal);
+                        fog_color = in_liquid ? emission : vec3(0);
+                    }
+                    origin -= g*0.01;
+                } else {
+                    weight = reflect_path ? reflection_weight : vec3(0);
+                    direction = reflected;
+                    in_liquid = reflected_in_liquid;
+                    fog_color = reflected_fog_color;
+                    origin += g*0.01;
+                }
+            }
+        } else {
+            radiance += weight * (cached + emission);
+            weight = vec3(0);
+        }
+        if (max(max(weight.r,weight.g),weight.b) < REFRACTION_MIN_WEIGHT) {
+            if (count == 0) break;
+            Path next = stack[--count];
+            origin = next.origin; direction = next.direction; weight = next.weight;
+            in_liquid = next.in_liquid; fog_color = next.fog_color;
+        }
+        rayQueryEXT q;
+        traceInterface(q, origin, direction);
+        bool hit = rayQueryGetIntersectionTypeEXT(q,true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+        if (in_liquid) {
+            // Attenuate before shading the next hit, including glass or a liquid
+            // exit. The near offsets are numerical bias, not additional air gaps.
+            float distance = hit ? rayQueryGetIntersectionTEXT(q,true) : 10000.0;
+            integrateLiquidFog(distance, fog_color, radiance, weight);
+        }
+        if (hit) {
+            RayPayloadPrimary payload;
+            payload.material_rmxx = vec4(0); payload.emissive = vec4(0);
+            primaryRayHit(q,payload);
+            origin = payload.hit_t.xyz;
+            normals = payload.normals_gs; base = payload.base_color_a;
+            rm = payload.material_rmxx; emission = payload.emissive.rgb;
+            cached = payload.hit_t.w > 0.0 ? lcCachedIrradiance(rayLightmapUV(q)) * base.rgb : vec3(0);
+        } else {
+            rm = vec4(0); cached = vec3(0); emission = sampleSkybox(direction);
+        }
+    }
+    imageStore(out_refraction, pix, vec4(min(max(radiance,vec3(0)),vec3(65504)),1));
+}

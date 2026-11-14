@@ -85,6 +85,8 @@ struct Vertex {
 #define MATERIAL_MODE_DECAL 6
 #define MATERIAL_MODE_COUNT 7
 
+#define MATERIAL_FLAG_LIQUID 1u
+
 #define TEX_BASE_SKYBOX 0x0f000000u
 
 struct Material {
@@ -102,7 +104,7 @@ struct Material {
 	float roughness;
 	float metalness;
 	float normal_scale;
-	PAD(1)
+	uint flags;
 
 	vec4 base_color;
 };
@@ -240,7 +242,12 @@ struct UniformBuffer {
 	float auto_exposure_min;
 	float auto_exposure_max;
 	uint bloom_enabled;
-	PAD(1)
+	float time;
+
+    float water_wave_scale;
+    float water_wave_strength;
+    float water_fog_density;
+    PAD(1)
 };
 
 #undef PAD

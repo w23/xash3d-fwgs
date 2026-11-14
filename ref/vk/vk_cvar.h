@@ -28,6 +28,9 @@ void VK_LoadCvarsAfterInit( void );
 	X(rt_enable) \
 	X(rt_bounces) \
 	X(rt_bloom) \
+	X(rt_water_wave_scale) \
+	X(rt_water_wave_strength) \
+	X(rt_water_fog_density) \
 	X(rt_auto_exposure_min) \
 	X(rt_auto_exposure_max) \
 	X(rt_only_diffuse_gi) \

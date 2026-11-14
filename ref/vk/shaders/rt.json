@@ -71,6 +71,9 @@
 	"indirect_temporal_metadata": {
 		"comp": "indirect_temporal_metadata"
 	},
+	"lc_refraction": {
+		"comp": "lc_refraction"
+	},
 	"denoiser": {
 		"comp": "denoiser"
 	},
