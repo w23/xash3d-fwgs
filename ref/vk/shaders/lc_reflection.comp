@@ -52,7 +52,17 @@ layout(set = 0, binding = 59, rgba32f) uniform writeonly image2D out_reflection_
 
 #include "lc_reprojection.glsl"
 
-vec3 cachedHit(vec3 origin, vec3 direction, out vec4 hit, out vec4 identity, out vec3 previous_hit, bool lighting)
+float reflectionSkyLod(float roughness, float pdf)
+{
+    if (roughness < 0.004) return 0.0;
+    float size = float(textureSize(skybox, 0).x);
+    float texel_solid_angle = 4.0 * kPi / (6.0 * size * size);
+    float sample_solid_angle = 1.0 / (REFLECTION_SKY_FILTER_SAMPLES * max(pdf, 1e-8));
+    return clamp(0.5 * log2(sample_solid_angle / texel_solid_angle),
+        0.0, float(textureQueryLevels(skybox) - 1));
+}
+
+vec3 cachedHit(vec3 origin, vec3 direction, float sky_lod, out vec4 hit, out vec4 identity, out vec3 previous_hit, bool lighting)
 {
     hit = vec4(0);
     identity = vec4(0);
@@ -61,12 +71,12 @@ vec3 cachedHit(vec3 origin, vec3 direction, out vec4 hit, out vec4 identity, out
     rayQueryEXT rq;
     lcTraceRay(rq, origin, direction);
     if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionTriangleEXT)
-        return lighting ? sampleSkybox(direction) : vec3(0);
+        return lighting ? sampleSkybox(direction, sky_lod) : vec3(0);
 
     int ko =
         rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) + rayQueryGetIntersectionGeometryIndexEXT(rq, true);
     if (getKusok(uint(ko)).material.tex_base_color == TEX_BASE_SKYBOX)
-        return lighting ? sampleSkybox(direction) : vec3(0);
+        return lighting ? sampleSkybox(direction, sky_lod) : vec3(0);
 
     hit = vec4(origin + direction * rayQueryGetIntersectionTEXT(rq, true), rayQueryGetIntersectionTEXT(rq, true));
     identity = vec4(float(rayQueryGetIntersectionInstanceIdEXT(rq, true) + 1),
@@ -140,7 +150,7 @@ vec3 traceReflection(uint r, vec3 P, vec3 G, vec3 N, vec3 V, MaterialProperties 
             throughput /= pdf;
         }
 
-        incident = cachedHit(P + G * 0.01, L, hit, identity, previous_hit, true);
+        incident = cachedHit(P + G * 0.01, L, reflectionSkyLod(rm.x, pdf), hit, identity, previous_hit, true);
         value = incident * throughput;
     }
 

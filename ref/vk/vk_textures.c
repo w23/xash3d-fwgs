@@ -662,6 +662,40 @@ static const int g_remap_cube_layer[6] = {
 	/* lf = */ 1,
 };
 
+// Sky mips represent radiance. Averaging sRGB bytes directly darkens bright
+// features (including the sun) as reflection lookups move to coarser levels.
+static void buildSkyboxMip( byte *buf, int width, int height ) {
+	static float decode[256];
+	static byte encode[4096];
+	static qboolean initialized = false;
+	if (!initialized) {
+		for (int i = 0; i < COUNTOF(decode); ++i) {
+			float s = (float)i / 255.0f;
+			decode[i] = s <= 0.04045f ? s / 12.92f : powf((s + 0.055f) / 1.055f, 2.4f);
+		}
+		for (int i = 0; i < COUNTOF(encode); ++i) {
+			float l = (float)i / (COUNTOF(encode) - 1);
+			float s = l <= 0.0031308f ? 12.92f * l : 1.055f * powf(l, 1.0f / 2.4f) - 0.055f;
+			encode[i] = (byte)bound(0, (int)(255.0f * s + 0.5f), 255);
+		}
+		initialized = true;
+	}
+	for (int y = 0; y < Q_max(1, height >> 1); ++y) {
+		for (int x = 0; x < Q_max(1, width >> 1); ++x) {
+			const byte *a = buf + (2 * y * width + 2 * x) * 4;
+			const byte *b = a + (2 * x + 1 < width ? 4 : 0);
+			const byte *c = a + (2 * y + 1 < height ? width * 4 : 0);
+			const byte *d = c + (2 * x + 1 < width ? 4 : 0);
+			byte *out = buf + (y * Q_max(1, width >> 1) + x) * 4;
+			for (int channel = 0; channel < 3; ++channel) {
+				float linear = 0.25f * (decode[a[channel]] + decode[b[channel]] + decode[c[channel]] + decode[d[channel]]);
+				out[channel] = encode[(int)(linear * (COUNTOF(encode) - 1) + 0.5f)];
+			}
+			out[3] = (a[3] + b[3] + c[3] + d[3]) >> 2;
+		}
+	}
+}
+
 static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint) {
 	tex->total_size = 0;
 
@@ -734,8 +768,12 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *pic
 
 					// Build mip in place for the next mip level
 					if (compute_mips) {
-						if ( mip < mipCount - 1 )
-							BuildMipMap( buf, width, height, depth, tex->flags );
+						if ( mip < mipCount - 1 ) {
+							if (is_cubemap && colorspace_hint == kColorspaceGamma)
+								buildSkyboxMip(buf, width, height);
+							else
+								BuildMipMap( buf, width, height, depth, tex->flags );
+						}
 					} else {
 						buf += mip_size;
 					}
@@ -825,7 +863,7 @@ qboolean R_VkTexturesSkyboxUpload( const char *name, const rgbdata_t *pic, color
 
 	vk_texture_t *const dest = g_vktextures.skybox + skybox_slot;
 	Q_strncpy( TEX_NAME(dest), name, sizeof( TEX_NAME(dest) ));
-	dest->flags |= TF_NOMIPMAP;
+	dest->flags &= ~TF_NOMIPMAP;
 	ASSERT(pic->flags & IMAGE_CUBEMAP);
 
 	const qboolean uploaded = uploadTexture(-1, dest, pic, colorspace_hint);

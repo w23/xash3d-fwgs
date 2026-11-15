@@ -5,6 +5,12 @@
 #define REFLECTION_PATH_MAX_EFFECTIVE_SAMPLES 640.0
 #endif
 
+// Filter each stochastic sky lookup over a fraction of its proposal footprint.
+// This is filtered importance sampling, not a second full roughness convolution.
+#ifndef REFLECTION_SKY_FILTER_SAMPLES
+#define REFLECTION_SKY_FILTER_SAMPLES 64.0
+#endif
+
 #ifndef REFLECTION_PATH_PARALLAX_TRANSLATION_EPSILON
 #define REFLECTION_PATH_PARALLAX_TRANSLATION_EPSILON 0.001
 #endif
