@@ -1,9 +1,15 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "fog.glsl"
 
 layout(set = 0, binding = 0) uniform UBO {
 	mat4 mvp;
 	mat4 inv_proj;
 	mat4 inv_view;
+	vec4 fog_color;
+	vec4 fog_params;
+	vec4 fog_plane;
 	vec2 resolution;
 } ubo;
 
@@ -27,4 +33,8 @@ void main() {
 	const vec2 uv = gl_FragCoord.xy / ubo.resolution;
 	const vec3 direction = getDirection(uv);
 	out_color = texture(skybox, direction);
+	// Match GL's MakeSkyVec cube at farClip / 2, measured along the view axis.
+	const vec3 cube = abs(direction);
+	const float fog_coord = abs(dot(direction, ubo.fog_plane.xyz)) * ubo.fog_plane.w / max(max(cube.x, cube.y), cube.z);
+	out_color.rgb = applyFog(out_color.rgb, ubo.fog_color, ubo.fog_params, fog_coord);
 }

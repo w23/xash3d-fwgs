@@ -14,6 +14,7 @@ typedef struct vk_texture_s
 	int width, height, depth;
 	uint32_t flags;
 	int total_size;
+	rgba_t fogParams; // underwater fog from the original image
 
 	struct {
 		r_vk_image_t image;

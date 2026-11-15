@@ -593,7 +593,9 @@ static void blasFillGeometries(rt_blas_t *blas, const vk_render_geometry_t *geom
 
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *mg = geoms + i;
-		const uint32_t prim_count = mg->element_count / 3;
+
+		// Preserve geometry indices shared with raster rendering and material data.
+		const uint32_t prim_count = mg->ray_tracing_hidden ? 0 : mg->element_count / 3;
 
 		blas->build.max_prim_counts[i] = prim_count;
 		blas->build.geoms[i] = (VkAccelerationStructureGeometryKHR)

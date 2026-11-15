@@ -15,6 +15,8 @@
 #include "vk_rtx.h"
 #include "r_textures.h"
 #include "vk_cvar.h"
+#include "vk_fog.h"
+#include "vk_renderstate.h"
 #include "vk_materials.h"
 #include "camera.h"
 #include "vk_mapents.h"
@@ -278,6 +280,7 @@ static void R_ClearModelDecalChains( void )
 
 // tell the renderer what new map is started
 void R_NewMap( void ) {
+	memset( &g_fog, 0, sizeof( g_fog ));
 	const model_t *const map = WORLDMODEL;
 
 	// Existence of cache.data for the world means that we've already have loaded this map
@@ -715,7 +718,11 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 	VK_RenderSetupCamera( rvp );
 
 	if( !CVAR_TO_BOOL( rt_enable ))
+	{
+		R_CheckFog( rvp );
 		VK_UpdateLightmapsIfNeeded();
+	}
+	R_AllowFog( true );
 
 	VK_RenderDebugLabelBegin( "opaque" );
 

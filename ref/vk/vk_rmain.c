@@ -5,6 +5,7 @@
 #include "vk_renderstate.h"
 #include "vk_overlay.h"
 #include "vk_scene.h"
+#include "vk_fog.h"
 #include "vk_framectl.h"
 #include "vk_lightmap.h"
 #include "vk_sprite.h"
@@ -394,19 +395,11 @@ static void*		R_GetProcAddress( const char *name )
 }
 
 // TriAPI Interface
-static void	TriFog( float flFogColor[3], float flStart, float flEnd, int bOn )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
 static void	R_ScreenToWorld( const float *screen, float *world  )
 {
 	PRINT_NOT_IMPLEMENTED();
 }
 static void	TriGetMatrix( const int pname, float *matrix )
-{
-	PRINT_NOT_IMPLEMENTED();
-}
-static void	TriFogParams( float flDensity, int iFogSkybox )
 {
 	PRINT_NOT_IMPLEMENTED();
 }

@@ -21,6 +21,7 @@ void VK_LoadCvarsAfterInit( void );
 	X(r_lighting_modulate) \
 	X(r_lightmap) \
 	X(r_infotool) \
+	X(vk_fog) \
 	X(vk_device_target_id) \
 	X(vk_debug_log) \
 	X(rt_capable) \

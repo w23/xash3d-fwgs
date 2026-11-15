@@ -15,6 +15,7 @@ GNU General Public License for more details.
 
 #include "vk_rpart.h"
 #include "vk_triapi.h"
+#include "vk_renderstate.h"
 #include "camera.h"
 #include "r_textures.h" // tglob.particleTexture
 #include "vk_common.h"
@@ -66,6 +67,7 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 		return;	// nothing to draw?
 
 	TriRenderMode( kRenderTransAlpha );
+	R_AllowFog( false );
 	TriSetTexture( tglob.particleTexture );
 
 	TriBegin( TRI_QUADS );
@@ -120,6 +122,7 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 
 	const vec4_t color = { 1, 1, 1, 1 }; // pColor->r / 255.f, pColor->g / 255.f, pColor->b / 255.f, 1.f };
 	TriEndEx( color, "particle");
+	R_AllowFog( true );
 }
 
 /*
