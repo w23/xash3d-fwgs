@@ -57,7 +57,21 @@ Waves are independent of transparency. They can be enabled on a vanilla material
 or disabled on physical water with `wave_strength 0`. Wave scale multiplies both
 wavelength and height, preserving slope. There are no global wave cvars.
 The shipped water list enables waves initially. The final override file can tune
-or disable them; it takes precedence over resource-pack and map materials. There is no underwater fog in this pass.
+or disable them; it takes precedence over resource-pack and map materials.
+
+RT fog uses `vk_fog` and the raster renderer's LINEAR, EXP and EXP2 equations.
+Camera fog is applied to composed lighting and emission before exposure; sky fog
+keeps the raster skybox setting and engine density reduction. Debug buffer views
+remain available without camera fog.
+
+Transmission through a liquid applies EXP fog over each underwater ray segment,
+including when looking down through the surface from air. Colour and density come
+from the original brush texture's `fogParams`, using the same conversion as camera
+water fog (RGB / 255, density * 0.000025), even if a PBR material replaces its maps.
+Fog stops at an exit face and continues through transparent objects within the
+liquid. This works with both vanilla alpha and physical refraction. Opaque water
+still hides its background. A single current liquid medium is tracked; overlapping
+or nested liquid volumes are not resolved with a medium stack.
 
 ## Override files and precedence
 

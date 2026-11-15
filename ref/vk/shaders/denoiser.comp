@@ -38,6 +38,7 @@ layout(set = 0, binding = 14, rgba32f) uniform readonly image2D position_t;
 layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_bloom_a;
 
 layout(set = 0, binding = 16, rgba16f) uniform readonly image2D refraction;
+#include "rt_fog.glsl"
 
 struct Components {
     vec3 direct_diffuse, direct_specular, indirect_diffuse, indirect_specular;
@@ -158,6 +159,19 @@ void main() {
 		? clamp(imageLoad(base_color_a, pix).a, 0.0, 1.0) : 1.0;
 	colour = mix(imageLoad(refraction, pix).rgb, colour, opacity);
 	vec3 emission = imageLoad(emissive, pix).rgb * opacity;
+    vec4 fog_params = ubo.ubo.fog_params;
+    vec4 position = imageLoad(position_t, pix);
+    float fog_distance = rtFogDepth(position.xyz);
+    if (position.w <= 0.0) {
+        vec2 ndc = (vec2(pix) + 0.5) / vec2(res) * 2.0 - 1.0;
+        vec4 eye = ubo.ubo.inv_proj * vec4(ndc, 1.0, 1.0);
+        vec3 direction = normalize(mat3(ubo.ubo.inv_view) * eye.xyz);
+        fog_distance = rtSkyFogDistance(direction);
+        fog_params = ubo.ubo.sky_fog_params;
+    }
+    float transmission = fogTransmittance(fog_params, fog_distance);
+    colour = mix(SRGBtoLINEAR(ubo.ubo.fog_color.rgb), colour, transmission);
+    emission *= transmission;
     const vec3 lighting = colour;
     colour = (lighting + emission) * legacy_blend.a;
 

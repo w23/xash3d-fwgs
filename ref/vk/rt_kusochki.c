@@ -1,6 +1,7 @@
 #include "rt_kusochki.h"
 
 #include "vk_materials.h"
+#include "vk_textures.h"
 #include "vulkan/VResource.h"
 #include "vk_render.h" // vk_render_geometry_t
 #include "vulkan/VBuffer.h"
@@ -102,6 +103,19 @@ static void applyMaterialToKusok(vk_kusok_data_t* kusok, const vk_render_geometr
 		.surface_flags = geom->surf_deprecate &&
 			(geom->surf_deprecate->flags & (SURF_DRAWTURB | SURF_DRAWTURB_QUADS)) ? SURFACE_FLAG_LIQUID : 0,
 	};
+
+	// Use the original liquid texture, even when a material replaces its base colour.
+	if( kusok->material.surface_flags & SURFACE_FLAG_LIQUID ) {
+		const msurface_t *surf = geom->surf_deprecate;
+		if( surf->texinfo && surf->texinfo->texture ) {
+			const vk_texture_t *tex = R_TextureGetByIndex( surf->texinfo->texture->gl_texturenum );
+			if( tex ) {
+				for( int i = 0; i < 3; ++i )
+					kusok->material.liquid_fog[i] = tex->fogParams[i] / 255.0f;
+				kusok->material.liquid_fog[3] = tex->fogParams[3] * 0.000025f;
+			}
+		}
+	}
 
 	// TODO emissive is potentially "dynamic", not tied to the material directly, as it is specified per-surface in rad files
 	VectorCopy(geom->emissive, kusok->emissive);

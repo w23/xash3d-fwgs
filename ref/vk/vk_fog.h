@@ -20,5 +20,6 @@ extern vk_fog_t g_fog;
 struct ref_viewpass_s;
 void R_CheckFog( const struct ref_viewpass_s *rvp );
 void R_GetFogParams( vec4_t color, vec4_t params, qboolean skybox );
+void R_GetSceneFogParams( vec4_t color, vec4_t params, qboolean skybox );
 void TriFog( float flFogColor[3], float flStart, float flEnd, int bOn );
 void TriFogParams( float flDensity, int iFogSkybox );

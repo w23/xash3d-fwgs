@@ -1,5 +1,7 @@
+#ifndef FOG_GLSL_INCLUDED
+#define FOG_GLSL_INCLUDED
 // Fixed-function GL fog equations. params = density, start, end, mode.
-vec3 applyFog(vec3 color, vec4 fog_color, vec4 params, float distance) {
+float fogTransmittance(vec4 params, float distance) {
 	float factor = 1.;
 	if (params.w == 1.)
 		factor = (params.z - distance) / (params.z - params.y);
@@ -9,5 +11,10 @@ vec3 applyFog(vec3 color, vec4 fog_color, vec4 params, float distance) {
 		const float d = params.x * distance;
 		factor = exp(-d * d);
 	}
-	return mix(fog_color.rgb, color, clamp(factor, 0., 1.));
+	return clamp(factor, 0., 1.);
 }
+
+vec3 applyFog(vec3 color, vec4 fog_color, vec4 params, float distance) {
+	return mix(fog_color.rgb, color, fogTransmittance(params, distance));
+}
+#endif

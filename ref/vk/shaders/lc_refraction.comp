@@ -23,6 +23,7 @@ layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_refraction;
 #include "lc_sampling.glsl"
 #include "refraction_config.glsl"
 #include "transparency_faces.glsl"
+#include "rt_fog.glsl"
 
 void traceInterface(rayQueryEXT q, vec3 p, vec3 d) {
     // Keep both sides available; per-candidate policy distinguishes vanilla faces from physical exits.
@@ -58,7 +59,10 @@ void main() {
 
     vec4 uv = imageLoad(primary_lightmap_uv, pix);
     Material material = getKusok(uint(uv.w) - 1u).material;
-    vec3 direction = transmittedDirection(normalize(first.xyz - ubo.ubo.inv_view[3].xyz),
+    vec3 incoming = normalize(first.xyz - ubo.ubo.inv_view[3].xyz);
+    RayFog fog = rtInitialFog(first.xyz);
+    rtCrossLiquid(fog, material, incoming, imageLoad(normals_gs, pix));
+    vec3 direction = transmittedDirection(incoming,
         imageLoad(normals_gs, pix), material.refraction_ior);
     vec3 origin = first.xyz;
     vec3 radiance = vec3(0);
@@ -70,12 +74,19 @@ void main() {
         rayQueryEXT q;
         traceInterface(q, origin + direction * 0.01, direction);
         if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+            rtFogSegment(fog, fog.liquid ? 10000.0 : rtSkyFogDistance(direction), true, radiance, weight);
             radiance += weight * sampleSkybox(direction);
             break;
         }
         uint kusok_index = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, true) +
             rayQueryGetIntersectionGeometryIndexEXT(q, true));
         material = getKusok(kusok_index).material;
+        float segment_length = rayQueryGetIntersectionTEXT(q, true) + 0.01;
+        bool sky = material.tex_base_color == TEX_BASE_SKYBOX;
+        // Water uses the actual path length; global fog keeps the raster view-axis metric.
+        float fog_distance = fog.liquid ? segment_length :
+            abs((ubo.ubo.view * vec4(direction * segment_length, 0.0)).z);
+        rtFogSegment(fog, fog_distance, sky, radiance, weight);
         if (material.tex_base_color == TEX_BASE_SKYBOX) {
             radiance += weight * sampleSkybox(direction);
             break;
@@ -92,6 +103,7 @@ void main() {
         radiance += weight * opacity * surface;
         weight *= 1.0 - opacity;
         origin = payload.hit_t.xyz;
+        rtCrossLiquid(fog, material, direction, payload.normals_gs);
         direction = transmittedDirection(direction, payload.normals_gs, material.refraction_ior);
     }
     imageStore(out_refraction, pix, vec4(min(max(radiance, vec3(0)), vec3(65504)), 0));

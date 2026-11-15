@@ -8,6 +8,7 @@
 #include "vk_common.h"
 #include "vk_core.h"
 #include "vk_cvar.h"
+#include "vk_fog.h"
 #include "vk_light.h"
 #include "vk_brush.h"
 #include "vk_math.h"
@@ -21,6 +22,7 @@
 #include "std/profiler.h"
 
 #include "xash3d_mathlib.h"
+#include "pmove.h"
 
 #include <string.h>
 
@@ -186,6 +188,11 @@ static void produceUboResource(struct Producer* p, struct vk_combuf_s *combuf, c
 static struct UniformBuffer prepareUniformBuffer( const vk_ray_frame_render_args_t *args, float fov_angle_y, int frame_width, int frame_height ) {
 	struct UniformBuffer ret = {0};
 	ret.time = gp_cl->time;
+	R_GetSceneFogParams( ret.fog_color, ret.fog_params, false );
+	R_GetSceneFogParams( ret.fog_color, ret.sky_fog_params, true );
+	ret.fog_enabled = CVAR_TO_BOOL( vk_fog );
+	ret.fog_liquid = g_fog.fogEnabled && !FBitSet( gp_host->features, ENGINE_QUAKE_COMPATIBLE );
+	ret.fog_sky_half_size = (int)( WORLDMODEL ? MOVEVARS->zmax * 1.73f : 2048.0f ) >> 1;
 	ret.blue_noise_2d_texture = (uint32_t)tglob.blueNoise2DTexture;
 	ret.bounce_count = (uint32_t)bound(0, (int)rt_bounces->value, 64);
 	ret.lightcache_init_frame = g_rtx.lightcache_init_frame;

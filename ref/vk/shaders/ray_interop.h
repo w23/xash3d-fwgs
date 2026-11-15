@@ -113,6 +113,7 @@ struct Material {
 	PAD(1)
 
 	vec4 base_color;
+	vec4 liquid_fog; // Texture fog RGB and exponential density; zero for non-liquids.
 };
 
 struct ModelHeader {
@@ -249,6 +250,13 @@ struct UniformBuffer {
 	float auto_exposure_max;
 	uint bloom_enabled;
 	float time;
+	vec4 fog_color;
+	vec4 fog_params;
+	vec4 sky_fog_params;
+	uint fog_enabled;
+	uint fog_liquid; // Camera fog comes from a liquid rather than global/custom fog.
+	float fog_sky_half_size;
+	PAD(1)
 
 };
 

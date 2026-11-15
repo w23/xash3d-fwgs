@@ -716,10 +716,10 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 	/* FIXME VK : 0.f */;
 
 	VK_RenderSetupCamera( rvp );
+	R_CheckFog( rvp );
 
 	if( !CVAR_TO_BOOL( rt_enable ))
 	{
-		R_CheckFog( rvp );
 		VK_UpdateLightmapsIfNeeded();
 	}
 	R_AllowFog( true );

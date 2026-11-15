@@ -217,12 +217,12 @@ void TriFogParams( float flDensity, int iFogSkybox )
 	g_fog.fogSkybox = iFogSkybox;
 }
 
-void R_GetFogParams( vec4_t color, vec4_t params, qboolean skybox )
+void R_GetSceneFogParams( vec4_t color, vec4_t params, qboolean skybox )
 {
 	Vector4Copy( g_fog.fogColor, color );
 	Vector4Set( params, g_fog.fogDensity, g_fog.fogStart, g_fog.fogEnd, 0.0f );
 
-	if( !CVAR_TO_BOOL( vk_fog ) || CVAR_TO_BOOL( rt_enable ) || vk_renderstate.mode_2d || !vk_renderstate.fog_allowed )
+	if( !CVAR_TO_BOOL( vk_fog ) )
 		return;
 	if( !g_fog.fogEnabled && !g_fog.fogCustom )
 		return;
@@ -237,4 +237,11 @@ void R_GetFogParams( vec4_t color, vec4_t params, qboolean skybox )
 	// R_DrawSkyBox halves the density of engine fog in GL.
 	if( skybox && g_fog.fogEnabled )
 		params[0] *= 0.5f;
+}
+
+void R_GetFogParams( vec4_t color, vec4_t params, qboolean skybox )
+{
+	R_GetSceneFogParams( color, params, skybox );
+	if( CVAR_TO_BOOL( rt_enable ) || vk_renderstate.mode_2d || !vk_renderstate.fog_allowed )
+		params[3] = 0.0f;
 }
