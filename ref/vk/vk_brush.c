@@ -459,7 +459,7 @@ typedef struct {
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
-	const float *modelorg;
+	const matrix4x4 *transform;
 	qboolean is_creating;
 
 	vk_brush_model_t *bmodel;
@@ -472,6 +472,14 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 	ASSERT(args.wmodel->surfaces_count > 0);
 
 	const float wave_height = (!args.ent) ? 0.f : args.ent->curstate.scale;
+
+	// GL's R_RenderBrushPoly passes CULL_BACKSIDE to EmitWaterPolys, which
+	// reverses the vertex order so water can be seen from either side.
+	// Do the same for rasterization; RT needs stable winding for medium transitions.
+	const qboolean face_camera = !args.is_creating && !CVAR_TO_BOOL(rt_enable);
+	vec3_t modelorg;
+	if (face_camera)
+		Matrix4x4_VectorITransform(*args.transform, g_camera.vieworg, modelorg);
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&args.wmodel->geometry);
 
@@ -501,20 +509,22 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 			});
 		}
 
-		int vertices = 0, indices = 0;
-		qboolean reverse = false;
-		if (args.modelorg) {
-			// Like GL's CULL_BACKSIDE / EmitWaterPolys: face the raster camera.
-			float dist = PlaneDiff(args.modelorg, warp->plane);
+		// A hack that allows one-sided water to be rendered from both sides;
+		// the logic is similar to GL rendering, but specific to Vulkan.
+		qboolean reverse_winding = false;
+		if (face_camera) {
+			float dist = PlaneDiff(modelorg, warp->plane);
 			if (FBitSet(warp->flags, SURF_PLANEBACK))
 				dist = -dist;
-			reverse = dist < 0.f;
+			reverse_winding = dist < 0.f;
 		}
+
+		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = args.prev_time,
 			.wave_height = wave_height,
 			.warp = warp,
-			.reverse = reverse,
+			.reverse = reverse_winding,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
@@ -754,18 +764,13 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(wmodel->surfaces_count > 0);
 
-	// Keep RT water winding stable: its normals determine medium transitions.
-	// Raster water needs both sides, including brushes without a paired back face.
-	vec3_t modelorg;
-	Matrix4x4_VectorITransform(transform, g_camera.vieworg, modelorg);
-
 	fillWaterSurfaces((fill_water_surfaces_args_t){
 		.ent = ent,
 		.surfaces = surfaces,
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
-		.modelorg = CVAR_TO_BOOL(rt_enable) ? NULL : modelorg,
+		.transform = (const matrix4x4*)transform,
 		.is_creating = false,
 	});
 
