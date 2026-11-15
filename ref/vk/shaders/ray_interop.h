@@ -85,7 +85,8 @@ struct Vertex {
 #define MATERIAL_MODE_DECAL 6
 #define MATERIAL_MODE_COUNT 7
 
-#define MATERIAL_FLAG_LIQUID 1u
+// Engine geometry property used only for sidedness, independent of optical parameters.
+#define SURFACE_FLAG_LIQUID 1u
 
 #define TEX_BASE_SKYBOX 0x0f000000u
 
@@ -104,7 +105,12 @@ struct Material {
 	float roughness;
 	float metalness;
 	float normal_scale;
-	uint flags;
+	float refraction_ior;
+
+	float wave_scale;
+	float wave_strength;
+	uint surface_flags;
+	PAD(1)
 
 	vec4 base_color;
 };
@@ -244,10 +250,6 @@ struct UniformBuffer {
 	uint bloom_enabled;
 	float time;
 
-    float water_wave_scale;
-    float water_wave_strength;
-    float water_fog_density;
-    PAD(1)
 };
 
 #undef PAD

@@ -68,6 +68,7 @@ vec3 reconstruct(ivec2 p, vec3 center, out float meanRayLength) {
     vec3 G = normalDecode(normals.xy);
     vec3 N = normalDecode(normals.zw);
     vec3 V = normalize(ubo.ubo.inv_view[3].xyz - surface.xyz);
+    if (dot(G, V) < 0.0) { G = -G; N = -N; }
     bool separated = (ubo.ubo.renderer_flags & RENDERER_FLAG_SEPARATED_REFLECTION) != 0u;
     MaterialProperties material = MaterialProperties(separated ? vec3(1) :
         SRGBtoLINEAR(imageLoad(base_color_a,p).rgb), separated ? 1.0 : rm.y, rm.x);

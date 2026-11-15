@@ -24,6 +24,9 @@ static r_vk_material_t k_default_material = {
 	.metalness = 0.f,
 	.roughness = 1.f,
 	.normal_scale = 1.f,
+	.refraction_ior = 0.f,
+	.wave_scale = 1.f,
+	.wave_strength = 0.f,
 	.base_color = { 1.f, 1.f, 1.f, 1.f },
 };
 
@@ -115,11 +118,12 @@ static void printMaterial(int index) {
 	const char* const name = g_materials.table[index].name;
 	const r_vk_material_t* const mat = &g_materials.table[index].material;
 
-	DEBUG("material[%d] \"%s\" (tbc=%d, tr=%d, tm=%d, tn=%d bc=(%.03f,%.03f,%.03f,%.03f) r=%.03f m=%.03f ns=%.03f",
+	DEBUG("material[%d] \"%s\" (tbc=%d, tr=%d, tm=%d, tn=%d bc=(%.03f,%.03f,%.03f,%.03f) r=%.03f m=%.03f ns=%.03f refraction_ior=%.03f waves=(%.03f,%.03f)",
 		index, name,
 		mat->tex_base_color, mat->tex_roughness, mat->tex_metalness, mat->tex_normalmap,
 		mat->base_color[0], mat->base_color[1], mat->base_color[2], mat->base_color[3],
-		mat->roughness, mat->metalness, mat->normal_scale
+		mat->roughness, mat->metalness, mat->normal_scale,
+		mat->refraction_ior, mat->wave_scale, mat->wave_strength
 		);
 }
 
@@ -180,9 +184,9 @@ static void assignMaterialForTexture(const char *name, int for_tex_id, int mat_i
 	texture_to_material_t* const t2m = g_materials.tex_to_mat + for_tex_id;
 
 	if (t2m->mat_id == kMaterialNoReplacement) {
-		ERR("Texture \"%s\"(%d) has been already queried by something. Only future queries will get the new material", tex_name, for_tex_id);
+		DEBUG("Texture \"%s\"(%d) has been already queried by something. Only future queries will get the new material", tex_name, for_tex_id);
 	} else if (t2m->mat_id != kMaterialNotChecked) {
-		ERR("Texture \"%s\"(%d) already has material assigned, will replace", tex_name, for_tex_id);
+		DEBUG("Texture \"%s\"(%d) already has material assigned, will replace", tex_name, for_tex_id);
 	}
 
 	t2m->mat_id = mat_id;
@@ -322,14 +326,19 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 					DEBUG("Adding material \"%s\" for_tex_id=\"%s\"(%d) for rendermode %d", name, tex_name, for_tex_id, rendermode);
 
 					r_vk_material_per_mode_t* const rm = g_materials.for_rendermode + rendermode;
-					if (rm->count == COUNTOF(rm->map)) {
+					int slot;
+					for (slot = 0; slot < rm->count; ++slot)
+						if (rm->map[slot].tex_id == for_tex_id)
+							break;
+					if (slot == COUNTOF(rm->map)) {
 						ERR("Too many rendermode/tex_id mappings");
 						continue;
 					}
 
-					rm->map[rm->count].tex_id = for_tex_id;
-					rm->map[rm->count].mat.index = mat_id;
-					rm->count++;
+					rm->map[slot].tex_id = for_tex_id;
+					rm->map[slot].mat.index = mat_id;
+					if (slot == rm->count)
+						rm->count++;
 				} else {
 					assignMaterialForTexture(name, for_tex_id, mat_id);
 				}
@@ -385,6 +394,18 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 				Q_strncpy(roughness_map, value, sizeof(roughness_map));
 				//fields |= kMatField_roughness_map;
 			} else if (Q_stricmp(key, "inherit") == 0 || Q_stricmp(key, "use") == 0) {
+				// Explicitly extend the already loaded material for this texture and render mode.
+				if (Q_stricmp(value, "$current") == 0) {
+					if (for_tex_id > 0) {
+						current_material = R_VkMaterialGetForTexture(for_tex_id);
+						if (rendermode > 0)
+							R_VkMaterialGetEx(for_tex_id, rendermode, &current_material);
+						metalness_set = true;
+					} else if (create) {
+						ERR("Material '%s': inherit $current requires a loaded 'for' texture", name);
+					}
+					continue;
+				}
 				const r_vk_material_ref_t ref = R_VkMaterialGetForName(value);
 				if (ref.index < 0) {
 					ERR("In material \"%s\" cannot find material \"%s\" to inherit", name, value);
@@ -402,6 +423,22 @@ static void loadMaterialsFromFile( const char *filename, int depth ) {
 			} else if (Q_stricmp(key, "normal_scale") == 0) {
 				sscanf(value, "%f", &current_material.normal_scale);
 				//fields |= kMatField_normal_scale;
+			} else if (Q_stricmp(key, "refraction_ior") == 0) {
+				float ior;
+				if (sscanf(value, "%f", &ior) == 1 && (ior == 0.f || (ior >= 1.f && ior <= 11.f)))
+					current_material.refraction_ior = ior;
+				else
+					ERR("Invalid refraction_ior '%s' in material '%s' (expected 0 or 1..11)", value, name);
+			} else if (Q_stricmp(key, "wave_scale") == 0) {
+				float scale;
+				if (sscanf(value, "%f", &scale) == 1) {
+					current_material.wave_scale = bound(0.01f, scale, 100.f);
+				}
+			} else if (Q_stricmp(key, "wave_strength") == 0) {
+				float strength;
+				if (sscanf(value, "%f", &strength) == 1) {
+					current_material.wave_strength = bound(0.f, strength, 10.f);
+				}
 			} else if (Q_stricmp(key, "base_color") == 0) {
 				sscanf(value, "%f %f %f %f", &current_material.base_color[0], &current_material.base_color[1], &current_material.base_color[2], &current_material.base_color[3]);
 				//fields |= kMatField_base_color;
@@ -509,6 +546,12 @@ void R_VkMaterialsReload( void ) {
 		const int no_ext_len = findFilenameExtension(filename, -1);
 		loadMaterialsFromFileF("pbr/%s/%.*s.mat", map->name, no_ext_len, filename);
 	}
+
+	// Renderer/user overrides are authoritative, including over map-specific PBR fixes.
+	// inherit $current preserves fields that this final layer does not explicitly replace.
+	// Optional: missing files are ignored.
+	// FIXME: Remove this explicit load once the material pack supplies physical water materials.
+	loadMaterialsFromFile( "water_physical_refraction.mat", MAX_INCLUDE_DEPTH );
 
 	// Print out statistics
 	{

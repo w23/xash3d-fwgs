@@ -66,8 +66,12 @@ void main() {
 
 	if (pos_t.w > 0.) {
 		const vec4 packed_normal = imageLoad(normals_gs, pix);
-		const vec3 geometry_normal = normalDecode(packed_normal.xy);
-		const vec3 shading_normal = normalDecode(packed_normal.zw);
+		vec3 geometry_normal = normalDecode(packed_normal.xy);
+		vec3 shading_normal = normalDecode(packed_normal.zw);
+		if (dot(direction, geometry_normal) > 0.0) {
+			geometry_normal = -geometry_normal;
+			shading_normal = -shading_normal;
+		}
 #ifdef DEBUG_VALIDATE_EXTRA
 		if (IS_INVALIDV(pos_t.xyz) || IS_INVALIDV(geometry_normal)) {
 			debugPrintfEXT("ray_light_direct.glsl:%d INVALID pos_t.xyz=(%f,%f,%f) geometry_normal=(%f,%f,%f) packed_normal=(%f,%f,%f,%f)",

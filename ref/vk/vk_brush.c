@@ -1,4 +1,5 @@
 #include "vk_brush.h"
+#include "pmove.h"
 
 #include "vk_core.h"
 #include "vk_math.h"
@@ -604,16 +605,12 @@ static brush_surface_type_e getSurfaceType( const msurface_t *surf, int i, qbool
 		if (!surf->polys)
 			return BrushSurface_Hidden;
 
-		// Water surfaces come in pairs: regular front and the opposite back
-		// This makes ray tracing unhappy as there are coplanar surfaces.
-		// We'd want to turn of the back surface, but SURF_PLANEBACK is not really congruent with
-		// the logical direction of the surface, it just means that glpolys have been produced in
-		// an opposite winding order.
-		// SURF_UNDERWATER seems to be the right flag: it does seem to signal that the surface is
-		// lookint "out" from the water, directed towards "air".
+		// BSP liquid boundaries can contain coincident faces with opposite winding.
+		// Keep the air-facing copy only; the tessellator emits just that winding.
+		// Ray queries can hit this one copy from either side for physical entry/exit.
+		// Do not use SURF_PLANEBACK: it describes plane-relative winding, not duplication.
 		if (surf->flags & SURF_UNDERWATER)
 			return BrushSurface_Hidden;
-		//}
 
 		// Worldmodel doesn't distinguish between !=PLANE_Z sides and not sides.
 		// All water surfaces should be present for worldmodel
@@ -762,12 +759,17 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		return;
 	}
 
+	vec4_t water_color;
+	Vector4Copy(color, water_color);
+	if (ent->model == WORLDMODEL)
+		water_color[3] *= bound(0.f, MOVEVARS->wateralpha, 1.f);
+
 	const material_mode_e material_mode = kMaterialMode_Translucent;
 	R_RenderModelDraw(&wmodel->render_model, (r_model_draw_t){
 		.render_type = render_type,
 		.material_mode = material_mode,
 		.material_flags = kMaterialFlag_DontCastShadow_Bit,
-		.color = (const vec4_t*)color,
+		.color = (const vec4_t*)water_color,
 		.transform = (const matrix4x4*)transform,
 		.prev_transform = (const matrix4x4*)prev_transform,
 		.override = {
@@ -865,6 +867,21 @@ const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s
 	}
 
 	return base;
+}
+
+qboolean R_BrushModelHasRefraction( const model_t *mod ) {
+	const vk_brush_model_t *bmodel = mod->cache.data;
+	if (!vk_core.rtx || !bmodel)
+		return false;
+
+	const vk_render_model_t *models[] = {
+		&bmodel->render_model, &bmodel->water.render_model, &bmodel->water_sides.render_model,
+	};
+	for (int i = 0; i < COUNTOF(models); ++i)
+		for (int j = 0; j < models[i]->num_geometries; ++j)
+			if (models[i]->geometries[j].material.refraction_ior > 0.f)
+				return true;
+	return false;
 }
 
 void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 in_transform ) {

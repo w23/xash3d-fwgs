@@ -154,10 +154,10 @@ void main() {
 
 	const vec4 legacy_blend = imageLoad(legacy_blend, pix);
 
-	const vec4 transmission = imageLoad(refraction, pix);
-	const vec3 emission = transmission.a > 0.0 ? vec3(0) : imageLoad(emissive, pix).rgb;
-	if (transmission.a > 0.0)
-		colour = transmission.rgb;
+	float opacity = imageLoad(position_t, pix).w > 0.0
+		? clamp(imageLoad(base_color_a, pix).a, 0.0, 1.0) : 1.0;
+	colour = mix(imageLoad(refraction, pix).rgb, colour, opacity);
+	vec3 emission = imageLoad(emissive, pix).rgb * opacity;
     const vec3 lighting = colour;
     colour = (lighting + emission) * legacy_blend.a;
 

@@ -660,7 +660,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 	const float blend = render_mode == kRenderNormal ? 1.f : CL_FxBlend( ent ) / 255.0f;
 
 	// TODO ref_gl does this earlier (when adding entity), can we too?
-	if( blend <= 0.0f )
+	if( blend <= 0.0f && !(mod->type == mod_brush && R_BrushModelHasRefraction(mod)) )
 		return;
 
 	switch (mod->type)

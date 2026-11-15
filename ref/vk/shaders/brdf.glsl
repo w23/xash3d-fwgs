@@ -204,7 +204,7 @@ metal_brdf =
 
 dielectric_brdf =
   fresnel_mix(
-    ior = 1.5,
+    f0 = 0.04,
     base = diffuse_brdf(color = baseColor),
     layer = specular_brdf(α = roughness ^ 2))
  */

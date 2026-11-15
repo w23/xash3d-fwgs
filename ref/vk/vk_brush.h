@@ -17,6 +17,8 @@ void R_BrushShutdown( void );
 qboolean R_BrushModelLoad(struct model_s *mod, qboolean is_worldmodel);
 void R_BrushModelDestroyAll( void );
 
+qboolean R_BrushModelHasRefraction( const struct model_s *mod );
+
 void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 transform );
 
 const texture_t *R_TextureAnimation( const cl_entity_t *ent, const msurface_t *s );

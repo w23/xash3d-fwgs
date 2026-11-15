@@ -1,0 +1,319 @@
+// Renderer-shipped Half-Life water defaults, independent of the PBR resource pack.
+// Loaded last, after resource-pack and map materials. Explicit values here take precedence.
+// inherit $current preserves existing maps, colors and emission sources.
+// Glass, toxins and Xen fluids are not overridden.
+// Their default refraction_ior 0 preserves vanilla alpha and straight transmission.
+
+{
+    "for" "!WATERBLUE"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATERGREEN"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATERSILO"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATERSILO2"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATERSILO3"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!BWATER1"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!BWATER2"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!BWATER3"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER1"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER2"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER3"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER4A"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER4B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER5"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER5B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!GWATER6"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!RWATER1"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!RWATER2"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!RWATER3"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATER1"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATER2A"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATER2B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!WATER2C"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+// c2a5 uses !C2A54: confirmed water, with a legacy PBR roughness/normal-map fix.
+// The normal map is inherited; set normal_scale 0 here to use procedural normals only.
+{
+    "for" "!C2A54"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+// Color variants of the same water pattern in liquids.wad.
+{
+    "for" "!C2A5"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!C2A52"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!C2A52B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!C2A53"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!C2A542"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+{
+    "for" "!C2A54B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}
+
+// Water used by func_water and moving water volumes, without the ! prefix.
+{
+    "for" "WATER4B"
+    "inherit" "$current"
+    "refraction_ior" "1.333"
+    "metalness" "1"
+    "roughness" "0"
+    "wave_scale" "1"
+    "wave_strength" "1"
+}

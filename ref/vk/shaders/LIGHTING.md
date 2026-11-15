@@ -48,59 +48,23 @@ not compiled into this graph.
   live in `indirect_temporal_config.glsl`, keeping the CPU UBO small.
   Sky brushes and misses return skybox radiance with the same exposure as the
   primary sky. They retain zero hit distance/identity for environment history.
-- Refraction: full-resolution `lc_refraction` traces deterministic smooth optical
-  paths through translucent brush glass and engine liquid/turbulent surfaces.
-  Opaque hit lighting comes from the light cache (plus material emission
-  and sky). Glass RGB filters transmitted light and never adds surface radiance.
-  There is no radiance history or denoising. Water uses IOR 1.333 and
-  animated world-space directional wave normals written into the G-buffer.
-  The wave shape and analytic slope follow GPU Gems chapter 1, equations 8a/8b
-  (sharpened sine waves); short waves fade with the pixel footprint. Wave phases
-  use the geometric plane, independent of the material normal map. The liquid
-  flag is derived directly from engine SURF_DRAWTURB/SURF_DRAWTURB_QUADS flags.
-  Flat glass preserves direction; normal-mapped glass keeps only the perturbation
-  relative to a flat interface, retaining the water-IOR bending cap. All non-liquid
-  interfaces in this pass use glass Fresnel (IOR 1.5, F0=0.04); liquid uses water
-  Fresnel (IOR 1.333, F0 about 0.02). Both smoothly reach 100% reflection between
-  65 and 80 degrees from the shading normal. Primary glass also retains the
-  existing direct-specular signal, including its Fresnel and shadow visibility,
-  without multiplying it by surface alpha or applying Fresnel a second time.
-  Liquid composition is unchanged.
-  There is no intersection/depth limit. A four-branch budget includes reflected
-  continuations at total internal reflection. On exhaustion, further reflected
-  branches are omitted while transmission continues. Reflection-only exhaustion
-  resolves the liquid surface or discards the exhausted glass reflection branch.
-  Negligible path weights are discarded. Alpha is texture alpha multiplied by
-  material and entity alpha. Glass tint and liquid coverage apply only on the
-  entering face. The exit retains Fresnel/refraction but does not apply another
-  texture layer. In particular, legacy water texture alpha = 1 must not block
-  sky transmission from below; the incident underwater segment still receives fog.
-  Liquid uses `F * reflected + (1-F) * (alpha * surface + (1-alpha) * transmitted)`,
-  with cached diffuse surface lighting. Glass instead uses
-  `F * reflected + (1-F) * mix(1, tint, alpha) * transmitted`.
-  Tint is the sampled linear texture RGB times material/entity RGB, clamped to
-  [0,1]. White is the identity multiplier for every alpha; alpha = 0 is fully
-  clear before Fresnel. There is no additive glass texture or cache-dependent
-  absorption. Only explicitly emissive materials add glass emission.
-  Refraction texture samples use the
-  traced ray footprint rather than a fixed mip level, preserving texture detail.
-  The primary pass stores lightmap UV for cached shading of the first interface,
-  without tracing the camera ray again. There is no fixed liquid opacity or tint.
-  Tuning lives in `refraction_config.glsl`.
-  Liquid segments use Beer-Lambert fog, with 50% transmittance at 200 world units
-  (approximately 2 metres). Fog asymptotically approaches the boundary's linear
-  emission color, or black for a non-emissive liquid. Each branch retains its own
-  medium/color across glass and internal reflections; transmission into air stops
-  fog integration. The liquid-facing dot threshold is 0.01, using the unflipped
-  geometric normal. An initial back-facing liquid boundary also fogs the segment
-  from the camera to that exit. Medium detection relies on visible boundaries;
-  camera-underwater pixels with no liquid boundary on their primary path and
-  missing liquid side faces are not classified by a volume query.
-  Sky brushes and misses terminate at the environment before fog integration:
-  neither the sky distance nor the ray's maximum range defines a water segment.
-  Fog is applied to the camera-to-liquid-exit segment and finite geometry hits
-  while inside liquid. Open water volumes therefore do not receive an invented
-  infinite fog segment on environment rays.
+- Transparency: positive material `refraction_ior` computes Fresnel once at the
+  ray hit and writes it to ordinary surface alpha, before decal composition.
+  The standard surface PBR response (explicitly mirrored by the water patch)
+  blends with transmitted background through that alpha. There are no optical
+  mode tags, special IOR branches in direct lighting, or secondary Fresnel weights.
+  `lc_refraction` follows one continuing transmitted path, shading every accepted
+  layer from the light cache and emission. Decals are applied at all these hits.
+  Opaque decal coverage stops transmission and covers underlying emission.
+  Roughness, metalness and RGB retain normal material/decal semantics.
+  Primary shading uses the already resolved lighting lobes in the compositor.
+  There is no reflection-branch stack or fixed layer limit; negligible accumulated
+  transmission terminates the path. Rejected back faces are not alpha layers.
+  Vanilla liquid surfaces remain visible from both sides; coincident BSP liquid
+  back copies are removed before geometry generation. Physical entry/exit remains
+  two-sided. Wave normals use independent material parameters on the geometric
+  plane, filtered by ray footprint. There is no volumetric fog in this pass.
+  File precedence and authoring examples are in `../ray_materials.md`.
 - `denoiser.comp` reads the finished lobes and handles material composition,
   emissive/translucent composition, exposure and debug views. Normal output remains
   linear HDR until `bloom_composite.comp` applies bloom and the output curve.
@@ -153,17 +117,10 @@ The final pass adds bloom to exposed linear HDR, converts to sRGB, then performs
 legacy additive blending. Auto-exposure continues metering the unexposed scene,
 without bloom feedback. There is no new tone mapper or temporal bloom history.
 
-## Liquid controls
+## Procedural wave controls
 
-These archived cvars update immediately; all default to 1:
-
-- `rt_water_wave_scale` (0.01..100): wavelength multiplier. 2 makes waves twice
-  as large; height scales with wavelength to preserve normal strength.
-- `rt_water_wave_strength` (0..10): procedural normal slope multiplier. 0 disables
-  procedural waves while retaining any material normal map.
-- `rt_water_fog_density` (0..100): extinction multiplier. 0 disables liquid fog;
-  1 gives 50% visibility at 200 units (2 m), 2 at 100 units (1 m), 0.5 at 400
-  units (4 m). Fog emission/color is unchanged.
-
-Values are clamped when uploading shader uniforms. Wave setting changes reset
-lighting histories; the refraction pass itself has no temporal history.
+Material `wave_scale` (0.01..100) multiplies wavelength and height together,
+preserving normal slope. `wave_strength` (0..10) multiplies slope; zero disables
+procedural waves while retaining any material normal map. These are authored in
+`.mat` patches and passed directly to the shader, with no global cvar multipliers.
+The refraction pass has no temporal history.
