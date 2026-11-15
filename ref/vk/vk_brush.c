@@ -1095,10 +1095,6 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 			break;
 		case BrushSurface_Sky:
 			sizes.sky_surfaces_count++;
-
-			// Do not count towards surfaces that we'll load (still need to count if for the purpose of loading skybox)
-			if (g_map_entities.remove_all_sky_surfaces)
-				continue;
 			break;
 		case BrushSurface_Regular:
 			break;
@@ -1505,8 +1501,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			case BrushSurface_Conveyor:
 				break;
 			case BrushSurface_Sky:
-				if (g_map_entities.remove_all_sky_surfaces)
-					continue;
 			case BrushSurface_Regular:
 				break;
 			}
@@ -1605,6 +1599,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			model_geometry->index_offset = index_offset;
 
+			// TODO: draw skybox on sky surfaces at RT renderer and remove this hack
+			model_geometry->ray_tracing_hidden = type == BrushSurface_Sky && g_map_entities.remove_all_sky_surfaces;
+			
 			if ( type == BrushSurface_Sky ) {
 				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
 				model_geometry->ye_olde_texture = TEX_BASE_SKYBOX;
