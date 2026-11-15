@@ -1,6 +1,8 @@
 #include "vk_brush.h"
 
+#include "camera.h"
 #include "vk_core.h"
+#include "vk_cvar.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
@@ -179,6 +181,7 @@ typedef struct {
 	float prev_time;
 	float wave_height;
 	msurface_t *warp;
+	qboolean reverse;
 
 	vk_vertex_t *dst_vertices;
 	uint16_t *dst_indices;
@@ -226,7 +229,7 @@ static qboolean tesselationHasSameOrientation( const msurface_t *surf, qboolean 
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	const float time = gp_cl->time;
-	const qboolean reverse = false;//!tesselationHasSameOrientation( args.warp, args.debug );
+	const qboolean reverse = args.reverse;
 
 #define MAX_WATER_VERTICES 16
 	vk_vertex_t poly_vertices[MAX_WATER_VERTICES];
@@ -234,9 +237,6 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	// FIXME unused? const qboolean useQuads = FBitSet( warp->flags, SURF_DRAWTURB_QUADS );
 
 	ASSERT(args.warp->polys);
-
-	// reset fog color for nonlightmapped water
-	// FIXME VK GL_ResetFogColor();
 
 	int vertices = 0;
 	int indices = 0;
@@ -385,8 +385,6 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 		vertices += p->numverts;
 	}
 
-	// FIXME VK GL_SetupFogColorForSurfaces();
-
 	// Render
 	const int tex_id = args.warp->texinfo->texture->gl_texturenum;
 	const r_vk_material_t material = R_VkMaterialGetForTexture(tex_id);
@@ -461,6 +459,7 @@ typedef struct {
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
+	const matrix4x4 *transform;
 	qboolean is_creating;
 
 	vk_brush_model_t *bmodel;
@@ -473,6 +472,14 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 	ASSERT(args.wmodel->surfaces_count > 0);
 
 	const float wave_height = (!args.ent) ? 0.f : args.ent->curstate.scale;
+
+	// GL's R_RenderBrushPoly passes CULL_BACKSIDE to EmitWaterPolys, which
+	// reverses the vertex order so water can be seen from either side.
+	// Do the same for rasterization; RT needs stable winding for medium transitions.
+	const qboolean face_camera = !args.is_creating && !CVAR_TO_BOOL(rt_enable);
+	vec3_t modelorg;
+	if (face_camera)
+		Matrix4x4_VectorITransform(*args.transform, g_camera.vieworg, modelorg);
 
 	const r_geometry_range_lock_t geom_lock = R_GeometryRangeLock(&args.wmodel->geometry);
 
@@ -502,11 +509,22 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 			});
 		}
 
+		// A hack that allows one-sided water to be rendered from both sides;
+		// the logic is similar to GL rendering, but specific to Vulkan.
+		qboolean reverse_winding = false;
+		if (face_camera) {
+			float dist = PlaneDiff(modelorg, warp->plane);
+			if (FBitSet(warp->flags, SURF_PLANEBACK))
+				dist = -dist;
+			reverse_winding = dist < 0.f;
+		}
+
 		int vertices = 0, indices = 0;
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = args.prev_time,
 			.wave_height = wave_height,
 			.warp = warp,
+			.reverse = reverse_winding,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
@@ -752,6 +770,7 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
+		.transform = (const matrix4x4*)transform,
 		.is_creating = false,
 	});
 
@@ -1076,10 +1095,6 @@ static model_sizes_t computeSizes( const model_t *mod, qboolean is_worldmodel ) 
 			break;
 		case BrushSurface_Sky:
 			sizes.sky_surfaces_count++;
-
-			// Do not count towards surfaces that we'll load (still need to count if for the purpose of loading skybox)
-			if (g_map_entities.remove_all_sky_surfaces)
-				continue;
 			break;
 		case BrushSurface_Regular:
 			break;
@@ -1486,8 +1501,6 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 			case BrushSurface_Conveyor:
 				break;
 			case BrushSurface_Sky:
-				if (g_map_entities.remove_all_sky_surfaces)
-					continue;
 			case BrushSurface_Regular:
 				break;
 			}
@@ -1586,6 +1599,9 @@ static qboolean fillBrushSurfaces(fill_geometries_args_t args) {
 
 			model_geometry->index_offset = index_offset;
 
+			// TODO: draw skybox on sky surfaces at RT renderer and remove this hack
+			model_geometry->ray_tracing_hidden = type == BrushSurface_Sky && g_map_entities.remove_all_sky_surfaces;
+			
 			if ( type == BrushSurface_Sky ) {
 				model_geometry->material.tex_base_color = TEX_BASE_SKYBOX;
 				model_geometry->ye_olde_texture = TEX_BASE_SKYBOX;
