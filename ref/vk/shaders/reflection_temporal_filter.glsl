@@ -9,6 +9,7 @@ struct ReflectionNeighborhood {
     float support;
     float length_mean;
     float length_variance;
+    float hit_fraction;
 };
 
 ReflectionNeighborhood reflectionNeighborhood(ivec2 pix, vec3 current) {
@@ -21,6 +22,7 @@ ReflectionNeighborhood reflectionNeighborhood(ivec2 pix, vec3 current) {
     stats.support = 0.0;
     stats.length_mean = 0.0;
     stats.length_variance = 0.0;
+    stats.hit_fraction = 0.0;
     float length_weight = 0.0;
     float center_length = decodeReflectionLength(imageLoad(INDIRECT_TEMPORAL_INPUT, pix).a);
     vec3 center_pos = imageLoad(position_t, pix).xyz;
@@ -44,6 +46,7 @@ ReflectionNeighborhood reflectionNeighborhood(ivec2 pix, vec3 current) {
         stats.luma_variance += luma * luma * w;
         stats.support += w;
         float ray_length = decodeReflectionLength(value.a);
+        if (reflectionLengthValid(ray_length)) stats.hit_fraction += w;
         // A miss at the center stays a miss. Never average zero/miss distances
         // into valid hits, or let neighboring hits turn a miss into a hit.
         if (center_length > 0.0 && ray_length > 0.0) {
@@ -54,6 +57,7 @@ ReflectionNeighborhood reflectionNeighborhood(ivec2 pix, vec3 current) {
     }
     if (stats.support > 0.0) {
         stats.mean /= stats.support;
+        stats.hit_fraction /= stats.support;
         stats.variance = max(stats.variance / stats.support - stats.mean * stats.mean, vec3(0.0));
         float mean_luma = luminance(stats.mean);
         stats.luma_variance = max(stats.luma_variance / stats.support - mean_luma * mean_luma, 0.0);
@@ -80,15 +84,24 @@ float reflectionAccumulationStrength(ReflectionNeighborhood stats, float roughne
     return max(rough, scattered);
 }
 
-float reflectionLengthGate(ReflectionNeighborhood stats, float previous_length, float roughness) {
+float reflectionLengthGate(ReflectionNeighborhood stats, float previous_length, float roughness,
+    float previous_hit_probability) {
     float mirror = 1.0 - smoothstep(REFLECTION_LENGTH_ROUGHNESS_FADE_START,
         REFLECTION_LENGTH_ROUGHNESS_FADE_END, roughness);
+    // Dispersed rays are not a coherent virtual surface, even at low roughness.
+    mirror *= 1.0 - reflectionAccumulationStrength(stats, roughness);
     if (mirror <= 0.0) return 1.0;
     bool current_hit = reflectionLengthValid(stats.length_mean);
     bool previous_hit = reflectionLengthValid(previous_length);
     float rejection = 0.0;
     if (current_hit != previous_hit) {
-        rejection = 1.0;
+        // A stable sky/geometry boundary still rejects history. Mixed spatial
+        // samples or temporal hit/miss flicker indicate stochastic visibility.
+        float current_probability = current_hit ? stats.hit_fraction : 1.0 - stats.hit_fraction;
+        float previous_probability = previous_hit ? previous_hit_probability : 1.0 - previous_hit_probability;
+        float current_certainty = max(2.0 * current_probability - 1.0, 0.0);
+        float previous_certainty = max(2.0 * previous_probability - 1.0, 0.0);
+        rejection = min(current_certainty, previous_certainty);
     } else if (current_hit) {
         float tolerance = max(REFLECTION_LENGTH_RELATIVE_TOLERANCE * stats.length_mean,
             REFLECTION_LENGTH_SIGMA_SCALE * sqrt(stats.length_variance) +
@@ -100,29 +113,35 @@ float reflectionLengthGate(ReflectionNeighborhood stats, float previous_length, 
 }
 
 vec3 filterReflectionHistory(vec3 current, vec3 history, ReflectionNeighborhood stats,
-    float previous_length, float roughness, float reprojection_confidence, float motion)
+    vec3 temporal_variance, float roughness, float reprojection_confidence, float motion)
 {
-    float accumulation = reflectionAccumulationStrength(stats, roughness);
-    vec3 sigma = sqrt(stats.variance);
     vec3 signal = max(current, stats.mean);
     vec3 floor_delta = REFLECTION_SIGNAL_ABSOLUTE_FLOOR + REFLECTION_SIGNAL_RELATIVE_FLOOR * signal;
+    vec3 temporal_sigma = sqrt(max(temporal_variance, vec3(0.0)));
+    vec3 relative_noise = temporal_sigma / max(signal, vec3(REFLECTION_SIGNAL_ABSOLUTE_FLOOR));
+    float noise = smoothstep(REFLECTION_TEMPORAL_NOISE_RELATIVE_START,
+        REFLECTION_TEMPORAL_NOISE_RELATIVE_END, max(relative_noise.r, max(relative_noise.g, relative_noise.b)));
+    float accumulation = max(reflectionAccumulationStrength(stats, roughness), noise);
+    vec3 sigma = sqrt(max(stats.variance, temporal_variance));
 
-    // Test the original history, before clipping can make it appear compatible.
-    vec3 mismatch = abs(history - current) / (mix(1.5, 2.5, accumulation) * sigma + floor_delta);
+    // Compare with the neighborhood estimate rather than one noisy sample.
+    // Only variance from earlier frames is used here: the current innovation
+    // must not excuse its own mismatch on a real lighting change.
+    vec3 reference = mix(current, stats.mean, accumulation);
+    vec3 mismatch = abs(history - reference) / (mix(1.5, 2.5, accumulation) * sigma + floor_delta);
     float signal_confidence = 1.0 - smoothstep(1.0, 3.0, max(mismatch.r, max(mismatch.g, mismatch.b)));
     float support_confidence = clamp((stats.support - 1.0) / 3.0, 0.0, 1.0);
     float motion_confidence = mix(1.0, mix(0.5, 0.8, accumulation), smoothstep(0.5, 4.0, motion));
     float history_max = mix(REFLECTION_HISTORY_WEIGHT_MAX, REFLECTION_SCATTERED_HISTORY_WEIGHT_MAX, accumulation);
     float history_weight = history_max * signal_confidence * support_confidence *
-        motion_confidence * clamp(reprojection_confidence, 0.0, 1.0) *
-        reflectionLengthGate(stats, previous_length, roughness);
+        motion_confidence * clamp(reprojection_confidence, 0.0, 1.0);
 
     // Intersect the variance box with neighborhood min/max, then include the
     // current center so a genuine narrow highlight is always preserved.
     float clip_sigma = mix(REFLECTION_CLIP_SIGMA, REFLECTION_SCATTERED_CLIP_SIGMA, accumulation);
     // A small allowance lets correlated grain settle even when the whole 3x3
     // fluctuates together. Coherent mirrors retain the original tight box.
-    vec3 allowance = accumulation * floor_delta;
+    vec3 allowance = accumulation * (floor_delta + temporal_sigma);
     vec3 lower = min(current, max(stats.lower - allowance, stats.mean - clip_sigma * sigma - allowance));
     vec3 upper = max(current, min(stats.upper + allowance, stats.mean + clip_sigma * sigma + allowance));
     vec3 delta = history - current;
@@ -136,7 +155,10 @@ vec3 filterReflectionHistory(vec3 current, vec3 history, ReflectionNeighborhood 
     vec3 correction = history_weight * clip_factor * delta;
     float relative_budget = mix(REFLECTION_CORRECTION_RELATIVE_MAX,
         REFLECTION_SCATTERED_CORRECTION_RELATIVE_MAX, accumulation);
-    vec3 budget = REFLECTION_SIGNAL_ABSOLUTE_FLOOR + relative_budget * signal;
+    // A relative-only cap also prevents averaging when the estimator's noise
+    // exceeds that cap. Let measured noise supply the additional correction.
+    vec3 budget = REFLECTION_SIGNAL_ABSOLUTE_FLOOR + relative_budget * signal +
+        accumulation * temporal_sigma;
     // Bound the correction without changing its color direction.
     vec3 budget_ratios = budget / max(abs(correction), vec3(1e-8));
     correction *= min(1.0, min(budget_ratios.r, min(budget_ratios.g, budget_ratios.b)));

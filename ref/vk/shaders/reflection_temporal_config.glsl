@@ -11,11 +11,14 @@ const float REFLECTION_ACCUMULATION_ROUGHNESS_END = 0.40;
 // same roughness/length-spread classification as the accumulation filter.
 const float REFLECTION_SURFACE_REPROJECTION_ACCUMULATION_MIN = 0.5;
 // History alpha records the method actually used to accumulate this texel.
-// Values also version the raw RGB + metric hit-length statistics layout:
-// legacy histories used alpha == 1 and must not be read with the new layout.
-const float REFLECTION_HISTORY_RAW = 2.0;
-const float REFLECTION_HISTORY_SURFACE = 3.0;
-const float REFLECTION_HISTORY_PARALLAX = 4.0;
+// Values also version the raw RGB + metric hit-length statistics layout.
+// Legacy alpha == 1 and the previous 2/3/4 layout have no variance history.
+const float REFLECTION_HISTORY_RAW = 5.0;
+const float REFLECTION_HISTORY_SURFACE = 6.0;
+const float REFLECTION_HISTORY_PARALLAX = 7.0;
+const float REFLECTION_VARIANCE_UPDATE_WEIGHT = 0.2;
+const float REFLECTION_TEMPORAL_NOISE_RELATIVE_START = 0.03;
+const float REFLECTION_TEMPORAL_NOISE_RELATIVE_END = 0.20;
 // Coefficient of variation of current 3x3 reconstructed hit lengths. This
 // also enables stronger accumulation on smooth materials with dispersed hits.
 const float REFLECTION_LENGTH_SPREAD_START = 0.10;
