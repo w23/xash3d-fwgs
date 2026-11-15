@@ -1,6 +1,8 @@
 #include "vk_brush.h"
 
+#include "camera.h"
 #include "vk_core.h"
+#include "vk_cvar.h"
 #include "vk_math.h"
 #include "r_textures.h"
 #include "vk_lightmap.h"
@@ -179,6 +181,7 @@ typedef struct {
 	float prev_time;
 	float wave_height;
 	msurface_t *warp;
+	qboolean reverse;
 
 	vk_vertex_t *dst_vertices;
 	uint16_t *dst_indices;
@@ -226,7 +229,7 @@ static qboolean tesselationHasSameOrientation( const msurface_t *surf, qboolean 
 
 static void brushComputeWaterPolys( compute_water_polys_t args ) {
 	const float time = gp_cl->time;
-	const qboolean reverse = false;//!tesselationHasSameOrientation( args.warp, args.debug );
+	const qboolean reverse = args.reverse;
 
 #define MAX_WATER_VERTICES 16
 	vk_vertex_t poly_vertices[MAX_WATER_VERTICES];
@@ -456,6 +459,7 @@ typedef struct {
 	r_brush_water_model_t *wmodel;
 	vk_render_geometry_t *geometries;
 	float prev_time;
+	const float *modelorg;
 	qboolean is_creating;
 
 	vk_brush_model_t *bmodel;
@@ -498,10 +502,19 @@ static void fillWaterSurfaces( fill_water_surfaces_args_t args ) {
 		}
 
 		int vertices = 0, indices = 0;
+		qboolean reverse = false;
+		if (args.modelorg) {
+			// Like GL's CULL_BACKSIDE / EmitWaterPolys: face the raster camera.
+			float dist = PlaneDiff(args.modelorg, warp->plane);
+			if (FBitSet(warp->flags, SURF_PLANEBACK))
+				dist = -dist;
+			reverse = dist < 0.f;
+		}
 		brushComputeWaterPolys((compute_water_polys_t){
 			.prev_time = args.prev_time,
 			.wave_height = wave_height,
 			.warp = warp,
+			.reverse = reverse,
 
 			.dst_vertices = geom_lock.vertices + vertices_offset,
 			.dst_indices = geom_lock.indices + indices_offset,
@@ -741,12 +754,18 @@ static void brushDrawWater(r_brush_water_model_t *wmodel, const cl_entity_t *ent
 	APROF_SCOPE_DECLARE_BEGIN(brush_draw_water, __FUNCTION__);
 	ASSERT(wmodel->surfaces_count > 0);
 
+	// Keep RT water winding stable: its normals determine medium transitions.
+	// Raster water needs both sides, including brushes without a paired back face.
+	vec3_t modelorg;
+	Matrix4x4_VectorITransform(transform, g_camera.vieworg, modelorg);
+
 	fillWaterSurfaces((fill_water_surfaces_args_t){
 		.ent = ent,
 		.surfaces = surfaces,
 		.wmodel = wmodel,
 		.geometries = wmodel->render_model.geometries,
 		.prev_time = prev_time,
+		.modelorg = CVAR_TO_BOOL(rt_enable) ? NULL : modelorg,
 		.is_creating = false,
 	});
 
