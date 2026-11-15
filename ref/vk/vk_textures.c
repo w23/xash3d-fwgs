@@ -679,6 +679,7 @@ static qboolean uploadTexture(int index, vk_texture_t *tex, const rgbdata_t *pic
 }
 
 qboolean R_VkTextureUpload(int index, vk_texture_t *tex, const rgbdata_t *pic, colorspace_hint_e colorspace_hint) {
+	memcpy( tex->fogParams, pic->fogParams, sizeof( tex->fogParams ));
 	return uploadTexture( index, tex, pic, colorspace_hint );
 }
 

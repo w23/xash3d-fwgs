@@ -235,9 +235,6 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 
 	ASSERT(args.warp->polys);
 
-	// reset fog color for nonlightmapped water
-	// FIXME VK GL_ResetFogColor();
-
 	int vertices = 0;
 	int indices = 0;
 
@@ -384,8 +381,6 @@ static void brushComputeWaterPolys( compute_water_polys_t args ) {
 		memcpy(args.dst_vertices + vertices, poly_vertices, sizeof(vk_vertex_t) * p->numverts);
 		vertices += p->numverts;
 	}
-
-	// FIXME VK GL_SetupFogColorForSurfaces();
 
 	// Render
 	const int tex_id = args.warp->texinfo->texture->gl_texturenum;

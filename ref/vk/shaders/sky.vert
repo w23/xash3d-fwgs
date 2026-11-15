@@ -4,6 +4,9 @@ layout(set=0,binding=0) uniform UBO {
 	mat4 mvp;
 	mat4 inv_proj;
 	mat4 inv_view;
+	vec4 fog_color;
+	vec4 fog_params;
+	vec4 fog_plane;
 	vec2 resolution;
 } ubo;
 

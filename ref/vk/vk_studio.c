@@ -2599,6 +2599,9 @@ static void R_StudioSetupRenderer( int rendermode )
 	if( rendermode > kRenderTransAdd ) rendermode = 0;
 	g_studio.rendermode = bound( 0, rendermode, kRenderTransAdd );
 
+	if( g_studio.rendermode == kRenderTransAdd || g_studio.rendermode == kRenderGlow )
+		R_AllowFog( false );
+
 	/* FIXME VK
 	pglTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 	pglDisable( GL_ALPHA_TEST );
@@ -2618,6 +2621,9 @@ static void R_StudioSetupRenderer( int rendermode )
 
 static void R_StudioRestoreRenderer( void )
 {
+	if( g_studio.rendermode == kRenderTransAdd || g_studio.rendermode == kRenderGlow )
+		R_AllowFog( true );
+
 	/* FIXME VK
 	if( g_studio.rendermode != kRenderNormal )
 		pglDisable( GL_BLEND );
