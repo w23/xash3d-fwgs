@@ -132,11 +132,9 @@ void main()
     vec3 selected = tracePath(selected_seed, position.xyz, G, first_direction, first_distance);
 
     float history_cap = BOUNCE_PATH_MAX_EFFECTIVE_SAMPLES;
-    float replay_ratio = 1.0;
     LCReservoir reservoir = LCReservoir(0, 0, 0);
     lcOffer(reservoir, lcPathTarget(selected), 1.0, 0.0);
 
-    vec4 previous_position = imageLoad(geometry_prev_position, primary_pix);
     float restart = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x626c6966u)));
 
     ivec2 source;
@@ -146,7 +144,12 @@ void main()
 #if LC_PATH_PERMUTATION_SAMPLING
         // The same offset for every pixel makes this a permutation, not jitter.
         uint permutation = xxhash32(uvec4(ubo.ubo.random_seed, ubo.ubo.frame_counter, 0x62706572u, 0u));
-        source = temporalPathPermutedPixel(source, res / 2, permutation);
+        ivec2 permuted_source = temporalPathPermutedPixel(source, res / 2, permutation);
+        vec4 permuted_metadata = imageLoad(prev_temporal_lc_bounce_path, permuted_source);
+        if (lcHistoryDonorValid(pix, 2, permuted_source) && lcPathSeedMetadataValid(permuted_metadata) &&
+            permuted_metadata.z == float(ubo.ubo.bounce_count) &&
+            lcPathHistoryValid(imageLoad(prev_temporal_lc_bounce_reservoir, permuted_source)))
+            source = permuted_source;
 #endif
 
 #if LC_PATH_MAG_DEDUPLICATION
@@ -155,14 +158,7 @@ void main()
     }
 
     if (projected && restart >= BOUNCE_PATH_RESTART_PROBABILITY) {
-        // Validate the actual half-resolution donor against its previous plane.
-        // Tangential displacement from pixel quantization is deliberately ignored.
-        vec4 donor = imageLoad(prev_position_t, source * 2);
-        vec3 donor_normal = normalDecode(imageLoad(prev_normals_gs, source * 2).xy);
-        float plane_error = abs(dot(previous_position.xyz - donor.xyz, donor_normal));
-        if (donor.w <= 0.0 || isnan(plane_error) || isinf(plane_error) ||
-            plane_error > BOUNCE_PATH_REPROJECTION_PLANE_TOLERANCE)
-            projected = false;
+        projected = lcHistoryDonorValid(pix, 2, source);
     } else
         projected = false;
 
@@ -170,7 +166,7 @@ void main()
         vec4 metadata = imageLoad(prev_temporal_lc_bounce_path, source);
         vec4 previous = imageLoad(prev_temporal_lc_bounce_reservoir, source);
 
-        if (metadata.w == float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) &&
+        if (lcPathSeedMetadataValid(metadata) &&
             metadata.z == float(ubo.ubo.bounce_count) && lcPathHistoryValid(previous)) {
             uint seed = uint(metadata.x);
             vec3 history_direction;
@@ -178,15 +174,8 @@ void main()
             vec3 history = tracePath(seed, position.xyz, G, history_direction, history_distance);
 
             float target = lcPathTarget(history);
-            float old_luminance = max(previous.x, 1e-6);
-            replay_ratio = target / old_luminance;
-
-            float limit = BOUNCE_PATH_RADIANCE_RATIO;
-            float confidence = lcRatioConfidence(replay_ratio, limit);
-
-            float rejection = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x62636f6eu)));
-            if (rejection < confidence) {
-                // Replace exactly the selected historical candidate's contribution.
+            if (target > 0.0 && !isnan(target) && !isinf(target)) {
+                // Reweight the whole historical reservoir at the current target.
                 // Replaying it does not add a sample to M.
                 reservoir = lcReplayReservoir(previous, target);
 
@@ -215,6 +204,6 @@ void main()
     imageStore(out_first_bounce_direction, pix, vec4(first_direction, first_distance));
 
     imageStore(out_temporal_lc_bounce_path, pix,
-        vec4(float(selected_seed), 0.0, float(ubo.ubo.bounce_count), float((ubo.ubo.frame_counter & 65535u) + 1u)));
+        vec4(float(selected_seed), LC_PATH_HISTORY_VERSION, float(ubo.ubo.bounce_count), float((ubo.ubo.frame_counter & 65535u) + 1u)));
     imageStore(out_temporal_lc_bounce_reservoir, pix, lcEncodePath(reservoir, history_cap));
 }

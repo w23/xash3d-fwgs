@@ -18,6 +18,33 @@ void lcTraceRay(rayQueryEXT query, vec3 origin, vec3 direction)
     }
 }
 
+// Validate the actual donor, including any permutation/parallax displacement.
+// A failed optional displacement must leave the ordinary history available.
+bool lcHistoryDonorValid(ivec2 pixel, int scale, ivec2 source)
+{
+    if (any(lessThan(source, ivec2(0))) || any(greaterThanEqual(source, ubo.ubo.res / scale)))
+        return false;
+    vec4 donor = imageLoad(prev_position_t, source * scale);
+    vec3 donor_normal = normalDecode(imageLoad(prev_normals_gs, source * scale).xy);
+    vec3 current_normal = normalDecode(imageLoad(normals_gs, pixel * scale).xy);
+    vec3 previous_position = imageLoad(geometry_prev_position, pixel * scale).xyz;
+    float error = abs(dot(previous_position - donor.xyz, donor_normal));
+    return donor.w > 0.0 && !any(isnan(donor)) && !any(isinf(donor)) &&
+        !isnan(error) && !isinf(error) && error <= BOUNCE_PATH_REPROJECTION_PLANE_TOLERANCE &&
+        dot(current_normal, donor_normal) >= BOUNCE_PATH_REPROJECTION_NORMAL_MIN_DOT;
+}
+
+// Version the seed + reservoir estimator together on shader reload.
+const float LC_PATH_HISTORY_VERSION = 3.0;
+
+bool lcPathSeedMetadataValid(vec4 metadata)
+{
+    return !any(isnan(metadata)) && !any(isinf(metadata)) &&
+        metadata.y == LC_PATH_HISTORY_VERSION &&
+        metadata.w == float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) &&
+        metadata.x >= 0.0 && metadata.x <= 8388607.0;
+}
+
 // Scale maps a path pixel to the full-resolution primary surface.
 bool lcHistoryPixel(ivec2 pixel, int scale, out ivec2 source)
 {
@@ -38,7 +65,7 @@ bool lcHistoryPixel(ivec2 pixel, int scale, out ivec2 source)
 
     source = ivec2(floor(uv * vec2(ubo.ubo.res))) / scale;
 
-    return all(lessThan(source, ubo.ubo.res / scale));
+    return all(lessThan(source, ubo.ubo.res / scale)) && lcHistoryDonorValid(pixel, scale, source);
 }
 
 #if LC_PATH_MAG_DEDUPLICATION

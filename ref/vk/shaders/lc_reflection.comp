@@ -158,7 +158,7 @@ vec3 traceReflection(uint r, vec3 P, vec3 G, vec3 N, vec3 V, MaterialProperties 
 }
 
 bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float roughness, vec4 hit, vec4 identity,
-    vec3 previous_hit, out ivec2 source)
+    vec3 previous_hit, vec3 reflection_direction, out ivec2 source)
 {
     source = plane_source;
 
@@ -167,7 +167,7 @@ bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float rou
     if (length(ubo.ubo.inv_view[3].xyz - ubo.ubo.prev_inv_view[3].xyz) <= REFLECTION_PATH_PARALLAX_TRANSLATION_EPSILON)
         return false;
 
-    if (!lcMirrorPath(roughness, dot(G, N)) || hit.w <= 0.0 || identity.w <= 0.0)
+    if (!lcMirrorPath(roughness, dot(G, N)))
         return false;
 
     vec4 plane_normals = imageLoad(prev_temporal_reflection_path_normals, plane_source);
@@ -175,11 +175,24 @@ bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float rou
 
     // Rotating/curved mirror planes require a surface transform, so use the
     // validated primary-plane source there instead of guessing a parallax warp.
-    if (dot(G, old_G) < 0.999)
+    if (abs(dot(G, old_G)) < 0.999)
         return false;
 
     vec3 previous_P = imageLoad(geometry_prev_position, pix).xyz;
     vec3 virtual_hit = previous_hit - 2.0 * old_G * dot(old_G, previous_hit - previous_P);
+    bool sky = hit.w == 0.0 && identity.w == 0.0;
+    if (sky) {
+        // Infinite environment: find the old mirror-plane point whose viewing
+        // ray reflects into the same world direction. No finite hit is needed.
+        vec3 view_ray = reflect(reflection_direction, old_G);
+        float denominator = dot(old_G, view_ray);
+        if (abs(denominator) <= 1e-6) return false;
+        float t = dot(old_G, previous_P - ubo.ubo.prev_inv_view[3].xyz) / denominator;
+        if (!(t > 0.0) || isnan(t) || isinf(t)) return false;
+        virtual_hit = ubo.ubo.prev_inv_view[3].xyz + view_ray * t;
+    } else if (hit.w <= 0.0 || identity.w <= 0.0) {
+        return false;
+    }
     vec2 uv;
     float clip_w;
     if (!projectWorldToPrevFrameUvCenter(virtual_hit, ubo.ubo.res, uv, clip_w))
@@ -194,7 +207,7 @@ bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float rou
 
     for (int i = 0; i < 4; ++i) {
         ivec2 tap = taps[i];
-        if (!isReprojectionTexelInside(tap, ubo.ubo.res))
+        if (!isReprojectionTexelInside(tap, ubo.ubo.res) || !lcHistoryDonorValid(pix, 1, tap))
             continue;
 
         vec4 meta = imageLoad(prev_temporal_reflection_path_random, tap);
@@ -202,17 +215,16 @@ bool parallaxPathSource(ivec2 pix, ivec2 plane_source, vec3 G, vec3 N, float rou
         vec4 old_normals = imageLoad(prev_temporal_reflection_path_normals, tap);
         vec3 old_geometry = normalDecode(old_normals.xy), old_shading = normalDecode(old_normals.zw);
 
-        if (!lcMirrorPath(meta.z, dot(old_geometry, old_shading)) || dot(old_geometry, old_G) < 0.999 ||
-            meta.w != float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) || any(isnan(meta)) || any(isinf(meta)) ||
-            meta.y != 2.0 || meta.x < 0.0 || meta.x > 8388607.0 || !lcPathHistoryValid(reservoir))
+        if (!lcMirrorPath(meta.z, dot(old_geometry, old_shading)) || abs(dot(old_geometry, old_G)) < 0.999 ||
+            !lcPathSeedMetadataValid(meta) || !lcPathHistoryValid(reservoir))
             continue;
 
         vec4 old_identity = imageLoad(prev_temporal_lc_reflection_hit_identity, tap);
         vec4 old_hit = imageLoad(prev_reflection_hit_pos, tap);
-        if (old_hit.w <= 0.0 || any(notEqual(identity, old_identity)))
+        if ((sky ? old_hit.w != 0.0 : old_hit.w <= 0.0) || any(notEqual(identity, old_identity)))
             continue;
 
-        float error = length(old_hit.xyz - previous_hit);
+        float error = sky ? 0.0 : length(old_hit.xyz - previous_hit);
         float tolerance = max(0.05, length(previous_hit - previous_P) * 0.002);
         if (error > tolerance)
             continue;
@@ -289,7 +301,6 @@ void main()
         selected_seed, position.xyz, G, N, V, material, direction, pdf, hit, identity, previous_hit, incident);
 
     float history_cap = REFLECTION_PATH_MAX_EFFECTIVE_SAMPLES;
-    float replay_ratio = 1.0;
     LCReservoir reservoir = LCReservoir(0, 0, 0);
     lcOffer(reservoir, lcPathTarget(selected), 1.0, 0.0);
 
@@ -298,12 +309,15 @@ void main()
 
     if (projected) {
         ivec2 parallax_source;
-        if (parallaxPathSource(pix, source, G, N, rm.x, hit, identity, previous_hit, parallax_source))
+        if (parallaxPathSource(pix, source, G, N, rm.x, hit, identity, previous_hit, direction, parallax_source))
             source = parallax_source;
 #if LC_PATH_PERMUTATION_SAMPLING
         uint permutation = xxhash32(uvec4(ubo.ubo.random_seed, ubo.ubo.frame_counter, 0x72706572u, 0u));
         ivec2 permuted_source = temporalPathPermutedPixel(source, res, permutation);
-        if (reflectionPermutationAllowed(permuted_source, N, V, rm.x))
+        if (lcHistoryDonorValid(pix, 1, permuted_source) &&
+            reflectionPermutationAllowed(permuted_source, N, V, rm.x) &&
+            lcPathSeedMetadataValid(imageLoad(prev_temporal_reflection_path_random, permuted_source)) &&
+            lcPathHistoryValid(imageLoad(prev_temporal_reflection_path_reservoir, permuted_source)))
             source = permuted_source;
 #endif
 
@@ -314,11 +328,7 @@ void main()
 
     float restart = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x726c6966u)));
     if (projected && restart >= BOUNCE_PATH_RESTART_PROBABILITY) {
-        vec4 donor = imageLoad(prev_position_t, source);
-        vec3 donor_normal = normalDecode(imageLoad(prev_normals_gs, source).xy);
-        float error = abs(dot(imageLoad(geometry_prev_position, pix).xyz - donor.xyz, donor_normal));
-        projected =
-            donor.w > 0.0 && !isnan(error) && !isinf(error) && error <= BOUNCE_PATH_REPROJECTION_PLANE_TOLERANCE;
+        projected = lcHistoryDonorValid(pix, 1, source);
     } else
         projected = false;
 
@@ -326,9 +336,7 @@ void main()
         vec4 metadata = imageLoad(prev_temporal_reflection_path_random, source);
         vec4 previous = imageLoad(prev_temporal_reflection_path_reservoir, source);
 
-        // Y tags the seed format; old random-pair histories are incompatible.
-        if (metadata.y == 2.0 && metadata.w == float(((ubo.ubo.frame_counter - 1u) & 65535u) + 1u) &&
-            metadata.x >= 0.0 && metadata.x <= 8388607.0 && lcPathHistoryValid(previous)) {
+        if (lcPathSeedMetadataValid(metadata) && lcPathHistoryValid(previous)) {
             vec3 hd, hp, history_incident;
             float hpdf;
             vec4 hh, hi;
@@ -336,24 +344,9 @@ void main()
                 uint(metadata.x), position.xyz, G, N, V, material, hd, hpdf, hh, hi, hp, history_incident);
 
             float target = lcPathTarget(history);
-            replay_ratio = target / max(previous.x, 1e-6);
-            float relaxation =
-                smoothstep(REFLECTION_PATH_RELAX_ROUGHNESS_START, REFLECTION_PATH_RELAX_ROUGHNESS_END, rm.x);
-            float limit = mix(BOUNCE_PATH_RADIANCE_RATIO, REFLECTION_PATH_ROUGH_RADIANCE_RATIO, relaxation);
-            float confidence = lcRatioConfidence(replay_ratio, limit);
-
-            float old_length = imageLoad(prev_reflection_hit_pos, source).w;
-            float length_confidence = 0.0;
-            if (old_length > 0.0 && hh.w > 0.0) {
-                float ratio = hh.w / old_length;
-                float length_limit = mix(REFLECTION_PATH_LENGTH_RATIO, REFLECTION_PATH_ROUGH_LENGTH_RATIO, relaxation);
-                length_confidence = lcRatioConfidence(ratio, length_limit);
-            } else if (old_length == 0.0 && hh.w == 0.0)
-                length_confidence = 1.0;
-
-            confidence *= length_confidence;
-
-            if (uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x72636f6eu))) < confidence) {
+            // Retracing validates visibility, and target-ratio reweighting
+            // handles radiance/length changes without a stochastic history reset.
+            if (target > 0.0 && !isnan(target) && !isinf(target)) {
                 reservoir = lcReplayReservoir(previous, target);
 
                 float choose = uintToFloat01(xxhash32(uvec4(uvec2(pix), ubo.ubo.random_seed, 0x7273656cu)));
@@ -387,7 +380,7 @@ void main()
     imageStore(out_temporal_lc_reflection_hit_identity, pix, identity);
 
     imageStore(out_temporal_reflection_path_random, pix,
-        vec4(float(selected_seed), 2.0, rm.x, float((ubo.ubo.frame_counter & 65535u) + 1u)));
+        vec4(float(selected_seed), LC_PATH_HISTORY_VERSION, rm.x, float((ubo.ubo.frame_counter & 65535u) + 1u)));
     imageStore(out_temporal_reflection_path_reservoir, pix, lcEncodePath(reservoir, history_cap));
 
     // The chosen pair has now been evaluated in this frame: next frame uses

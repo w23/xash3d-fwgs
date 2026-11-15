@@ -45,16 +45,12 @@ bool lcMirrorPath(float roughness, float normal_dot)
     return roughness < 0.004 && normal_dot >= 0.98;
 }
 
-// Symmetric confidence around an unchanged replay value (ratio == 1).
-float lcRatioConfidence(float ratio, float limit)
-{
-    return clamp(ratio < 1.0 ? (ratio - 1.0 / limit) / (1.0 - 1.0 / limit) : (limit - ratio) / (limit - 1.0), 0.0, 1.0);
-}
-
-// Replay replaces the selected contribution without increasing the sample count.
+// The historical reservoir represents M proposals, not one old contribution.
+// Reweight its aggregate mass by the replayed selected sample's target ratio
+// (target_current * W_previous * M). The seed is retraced in the current scene.
 LCReservoir lcReplayReservoir(vec4 previous, float target)
 {
-    return LCReservoir(max(0.0, previous.y - previous.x) + target, previous.z, target);
+    return LCReservoir(previous.y * (target / previous.x), previous.z, target);
 }
 
 vec4 lcEncodePath(LCReservoir r, float cap)
