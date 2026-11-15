@@ -7,6 +7,15 @@ const float REFLECTION_HISTORY_WEIGHT_MAX = 0.25;
 const float REFLECTION_SCATTERED_HISTORY_WEIGHT_MAX = 0.85;
 const float REFLECTION_ACCUMULATION_ROUGHNESS_START = 0.10;
 const float REFLECTION_ACCUMULATION_ROUGHNESS_END = 0.40;
+// Use surface motion once the reflection is predominantly scattered. Keep the
+// same roughness/length-spread classification as the accumulation filter.
+const float REFLECTION_SURFACE_REPROJECTION_ACCUMULATION_MIN = 0.5;
+// History alpha records the method actually used to accumulate this texel.
+// Values also version the raw RGB + metric hit-length statistics layout:
+// legacy histories used alpha == 1 and must not be read with the new layout.
+const float REFLECTION_HISTORY_RAW = 2.0;
+const float REFLECTION_HISTORY_SURFACE = 3.0;
+const float REFLECTION_HISTORY_PARALLAX = 4.0;
 // Coefficient of variation of current 3x3 reconstructed hit lengths. This
 // also enables stronger accumulation on smooth materials with dispersed hits.
 const float REFLECTION_LENGTH_SPREAD_START = 0.10;

@@ -58,6 +58,7 @@ void main() {
     current = finite_current ? max(current, vec3(0.0)) : vec3(0.0);
     ReflectionNeighborhood stats = reflectionNeighborhood(pix, current);
     vec3 result = current;
+    float history_method = REFLECTION_HISTORY_RAW;
     bool enabled = finite_current && (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_REPROJECTION) == 0u;
 
     vec4 position = imageLoad(position_t, pix);
@@ -76,10 +77,12 @@ void main() {
         bool valid = buildValidatedReprojectionHistoryTapsForParams(params, previous_position,
             geometry_normal, pix, res, taps, weights, tap_count, projected, depth_threshold);
 
-        // Prefer reflected motion. Surface fallback is less trustworthy for
-        // mirrors, even when depth/normal validation succeeds.
+        // Scattered reflections follow the surface. Coherent reflections
+        // prefer reflected motion, with surface motion as a fallback.
+        bool prefer_surface = reflectionAccumulationStrength(stats, roughness) >=
+            REFLECTION_SURFACE_REPROJECTION_ACCUMULATION_MIN;
         bool parallax_valid = false;
-        if (valid) {
+        if (valid && !prefer_surface) {
             float ray_length = stats.length_mean;
             ivec2 parallax;
             if (parallaxReprojectToPrevFramePixel(position.xyz, previous_position, geometry_normal,
@@ -108,24 +111,32 @@ void main() {
         float history_motion = 0.0;
         if (valid) for (int i = 0; i < tap_count; ++i) {
             vec4 sample_value = imageLoad(INDIRECT_TEMPORAL_HISTORY, taps[i]);
-            if (!(sample_value.a >= 1.0) || any(isnan(sample_value)) || any(isinf(sample_value))) continue;
+            if ((sample_value.a != REFLECTION_HISTORY_RAW &&
+                sample_value.a != REFLECTION_HISTORY_SURFACE &&
+                sample_value.a != REFLECTION_HISTORY_PARALLAX) ||
+                any(isnan(sample_value)) || any(isinf(sample_value))) continue;
             vec4 meta = imageLoad(prev_temporal_asvgf_reproj_depth, taps[i]);
             if (dot(shading_normal, normalDecode(meta.zw)) < 0.9) continue;
             if (abs(meta.g - roughness) >= 0.1) continue;
             vec4 sample_stats = imageLoad(INDIRECT_TEMPORAL_STATS, taps[i]);
-            // .w tags the new raw-statistics layout, rejecting legacy ASVGF
-            // history on shader reload. .z is mean metric hit length, 0 = miss.
-            if (sample_stats.w != -1.0 || any(isnan(sample_stats)) || any(isinf(sample_stats))) continue;
+            // Statistics preserve the previous reconstruction before temporal
+            // accumulation: .rgb is raw color, .w is mean metric hit length.
+            if (any(isnan(sample_stats)) || any(isinf(sample_stats))) continue;
+            // A successful parallax lookup must never inherit a surface-motion
+            // trail. Restart from just the previous raw frame at this tap.
+            vec3 sample_history = parallax_valid && sample_value.a != REFLECTION_HISTORY_PARALLAX
+                ? sample_stats.rgb : sample_value.rgb;
             float w = weights[i];
-            history += sample_value.rgb * w;
-            if (reflectionLengthValid(sample_stats.z)) {
-                previous_length += sample_stats.z * w;
+            history += sample_history * w;
+            if (reflectionLengthValid(sample_stats.w)) {
+                previous_length += sample_stats.w * w;
                 length_weight += w;
             }
             history_motion += length(vec2(taps[i] - pix)) * w;
             total += w;
         }
         if (total > 0.0) {
+            history_method = parallax_valid ? REFLECTION_HISTORY_PARALLAX : REFLECTION_HISTORY_SURFACE;
             history /= total;
             if (length_weight > 0.0) previous_length /= length_weight;
             float mirror = 1.0 - smoothstep(REFLECTION_LENGTH_ROUGHNESS_FADE_START,
@@ -135,9 +146,9 @@ void main() {
                 roughness, confidence, history_motion / total);
         }
     }
-    // Alpha is validity, not an accumulating sample count. Geometry metadata
-    // always describes this frame's reconstruction, never the temporal color.
-    imageStore(INDIRECT_TEMPORAL_OUTPUT, pix, vec4(result, finite_current ? 1.0 : 0.0));
+    // Alpha is validity + reprojection method, not an accumulating sample count.
+    // Keep raw color separately so surface accumulation can be discarded later.
+    imageStore(INDIRECT_TEMPORAL_OUTPUT, pix, vec4(result, finite_current ? history_method : 0.0));
     imageStore(INDIRECT_TEMPORAL_OUTPUT_STATS, pix,
-        vec4(luminance(stats.mean), stats.luma_variance, stats.length_mean, -1.0));
+        vec4(current, stats.length_mean));
 }
