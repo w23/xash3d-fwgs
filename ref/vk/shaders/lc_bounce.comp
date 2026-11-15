@@ -10,6 +10,7 @@
 
 #define RAY_QUERY
 #define RAY_BOUNCE
+#define LIGHTCACHE_SHADING_NORMAL
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -90,7 +91,7 @@ vec3 tracePath(uint seed, vec3 P, vec3 G, out vec3 first_direction, out float fi
 
         // Match cached reflection shading: tint by base color even on metals.
         throughput *= payload.base_color_a.rgb;
-        color += throughput * lcCachedIrradiance(uv);
+        color += throughput * lcCachedIrradiance(uv, normalDecode(payload.normals_gs.zw));
         if (max(throughput.r, max(throughput.g, throughput.b)) <= 1e-3)
             break;
 

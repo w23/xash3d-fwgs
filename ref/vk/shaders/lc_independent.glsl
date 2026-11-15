@@ -74,10 +74,4 @@ float lcWeight(vec3 c)
     return max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
 }
 
-// Unit-albedo outgoing diffuse radiance; geometry normal only, no view/material.
-vec3 lcDiffuse(vec3 radiance, vec3 geometry_normal, vec3 direction)
-{
-    return radiance * (max(dot(geometry_normal, direction), 0.0) / 3.14159265);
-}
-
 #endif

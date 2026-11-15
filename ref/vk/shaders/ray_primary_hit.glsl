@@ -59,7 +59,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
 		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;
 
-#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION)
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION) || defined(LIGHTCACHE_SHADING_NORMAL)
 		const uint tex_normal = material.tex_normalmap;
 		vec3 T = geom.tangent;
 		if (tex_normal > 0 && dot(T,T) > .5) {

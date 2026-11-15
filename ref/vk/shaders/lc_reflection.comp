@@ -10,6 +10,7 @@
 
 #define RAY_QUERY
 #define RAY_BOUNCE
+#define LIGHTCACHE_SHADING_NORMAL
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -85,7 +86,7 @@ vec3 cachedHit(vec3 origin, vec3 direction, out vec4 hit, out vec4 identity, out
 
     vec4 uv = rayLightmapUV(rq);
 
-    return lcCachedIrradiance(uv) * payload.base_color_a.rgb;
+    return lcCachedIrradiance(uv, normalDecode(payload.normals_gs.zw)) * payload.base_color_a.rgb;
 }
 
 vec3 reflectionDirection(uint seed, vec3 N, vec3 V, float roughness, out float pdf)

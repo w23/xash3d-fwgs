@@ -19,6 +19,7 @@ const float shadow_offset_fudge = 0.01;
 #include "light_common.glsl"
 #include "lightcache_geometry.glsl"
 #include "lc_independent.glsl"
+#include "spherical_harmonics.glsl"
 
 bool lcLoadCluster(vec3 P, out uint cluster)
 {
