@@ -1,0 +1,110 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_nonuniform_qualifier : enable
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#define RAY_QUERY
+#define RAY_BOUNCE
+#define RAY_REFRACTION
+layout(local_size_x = 8, local_size_y = 8) in;
+#include "lc_scene.glsl"
+layout(set = 0, binding = 7) uniform samplerCube skybox;
+layout(set = 0, binding = 10, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
+layout(set = 0, binding = 16, rgba32f) uniform readonly image2D primary_lightmap_uv;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_refraction;
+#include "ray_primary_hit.glsl"
+#include "trace_decals.glsl"
+#include "ray_lightmap.glsl"
+#include "lc_sampling.glsl"
+#include "refraction_config.glsl"
+#include "transparency_faces.glsl"
+#include "rt_fog.glsl"
+
+void traceInterface(rayQueryEXT q, vec3 p, vec3 d) {
+    // Keep both sides available; per-candidate policy distinguishes vanilla faces from physical exits.
+    rayQueryInitializeEXT(q, tlas, 0u,
+        GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST | GEOMETRY_BIT_REFRACTIVE,
+        p, 0.001, d, 10000.0);
+    while (rayQueryProceedEXT(q)) {
+        uint kusok_index = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, false) +
+            rayQueryGetIntersectionGeometryIndexEXT(q, false));
+        Material candidate = getKusok(kusok_index).material;
+        ModelHeader model = getModelHeader(rayQueryGetIntersectionInstanceIdEXT(q, false));
+        bool translucent = model.mode == MATERIAL_MODE_TRANSLUCENT;
+        if (!transparencyFaceVisible(candidate.refraction_ior,
+            (candidate.surface_flags & SURFACE_FLAG_LIQUID) != 0u, translucent,
+            rayQueryGetIntersectionFrontFaceEXT(q, false)))
+            continue;
+        if (translucent || candidate.refraction_ior > 0.0 || candidate.tex_base_color == TEX_BASE_SKYBOX) {
+            rayQueryConfirmIntersectionEXT(q);
+            continue;
+        }
+        MiniGeometry g = readCandidateMiniGeometry(q);
+        if (textureLod(textures[nonuniformEXT(candidate.tex_base_color)], g.uv, 0.0).a >= 0.1)
+            rayQueryConfirmIntersectionEXT(q);
+    }
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pix, ubo.ubo.res))) return;
+    imageStore(out_refraction, pix, vec4(0));
+    vec4 first = imageLoad(position_t, pix);
+    if (first.w <= 0.0 || imageLoad(base_color_a, pix).a >= 1.0) return;
+
+    vec4 uv = imageLoad(primary_lightmap_uv, pix);
+    Material material = getKusok(uint(uv.w) - 1u).material;
+    vec3 incoming = normalize(first.xyz - ubo.ubo.inv_view[3].xyz);
+    RayFog fog = rtInitialFog(first.xyz);
+    rtCrossLiquid(fog, material, incoming, imageLoad(normals_gs, pix));
+    vec3 direction = transmittedDirection(incoming,
+        imageLoad(normals_gs, pix), material.refraction_ior);
+    vec3 origin = first.xyz;
+    vec3 radiance = vec3(0);
+    float weight = 1.0;
+
+    // One continuing path. Rejected faces are not layers; all accepted layers use
+    // the same shaded-surface alpha, already including IOR and decal coverage.
+    while (weight >= REFRACTION_MIN_WEIGHT && dot(direction, direction) > 1e-8) {
+        rayQueryEXT q;
+        traceInterface(q, origin + direction * 0.01, direction);
+        if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+            rtFogSegment(fog, fog.liquid ? 10000.0 : rtSkyFogDistance(direction), true, radiance, weight);
+            radiance += weight * sampleSkybox(direction);
+            break;
+        }
+        uint kusok_index = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, true) +
+            rayQueryGetIntersectionGeometryIndexEXT(q, true));
+        material = getKusok(kusok_index).material;
+        float segment_length = rayQueryGetIntersectionTEXT(q, true) + 0.01;
+        bool sky = material.tex_base_color == TEX_BASE_SKYBOX;
+        // Water uses the actual path length; global fog keeps the raster view-axis metric.
+        float fog_distance = fog.liquid ? segment_length :
+            abs((ubo.ubo.view * vec4(direction * segment_length, 0.0)).z);
+        rtFogSegment(fog, fog_distance, sky, radiance, weight);
+        if (material.tex_base_color == TEX_BASE_SKYBOX) {
+            radiance += weight * sampleSkybox(direction);
+            break;
+        }
+
+        RayPayloadPrimary payload;
+        payload.material_rmxx = vec4(0);
+        payload.emissive = vec4(0);
+        primaryRayHit(q, payload); // Computes the ordinary surface alpha, including Fresnel.
+        traceDecals(payload);     // A decal can raise that alpha all the way to opaque.
+        float opacity = clamp(payload.base_color_a.a, 0.0, 1.0);
+        vec3 surface = lcCachedIrradiance(rayLightmapUV(q), normalDecode(payload.normals_gs.zw)) * payload.base_color_a.rgb
+            + payload.emissive.rgb;
+        radiance += weight * opacity * surface;
+        weight *= 1.0 - opacity;
+        origin = payload.hit_t.xyz;
+        rtCrossLiquid(fog, material, direction, payload.normals_gs);
+        direction = transmittedDirection(direction, payload.normals_gs, material.refraction_ior);
+    }
+    imageStore(out_refraction, pix, vec4(min(max(radiance, vec3(0)), vec3(65504)), 0));
+}

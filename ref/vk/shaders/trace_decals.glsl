@@ -2,6 +2,7 @@
 #define TRACE_DECALS_GLSL_INCLUDED
 
 #include "debug.glsl"
+#include "alpha_blending.glsl"
 
 // Traces geometry with decals.
 // Modifies RayPayloadPrimary by blending in decals found near the original surface.
@@ -20,7 +21,7 @@ void traceDecals(inout RayPayloadPrimary payload) {
 	struct DecalEntry {
 		uint id; // sorting by id for stable drawing order
 		vec4 base_color_a;
-		vec4 material_rmxx; // TODO: add also shading normal and emissive
+		vec2 roughness_metalness; // TODO: decal normal maps
 	};
 
 	// VGPR usage :FeelsBadMan:
@@ -54,7 +55,9 @@ void traceDecals(inout RayPayloadPrimary payload) {
 		// Collect in random order
 		entries[entries_count].id = geom.kusok_index;
 		entries[entries_count].base_color_a = vec4(color, alpha);
-		entries[entries_count].material_rmxx = vec4(kusok.material.roughness, kusok.material.metalness, 0., 0.);
+		entries[entries_count].roughness_metalness = vec2(
+			textureLod(textures[nonuniformEXT(kusok.material.tex_roughness)], geom.uv, 0.0).r * kusok.material.roughness,
+			textureLod(textures[nonuniformEXT(kusok.material.tex_metalness)], geom.uv, 0.0).r * kusok.material.metalness);
 
 		++entries_count;
 
@@ -85,8 +88,11 @@ void traceDecals(inout RayPayloadPrimary payload) {
 		// Composite everything in the right order
 		for (uint i = 0; i < entries_count; ++i) {
 			float a = entries[i].base_color_a.w;
-			payload.base_color_a = mix(payload.base_color_a, vec4(entries[i].base_color_a.rgb, 1.0), a);
-			payload.material_rmxx = mix(payload.material_rmxx, entries[i].material_rmxx, a);
+			payload.base_color_a.rgb = mix(payload.base_color_a.rgb, entries[i].base_color_a.rgb, a);
+			payload.base_color_a.a = coveredAlpha(payload.base_color_a.a, a);
+			payload.material_rmxx.rg = mix(payload.material_rmxx.rg, entries[i].roughness_metalness, a);
+			// Transient decal geometry uses emissive as legacy draw color, not a light source.
+			payload.emissive.rgb *= 1.0 - a;
 		}
 	}
 }

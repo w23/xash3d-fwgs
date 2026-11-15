@@ -19,6 +19,8 @@
 #include "r_speeds.h"
 #include "camera.h"
 #include "r_decals.h"
+#include "vk_fog.h"
+#include "pmove.h"
 
 #include "eiface.h"
 #include "xash3d_mathlib.h"
@@ -40,12 +42,18 @@ PROFILER_SCOPES(SCOPE_DECLARE)
 typedef struct {
 	matrix4x4 mvp;
 	vec4_t color;
+	vec4_t fog_color;
+	vec4_t fog_params;
+	vec4_t fog_plane;
 } uniform_data_t;
 
 typedef struct {
 	matrix4x4 mvp;
 	matrix4x4 inv_proj;
 	matrix4x4 inv_view;
+	vec4_t fog_color;
+	vec4_t fog_params;
+	vec4_t fog_plane; // view forward and GL skybox half-size
 	vec2_t resolution;
 	float pad_[2];
 } sky_uniform_data_t;
@@ -363,7 +371,8 @@ typedef struct render_draw_s {
 typedef struct render_draw_sky_s {
 	uint32_t element_count;
 	uint32_t index_offset, vertex_offset;
-	// TODO matrix4x4 model;
+	vec4_t fog_color;
+	vec4_t fog_params;
 } render_draw_sky_t;
 
 enum draw_command_type_e {
@@ -585,6 +594,7 @@ static void drawCmdPushDrawSky( const render_draw_sky_t *draw_sky )
 
 	draw_command = drawCmdAlloc();
 	draw_command->draw_sky = *draw_sky;
+	R_GetFogParams( draw_command->draw_sky.fog_color, draw_command->draw_sky.fog_params, true );
 	draw_command->type = DrawSky;
 }
 
@@ -657,9 +667,9 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 			{
 				const render_draw_sky_t *draw_sky = &draw->draw_sky;
 
-				if (cur.pipeline != g_render.pipeline_sky.pipeline) {
+				{
 					const uint32_t ubo_offset = allocUniform(sizeof(sky_uniform_data_t), 16 /*?*/);
-					if (g_render_state.current_ubo_offset_FIXME == ALO_ALLOC_FAILED)
+					if (ubo_offset == ALO_ALLOC_FAILED)
 						continue;
 
 					// Compute and upload UBO stuff
@@ -669,6 +679,10 @@ void VK_RenderEnd( vk_combuf_t* combuf, qboolean draw, uint32_t width, uint32_t 
 						// FIXME model matrix
 						Matrix4x4_ToArrayFloatGL(g_render_state.projection_view, (float*)sky_ubo->mvp);
 
+						Vector4Copy( draw_sky->fog_color, sky_ubo->fog_color );
+						Vector4Copy( draw_sky->fog_params, sky_ubo->fog_params );
+						VectorCopy( g_camera.vforward, sky_ubo->fog_plane );
+						sky_ubo->fog_plane[3] = (int)( WORLDMODEL ? MOVEVARS->zmax * 1.73f : 2048.0f ) >> 1;
 						sky_ubo->resolution[0] = width;
 						sky_ubo->resolution[1] = height;
 
@@ -844,6 +858,14 @@ static void submitToTraditionalRender( trad_submit_t args ) {
 	// TODO get rid of this dirty ubo thing
 	uboComputeAndSetMVPFromModel( *args.transform );
 	Vector4Copy(*args.color, g_render_state.dirty_uniform_data.color);
+	R_GetFogParams( g_render_state.dirty_uniform_data.fog_color, g_render_state.dirty_uniform_data.fog_params, false );
+	// GL disables fog for additive models, sprites and TriAPI primitives.
+	if( args.render_type == kVkRenderType_A_1 || args.render_type == kVkRenderType_A_1_R || args.render_type == kVkRenderType_1_1_R )
+		g_render_state.dirty_uniform_data.fog_params[3] = 0.0f;
+
+	matrix4x4 modelview;
+	Matrix4x4_Concat( modelview, g_camera.viewMatrix, *args.transform );
+	Vector4Copy( modelview[2], g_render_state.dirty_uniform_data.fog_plane );
 	if( args.lightmap > 0 )
 	{
 		// Match the GL multipass overbright blending path.
@@ -944,6 +966,7 @@ void R_RenderModelDraw(const vk_render_model_t *model, r_model_draw_t args) {
 			.transform = (const matrix3x4*)args.transform,
 			.prev_transform = (const matrix3x4*)args.prev_transform,
 			.color_srgb = args.color,
+			.lightmap_uv = args.lightmap_uv,
 			.override = {
 				.material = args.override.material,
 				.geoms = model->geometries,

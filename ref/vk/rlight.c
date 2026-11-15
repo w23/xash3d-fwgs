@@ -31,6 +31,7 @@ GNU General Public License for more details.
 =======================================================================
 */
 static vec3_t	g_trace_lightspot;
+static const msurface_t *g_trace_lightsurface;
 static vec3_t	g_trace_lightvec;
 static float	g_trace_fraction;
 
@@ -108,6 +109,7 @@ static qboolean R_RecursiveLightPoint( model_t *model, mnode_t *node, float p1f,
 
 		cv->r = cv->g = cv->b = cv->a = 0;
 
+		g_trace_lightsurface = surf;
 		if( !surf->samples )
 			return true;
 
@@ -192,13 +194,14 @@ R_LightVec
 check bspmodels to get light from
 =================
 */
-static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec )
+static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec, const msurface_t **surface, vec3_t local_hit )
 {
 	float	last_fraction;
 	int	i, maxEnts = 1;
 	colorVec	light, cv;
 	const model_t* world_model = WORLDMODEL;
 
+	if (surface) *surface = NULL;
 	if( lspot ) VectorClear( lspot );
 	if( lvec ) VectorClear( lvec );
 
@@ -239,6 +242,7 @@ static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t
 				Matrix4x4_VectorITransform( matrix, end, end_l );
 			}
 
+			g_trace_lightsurface = NULL;
 			VectorClear( g_trace_lightspot );
 			VectorClear( g_trace_lightvec );
 			g_trace_fraction = 1.0f;
@@ -248,6 +252,8 @@ static colorVec R_LightVecInternal( const vec3_t start, const vec3_t end, vec3_t
 
 			if( g_trace_fraction < last_fraction )
 			{
+				if (surface) *surface = g_trace_lightsurface;
+				if (local_hit) VectorCopy(g_trace_lightspot, local_hit);
 				if( lspot ) VectorCopy( g_trace_lightspot, lspot );
 				if( lvec ) VectorNormalize2( g_trace_lightvec, lvec );
 				// copied from R_LightVecInternal in ref/common/ref_light.c
@@ -277,16 +283,21 @@ R_LightVec
 check bspmodels to get light from
 =================
 */
-colorVec R_LightVec( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec )
+colorVec R_LightVecSurface( const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec, const msurface_t **surface, vec3_t local_hit )
 {
-	colorVec	light = R_LightVecInternal( start, end, lspot, lvec );
+	colorVec	light = R_LightVecInternal( start, end, lspot, lvec, surface, local_hit );
 
 	if( /* FIXME VK CVAR_TO_BOOL( r_lighting_extended ) &&*/ lspot != NULL && lvec != NULL )
 	{
 		// trying to get light from ceiling (but ignore gradient analyze)
 		if(( light.r + light.g + light.b ) == 0 )
-			return R_LightVecInternal( end, start, lspot, lvec );
+			return R_LightVecInternal( end, start, lspot, lvec, surface, local_hit );
 	}
 
 	return light;
+}
+
+colorVec R_LightVec(const vec3_t start, const vec3_t end, vec3_t lspot, vec3_t lvec)
+{
+	return R_LightVecSurface(start, end, lspot, lvec, NULL, NULL);
 }

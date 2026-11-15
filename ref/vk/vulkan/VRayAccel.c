@@ -22,6 +22,11 @@
 #define MODULE_NAME "accel"
 #define LOG_MODULE rt
 
+// ModelHeader reuses the existing 12 padding bytes; keep the storage-buffer ABI.
+typedef char model_header_stride_must_stay_96[(sizeof(struct ModelHeader) == 96) ? 1 : -1];
+typedef char model_header_cache_uv_offset[(offsetof(struct ModelHeader, lightmap_uv) == 88) ? 1 : -1];
+typedef char vertex_lm_offset[(offsetof(vk_vertex_t, lm_tc) == 72) ? 1 : -1];
+
 #define MAX_SCRATCH_BUFFER (128*1024*1024)
 // FIXME compute this by lazily allocating #define MAX_ACCELS_BUFFER (128*1024*1024)
 #define MAX_ACCELS_BUFFER (512*1024*1024)
@@ -377,8 +382,9 @@ static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress ge
 			case MATERIAL_MODE_TRANSLUCENT:
 				inst[i].mask = GEOMETRY_BIT_REFRACTIVE;
 				inst[i].instanceShaderBindingTableRecordOffset = SHADER_OFFSET_HIT_REGULAR,
-				// Disable culling for translucent surfaces: decide what side it is based on normal wrt ray directions
-				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_OPAQUE_BIT_KHR | flags;
+				// Candidate filtering selects raster-visible vanilla faces per material.
+				// Keep both windings available for physical exits, including mixed-material instances.
+				inst[i].flags = VK_GEOMETRY_INSTANCE_FORCE_NO_OPAQUE_BIT_KHR | VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 				break;
 			case MATERIAL_MODE_BLEND_ADD:
 			case MATERIAL_MODE_BLEND_MIX:
@@ -397,6 +403,8 @@ static uint32_t processEnqueuedInstances(vk_combuf_t *combuf, VkDeviceAddress ge
 
 		struct ModelHeader *const header = ((struct ModelHeader*)headers_lock.ptr) + i;
 		header->mode = instance->material_mode;
+		header->lightmap_uv_valid = instance->lightmap_uv_valid;
+		Vector2Copy(instance->lightmap_uv, header->lightmap_uv);
 		Vector4Copy(instance->color, header->color);
 		Matrix4x4_ToArrayFloatGL(instance->prev_transform_row, (float*)header->prev_transform);
 	}
@@ -585,7 +593,9 @@ static void blasFillGeometries(rt_blas_t *blas, const vk_render_geometry_t *geom
 
 	for (int i = 0; i < geoms_count; ++i) {
 		const vk_render_geometry_t *mg = geoms + i;
-		const uint32_t prim_count = mg->element_count / 3;
+
+		// Preserve geometry indices shared with raster rendering and material data.
+		const uint32_t prim_count = mg->ray_tracing_hidden ? 0 : mg->element_count / 3;
 
 		blas->build.max_prim_counts[i] = prim_count;
 		blas->build.geoms[i] = (VkAccelerationStructureGeometryKHR)

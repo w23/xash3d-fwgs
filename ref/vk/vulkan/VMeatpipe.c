@@ -713,19 +713,20 @@ static void swapPingPongImages(vk_meatpipe_t *meatpipe, vk_combuf_t* combuf, qbo
 		if (mr->prev_frame_index_plus_1 <= 0)
 			continue;
 
-		vk_resource_storage_image_t *const write = (void*)meatpipe->acquired_resources[i];
-		vk_resource_storage_image_t *const read = (void*)meatpipe->acquired_resources[mr->prev_frame_index_plus_1 - 1];
+		vk_resource_storage_image_t *const history = (void*)meatpipe->acquired_resources[i];
+		vk_resource_storage_image_t *const current = (void*)meatpipe->acquired_resources[mr->prev_frame_index_plus_1 - 1];
 
-		// Swap images
-		const r_vk_image_t tmp_img = write->image;
-		write->image = read->image;
-		read->image = tmp_img;
+		// mr names the prev_ resource; its linked resource is the current output.
+		// Move last frame's output into the history descriptor.
+		const r_vk_image_t tmp_img = history->image;
+		history->image = current->image;
+		current->image = tmp_img;
 
-		// If there was no initial state, prepare it. (this should happen only for the first frame)
-		if (discontinuity || read->image.sync.write.stage == 0) {
+		// Clear the image that shaders read as history, not the current output.
+		if (discontinuity || history->image.sync.write.stage == 0) {
 			// TODO is there a better way? Can image be cleared w/o explicit clear op?
-			WARN("discontinuity: %s", read->header.name);
-			R_VkImageClear( &read->image, combuf, NULL );
+			WARN("discontinuity: %s", history->header.name);
+			R_VkImageClear( &history->image, combuf, NULL );
 		}
 	}
 }

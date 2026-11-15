@@ -1,0 +1,43 @@
+#version 460
+#include "utils.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+#include "heitz_shadow_common.glsl"
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D heitz_noise_blurred;
+#include "heitz_shadow_encoded.glsl"
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D out_heitz_horizontal_sd;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D out_heitz_horizontal_ud;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_heitz_horizontal_ss;
+layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D out_heitz_horizontal_us;
+void main() {
+	const ivec2 p = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
+	if (!heitzInside(p, res)) return;
+	const vec4 center = imageLoad(position_t, p);
+	const vec3 normal = normalDecode(imageLoad(normals_gs, p).xy);
+	const vec2 sigma = heitzSigma(imageLoad(heitz_noise_blurred, p).rg);
+	const int radius = min(HEITZ_MAX_RADIUS, int(ceil(3.0 * max(sigma.x, sigma.y))));
+	vec3 sd, ud, ss, us;
+	heitzEncoded(p, sd, ud, ss, us);
+	vec2 total = vec2(1.0);
+	for (int x = -radius; x <= radius; ++x) {
+		if (x == 0) continue;
+		const ivec2 tap = p + ivec2(x, 0);
+		if (!heitzInside(tap, res) || center.w <= 0.0) continue;
+		vec2 w = exp(-0.5 * float(x*x) / max(sigma*sigma, vec2(1e-8)));
+		w *= heitzGeometryWeight(center, normal, tap);
+		if (max(w.x,w.y) < 1e-5) continue;
+		vec3 tsd, tud, tss, tus;
+		heitzEncoded(tap, tsd, tud, tss, tus);
+		sd += tsd*w.x; ud += tud*w.x; ss += tss*w.y; us += tus*w.y;
+		total += w;
+	}
+	imageStore(out_heitz_horizontal_sd, p, vec4(sd / total.x, 0.0));
+	imageStore(out_heitz_horizontal_ud, p, vec4(ud / total.x, 0.0));
+	imageStore(out_heitz_horizontal_ss, p, vec4(ss / total.y, 0.0));
+	imageStore(out_heitz_horizontal_us, p, vec4(us / total.y, 0.0));
+}

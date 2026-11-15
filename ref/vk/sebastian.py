@@ -107,12 +107,14 @@ class ImageFormat:
     VK_FORMAT_UNDEFINED = 0
     VK_FORMAT_R8G8B8A8_UNORM = 37
     VK_FORMAT_R16G16B16A16_SFLOAT = 97
+    VK_FORMAT_R32_SFLOAT = 100
     VK_FORMAT_R32G32B32A32_SFLOAT = 109
 
     __map = {
         'Unknown': VK_FORMAT_UNDEFINED,
         'Rgba32f' : VK_FORMAT_R32G32B32A32_SFLOAT,
         'Rgba16f' : VK_FORMAT_R16G16B16A16_SFLOAT,
+        'R32f' : VK_FORMAT_R32_SFLOAT,
         'Rgba8' : VK_FORMAT_R8G8B8A8_UNORM,
         # TODO map more
     }
@@ -426,7 +428,8 @@ class Resources:
 
 		if index >= 0:
 			res = self.__storage.getByIndex(index)
-			res.checkSameTypeNode(node)
+			if node is not None:
+				res.checkSameTypeNode(node)
 			return index
 
 		return self.__storage.put(name, self.Resource(name, node, dependency))

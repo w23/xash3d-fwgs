@@ -210,4 +210,34 @@ MiniGeometry readCandidateMiniGeometry(rayQueryEXT rq) {
 }
 #endif // #ifdef RAY_QUERY
 
+#ifdef RAY_QUERY
+struct AlphaCandidateGeometry {
+	vec2 uv;
+	uint kusok_index;
+};
+
+AlphaCandidateGeometry readCandidateAlphaGeometry(rayQueryEXT rq) {
+	const uint instance_kusochki_offset = rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false);
+	const uint geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, false);
+	const uint kusok_index = instance_kusochki_offset + geometry_index;
+	const Kusok kusok = getKusok(kusok_index);
+
+	const uint primitive_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, false);
+	const uint first_index_offset = kusok.index_offset + primitive_index * 3;
+	const uint vi1 = uint(getIndex(first_index_offset+0)) + kusok.vertex_offset;
+	const uint vi2 = uint(getIndex(first_index_offset+1)) + kusok.vertex_offset;
+	const uint vi3 = uint(getIndex(first_index_offset+2)) + kusok.vertex_offset;
+	const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rq, false);
+
+	AlphaCandidateGeometry ret;
+	ret.uv = baryMix(
+		GET_VERTEX(vi1).gl_tc,
+		GET_VERTEX(vi2).gl_tc,
+		GET_VERTEX(vi3).gl_tc,
+		bary);
+	ret.kusok_index = kusok_index;
+	return ret;
+}
+#endif
+
 #endif // RT_GEOMETRY_GLSL_INCLUDED

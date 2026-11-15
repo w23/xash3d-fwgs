@@ -138,7 +138,9 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 	// Find closest intersection, and then check whether that was a skybox
 	while (rayQueryProceedEXT(rq)) {}
 
+	float hit_t = L;
 	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+		hit_t = rayQueryGetIntersectionTEXT(rq, true);
 		const uint instance_kusochki_offset = rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true);
 		const uint geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 		const uint kusok_index = instance_kusochki_offset + geometry_index;
@@ -149,7 +151,6 @@ bool shadowedSky(vec3 pos, vec3 dir) {
 	}
 
 	// check for alpha-masked surfaces separately
-	const float hit_t = rayQueryGetIntersectionTEXT(rq, true);
 	return shadowTestAlphaMask(pos, dir, hit_t);
 
 #else

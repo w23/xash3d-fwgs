@@ -8,11 +8,16 @@ struct draw_list_s;
 struct model_s;
 struct cl_entity_s;
 
+qboolean R_BrushPrepareLightcache(struct vk_combuf_s *combuf, qboolean reinitialize);
+void R_BrushLightcacheShutdown(void);
+
 qboolean R_BrushInit( void );
 void R_BrushShutdown( void );
 
 qboolean R_BrushModelLoad(struct model_s *mod, qboolean is_worldmodel);
 void R_BrushModelDestroyAll( void );
+
+qboolean R_BrushModelHasRefraction( const struct model_s *mod );
 
 void R_BrushModelDraw( const cl_entity_t *ent, int render_mode, float blend, const matrix4x4 transform );
 

@@ -1,0 +1,173 @@
+// Reflection radiance history only. Diffuse GI accumulates SH before normal-map shading.
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+#include "utils.glsl"
+float luminance(vec3 rgb) { return dot(rgb, vec3(0.2126, 0.7152, 0.0722)); }
+#include "indirect_temporal_config.glsl"
+#include "reflection_temporal_config.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D INDIRECT_TEMPORAL_INPUT;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D INDIRECT_TEMPORAL_HISTORY;
+layout(set = 0, binding = 3, rgba32f) uniform readonly image2D INDIRECT_TEMPORAL_STATS;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D INDIRECT_TEMPORAL_OUTPUT;
+layout(set = 0, binding = 5, rgba32f) uniform writeonly image2D INDIRECT_TEMPORAL_OUTPUT_STATS;
+layout(set = 0, binding = 6, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 7, rgba32f) uniform readonly image2D geometry_prev_position;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D normals_gs;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D prev_temporal_asvgf_reproj_depth;
+layout(set = 0, binding = 10, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 11, rgba32f) uniform readonly image2D reflection_direction_pdf;
+layout(set = 0, binding = 12, rgba32f) uniform readonly image2D prev_temporal_reflection_variance;
+layout(set = 0, binding = 13, rgba32f) uniform writeonly image2D out_temporal_reflection_variance;
+#define LOAD_REFLECTION_RAY_LENGTH(p) length(imageLoad(reflection_direction_pdf, (p)).xyz)
+
+#define REPROJECTION_LOAD_PREV_DEPTH_META(p) imageLoad(prev_temporal_asvgf_reproj_depth, (p))
+#include "indirect_reprojection.glsl"
+
+const float EDGE_NORMAL_MIN_DOT = 0.98;
+const float EDGE_POSITION_MIN_RADIUS = 1.0;
+const float EDGE_POSITION_RAY_CONE_SCALE = 3.0;
+
+float computeLinearEdgeWeight(ivec2 p, vec3 center_pos, vec3 center_shading_normal) {
+	vec3 sample_shading_normal = normalDecode(imageLoad(normals_gs, p).zw);
+	if (dot(sample_shading_normal, center_shading_normal) < EDGE_NORMAL_MIN_DOT) {
+		return 0.0;
+	}
+
+	vec4 sample_position = imageLoad(position_t, p);
+	if (!(sample_position.w > 0.0)) return 0.0;
+	vec3 p_diff = sample_position.xyz - center_pos;
+	vec3 origin = (ubo.ubo.inv_view * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float center_depth = max(length(center_pos - origin), 1.0);
+	float position_radius = max(
+		EDGE_POSITION_MIN_RADIUS,
+		center_depth * max(ubo.ubo.ray_cone_width, 1e-6) * EDGE_POSITION_RAY_CONE_SCALE);
+	float p_dist2 = dot(p_diff, p_diff) / max(position_radius * position_radius, 1e-6);
+	return 1.0 - clamp(p_dist2, 0.0, 1.0);
+}
+
+#include "reflection_temporal_filter.glsl"
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
+    if (any(greaterThanEqual(pix, res))) return;
+
+    vec3 current = imageLoad(INDIRECT_TEMPORAL_INPUT, pix).rgb;
+    bool finite_current = !any(isnan(current)) && !any(isinf(current));
+    current = finite_current ? max(current, vec3(0.0)) : vec3(0.0);
+    ReflectionNeighborhood stats = reflectionNeighborhood(pix, current);
+    vec3 result = current;
+    float history_method = REFLECTION_HISTORY_RAW;
+    bool current_hit = reflectionLengthValid(stats.length_mean);
+    vec4 next_variance = vec4(stats.variance, current_hit ? 1.0 : 0.0);
+    bool enabled = finite_current && (ubo.ubo.renderer_flags & RENDERER_FLAG_DISABLE_REPROJECTION) == 0u;
+
+    vec4 position = imageLoad(position_t, pix);
+    if (enabled && position.w > 0.0) {
+        AsvgfReprojectionParams params = reflectionTemporalParams();
+        vec4 normals = imageLoad(normals_gs, pix);
+        vec3 geometry_normal = normalDecode(normals.xy);
+        vec3 shading_normal = normalDecode(normals.zw);
+        float roughness = imageLoad(material_rmxx, pix).r;
+        vec3 previous_position = imageLoad(geometry_prev_position, pix).xyz;
+        ivec2 taps[4];
+        float weights[4];
+        int tap_count;
+        vec2 projected;
+        float depth_threshold;
+        bool valid = buildValidatedReprojectionHistoryTapsForParams(params, previous_position,
+            geometry_normal, pix, res, taps, weights, tap_count, projected, depth_threshold);
+
+        // Scattered reflections follow the surface. Coherent reflections
+        // prefer reflected motion, with surface motion as a fallback.
+        bool prefer_surface = reflectionAccumulationStrength(stats, roughness) >=
+            REFLECTION_SURFACE_REPROJECTION_ACCUMULATION_MIN;
+        bool parallax_valid = false;
+        if (valid && !prefer_surface) {
+            float ray_length = stats.length_mean;
+            ivec2 parallax;
+            if (parallaxReprojectToPrevFramePixel(position.xyz, previous_position, geometry_normal,
+                ubo.ubo.inv_view[3].xyz, ubo.ubo.prev_inv_view[3].xyz, ray_length, res, parallax)) {
+                vec4 meta = imageLoad(prev_temporal_asvgf_reproj_depth, parallax);
+                float old_depth = decodeReprojectionDepth(meta.r);
+                float plane_depth;
+                if (computePlaneDepthInPrevFrame(parallax, res, previous_position, geometry_normal, plane_depth)) {
+                    float threshold = makeReprojectionDepthThresholdForParams(params, plane_depth, old_depth,
+                        depth_threshold * params.parallax_depth_threshold_scale);
+                    float normal_delta = 1.0 - clamp(dot(shading_normal, normalDecode(meta.ba)), 0.0, 1.0);
+                    float roughness_delta = abs(meta.g - roughness);
+                    if (isValidReprojectionDepth(old_depth) && abs(old_depth - plane_depth) < threshold &&
+                        normal_delta < params.parallax_shading_normal_threshold * 2.0 &&
+                        roughness_delta < params.parallax_roughness_threshold * 2.0) {
+                        taps[0] = parallax;
+                        weights[0] = 1.0;
+                        tap_count = 1;
+                        parallax_valid = true;
+                    }
+                }
+            }
+        }
+        vec3 history = vec3(0);
+        vec3 temporal_variance = vec3(0);
+        vec4 variance_sum = vec4(0);
+        float variance_weight = 0.0;
+        float total = 0.0;
+        float history_motion = 0.0;
+        if (valid) for (int i = 0; i < tap_count; ++i) {
+            vec4 sample_value = imageLoad(INDIRECT_TEMPORAL_HISTORY, taps[i]);
+            if ((sample_value.a != REFLECTION_HISTORY_RAW &&
+                sample_value.a != REFLECTION_HISTORY_SURFACE &&
+                sample_value.a != REFLECTION_HISTORY_PARALLAX) ||
+                any(isnan(sample_value)) || any(isinf(sample_value))) continue;
+            vec4 meta = imageLoad(prev_temporal_asvgf_reproj_depth, taps[i]);
+            if (dot(shading_normal, normalDecode(meta.zw)) < 0.9) continue;
+            if (abs(meta.g - roughness) >= 0.1) continue;
+            vec4 sample_stats = imageLoad(INDIRECT_TEMPORAL_STATS, taps[i]);
+            // Statistics preserve the previous reconstruction before temporal
+            // accumulation: .rgb is raw color, .w is mean metric hit length.
+            if (any(isnan(sample_stats)) || any(isinf(sample_stats))) continue;
+            vec4 sample_variance = imageLoad(prev_temporal_reflection_variance, taps[i]);
+            if (any(isnan(sample_variance)) || any(isinf(sample_variance)) ||
+                any(lessThan(sample_variance, vec4(0.0))) || sample_variance.a > 1.0) continue;
+            // For independent estimates of the same signal, E[(x_t-x_prev)^2]/2
+            // is the raw estimator variance. Never use accumulated RGB here.
+            vec3 raw_delta = current - sample_stats.rgb;
+            vec4 measured = vec4(0.5 * raw_delta * raw_delta, current_hit ? 1.0 : 0.0);
+            variance_sum += mix(sample_variance, measured, REFLECTION_VARIANCE_UPDATE_WEIGHT) * weights[i];
+            variance_weight += weights[i];
+            // A successful parallax lookup must never inherit a surface-motion
+            // trail. Restart from just the previous raw frame at this tap.
+            vec3 sample_history = parallax_valid && sample_value.a != REFLECTION_HISTORY_PARALLAX
+                ? sample_stats.rgb : sample_value.rgb;
+            // Validate lengths per tap. Averaging only finite lengths first
+            // lets a neighboring geometry hit reject otherwise valid sky taps.
+            float w = weights[i] * reflectionLengthGate(stats, sample_stats.w, roughness, sample_variance.a);
+            history += sample_history * w;
+            temporal_variance += sample_variance.rgb * w;
+            history_motion += length(vec2(taps[i] - pix)) * w;
+            total += w;
+        }
+        // Update even when color/length validation rejects accumulation, so a
+        // noisy texel can learn its variance instead of remaining locked out.
+        if (variance_weight > 0.0) next_variance = variance_sum / variance_weight;
+        if (total > 0.0) {
+            history_method = parallax_valid ? REFLECTION_HISTORY_PARALLAX : REFLECTION_HISTORY_SURFACE;
+            history /= total;
+            temporal_variance /= total;
+            float mirror = 1.0 - smoothstep(REFLECTION_LENGTH_ROUGHNESS_FADE_START,
+                REFLECTION_LENGTH_ROUGHNESS_FADE_END, roughness);
+            float confidence = total * (parallax_valid ? 1.0 : mix(1.0, 0.5, mirror));
+            result = filterReflectionHistory(current, history, stats,
+                temporal_variance, roughness, confidence, history_motion / total);
+        }
+    }
+    // Alpha is validity + reprojection method, not an accumulating sample count.
+    // Keep raw color separately so surface accumulation can be discarded later.
+    imageStore(INDIRECT_TEMPORAL_OUTPUT, pix, vec4(result, finite_current ? history_method : 0.0));
+    imageStore(INDIRECT_TEMPORAL_OUTPUT_STATS, pix,
+        vec4(current, stats.length_mean));
+    imageStore(out_temporal_reflection_variance, pix, next_variance);
+}

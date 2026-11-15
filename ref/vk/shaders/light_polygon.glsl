@@ -9,7 +9,7 @@
 
 #define DO_ALL_IN_CLUSTER 1
 
-#ifndef RAY_BOUNCE
+#if !LIGHT_POLYGON_ANALYTIC && !defined(RAY_BOUNCE)
 #define PROJECTED
 //#define SOLID
 //#define SIMPLE_SOLID
@@ -237,7 +237,9 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 #elif 1
 void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties material, uint cluster_index, inout vec3 diffuse, inout vec3 specular) {
 #if DO_ALL_IN_CLUSTER
+#if !LIGHT_POLYGON_ANALYTIC
 	const SampleContext ctx = buildSampleContext(P, N, view_dir);
+#endif
 
 #define USE_CLUSTERS
 #ifdef USE_CLUSTERS
@@ -258,6 +260,9 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 		if (plane_dist < 0.)
 			continue;
 
+#if LIGHT_POLYGON_ANALYTIC
+		accumulatePolygonLightLtc(poly, P, N, view_dir, material, diffuse, specular);
+#else
 #ifdef PROJECTED
 		const vec4 light_sample_dir = getPolygonLightSampleProjected(view_dir, ctx, poly);
 #elif defined(SOLID)
@@ -295,6 +300,7 @@ void sampleEmissiveSurfaces(vec3 P, vec3 N, vec3 view_dir, MaterialProperties ma
 			}
 #endif
 		}
+#endif
 	}
 #else // DO_ALL_IN_CLUSTERS
 

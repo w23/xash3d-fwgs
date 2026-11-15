@@ -7,6 +7,17 @@ const float shadow_offset_fudge = .1;
 #include "brdf.glsl"
 #include "light_common.glsl"
 
+#ifndef LIGHT_POLYGON_ANALYTIC
+#define LIGHT_POLYGON_ANALYTIC 1
+#endif
+#ifndef LIGHT_POINT_ANALYTIC
+#define LIGHT_POINT_ANALYTIC 1
+#endif
+
+#if (LIGHT_POLYGON && LIGHT_POLYGON_ANALYTIC) || (LIGHT_POINT && LIGHT_POINT_ANALYTIC)
+#include "light_ltc.glsl"
+#endif
+
 #if LIGHT_POLYGON
 #include "light_polygon.glsl"
 #endif
@@ -34,6 +45,9 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 	for (uint i = 0; i < lights.m.num_point_lights; ++i) {
 #endif
 
+#if LIGHT_POINT_ANALYTIC
+		accumulatePointLightLtc(lights.m.point_lights[i], P, N, view_dir, material, diffuse, specular);
+#else
 		const vec3 spotlight_dir = lights.m.point_lights[i].dir_stopdot2.xyz;
 		const bool is_environment = (lights.m.point_lights[i].environment != 0);
 
@@ -185,6 +199,7 @@ void computePointLights(vec3 P, vec3 N, uint cluster_index, vec3 view_dir, Mater
 
 		diffuse += ldiffuse;
 		specular += lspecular;
+#endif
 	} // for all lights
 }
 #endif

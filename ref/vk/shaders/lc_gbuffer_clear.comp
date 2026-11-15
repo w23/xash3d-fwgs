@@ -1,0 +1,27 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 2) uniform UBO
+{
+    UniformBuffer ubo;
+} ubo;
+layout(set = 0, binding = 20, rgba32f) uniform writeonly image2D out_lc_local_position;
+layout(set = 0, binding = 21, rgba32f) uniform writeonly image2D out_lc_local_normal;
+
+void main()
+{
+    if (ubo.ubo.lightcache_init_frame != ubo.ubo.frame_counter)
+        return;
+
+    // Images use the graph's backing allocation; the LM atlas occupies 512x512.
+    for (int y = int(gl_GlobalInvocationID.y); y < 512; y += int(gl_NumWorkGroups.y) * 8)
+        for (int x = int(gl_GlobalInvocationID.x); x < 512; x += int(gl_NumWorkGroups.x) * 8) {
+            imageStore(out_lc_local_position, ivec2(x, y), vec4(0));
+            imageStore(out_lc_local_normal, ivec2(x, y), vec4(0));
+        }
+}

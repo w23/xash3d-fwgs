@@ -1,0 +1,9 @@
+#version 460
+
+#define FIREFLY_INPUT indirect_diffuse
+#define FIREFLY_OUTPUT out_firefly_filtered_diffuse
+#define FIREFLY_PIXEL_SCALE 2
+#ifndef FIREFLY_REMOVED_MAP
+#define FIREFLY_REMOVED_MAP 0
+#endif
+#include "firefly_rejection.glsl"

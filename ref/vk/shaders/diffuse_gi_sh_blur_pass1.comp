@@ -1,0 +1,12 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define GI_SH_BLUR_FLAGS (RENDERER_FLAG_DENOISE_GI_BY_SH | RENDERER_FLAG_GI_SH_BLUR)
+#define ROTATED_BILATERAL_BLUR_ENABLED ((ubo.ubo.renderer_flags & GI_SH_BLUR_FLAGS) == GI_SH_BLUR_FLAGS)
+#define ROTATED_BILATERAL_BLUR_INPUT temporal_gi_sh1
+#define ROTATED_BILATERAL_BLUR_OUTPUT out_sh1_blur_intermediate
+#define ROTATED_BILATERAL_BLUR_SECOND_INPUT temporal_gi_sh2
+#define ROTATED_BILATERAL_BLUR_SECOND_OUTPUT out_sh2_blur_intermediate
+#define ROTATED_BILATERAL_BLUR_RADIUS 8.0
+#define ROTATED_BILATERAL_BLUR_ROTATION mat2(1.0)
+#include "rotated_bilateral_blur.glsl"

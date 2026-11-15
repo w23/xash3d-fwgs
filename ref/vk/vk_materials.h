@@ -26,6 +26,9 @@ typedef struct r_vk_material_s {
 	float roughness;
 	float metalness;
 	float normal_scale;
+	float refraction_ior; // 0: vanilla alpha blending; >=1: physical reflection/transmission.
+	float wave_scale;
+	float wave_strength;
 } r_vk_material_t;
 
 typedef struct { int index; } r_vk_material_ref_t;

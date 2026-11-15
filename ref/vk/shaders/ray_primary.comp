@@ -24,14 +24,17 @@ layout(set = 0, binding = 13, rgba8) uniform writeonly image2D out_material_rmxx
 layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D out_emissive;
 layout(set = 0, binding = 15, rgba32f) uniform writeonly image2D out_geometry_prev_position;
 layout(set = 0, binding = 16, rgba16f) uniform writeonly image2D out_legacy_blend;
+layout(set = 0, binding = 18, rgba32f) uniform writeonly image2D out_primary_lightmap_uv;
 
 layout(set = 0, binding = 30, std430) readonly buffer ModelHeaders { ModelHeader a[]; } model_headers;
 layout(set = 0, binding = 31, std430) readonly buffer Kusochki { Kusok a[]; } kusochki;
 layout(set = 0, binding = 32, std430) readonly buffer Indices { uint16_t a[]; } indices;
 layout(set = 0, binding = 33, std430) readonly buffer Vertices { Vertex a[]; } vertices;
 
+#include "transparency_faces.glsl"
 #include "ray_primary_common.glsl"
 #include "ray_primary_hit.glsl"
+#include "ray_lightmap.glsl"
 
 #include "trace_simple_blending.glsl"
 #include "trace_decals.glsl"
@@ -87,34 +90,35 @@ void main() {
 		;
 	rayQueryInitializeEXT(rq, tlas, flags, GEOMETRY_BIT_OPAQUE | GEOMETRY_BIT_ALPHA_TEST | GEOMETRY_BIT_REFRACTIVE, ray.origin, 0., ray.direction, ray.dist);
 	while (rayQueryProceedEXT(rq)) {
-		// FIXME this is a no-op. It doesn't do what I though it did. Should check for SBT index for alpha-test material instead.
-		if (0 != (rayQueryGetRayFlagsEXT(rq) & gl_RayFlagsOpaqueEXT))
+		const uint kusok_index = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(rq, false) +
+			rayQueryGetIntersectionGeometryIndexEXT(rq, false));
+		const Material material = getKusok(kusok_index).material;
+		const ModelHeader model = getModelHeader(rayQueryGetIntersectionInstanceIdEXT(rq, false));
+		const bool translucent = model.mode == MATERIAL_MODE_TRANSLUCENT;
+		if (!transparencyFaceVisible(material.refraction_ior,
+			(material.surface_flags & SURFACE_FLAG_LIQUID) != 0u, translucent,
+			rayQueryGetIntersectionFrontFaceEXT(rq, false)))
 			continue;
 
-		// alpha test
-		// TODO check other possible ways of doing alpha test. They might be more efficient
-		// (although in this particular primary ray case it's not taht important):
-		// 1. Do a separate ray query for alpha masked geometry. Reason: here we might accidentally do the expensive
-		//    texture sampling for geometry that's ultimately invisible (i.e. behind walls). Also, shader threads congruence.
-		//    Separate pass could be more efficient as it'd be doing the same thing for every invocation.
-		// 2. Same as the above, but also with a completely independent TLAS. Why: no need to mask-check geometry for opaque-vs-alpha
-		const MiniGeometry geom = readCandidateMiniGeometry(rq);
-		const uint tex_base_color = getKusok(geom.kusok_index).material.tex_base_color;
-		// Should never happen: skybox is opaque if (tex_base_color == TEX_BASE_SKYBOX)
-		const vec4 texture_color = texture(textures[nonuniformEXT(tex_base_color)], geom.uv);
-
-		const float alpha_mask_threshold = .1f;
-		if (texture_color.a >= alpha_mask_threshold) {
+		// Translucent alpha is blending, not a binary hole. Physical transparency ignores alpha.
+		if (translucent || material.refraction_ior > 0.0 || material.tex_base_color == TEX_BASE_SKYBOX) {
 			rayQueryConfirmIntersectionEXT(rq);
+			continue;
 		}
+
+		const MiniGeometry geom = readCandidateMiniGeometry(rq);
+		if (texture(textures[nonuniformEXT(material.tex_base_color)], geom.uv).a >= 0.1)
+			rayQueryConfirmIntersectionEXT(rq);
 	}
 
 	float L = ray.dist;
+	vec4 lightmap_uv = vec4(0);
 	//uint debug_geometry_index = 0;
 	if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
 		//debug_geometry_index = rayQueryGetIntersectionGeometryIndexEXT(rq, true);
 		//debug_geometry_index = rayQueryGetIntersectionPrimitiveIndexEXT(rq, true);
 		primaryRayHit(rq, payload);
+		lightmap_uv = rayLightmapUV(rq);
 		L = rayQueryGetIntersectionTEXT(rq, true);
 
 		traceDecals(payload);
@@ -126,6 +130,7 @@ void main() {
 	const vec4 blend = traceLegacyBlending(ray.origin, ray.direction, L);
 	imageStore(out_legacy_blend, pix, blend);
 
+	imageStore(out_primary_lightmap_uv, pix, lightmap_uv);
 	imageStore(out_position_t, pix, payload.hit_t);
 	imageStore(out_base_color_a, pix, LINEARtoSRGB(payload.base_color_a));
 	imageStore(out_normals_gs, pix, payload.normals_gs);

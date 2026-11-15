@@ -1,0 +1,27 @@
+#version 460
+#include "reflection_firefly_config.glsl"
+
+#ifndef RECON_USE_CENTER_BRDF
+#define RECON_USE_CENTER_BRDF 1
+#endif
+
+#ifndef RECON_USE_PHONG_SPOT
+#define RECON_USE_PHONG_SPOT 1
+#endif
+#define RECON_SPOT_RADIUS_SCALE 2.0
+
+#define RECON_USE_DEPTH_WEIGHT 1
+#define RECON_USE_NORMAL_WEIGHT 1
+#define RECON_USE_ROUGHNESS_WEIGHT 1
+#define RECON_USE_MUTUAL_HORIZONS 1
+#define RECON_USE_HIT_HORIZON 1
+#define RECON_USE_HIT_BOUNDS 1
+#define RECON_USE_CONTACT_FALLBACK 0
+#define RECON_USE_HIT_DEDUP 0
+#define RECON_DEPTH_FADE_START 0.2
+#define RECON_DEPTH_FADE_END 0.5
+#define RECON_MIN_RADIUS 2.0
+#define RECON_MAX_RADIUS 16.0
+#define RECON_FIREFLY_RADIUS 24.0
+
+#include "reflection_spatial_reuse.glsl"

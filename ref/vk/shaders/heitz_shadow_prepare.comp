@@ -1,0 +1,56 @@
+#version 460
+#include "utils.glsl"
+#include "color_spaces.glsl"
+#define GLSL
+#include "ray_interop.h"
+#undef GLSL
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform UBO { UniformBuffer ubo; } ubo;
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D position_t;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D normals_gs;
+#include "heitz_shadow_common.glsl"
+#include "heitz_shadow_raw.glsl"
+layout(set = 0, binding = 12, rgba32f) uniform readonly image2D prev_temporal_exposure;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D base_color_a;
+layout(set = 0, binding = 14, rgba8) uniform readonly image2D material_rmxx;
+layout(set = 0, binding = 15, rgba16f) uniform readonly image2D heitz_poly_analytic_diffuse;
+layout(set = 0, binding = 16, rgba16f) uniform readonly image2D heitz_point_analytic_diffuse;
+layout(set = 0, binding = 17, rgba16f) uniform readonly image2D heitz_poly_analytic_specular;
+layout(set = 0, binding = 18, rgba16f) uniform readonly image2D heitz_point_analytic_specular;
+layout(set = 0, binding = 19, rgba16f) uniform readonly image2D legacy_blend;
+layout(set = 0, binding = 20, rgba16f) uniform writeonly image2D out_heitz_encoded_sd;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D out_heitz_encoded_ud;
+layout(set = 0, binding = 22, rgba16f) uniform writeonly image2D out_heitz_encoded_ss;
+layout(set = 0, binding = 23, rgba16f) uniform writeonly image2D out_heitz_encoded_us;
+layout(set = 0, binding = 24, rgba16f) uniform writeonly image2D out_heitz_perceptual_diffuse;
+layout(set = 0, binding = 25, rgba16f) uniform writeonly image2D out_heitz_perceptual_specular;
+
+vec4 loadExposureTemporalData(ivec2 p) {
+	return imageLoad(prev_temporal_exposure, p);
+}
+#include "exposure_read.glsl"
+
+void main() {
+	const ivec2 p = ivec2(gl_GlobalInvocationID.xy), res = ubo.ubo.res;
+	if (!heitzInside(p, res)) return;
+	vec3 sd, ud, ss, us;
+	heitzRaw(p, sd, ud, ss, us);
+	imageStore(out_heitz_encoded_sd, p, vec4(heitzFilterEncode(sd), 0.0));
+	imageStore(out_heitz_encoded_ud, p, vec4(heitzFilterEncode(ud), 0.0));
+	imageStore(out_heitz_encoded_ss, p, vec4(heitzFilterEncode(ss), 0.0));
+	imageStore(out_heitz_encoded_us, p, vec4(heitzFilterEncode(us), 0.0));
+
+	const vec3 diffuse_color = SRGBtoLINEAR(imageLoad(base_color_a, p).rgb)
+		* (1.0 - imageLoad(material_rmxx, p).g);
+	const vec3 ad = (imageLoad(heitz_poly_analytic_diffuse, p).rgb
+		+ imageLoad(heitz_point_analytic_diffuse, p).rgb) * diffuse_color;
+	const vec3 as = imageLoad(heitz_poly_analytic_specular, p).rgb
+		+ imageLoad(heitz_point_analytic_specular, p).rgb;
+	const float exposure = readAutoExposure(res) * imageLoad(legacy_blend, p).a;
+	// Match the compositor's exposure and transfer curve. Keep lobes separate so
+	// their noise cannot cancel. Other lighting is deliberately not blurred here.
+	const vec3 pd = LINEARtoSRGB(max(exposure * ad * heitzRatio(sd, ud), vec3(0.0)));
+	const vec3 ps = LINEARtoSRGB(max(exposure * as * heitzRatio(ss, us), vec3(0.0)));
+	imageStore(out_heitz_perceptual_diffuse, p, vec4(clamp(pd, 0.0, 1.0), 0.0));
+	imageStore(out_heitz_perceptual_specular, p, vec4(clamp(ps, 0.0, 1.0), 0.0));
+}

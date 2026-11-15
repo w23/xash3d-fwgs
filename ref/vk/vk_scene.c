@@ -15,6 +15,8 @@
 #include "vk_rtx.h"
 #include "r_textures.h"
 #include "vk_cvar.h"
+#include "vk_fog.h"
+#include "vk_renderstate.h"
 #include "vk_materials.h"
 #include "camera.h"
 #include "vk_mapents.h"
@@ -278,6 +280,7 @@ static void R_ClearModelDecalChains( void )
 
 // tell the renderer what new map is started
 void R_NewMap( void ) {
+	memset( &g_fog, 0, sizeof( g_fog ));
 	const model_t *const map = WORLDMODEL;
 
 	// Existence of cache.data for the world means that we've already have loaded this map
@@ -660,7 +663,7 @@ static void drawEntity( cl_entity_t *ent, int render_mode )
 	const float blend = render_mode == kRenderNormal ? 1.f : CL_FxBlend( ent ) / 255.0f;
 
 	// TODO ref_gl does this earlier (when adding entity), can we too?
-	if( blend <= 0.0f )
+	if( blend <= 0.0f && !(mod->type == mod_brush && R_BrushModelHasRefraction(mod)) )
 		return;
 
 	switch (mod->type)
@@ -713,9 +716,13 @@ void VK_SceneRender( const ref_viewpass_t *rvp ) {
 	/* FIXME VK : 0.f */;
 
 	VK_RenderSetupCamera( rvp );
+	R_CheckFog( rvp );
 
 	if( !CVAR_TO_BOOL( rt_enable ))
+	{
 		VK_UpdateLightmapsIfNeeded();
+	}
+	R_AllowFog( true );
 
 	VK_RenderDebugLabelBegin( "opaque" );
 

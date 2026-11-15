@@ -32,6 +32,7 @@ static struct {
 	} skybox;
 } g_textures;
 
+static int loadTextureInternalFromFile(const char *name, const byte *buf, size_t size, int flags, colorspace_hint_e colorspace_hint, qboolean force_update, qboolean ref_interface);
 static void createDefaultTextures( void );
 static void destroyDefaultTextures( void );
 static void destroyTexture( uint texnum );
@@ -59,6 +60,14 @@ qboolean R_TexturesInit( void ) {
 
 	if (!R_VkTexturesInit())
 		return false;
+
+	if (vk_core.rtx) {
+		tglob.blueNoise2DTexture = loadTextureInternalFromFile(
+			"bluenoise2d/joint_uv_128.png", NULL, 0, TF_NOMIPMAP | TF_NEAREST,
+			kColorspaceLinear, false, false);
+		if (!tglob.blueNoise2DTexture)
+			return false;
+	}
 
 	return true;
 }
@@ -240,6 +249,10 @@ static void createDefaultTextures( void )
 }
 
 static void destroyDefaultTextures( void ) {
+	if (tglob.blueNoise2DTexture > 0) {
+		R_TextureRelease(tglob.blueNoise2DTexture);
+		tglob.blueNoise2DTexture = 0;
+	}
 	if (tglob.cinTexture > 0)
 		R_TextureFree( tglob.cinTexture );
 

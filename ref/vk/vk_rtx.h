@@ -51,6 +51,7 @@ typedef struct {
 
 	const matrix3x4 *transform, *prev_transform;
 	const vec4_t *color_srgb;
+	const vec2_t *lightmap_uv;
 
 	struct {
 		const struct r_vk_material_s *material;

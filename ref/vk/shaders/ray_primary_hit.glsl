@@ -9,15 +9,34 @@
 #include "rt_geometry.glsl"
 #include "color_spaces.glsl"
 #include "skybox.glsl"
+#include "water_normal.glsl"
+#include "dielectric_fresnel.glsl"
 
 #include "noise.glsl" // for DEBUG_DISPLAY_SURFHASH
 
 vec4 sampleTexture(uint tex_index, vec2 uv, vec4 uv_lods) {
-#ifndef RAY_BOUNCE
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION)
 	return textureGrad(textures[nonuniformEXT(tex_index)], uv, uv_lods.xy, uv_lods.zw);
 #else
 	return textureLod(textures[nonuniformEXT(tex_index)], uv, 2.);
 #endif
+}
+
+// Oriented shading normal and IOR ratio for this ray/interface. Geometry normals stay
+// unflipped in the payload so entry/exit remains available after decal composition.
+vec3 interfaceNormal(vec3 direction, vec3 geometry_normal, vec3 shading_normal) {
+    if (dot(direction, geometry_normal) > 0.0) {
+        geometry_normal = -geometry_normal;
+        shading_normal = -shading_normal;
+    }
+    return dot(direction, shading_normal) < -0.001 ? shading_normal : geometry_normal;
+}
+
+vec3 transmittedDirection(vec3 direction, vec4 normals, float ior) {
+    if (ior <= 1.0) return direction;
+    vec3 g = normalDecode(normals.xy);
+    float eta = dot(direction, g) < 0.0 ? 1.0 / ior : ior;
+    return refract(direction, interfaceNormal(direction, g, normalDecode(normals.zw)), eta);
 }
 
 void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
@@ -40,7 +59,7 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 		payload.material_rmxx.r = sampleTexture(material.tex_roughness, geom.uv, geom.uv_lods).r * material.roughness;
 		payload.material_rmxx.g = sampleTexture(material.tex_metalness, geom.uv, geom.uv_lods).r * material.metalness;
 
-#ifndef RAY_BOUNCE
+#if !defined(RAY_BOUNCE) || defined(RAY_REFRACTION) || defined(LIGHTCACHE_SHADING_NORMAL)
 		const uint tex_normal = material.tex_normalmap;
 		vec3 T = geom.tangent;
 		if (tex_normal > 0 && dot(T,T) > .5) {
@@ -97,6 +116,11 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 #endif
 	}
 
+	if (material.wave_strength > 0.0)
+		geom.normal_shading = waterNormal(geom.pos, geom.normal_geometry, geom.normal_shading,
+			ubo.ubo.time, ubo.ubo.ray_cone_width * hitT,
+			vec2(material.wave_scale, material.wave_strength));
+
 	payload.normals_gs.xy = normalEncode(geom.normal_geometry);
 	payload.normals_gs.zw = normalEncode(geom.normal_shading);
 
@@ -130,11 +154,16 @@ void primaryRayHit(rayQueryEXT rq, inout RayPayloadPrimary payload) {
 	payload.base_color_a *= color;
 	payload.emissive.rgb *= color.rgb;
 
-	// α-masked materials leak non-1 alpha values to bounces, leading to weird translucent edges, see
-	// https://github.com/w23/xash3d-fwgs/issues/721
-	// Non-translucent materials should be fully opaque
-	if (model.mode != MATERIAL_MODE_TRANSLUCENT)
-		payload.base_color_a.a = 1.;
+	// IOR only replaces the opacity. Decals blend this ordinary alpha afterwards.
+	if (material.refraction_ior > 0.0) {
+		float eta = dot(rayDirection, geom.normal_geometry) < 0.0
+			? 1.0 / material.refraction_ior : material.refraction_ior;
+		vec3 n = interfaceNormal(rayDirection, geom.normal_geometry, geom.normal_shading);
+		payload.base_color_a.a = dielectricFresnel(clamp(-dot(rayDirection, n), 0.0, 1.0), eta);
+	} else if (model.mode != MATERIAL_MODE_TRANSLUCENT) {
+		payload.base_color_a.a = 1.0;
+	}
+	payload.material_rmxx.ba = vec2(0.0);
 
 	if ((ubo.ubo.debug_flags & DEBUG_FLAG_WHITE_FURNACE) != 0) {
 		// White furnace mode: everything is diffuse and white
